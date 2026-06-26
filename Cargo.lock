@@ -337,6 +337,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "crb-benchmark"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crb-reporting",
+ "regex",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "crb-consensus"
 version = "0.1.0"
 dependencies = [
@@ -368,6 +382,7 @@ dependencies = [
  "crb-tools",
  "csv",
  "dotenvy",
+ "regex",
  "rig-core",
  "serde",
  "serde_json",

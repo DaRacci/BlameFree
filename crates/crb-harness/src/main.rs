@@ -10,6 +10,7 @@ use crb_consensus::evaluate_pr_with_consensus;
 use crb_judge::{build_judge, compute_metrics, run_judge};
 use crb_reporting::{load_golden_datasets, write_report, GoldenCommentEntry, PrResult};
 use crb_rules::RuleSet;
+use regex::Regex;
 use rig_core::client::ProviderClient;
 use rig_core::completion::Prompt;
 use rig_core::tool::Tool;
@@ -59,6 +60,39 @@ async fn main() -> Result<()> {
     info!("Loading golden datasets from: {}", dataset_dir.display());
     let all_prs = load_golden_datasets(&dataset_dir)?;
     info!("Loaded {} PR entries total", all_prs.len());
+
+    // ── --pr-filter flag ──────────────────────────────────────────────────
+    let all_prs = if let Some(ref filter) = args.pr_filter {
+        let filter_patterns: std::collections::HashSet<String> = filter
+            .split(',')
+            .map(|s| s.trim().to_lowercase())
+            .collect();
+
+        let available_urls: Vec<String> = all_prs.iter().map(|pr| pr.url.clone()).collect();
+
+        let filtered: Vec<GoldenCommentEntry> = all_prs
+            .iter()
+            .filter(|pr| {
+                let url_lower = pr.url.to_lowercase();
+                filter_patterns.iter().any(|pattern| url_lower.contains(pattern))
+            })
+            .cloned()
+            .collect();
+
+        if filtered.is_empty() {
+            tracing::warn!(
+                "--pr-filter \"{}\" matched no PRs. Available URLs:\n  {}",
+                filter,
+                available_urls.join("\n  ")
+            );
+        }
+
+        filtered
+    } else {
+        all_prs
+    };
+
+    info!("After --pr-filter: {} PR(s) to evaluate", all_prs.len());
 
     // ── Dry run ───────────────────────────────────────────────────────────
     if args.dry_run {
@@ -277,6 +311,89 @@ async fn main() -> Result<()> {
     }
 }
 
+/// Extract owner, repo name, and PR number from a GitHub PR URL.
+///
+/// Expects URLs of the form `https://github.com/{owner}/{repo}/pull/{num}`.
+/// Returns `None` if the URL doesn't match the expected pattern.
+fn extract_pr_info(url: &str) -> Option<(String, String, u32)> {
+    let re = Regex::new(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)$").ok()?;
+    let caps = re.captures(url)?;
+    let owner = caps.get(1)?.as_str().to_string();
+    let repo = caps.get(2)?.as_str().to_string();
+    let pr_num: u32 = caps.get(3)?.as_str().parse().ok()?;
+    Some((owner, repo, pr_num))
+}
+
+/// Load the diff for a PR from pre-extracted cached diff files.
+///
+/// Cached diffs live at `{repos_dir}/../hermes_data/diffs/{owner}_{repo}_{pr_num}.diff`.
+/// This path is derived from the `repos_dir` CLI argument by going up one level
+/// to the shared parent (`offline/`) and into the sibling `hermes_data/diffs/` dir.
+fn load_cached_diff(repos_dir: &PathBuf, owner: &str, repo: &str, pr_num: u32) -> Option<String> {
+    let diffs_dir = repos_dir
+        .parent()
+        .map(|p| p.join("hermes_data").join("diffs"))
+        .unwrap_or_else(|| repos_dir.join("../hermes_data/diffs"));
+    let diff_path = diffs_dir.join(format!("{}_{}_{}.diff", owner, repo, pr_num));
+    match std::fs::read_to_string(&diff_path) {
+        Ok(content) => {
+            info!("Loaded cached diff ({} bytes) from {}", content.len(), diff_path.display());
+            Some(content)
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Cached diff not found at {}: {}. Using empty diff.",
+                diff_path.display(),
+                e
+            );
+            None
+        }
+    }
+}
+
+/// Parse an agent's LLM response string into a `Vec<Finding>`.
+///
+/// Attempts two strategies in order:
+/// 1. Direct JSON array deserialization via `serde_json::from_str`.
+/// 2. JSON extraction from markdown fenced code blocks (```json ... ```).
+///
+/// If both fail, returns an empty `Vec` with a warning and the truncated
+/// response text for debugging.
+fn parse_agent_findings(response: &str) -> Result<Vec<Finding>, String> {
+    // Strategy 1: Try direct JSON array parse
+    if let Ok(findings) = serde_json::from_str::<Vec<Finding>>(response) {
+        info!("Parsed {} finding(s) directly from agent JSON response", findings.len());
+        return Ok(findings);
+    }
+
+    // Strategy 2: Extract JSON from markdown code blocks
+    // Match ```json ... ``` or ``` ... ``` blocks
+    let re = Regex::new(r"(?s)```(?:json)?\s*\n?(.*?)```").unwrap();
+    if let Some(caps) = re.captures(response) {
+        let inner = caps.get(1).unwrap().as_str().trim();
+        if let Ok(findings) = serde_json::from_str::<Vec<Finding>>(inner) {
+            info!(
+                "Parsed {} finding(s) from markdown code block in agent response",
+                findings.len()
+            );
+            return Ok(findings);
+        }
+    }
+
+    // Both strategies failed — warn and return empty
+    let truncated = if response.len() > 200 {
+        format!("{}...", &response[..200])
+    } else {
+        response.to_string()
+    };
+    tracing::warn!(
+        "Failed to parse agent response as Finding array. \
+         Response (truncated): {}",
+        truncated
+    );
+    Ok(Vec::new())
+}
+
 /// Evaluate a single PR, optionally using consensus orchestration and linters.
 ///
 /// When `--linters-only` is set, only static analysis linters are run (no LLM
@@ -290,7 +407,7 @@ async fn evaluate_pr_with_postprocessing(
     judge: &rig_core::agent::Agent<
         rig_core::providers::openai::responses_api::ResponsesCompletionModel,
     >,
-    _repos_dir: &PathBuf,
+    repos_dir: &PathBuf,
     linter_configs: Option<&std::collections::HashMap<String, crb_tools::LinterConfig>>,
     skip_consensus: bool,
     linters_only: bool,
@@ -299,8 +416,25 @@ async fn evaluate_pr_with_postprocessing(
     roles: &str,
     max_findings: usize,
 ) -> Result<PrResult> {
-    // ── Diff loading (placeholder — no real diffs in MVP) ─────────────────
-    let diff = String::new();
+    // ── Diff loading ──────────────────────────────────────────────────────
+    let diff = match extract_pr_info(&pr.url) {
+        Some((owner, repo, pr_num)) => {
+            load_cached_diff(repos_dir, &owner, &repo, pr_num)
+                .unwrap_or_default()
+        }
+        None => {
+            tracing::warn!(
+                "Could not extract PR info from URL '{}'. Using empty diff.",
+                pr.url
+            );
+            String::new()
+        }
+    };
+    if diff.is_empty() {
+        tracing::warn!("Empty diff for PR: {} (url: {})", pr.pr_title, pr.url);
+    } else {
+        info!("Loaded diff ({} bytes) for PR: {}", diff.len(), pr.pr_title);
+    }
 
     // ── Linters ───────────────────────────────────────────────────────────
     let mut linter_findings: Vec<Finding> = Vec::new();
@@ -309,7 +443,7 @@ async fn evaluate_pr_with_postprocessing(
         for (_name, lconfig) in configs {
             let tool = crb_tools::create_linter_tool(lconfig);
             let args = crb_tools::LinterArgs {
-                repo_path: _repos_dir.to_string_lossy().to_string(),
+                repo_path: repos_dir.to_string_lossy().to_string(),
             };
             linter_set.spawn(async move {
                 // Run the linter via the rig Tool interface
@@ -456,7 +590,7 @@ async fn evaluate_pr_single_agent(
                         .prompt(&diff)
                         .await
                         .map_err(|e| e.to_string())
-                        .and_then(|_| Ok(Vec::new())) // placeholder extraction
+                        .and_then(|response| parse_agent_findings(&response))
                 },
                 3,    // max_retries
                 1000, // base_delay_ms

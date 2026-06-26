@@ -86,4 +86,9 @@ pub struct CliArgs {
     /// Maximum number of findings per agent (default: 20).
     #[arg(long, env = "MAX_FINDINGS", default_value_t = 20)]
     pub max_findings: usize,
+
+    /// Only evaluate PRs matching these repo or PR number patterns (comma-separated).
+    /// Useful for smoke tests. Example: --pr-filter "discourse-7,calcom-11059"
+    #[arg(long)]
+    pub pr_filter: Option<String>,
 }
