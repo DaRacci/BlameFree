@@ -24,6 +24,9 @@ mod validation;
 /// Main entry point for the review benchmark harness.
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load .env from CWD (and parent directories)
+    dotenvy::dotenv().ok();
+
     // ── Tracing ───────────────────────────────────────────────────────────
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
