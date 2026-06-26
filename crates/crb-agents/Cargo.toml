@@ -1,0 +1,9 @@
+[package]
+name = "crb-agents"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rig-core = { workspace = true }
+serde = { workspace = true }
+schemars = { workspace = true }

@@ -49,9 +49,11 @@ inconsistent, and concurrent execution would require duplicated boilerplate.
 ## Directory Structure
 
 ```
-crb-harness/src/
-└── tools/
-    ├── mod.rs       # Module exports
-    ├── linter.rs    # LinterTool, LinterArgs, LinterError, parsers
-    └── git.rs       # GitCleanTool, GitDiffTool, GitArgs, GitError
+review-harness/
+├── Cargo.toml                     # [workspace] members = ["crates/*"]
+└── crates/
+    └── crb-tools/                 # Tool trait implementations
+        ├── Cargo.toml             # deps: rig-core, tokio, serde, schemars
+        └── src/
+            └── lib.rs             # LinterTool, GitTool, types, parsers, config
 ```

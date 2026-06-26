@@ -323,12 +323,15 @@ pub async fn run_consensus(
 ## 4. Module Structure
 
 ```
-review-harness/src/consensus/
-├── mod.rs           # Re-exports: run_consensus, ConsensusReport, Role, Finding
-│                    # Re-exports: GoldenComment, MatchResult, ReviewerConfig
-├── agent.rs        # Role enum, ReviewerConfig, build_reviewer_agent()
-├── judge.rs        # JudgeAgent, JUDGE_PROMPT, judge_comment()
-└── types.rs        # Finding, GoldenComment, MatchResult, ConsensusReport
+review-harness/
+├── Cargo.toml                     # [workspace] members = ["crates/*"]
+└── crates/
+    └── crb-consensus/             # Multi-agent orchestration
+        ├── Cargo.toml             # deps: rig-core, tokio, crb-agents, crb-judge
+        └── src/
+            └── lib.rs             # Re-exports: run_consensus, ConsensusReport, Role, Finding
+                                   # Re-exports: GoldenComment, MatchResult, ReviewerConfig
+                                   # Agent builder, judge, and types all in lib.rs
 ```
 
 ## 5. Error Handling

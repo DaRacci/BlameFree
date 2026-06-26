@@ -2,24 +2,25 @@
 
 ## Architecture
 
-The linter runner lives in `linters.rs` under `crb-harness/src/`. It is called from `evaluate_pr()` in `main.rs` or `agents.rs` alongside LLM agent calls.
+The linter runner lives in `crates/crb-tools/src/lib.rs`. It is called from `crb-harness/src/main.rs` via `crb-consensus` orchestration alongside LLM agent calls.
 
 ```
-crb-harness/src/
-├── main.rs          # evaluate_pr() entry point
-├── agents.rs        # LLM agent definitions
-├── judge.rs         # finding evaluation pipeline
-├── reporting.rs     # output formatting
-├── config.rs        # TOML config loading
-├── linters.rs       # NEW — Tool trait implementations
-│   ├── struct LinterConfig { name, cmd, parser_kind, timeout_secs }
-│   ├── impl Tool for RuffLinter
-│   ├── impl Tool for EslintLinter
-│   ├── impl Tool for GoVetLinter
-│   ├── impl Tool for RubocopLinter
-│   ├── impl Tool for CheckstyleLinter
-│   └── fn run_linters(pr_path, language) -> Vec<Finding>
-└── findings.rs      # NEW — shared Finding schema
+review-harness/
+├── Cargo.toml                   # [workspace] members = ["crates/*"]
+└── crates/
+    ├── crb-tools/               # Tool trait implementations
+    │   ├── Cargo.toml           # deps: rig-core, tokio, serde, schemars
+    │   └── src/lib.rs           # LinterTool, GitTool, TOML config loading
+    │       ├── struct LinterConfig { name, cmd, parser_kind, timeout_secs }
+    │       ├── impl Tool for RuffLinter
+    │       ├── impl Tool for EslintLinter
+    │       ├── impl Tool for GoVetLinter
+    │       ├── impl Tool for RubocopLinter
+    │       ├── impl Tool for CheckstyleLinter
+    │       └── fn run_linters(pr_path, language) -> Vec<Finding>
+    └── crb-agents/              # Shared Finding type
+        ├── Cargo.toml           # deps: serde, schemars
+        └── src/lib.rs           # Finding, severity types
 ```
 
 ### `rig::tool::Tool` Trait (from `rig-core`)

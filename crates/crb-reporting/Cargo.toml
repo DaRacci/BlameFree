@@ -1,0 +1,12 @@
+[package]
+name = "crb-reporting"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crb-judge = { path = "../crb-judge" }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+csv = { workspace = true }

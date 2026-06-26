@@ -284,24 +284,27 @@ output_format = "text"
 ## 4. Module Structure
 
 ```
-crb-harness/src/tools/
-├── mod.rs
-│   // Re-exports public types: LinterTool, LinterArgs, LinterError, Finding
-│   // Re-exports: GitCleanTool, GitDiffTool, GitCleanArgs, GitDiffArgs, GitError
-│   // Re-exports: load_linter_config()
-│
-├── linter.rs
-│   // LinterArgs, Finding, LinterError
-│   // LinterTool struct + Tool impl
-│   // LinterConfig struct + load_linter_config()
-│   // parse_ruff_output(), parse_eslint_output(), parse_govet_output()
-│   // create_ruff_tool(), create_eslint_tool(), create_govet_tool()
-│   // Tests: each parser with known-good and known-bad input
-│
-└── git.rs
-    // GitCleanArgs, GitDiffArgs, GitError
-    // GitCleanTool, GitDiffTool structs + Tool impls
-    // Tests: git operations against a temp repo
+review-harness/
+├── Cargo.toml                     # [workspace] members = ["crates/*"]
+└── crates/
+    └── crb-tools/                 # Tool trait implementations
+        ├── Cargo.toml             # deps: rig-core, tokio, serde, schemars
+        └── src/
+            └── lib.rs
+                // Re-exports public types: LinterTool, LinterArgs, LinterError, Finding
+                // Re-exports: GitCleanTool, GitDiffTool, GitCleanArgs, GitDiffArgs, GitError
+                // Re-exports: load_linter_config()
+                //
+                // LinterArgs, Finding, LinterError
+                // LinterTool struct + Tool impl
+                // LinterConfig struct + load_linter_config()
+                // parse_ruff_output(), parse_eslint_output(), parse_govet_output()
+                // create_ruff_tool(), create_eslint_tool(), create_govet_tool()
+                // Tests: each parser with known-good and known-bad input
+                //
+                // GitCleanArgs, GitDiffArgs, GitError
+                // GitCleanTool, GitDiffTool structs + Tool impls
+                // Tests: git operations against a temp repo
 ```
 
 ## 5. Error Handling Strategy

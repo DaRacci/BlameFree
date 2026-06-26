@@ -3,25 +3,24 @@
 ## Architecture
 
 ```
-crb-harness/src/
-├── main.rs               # CLI entrypoint — clap flags: --validate, --ci, --cached-diffs
-├── scaffolding.rs         # ~130 lines — Rust port of scaffold_pr.sh
-│   ├── fn clean_repo(repo_path: &Path) -> Result<()>
-│   ├── fn checkout_pr(repo_path: &Path, pr_info: &PrInfo) -> Result<()>
-│   └── fn extract_diff(repo_path: &Path, base: &str, head: &str) -> Result<String>
-├── validation.rs          # ~90 lines  — baseline comparison
-│   ├── fn load_baseline(path: &Path) -> Result<Baseline>
-│   ├── fn compute_delta(results: &RunResults, baseline: &Baseline) -> Vec<BaselineDelta>
-│   └── fn validate_run(results_path: &Path, baseline_path: &Path) -> Result<bool>
-├── reporting.rs           # JSON output helpers
-├── config.rs              # CLI config struct + deserialization
-└── findings.rs            # Existing finding types
+review-harness/
+├── Cargo.toml                           # [workspace] members = ["crates/*"]
+└── crates/
+    ├── crb-harness/                     # Binary — CLI entrypoint: --validate, --ci, --cached-diffs
+    │   ├── Cargo.toml                   # deps: crb-tools, crb-reporting, crb-agents, clap
+    │   └── src/main.rs
+    ├── crb-tools/                       # Git tool operations (scaffolding port)
+    │   ├── Cargo.toml                   # deps: serde
+    │   └── src/lib.rs                   # git helpers: clean_repo, checkout_pr, extract_diff
+    └── crb-reporting/                   # Validation (baseline comparison + output)
+        ├── Cargo.toml                   # deps: serde, serde_json
+        └── src/lib.rs                   # load_baseline, compute_delta, validate_run
 ```
 
-## Scaffolding Module
+## Scaffolding Module (in `crates/crb-tools/src/lib.rs`)
 
 ```rust
-// scaffolding.rs
+// crates/crb-tools/src/lib.rs — git helper functions
 use std::path::Path;
 use std::process::Command;
 
@@ -67,10 +66,10 @@ pub fn extract_diff(repo_path: &Path, base: &str, head: &str) -> Result<String, 
 }
 ```
 
-## Validation Module
+## Validation Module (in `crates/crb-reporting/src/lib.rs`)
 
 ```rust
-// validation.rs
+// crates/crb-reporting/src/lib.rs — baseline comparison
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -159,8 +158,8 @@ fn load_results(path: &Path) -> Result<HashMap<String, f64>, Box<dyn std::error:
 ```bash
 # ./run_ci.sh — intended for cron or GitHub Actions
 export OPENROUTER_API_KEY="${OPENROUTER_API_KEY}"
-cd crb-harness
-cargo build --release
+cd review-harness
+cargo build --release -p crb-harness
 ./target/release/crb-harness --ci \
     --dataset datasets/golden_comments/ \
     --repos repos/ \
@@ -175,7 +174,7 @@ cargo build --release
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Git operations | `std::process::Command` (not git2 crate) | Reduces dependency weight; git CLI is stable and available in all CI environments |
+| Git operations | `std::process::Command` in `crates/crb-tools` | Reduces dependency weight; git CLI is stable and available in all CI environments |
 | Serialization | serde + serde_json | Standard Rust JSON toolkit; zero extra deps for the project |
 | Baseline format | JSON file with summary metrics + per-PR breakdown | Matches existing v5.14 output format |
 | Noise threshold | ±2pp F1, ±3pp precision/recall | Based on empirical variance observed in v5.12–v5.14 runs |

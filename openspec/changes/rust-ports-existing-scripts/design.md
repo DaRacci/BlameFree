@@ -2,20 +2,25 @@
 
 ## Architecture
 
-Both modules live under `crb-harness/src/` as sibling files called from `main.rs` during the evaluation pipeline.
+Both modules live as separate workspace crates with dual lib.rs+main.rs. The library exposes pure functions; the CLI wraps those functions with clap argument parsing.
 
 ```
-crb-harness/src/
-├── main.rs               # evaluate_pr() entry point
-├── agents.rs             # LLM agent definitions
-├── judge.rs              # finding evaluation pipeline
-├── reporting.rs          # output formatting
-├── config.rs             # TOML config loading
-├── linters.rs            # linter Tool trait implementations
-├── findings.rs           # shared Finding / Candidate / Severity types
-├── aggregator.rs         # NEW — report parsing, dedup, candidate formatting
-├── severity_auditor.rs   # NEW — severity inflation detection & downgrade
-└── scaffolding.rs        # PR checkout, file I/O helpers
+review-harness/
+├── Cargo.toml                     # [workspace] members = ["crates/*"]
+└── crates/
+    ├── crb-aggregator/             # Port of aggregate_findings.py
+    │   ├── Cargo.toml              # deps: serde, serde_json, regex, crb-agents
+    │   └── src/
+    │       ├── lib.rs              # Pure library: parse_report, semantic_dedup, aggregate_batch, etc.
+    │       └── main.rs             # Standalone CLI: --reports-dir, --output, --replace, --pr-filter
+    ├── crb-auditor/                # Port of severity_auditor.py
+    │   ├── Cargo.toml              # deps: serde, serde_json, regex, crb-agents
+    │   └── src/
+    │       ├── lib.rs              # Pure library: apply_severity_auditor, format_report, patterns
+    │       └── main.rs             # Standalone CLI: --findings-file, --output, --report
+    └── crb-agents/                 # Shared types
+        ├── Cargo.toml              # deps: serde, schemars
+        └── src/lib.rs              # Finding, Severity, Candidate types
 ```
 
 ### Data Flow
@@ -138,9 +143,9 @@ Returns:
 - `Map<Url, Candidates>` — mapping PR URL → tool-name → candidate list
 - `Stats` — `{ total_findings, candidates, parse_warnings, reports_with_warnings, passed_to_adjudication, report_stats }`
 
-### Key Types (shared, defined in `findings.rs`)
+### Key Types (shared, defined in `crb-agents` crate)
 
-See existing `findings.rs` for `Finding`, `Candidate`, and `Severity` type definitions.
+See `crates/crb-agents/src/lib.rs` for `Finding`, `Candidate`, and `Severity` type definitions, now shared across all workspace crates.
 
 ### Regex Compilation
 
@@ -223,15 +228,15 @@ Generate human-readable report:
 
 ## Key Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Language | Rust | Same language as harness; zero overhead integration; no subprocess |
-| Regex crate | `regex` | Standard, well-optimised; compiled patterns via `once_cell::sync::Lazy` |
-| JSON parsing | `serde_json` | Already a dependency; matches existing `Finding` serde derives |
-| Module boundary | Pure functions, no I/O | File I/O stays in `main.rs` / `scaffolding.rs`; modules are testable in isolation |
-| Dedup strategy | Group-key then Jaccard | Matches Python exactly; O(n²) Jaccard only for remaining ungrouped |
-| Severity type | `enum Severity` in `findings.rs` | Strongly-typed, matches-schema derives; no magic strings |
-| Compile-once patterns | `once_cell::sync::Lazy<Vec<Regex>>` | Pattern list grows rarely; negligible memory cost |
-| Pattern reuse | `severity_value()` in shared location | Deferred to impl; could live on `Severity` impl or shared `util.rs` |
-| parse_report order | table → bullet → JSON | Matches Python; table format is the primary Phase 4 format |
-| NEVER_DOWNGRADE priority | Highest | Security/integrity/correctness patterns must always win |
+|| Decision | Choice | Rationale |
+||----------|--------|-----------|
+|| Language | Rust | Same language as harness; zero overhead integration; no subprocess |
+|| Crate structure | Separate crates (crb-aggregator, crb-auditor) | Independently publishable, testable, and usable as library or CLI |
+|| Regex crate | `regex` | Standard, well-optimised; compiled patterns via `once_cell::sync::Lazy` |
+|| JSON parsing | `serde_json` | Already a dependency; matches existing `Finding` serde derives |
+|| Module boundary | Pure functions, no I/O | File I/O stays in main.rs; modules are testable in isolation |
+|| Dedup strategy | Group-key then Jaccard | Matches Python exactly; O(n²) Jaccard only for remaining ungrouped |
+|| Severity type | `enum Severity` in `crb-agents` | Strongly-typed, cross-crate shared; no magic strings |
+|| Compile-once patterns | `once_cell::sync::Lazy<Vec<Regex>>` | Pattern list grows rarely; negligible memory cost |
+|| parse_report order | table → bullet → JSON | Matches Python; table format is the primary Phase 4 format |
+|| NEVER_DOWNGRADE priority | Highest | Security/integrity/correctness patterns must always win |

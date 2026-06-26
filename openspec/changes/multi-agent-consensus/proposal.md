@@ -67,12 +67,13 @@ truth.
 ## Directory Structure
 
 ```
-review-harness/src/
-├── consensus/
-│   ├── mod.rs           # Module exports, consensus flow entry point
-│   ├── agent.rs         # ReviewerAgent struct, role definitions, system prompts
-│   ├── judge.rs         # JudgeAgent struct, golden comment matching
-│   └── types.rs         # Finding, GoldenComment, ConsensusReport structs
-└── bin/
-    └── review.rs        # Main entry point orchestrating the flow
+review-harness/
+├── Cargo.toml                     # [workspace] members = ["crates/*"]
+└── crates/
+    └── crb-consensus/             # Multi-agent orchestration crate
+        ├── Cargo.toml             # deps: rig-core, tokio, crb-agents, crb-judge
+        └── src/
+            └── lib.rs             # Module exports, consensus flow entry point
+                                   # Agent builder, role definitions, system prompts
+                                   # Judge agent, golden comment matching, types
 ```

@@ -4,7 +4,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use crate::judge::{JudgeVerdict, Metrics};
+use crb_judge::{JudgeVerdict, Metrics};
 
 // ── Data structures (shared across modules) ─────────────────────────────────
 

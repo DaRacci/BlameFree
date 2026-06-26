@@ -2,16 +2,54 @@
 
 ## Architecture
 
-crb-harness/
-├── Cargo.toml
-├── src/
-│   ├── main.rs           # ~150 lines — CLI (clap derive), main loop, JoinSet orchestration
-│   ├── agents.rs          # ~120 lines — prompt templates, rig AgentBuilder, provider routing
-│   ├── judge.rs           # ~150 lines — Martian-compatible judge via rig Extractor
-│   ├── reporting.rs       # ~100 lines — aggregation, CSV/JSON output via serde
-│   └── config.rs          # ~80 lines  — CliArgs, provider config, environment handling
+review-harness/                          # Cargo workspace root
+├── Cargo.toml                           # [workspace] members = ["crates/*"]
+├── crates/
+│   ├── crb-harness/                     # Binary — orchestrates benchmark
+│   │   ├── Cargo.toml                   # deps: crb-agents, crb-judge, crb-consensus, crb-tools, crb-reporting, rig-core, tokio, clap, tracing
+│   │   └── src/main.rs
+│   ├── crb-aggregator/                  # aggregate_findings.py port
+│   │   ├── Cargo.toml                   # deps: serde, serde_json, regex
+│   │   └── src/{lib.rs, main.rs}
+│   ├── crb-auditor/                     # severity_auditor.py port
+│   │   ├── Cargo.toml                   # deps: serde, serde_json, regex
+│   │   └── src/{lib.rs, main.rs}
+│   ├── crb-agents/                      # Agent builders + prompt templates
+│   │   ├── Cargo.toml                   # deps: rig-core, serde, schemars
+│   │   └── src/lib.rs
+│   ├── crb-judge/                       # Judge + metrics
+│   │   ├── Cargo.toml                   # deps: rig-core, serde, schemars
+│   │   └── src/lib.rs
+│   ├── crb-consensus/                   # Multi-agent orchestration
+│   │   ├── Cargo.toml                   # deps: rig-core, tokio, crb-agents, crb-judge
+│   │   └── src/lib.rs
+│   ├── crb-tools/                       # Tool trait implementations
+│   │   ├── Cargo.toml                   # deps: rig-core, tokio, serde, schemars
+│   │   └── src/lib.rs
+│   └── crb-reporting/                   # Output formatting
+│       ├── Cargo.toml                   # deps: serde, serde_json, csv
+│       └── src/lib.rs
 └── datasets/
-    └── golden_comments/   # copied from Martian (MIT license)
+    └── golden_comments/
+
+## Inter-crate dependency graph
+
+crb-harness (binary)
+  ├── crb-consensus
+  │     ├── crb-agents
+  │     ├── crb-judge
+  │     └── crb-tools
+  ├── crb-reporting
+  ├── crb-aggregator (used as library, also has standalone CLI)
+  └── crb-auditor (used as library, also has standalone CLI)
+
+## Key decisions
+- crb-aggregator and crb-auditor: dual lib+bin — usable as `cargo run -p crb-aggregator` standalone
+- crb-agents: defines Finding type (shared across consensus, tools, judge)
+- crb-judge: defines JudgeVerdict type and Martian prompt
+- crb-consensus: orchestration — depends on crb-agents for agent creation, crb-judge for evaluation, crb-tools for linter integration
+- crb-tools: linter/git tool implementations via rig Tool trait
+- crb-reporting: pure output — JSON + CSV, no LLM deps
 
 ## Core Loop (Pseudocode)
 
@@ -95,29 +133,44 @@ async fn main() -> Result<()> {
 ## Key Design Decisions
 
 | Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Async runtime | tokio (rt-multi-thread, macros) | Industry standard Rust async. JoinSet for concurrent PR eval |
-| LLM client | rig-core 0.39 | Provider-agnostic traits (CompletionModel, Extractor), published on crates.io, MIT licensed |
-| Diff source | Pre-scaffolded files | Avoid git dependency in MVP. Add git operations later |
-| Judge prompt | Martian JUDGE_PROMPT verbatim | Proven effective, MIT licensed |
-| Config model | clap derive + struct | Type-safe CLI parsing, env var fallback via clap env feature |
-| Output format | JSON via serde + CSV | Machine-readable + human-readable |
-| Error handling | anyhow::Result + skip-on-failure | Don't fail entire run on one PR failure. Log for post-hoc audit |
+||----------|--------|-----------|
+|| Async runtime | tokio (rt-multi-thread, macros) | Industry standard Rust async. JoinSet for concurrent PR eval |
+|| LLM client | rig-core 0.39 | Provider-agnostic traits (CompletionModel, Extractor), published on crates.io, MIT licensed |
+|| Workspace layout | `crates/*` pattern | Each component independently compilable, testable, publishable |
+|| Dual lib+bin | crb-aggregator, crb-auditor | Reusable as library, usable as standalone CLI |
+|| Shared types | `crb-agents` crate | Finding, Severity, Candidate shared across all crates |
+|| Diff source | Pre-scaffolded files | Avoid git dependency in MVP. Add git operations later |
+|| Judge prompt | Martian JUDGE_PROMPT verbatim | Proven effective, MIT licensed |
+|| Config model | clap derive + struct | Type-safe CLI parsing, env var fallback via clap env feature |
+|| Output format | JSON via serde + CSV | Machine-readable + human-readable |
+|| Error handling | anyhow::Result + skip-on-failure | Don't fail entire run on one PR failure. Log for post-hoc audit |
 
 ## Dependencies
 
+### Workspace root (`Cargo.toml`)
+```toml
+[workspace]
+members = ["crates/*"]
+```
+
+### Main binary (`crates/crb-harness/Cargo.toml`)
 ```toml
 [dependencies]
+crb-agents = { path = "../crb-agents" }
+crb-judge = { path = "../crb-judge" }
+crb-consensus = { path = "../crb-consensus" }
+crb-tools = { path = "../crb-tools" }
+crb-reporting = { path = "../crb-reporting" }
+crb-aggregator = { path = "../crb-aggregator" }
+crb-auditor = { path = "../crb-auditor" }
 rig-core = "0.39"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-schemars = "0.8"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-csv = "1.3"
 ```
 
 ## Prompt Template Approach

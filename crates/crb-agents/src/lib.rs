@@ -46,9 +46,6 @@ You are a code reviewer. Analyze the provided code diff and identify any \
 issues. Respond with a JSON array of findings.";
 
 /// Build a rig agent for the given role with its preamble prompt.
-///
-/// Supported roles: `SA` (static analysis), `CL` (code logic), `AR` (architecture),
-/// `SEC` (security).  Unknown roles use a generic code-review preamble.
 pub fn build_agent(
     client: &openai::Client,
     model: &str,

@@ -1,0 +1,26 @@
+[package]
+name = "crb-harness"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "crb-harness"
+path = "src/main.rs"
+
+[dependencies]
+crb-agents = { path = "../crb-agents" }
+crb-judge = { path = "../crb-judge" }
+crb-reporting = { path = "../crb-reporting" }
+crb-consensus = { path = "../crb-consensus" }
+crb-tools = { path = "../crb-tools" }
+crb-aggregator = { path = "../crb-aggregator" }
+crb-auditor = { path = "../crb-auditor" }
+rig-core = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+csv = { workspace = true }

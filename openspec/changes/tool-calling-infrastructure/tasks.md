@@ -2,12 +2,13 @@
 
 ## Phase 1: Foundation
 
-- [ ] **1.1 Create `crb-harness/src/tools/mod.rs`**
-  - Re-export all public types from `linter` and `git` submodules.
+- [x] **1.1 Create `crates/crb-tools/Cargo.toml` and `src/lib.rs`**
   - Define the `Finding` struct.
+  - Re-export all public types from the module.
+  - Define `LinterError`, `GitError` error types.
 
-- [ ] **1.2 Create `crb-harness/src/tools/linter.rs`**
-  - Define `LinterArgs`, `Finding`, `LinterError`.
+- [x] **1.2 Implement linter tools in `crates/crb-tools/src/lib.rs`**
+  - Define `LinterArgs`, `LinterError`.
   - Implement `LinterTool` struct with `Tool` trait.
   - Implement `LinterConfig` deserialization from TOML.
   - Implement `load_linter_config()`.
@@ -16,14 +17,14 @@
   - Write `parse_govet_output()` parser.
   - Write factories: `create_ruff_tool()`, `create_eslint_tool()`, `create_govet_tool()`.
 
-- [ ] **1.3 Create `crb-harness/src/tools/git.rs`**
+- [x] **1.3 Implement git tools in `crates/crb-tools/src/lib.rs`**
   - Define `GitCleanArgs`, `GitDiffArgs`, `GitError`.
   - Implement `GitCleanTool` with `Tool` trait.
   - Implement `GitDiffTool` with `Tool` trait.
 
 ## Phase 2: Testing
 
-- [ ] **2.1 Linter parser unit tests**
+- [x] **2.1 Linter parser unit tests**
   - Test `parse_ruff_output` with known ruff JSON output.
   - Test `parse_eslint_output` with known ESLint JSON output.
   - Test `parse_govet_output` with known `go vet` text output.
@@ -47,18 +48,18 @@
   - Define ruff, eslint, and govet entries.
   - Validate with the `load_linter_config()` function.
 
-- [ ] **3.2 Wire into harness orchestration**
+- [x] **3.2 Wire into harness orchestration**
   - Create `run_all_linters(repo_path)` function.
   - Create `aggregate_results()` for producing a `LintReport`.
-  - Integrate with the main review loop (separate change).
+  - Integrate with the main review loop in `crb-harness`.
 
 ## Phase 4: Edge Cases & Hardening
 
-- [ ] **4.1 Handle missing linter binaries gracefully**
+- [x] **4.1 Handle missing linter binaries gracefully**
   - If `ruff` is not installed, skip or warn instead of hard error.
   - Config option: `optional = true` per linter.
 
-- [ ] **4.2 Shell injection prevention**
+- [x] **4.2 Shell injection prevention**
   - Verify all commands use argument arrays, not shell strings.
   - Audit `LinterTool.cmd` usage for `sh -c` or string concatenation.
 
@@ -66,12 +67,12 @@
   - Stream/chunk stdout for linters that produce megabytes of output.
   - Cap `Vec<Finding>` size to prevent OOM.
 
-- [ ] **4.4 Concurrent execution limits**
+- [x] **4.4 Concurrent execution limits**
   - Add a semaphore to limit concurrent linter processes (default: 4).
 
 ## Phase 5: Documentation
 
-- [ ] **5.1 API docs**
+- [x] **5.1 API docs**
   - Document public types and functions with `///` docs.
   - Include example usage for each tool.
 

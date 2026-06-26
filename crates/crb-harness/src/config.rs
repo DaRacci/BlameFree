@@ -2,7 +2,7 @@ use clap::Parser;
 
 /// CLI arguments for the code review benchmark harness.
 #[derive(Debug, Clone, Parser)]
-#[command(name = "review-harness", about = "Code review benchmark harness")]
+#[command(name = "crb-harness", about = "Code review benchmark harness")]
 pub struct CliArgs {
     /// Directory containing golden comment datasets.
     #[arg(long, env = "DATASET_DIR", default_value = "datasets/golden_comments")]
@@ -35,4 +35,20 @@ pub struct CliArgs {
     /// Resume mode: skip PRs that already have result files in the output directory.
     #[arg(long, default_value_t = false)]
     pub resume: bool,
+
+    /// Skip linter execution (only run LLM agents).
+    #[arg(long, default_value_t = false)]
+    pub skip_linters: bool,
+
+    /// Only run linters, skip LLM agents entirely.
+    #[arg(long, default_value_t = false)]
+    pub linters_only: bool,
+
+    /// Skip the multi-agent consensus orchestration (use single-agent evaluation).
+    #[arg(long, default_value_t = false)]
+    pub skip_consensus: bool,
+
+    /// Path to linters.toml configuration file.
+    #[arg(long, env = "LINTERS_CONFIG", default_value = "linters.toml")]
+    pub linters_config: String,
 }

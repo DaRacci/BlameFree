@@ -12,42 +12,29 @@ export OPENAI_API_KEY="sk-..."
 export OPENAI_BASE_URL="https://openrouter.ai/api/v1"
 
 # Run the harness
-cargo run --release -- --model gpt-4o --judge-model gpt-4o-mini
+cargo run --release -- -p crb-harness -- --model deepseek/deepseek-v4-pro --judge-model deepseek/deepseek-v4-flash
 ```
 
 ## CLI Options
 
-| Flag | Env | Default | Description |
-|------|-----|---------|-------------|
-| `--dataset-dir` | `DATASET_DIR` | `datasets/golden_comments` | Golden comments dataset directory |
-| `--repos-dir` | `REPOS_DIR` | `repos` | Pre-scaffolded repos directory |
-| `--output-dir` | `OUTPUT_DIR` | `output` | Output directory for results |
-| `--model` | `MODEL` | `gpt-4o` | Model for agent reviews |
-| `--judge-model` | `JUDGE_MODEL` | `gpt-4o-mini` | Model for judge evaluation |
-| `--concurrency` | `CONCURRENCY` | `4` | Max concurrent PR evaluations |
-| `--dry-run` | — | `false` | Load config and datasets, then exit |
-| `--resume` | — | `false` | Skip PRs with existing result files |
+| Flag            | Env           | Default                      | Description                         |
+| --------------- | ------------- | ---------------------------- | ----------------------------------- |
+| `--dataset-dir` | `DATASET_DIR` | `datasets/golden_comments`   | Golden comments dataset directory   |
+| `--repos-dir`   | `REPOS_DIR`   | `repos`                      | Pre-scaffolded repos directory      |
+| `--output-dir`  | `OUTPUT_DIR`  | `output`                     | Output directory for results        |
+| `--model`       | `MODEL`       | `deepseek/deepseek-v4-pro`   | Model for agent reviews             |
+| `--judge-model` | `JUDGE_MODEL` | `deepseek/deepseek-v4-flash` | Model for judge evaluation          |
+| `--concurrency` | `CONCURRENCY` | `4`                          | Max concurrent PR evaluations       |
+| `--dry-run`     | —             | `false`                      | Load config and datasets, then exit |
+| `--resume`      | —             | `false`                      | Skip PRs with existing result files |
 
 ## Dry Run
 
 ```bash
-cargo run -- --dry-run
+cargo run -- -p crb-harness -- --dry-run
 ```
 
 ## Project Structure
-
-```
-├── Cargo.toml
-├── src/
-│   ├── main.rs      # CLI, main loop, JoinSet orchestration
-│   ├── config.rs    # CliArgs via clap derive
-│   ├── agents.rs    # Agent prompt templates (SA, CL, AR, SEC)
-│   ├── judge.rs     # Martian JUDGE_PROMPT, JudgeVerdict, Metrics
-│   └── reporting.rs # JSON/CSV output, dataset loading
-├── datasets/
-│   └── golden_comments/  # Martian golden comment datasets (MIT license)
-└── README.md
-```
 
 ## Architecture
 

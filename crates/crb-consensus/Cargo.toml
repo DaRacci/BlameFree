@@ -1,0 +1,16 @@
+[package]
+name = "crb-consensus"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crb-agents = { path = "../crb-agents" }
+crb-judge = { path = "../crb-judge" }
+crb-reporting = { path = "../crb-reporting" }
+rig-core = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+regex = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }

@@ -1,12 +1,10 @@
-# Change: MVP Core Harness
+# Change: Workspace Scaffold & Core Harness
 
 ## Intent
-Replace Hermes subagent orchestration with a standalone Rust benchmark harness using rig-core for LLM API calls, eliminating the variance and overhead of multi-agent spawning for code review evaluation.
+Create the Cargo workspace skeleton with all crate stubs, set up inter-crate dependencies, and implement the main binary crate (crb-harness) that orchestrates the full benchmark pipeline.
 
 ## Scope
-Build the core evaluation loop: load golden comments → run concurrent agent prompts (SA, CL, AR, SEC) → judge results against golden comments → aggregate precision/recall/F1.
-
-Out of scope for this change: linter subprocess calls, web dashboard, multi-model calibration.
+Cargo workspace with 8 member crates (1 binary + 7 library). The main binary assembles all components. Golden comments datasets copied.
 
 ## Approach
-Rust + rig-core 0.39 + tokio + clap. ~1000 lines total across 5 modules. Keep Martian golden_comments/ datasets (MIT license) and JUDGE_PROMPT as-is.
+Cargo workspace at root, crates/ subdirectory, each crate independently compilable. crb-aggregator and crb-auditor have both lib.rs (library) and main.rs (CLI entrypoint). crb-harness depends on all 7 library crates.
