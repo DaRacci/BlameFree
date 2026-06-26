@@ -3,8 +3,6 @@ use std::path::Path;
 use anyhow::Result;
 use tracing::info;
 
-use crb_reporting::GoldenCommentEntry;
-
 /// Validate a golden dataset for integrity.
 ///
 /// Checks:
@@ -24,7 +22,7 @@ pub fn run_validate(dataset_dir: &Path) -> Result<()> {
     let mut seen_titles = std::collections::HashSet::new();
     let mut repos = std::collections::BTreeSet::new();
     let mut total_golden_comments = 0usize;
-    let valid_severities = ["info", "warning", "critical"];
+    let valid_severities = ["info", "warning", "critical", "low", "medium", "high"];
 
     for entry in &entries {
         // Check URL
@@ -72,7 +70,7 @@ pub fn run_validate(dataset_dir: &Path) -> Result<()> {
                     "PR '{}' comment #{} has empty severity",
                     entry.pr_title, i
                 ));
-            } else if !valid_severities.contains(&comment.severity.as_str()) {
+            } else if !valid_severities.contains(&comment.severity.to_lowercase().as_str()) {
                 errors.push(format!(
                     "PR '{}' comment #{} has unknown severity '{}' (expected one of: {})",
                     entry.pr_title,
