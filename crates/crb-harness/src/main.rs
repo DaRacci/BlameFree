@@ -4,6 +4,7 @@ use std::time::Duration;
 use anyhow::Context;
 use anyhow::Result;
 use clap::Parser;
+use crb_agents::prompts::PromptLibrary;
 use crb_agents::{build_agent, Finding, AGENT_ROLES};
 use crb_consensus::evaluate_pr_with_consensus;
 use crb_judge::{build_judge, compute_metrics, run_judge};
@@ -160,6 +161,31 @@ async fn main() -> Result<()> {
         None
     };
 
+    // ── Prompt library ───────────────────────────────────────────────────
+    let prompt_lib = std::sync::Arc::new({
+        let mut lib = PromptLibrary::new();
+        let prompts_dir = std::path::Path::new(&args.prompts_dir);
+        // Always try to load from the configured prompts directory.
+        // If it's "prompts/builtin" and doesn't exist, that's fine — we fall
+        // back to built-in defaults.  For custom directories, load or warn.
+        if prompts_dir.exists() {
+            match lib.load_from_dir(prompts_dir) {
+                Ok(()) => {
+                    info!("Loaded prompts from: {}", prompts_dir.display());
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to load prompts from {}: {e}", prompts_dir.display());
+                }
+            }
+        } else if args.prompts_dir.to_string_lossy() != "prompts/builtin" {
+            tracing::warn!(
+                "Custom prompts directory '{}' not found — using built-in defaults",
+                prompts_dir.display()
+            );
+        }
+        lib
+    });
+
     // ── Concurrency ───────────────────────────────────────────────────────
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(args.concurrency));
     let mut set = tokio::task::JoinSet::new();
@@ -175,6 +201,7 @@ async fn main() -> Result<()> {
         let skip_consensus = args.skip_consensus;
         let linters_only = args.linters_only;
         let ruleset = ruleset.clone();
+        let prompt_lib = prompt_lib.clone();
         let roles = args.roles.clone();
         let max_findings = args.max_findings;
 
@@ -190,6 +217,7 @@ async fn main() -> Result<()> {
                 skip_consensus,
                 linters_only,
                 ruleset.as_ref(),
+                prompt_lib.as_ref(),
                 &roles,
                 max_findings,
             )
@@ -267,6 +295,7 @@ async fn evaluate_pr_with_postprocessing(
     skip_consensus: bool,
     linters_only: bool,
     ruleset: Option<&RuleSet>,
+    prompt_lib: &PromptLibrary,
     roles: &str,
     max_findings: usize,
 ) -> Result<PrResult> {
@@ -324,13 +353,13 @@ async fn evaluate_pr_with_postprocessing(
     let (all_findings, verdicts) = if skip_consensus {
         // Original single-agent evaluation
         evaluate_pr_single_agent(
-            pr, client, model, judge, &diff, linter_findings, rules_preamble.as_deref(),
+            pr, client, model, judge, &diff, linter_findings, rules_preamble.as_deref(), prompt_lib,
         )
         .await?
     } else {
         // Multi-agent consensus evaluation
         evaluate_pr_consensus(
-            pr, client, model, judge, &diff, linter_findings, rules_preamble.as_deref(),
+            pr, client, model, judge, &diff, linter_findings, rules_preamble.as_deref(), prompt_lib,
             roles, max_findings,
         )
         .await?
@@ -405,19 +434,22 @@ async fn evaluate_pr_single_agent(
     diff: &str,
     linter_findings: Vec<Finding>,
     rules_preamble: Option<&str>,
+    prompt_lib: &PromptLibrary,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     let mut agent_set = tokio::task::JoinSet::new();
+    let prompt_lib = prompt_lib.clone();
     for &role in AGENT_ROLES {
         let client = client.clone();
         let model = model.to_string();
         let role = role.to_string();
         let diff = diff.to_string();
         let preamble = rules_preamble.map(String::from);
+        let p_lib = prompt_lib.clone();
 
         agent_set.spawn(async move {
             let span = info_span!("agent", role = %role);
             let _guard = span.enter();
-            let agent = build_agent(&client, &model, &role, preamble.as_deref());
+            let agent = build_agent(&client, &model, &role, preamble.as_deref(), Some(&p_lib), None);
             let result: Result<Vec<Finding>, String> = with_retry(
                 || async {
                     agent
@@ -474,12 +506,17 @@ async fn evaluate_pr_consensus(
     _diff: &str,
     linter_findings: Vec<Finding>,
     rules_preamble: Option<&str>,
+    prompt_lib: &PromptLibrary,
     roles: &str,
     max_findings: usize,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // Parse comma-separated roles
     let parsed_roles: Vec<&str> = roles.split(',').map(|r| r.trim()).filter(|r| !r.is_empty()).collect();
-    let result = evaluate_pr_with_consensus(pr, client, model, judge, rules_preamble, &parsed_roles, max_findings).await?;
+    let result = evaluate_pr_with_consensus(
+        pr, client, model, judge, rules_preamble, Some(prompt_lib), None,
+        &parsed_roles, max_findings,
+    )
+    .await?;
 
     info!(
         "Consensus pipeline: {} agent findings, {} linter findings, {} goldens",

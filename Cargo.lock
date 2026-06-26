@@ -305,6 +305,7 @@ dependencies = [
 name = "crb-agents"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "rig-core",
  "schemars 0.8.22",
  "serde",

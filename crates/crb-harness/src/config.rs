@@ -61,6 +61,12 @@ pub struct CliArgs {
     #[arg(long, default_value_t = false)]
     pub skip_rules: bool,
 
+    /// Path to prompts directory (e.g., prompts/experiments/EXP-013).
+    /// Defaults to "prompts/builtin" which contains the built-in defaults.
+    /// Custom directories override the built-in prompts with file-based ones.
+    #[arg(long, env = "PROMPTS_DIR", default_value = "prompts/builtin")]
+    pub prompts_dir: PathBuf,
+
     /// Validate mode: load baseline JSON and compare metrics against output.
     #[arg(long, default_value_t = false)]
     pub validate: bool,

@@ -7,6 +7,7 @@
 //! Provides a [`evaluate_pr_with_consensus`] convenience function that matches
 //! the existing `evaluate_pr()` signature in `crb-harness` for drop-in use.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -18,6 +19,7 @@ use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
+use crb_agents::prompts::PromptLibrary;
 use crb_agents::{build_agent, Finding};
 use crb_judge::{run_judge, JudgeVerdict};
 use crb_reporting::{GoldenCommentEntry, PrResult};
@@ -102,12 +104,17 @@ pub struct ConsensusReport {
 /// Delegates to [`crb_agents::build_agent`] with the role's string identifier
 /// and an optional rules preamble.  The returned agent should be prompted with
 /// the diff to produce structured findings (parsed via `serde_json`).
+///
+/// `prompt_lib` and `template_vars` are forwarded to [`crb_agents::build_agent`]
+/// to support file-based prompt loading and template substitution.
 pub fn build_reviewer_agent(
     client: &openai::Client,
     config: &ReviewerConfig,
     rules_preamble: Option<&str>,
+    prompt_lib: Option<&PromptLibrary>,
+    template_vars: Option<&HashMap<&str, &str>>,
 ) -> Agent<ResponsesCompletionModel> {
-    build_agent(client, &config.model, config.role.as_str(), rules_preamble)
+    build_agent(client, &config.model, config.role.as_str(), rules_preamble, prompt_lib, template_vars)
 }
 
 // ── Concurrent execution ────────────────────────────────────────────────────
@@ -122,6 +129,8 @@ pub async fn run_reviewers(
     diff: &str,
     client: &openai::Client,
     rules_preamble: Option<&str>,
+    prompt_lib: Option<&PromptLibrary>,
+    template_vars: Option<&HashMap<&str, &str>>,
 ) -> Vec<(Role, Vec<Finding>)> {
     let mut set = JoinSet::new();
 
@@ -131,7 +140,7 @@ pub async fn run_reviewers(
         let role = config.role;
         let max_findings = config.max_findings;
         let preamble = rules_preamble.map(String::from);
-        let agent = build_reviewer_agent(&client, &config, preamble.as_deref());
+        let agent = build_reviewer_agent(&client, &config, preamble.as_deref(), prompt_lib, template_vars);
 
         set.spawn(async move {
             let outcome = tokio::time::timeout(Duration::from_secs(120), async {
@@ -245,9 +254,11 @@ pub async fn run_consensus(
     client: &openai::Client,
     judge: &Agent<ResponsesCompletionModel>,
     rules_preamble: Option<&str>,
+    prompt_lib: Option<&PromptLibrary>,
+    template_vars: Option<&HashMap<&str, &str>>,
 ) -> ConsensusReport {
     // Step 1: run all reviewers concurrently
-    let agents = run_reviewers(reviewer_configs, diff, client, rules_preamble).await;
+    let agents = run_reviewers(reviewer_configs, diff, client, rules_preamble, prompt_lib, template_vars).await;
 
     // Flatten all findings into a single mutable pool
     let mut unmatched: Vec<Finding> = agents
@@ -365,6 +376,8 @@ pub async fn evaluate_pr_with_consensus(
     model: &str,
     judge: &Agent<ResponsesCompletionModel>,
     rules_preamble: Option<&str>,
+    prompt_lib: Option<&PromptLibrary>,
+    template_vars: Option<&HashMap<&str, &str>>,
     roles: &[&str],
     max_findings: usize,
 ) -> Result<PrResult> {
@@ -410,6 +423,8 @@ pub async fn evaluate_pr_with_consensus(
         client,
         judge,
         rules_preamble,
+        prompt_lib,
+        template_vars,
     )
     .await;
     // Build verdicts for compatibility with crb-reporting::PrResult.

@@ -4,6 +4,9 @@ use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+pub mod prompts;
 
 /// A structured finding returned by an agent.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -35,6 +38,8 @@ pub fn map_to_finding(m: &serde_json::Map<String, serde_json::Value>) -> Option<
     serde_json::from_value(serde_json::Value::Object(m.clone())).ok()
 }
 
+use crate::prompts::PromptLibrary;
+
 // ── Role-specific preamble prompts ─────────────────────────────────────────
 
 const SA_PREAMBLE: &str = "\
@@ -65,24 +70,41 @@ const DEFAULT_PREAMBLE: &str = "\
 You are a code reviewer. Analyze the provided code diff and identify any \
 issues. Respond with a JSON array of findings.";
 
-/// Build a rig agent for the given role with optional rules preamble.
+/// Build a rig agent for the given role with optional prompt library and
+/// template variables.
+///
+/// If `prompt_lib` is `Some`, the role preamble is resolved through the
+/// library (custom prompts from files, falling back to built-in defaults).
+/// If `prompt_lib` is `None`, the original hardcoded const strings are used.
 ///
 /// If `rules_preamble` is `Some` and non-empty, it is prepended before the
 /// role-specific preamble, separated by a blank line.  This allows project-
 /// level rules to be injected into the agent's system prompt before its
 /// role-specific instructions.
+///
+/// `template_vars` provides variable substitutions for the prompt template
+/// (e.g. `{diff}`, `{role}`, `{file_list}`, `{language}`).
 pub fn build_agent(
     client: &openai::Client,
     model: &str,
     role: &str,
     rules_preamble: Option<&str>,
+    prompt_lib: Option<&PromptLibrary>,
+    template_vars: Option<&HashMap<&str, &str>>,
 ) -> Agent<ResponsesCompletionModel> {
-    let role_preamble = match role {
-        "SA" => SA_PREAMBLE,
-        "CL" => CL_PREAMBLE,
-        "AR" => AR_PREAMBLE,
-        "SEC" => SEC_PREAMBLE,
-        _ => DEFAULT_PREAMBLE,
+    let role_preamble = match prompt_lib {
+        Some(lib) => {
+            let empty_map = HashMap::new();
+            let vars = template_vars.unwrap_or(&empty_map);
+            lib.render(role, vars)
+        }
+        None => match role {
+            "SA" => SA_PREAMBLE.to_string(),
+            "CL" => CL_PREAMBLE.to_string(),
+            "AR" => AR_PREAMBLE.to_string(),
+            "SEC" => SEC_PREAMBLE.to_string(),
+            _ => DEFAULT_PREAMBLE.to_string(),
+        },
     };
     let full_preamble = match rules_preamble {
         Some(rp) if !rp.is_empty() => format!("{}\n\n{}", rp, role_preamble),

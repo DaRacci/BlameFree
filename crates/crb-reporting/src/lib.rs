@@ -122,8 +122,21 @@ pub fn load_golden_datasets(dataset_dir: &Path) -> Result<Vec<GoldenCommentEntry
                     );
                     entries.extend(dataset.entries);
                 }
-                Err(e) => {
-                    tracing::warn!("Failed to parse {}: {}", path.display(), e);
+                Err(_) => {
+                    // Try parsing as a raw array (backward compat with Martian format)
+                    match serde_json::from_str::<Vec<GoldenCommentEntry>>(&content) {
+                        Ok(raw_entries) => {
+                            info!(
+                                "Loaded {} entries from {} (raw array format)",
+                                raw_entries.len(),
+                                path.display()
+                            );
+                            entries.extend(raw_entries);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to parse {}: {}", path.display(), e);
+                        }
+                    }
                 }
             }
         }
