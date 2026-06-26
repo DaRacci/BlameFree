@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -7,6 +8,7 @@ use clap::Parser;
 use crb_agents::prompts::PromptLibrary;
 use crb_agents::{build_agent, Finding, AGENT_ROLES};
 use crb_consensus::evaluate_pr_with_consensus;
+use crb_consensus::CacheBackend;
 use crb_judge::{build_judge, compute_metrics, run_judge};
 use crb_reporting::{load_golden_datasets, write_report, GoldenCommentEntry, PrResult};
 use crb_rules::RuleSet;
@@ -18,7 +20,9 @@ use tracing::info;
 use tracing::info_span;
 use tracing_subscriber::EnvFilter;
 
+mod cache;
 mod config;
+use cache::LlmCache;
 use config::CliArgs;
 
 mod validation;
@@ -27,7 +31,20 @@ mod validation;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load .env from CWD (and parent directories)
-    dotenvy::dotenv().ok();
+    match dotenvy::dotenv() {
+        Ok(path) => eprintln!("[dotenv] Loaded .env from: {}", path.display()),
+        Err(e) => eprintln!("[dotenv] No .env file loaded: {e}"),
+    }
+
+    // Fallback: if OPENAI_API_KEY is not set but OPENROUTER_API_KEY is, use that
+    if std::env::var("OPENAI_API_KEY").is_err() {
+        if let Ok(key) = std::env::var("OPENROUTER_API_KEY") {
+            std::env::set_var("OPENAI_API_KEY", key);
+            eprintln!(
+                "[dotenv] OPENAI_API_KEY not found — falling back to OPENROUTER_API_KEY"
+            );
+        }
+    }
 
     // ── Tracing ───────────────────────────────────────────────────────────
     tracing_subscriber::fmt()
@@ -105,6 +122,9 @@ async fn main() -> Result<()> {
         println!("  Skip consensus:     {}", args.skip_consensus);
         println!("  Skip linters:       {}", args.skip_linters);
         println!("  Linters only:       {}", args.linters_only);
+        if let Some(ref cache_dir) = args.cache_dir {
+            println!("  Cache dir:          {}", cache_dir.display());
+        }
         return Ok(());
     }
 
@@ -220,6 +240,10 @@ async fn main() -> Result<()> {
         lib
     });
 
+    // ── Cache directory ───────────────────────────────────────────────────
+    let start_time = std::time::Instant::now();
+    let cache_dir = args.cache_dir.clone();
+
     // ── Concurrency ───────────────────────────────────────────────────────
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(args.concurrency));
     let mut set = tokio::task::JoinSet::new();
@@ -238,6 +262,7 @@ async fn main() -> Result<()> {
         let prompt_lib = prompt_lib.clone();
         let roles = args.roles.clone();
         let max_findings = args.max_findings;
+        let cache_dir = cache_dir.clone();
 
         set.spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
@@ -254,6 +279,7 @@ async fn main() -> Result<()> {
                 prompt_lib.as_ref(),
                 &roles,
                 max_findings,
+                cache_dir.as_ref(),
             )
             .await
         });
@@ -284,6 +310,11 @@ async fn main() -> Result<()> {
         output_dir.display()
     );
 
+    // ── Write _summary.json ──────────────────────────────────────────────
+    if let Some(ref cache_dir_path) = cache_dir {
+        write_summary(cache_dir_path, &args, &results, start_time.elapsed())?;
+    }
+
     // ── --ci flag: validate and exit with proper code ─────────────────────
     if args.ci {
         let metrics: Vec<crb_judge::Metrics> = results.iter().map(|r| r.metrics.clone()).collect();
@@ -309,6 +340,52 @@ async fn main() -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+/// Write the `_summary.json` aggregate statistics file to the cache directory.
+fn write_summary(
+    cache_dir: &PathBuf,
+    args: &CliArgs,
+    results: &[PrResult],
+    duration: Duration,
+) -> Result<()> {
+    let total_llm_calls: usize = results.iter().map(|r| r.findings_count).sum();
+    let total_judge_calls: usize = results.iter().map(|r| r.verdicts.len()).sum();
+
+    let aggregate_metrics = if results.is_empty() {
+        serde_json::json!({})
+    } else {
+        let avg_precision = results.iter().map(|r| r.metrics.precision).sum::<f64>() / results.len() as f64;
+        let avg_recall = results.iter().map(|r| r.metrics.recall).sum::<f64>() / results.len() as f64;
+        let avg_f1 = results.iter().map(|r| r.metrics.f1).sum::<f64>() / results.len() as f64;
+        serde_json::json!({
+            "avg_precision": avg_precision,
+            "avg_recall": avg_recall,
+            "avg_f1": avg_f1,
+            "total_true_positives": results.iter().map(|r| r.metrics.true_positives).sum::<usize>(),
+            "total_false_positives": results.iter().map(|r| r.metrics.false_positives).sum::<usize>(),
+            "total_false_negatives": results.iter().map(|r| r.metrics.false_negatives).sum::<usize>(),
+        })
+    };
+
+    let summary = serde_json::json!({
+        "run_id": std::env::current_dir()
+            .ok()
+            .and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string()))
+            .unwrap_or_default(),
+        "model": args.model,
+        "judge_model": args.judge_model,
+        "total_prs": results.len(),
+        "total_llm_calls": total_llm_calls,
+        "total_judge_calls": total_judge_calls,
+        "duration_secs": duration.as_secs_f64(),
+        "aggregate_metrics": aggregate_metrics,
+    });
+
+    let summary_path = cache_dir.join("_summary.json");
+    std::fs::write(&summary_path, serde_json::to_string_pretty(&summary)?)?;
+    info!("Cache summary written to: {}", summary_path.display());
+    Ok(())
 }
 
 /// Extract owner, repo name, and PR number from a GitHub PR URL.
@@ -360,6 +437,10 @@ fn load_cached_diff(repos_dir: &PathBuf, owner: &str, repo: &str, pr_num: u32) -
 /// If both fail, returns an empty `Vec` with a warning and the truncated
 /// response text for debugging.
 fn parse_agent_findings(response: &str) -> Result<Vec<Finding>, String> {
+    // Log raw response first for debugging
+    let preview_len = std::cmp::min(500, response.len());
+    tracing::info!("Agent raw response (first 500 chars): {}", &response[..preview_len]);
+
     // Strategy 1: Try direct JSON array parse
     if let Ok(findings) = serde_json::from_str::<Vec<Finding>>(response) {
         info!("Parsed {} finding(s) directly from agent JSON response", findings.len());
@@ -368,7 +449,7 @@ fn parse_agent_findings(response: &str) -> Result<Vec<Finding>, String> {
 
     // Strategy 2: Extract JSON from markdown code blocks
     // Match ```json ... ``` or ``` ... ``` blocks
-    let re = Regex::new(r"(?s)```(?:json)?\s*\n?(.*?)```").unwrap();
+    let re = Regex::new(r"(?s)```(?:json)?\s*\n(.*?)\n\s*```").unwrap();
     if let Some(caps) = re.captures(response) {
         let inner = caps.get(1).unwrap().as_str().trim();
         if let Ok(findings) = serde_json::from_str::<Vec<Finding>>(inner) {
@@ -380,7 +461,16 @@ fn parse_agent_findings(response: &str) -> Result<Vec<Finding>, String> {
         }
     }
 
-    // Both strategies failed — warn and return empty
+    // Strategy 3: Find any JSON array in the response
+    let array_re = Regex::new(r"\[[\s\S]*\]").unwrap();
+    if let Some(m) = array_re.find(response) {
+        if let Ok(findings) = serde_json::from_str::<Vec<Finding>>(m.as_str()) {
+            info!("Parsed {} finding(s) from embedded JSON array", findings.len());
+            return Ok(findings);
+        }
+    }
+
+    // All strategies failed — warn and return empty
     let truncated = if response.len() > 200 {
         format!("{}...", &response[..200])
     } else {
@@ -415,7 +505,26 @@ async fn evaluate_pr_with_postprocessing(
     prompt_lib: &PromptLibrary,
     roles: &str,
     max_findings: usize,
+    cache_dir: Option<&PathBuf>,
 ) -> Result<PrResult> {
+
+    // ── Setup cache if enabled ────────────────────────────────────────────
+    let cache: Option<Arc<LlmCache>> = if let Some(dir) = cache_dir {
+        let pr_key = utils::sanitize_filename(&pr.pr_title);
+        match LlmCache::new(dir, &pr_key) {
+            Ok(c) => {
+                info!("LLM cache enabled for PR '{}' at {}", pr.pr_title, c.dir().display());
+                Some(Arc::new(c))
+            }
+            Err(e) => {
+                tracing::warn!("Failed to create LLM cache for PR '{}': {e}", pr.pr_title);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // ── Diff loading ──────────────────────────────────────────────────────
     let diff = match extract_pr_info(&pr.url) {
         Some((owner, repo, pr_num)) => {
@@ -488,13 +597,14 @@ async fn evaluate_pr_with_postprocessing(
         // Original single-agent evaluation
         evaluate_pr_single_agent(
             pr, client, model, judge, &diff, linter_findings, rules_preamble.as_deref(), prompt_lib,
+            cache.clone(),
         )
         .await?
     } else {
         // Multi-agent consensus evaluation
         evaluate_pr_consensus(
             pr, client, model, judge, &diff, linter_findings, rules_preamble.as_deref(), prompt_lib,
-            roles, max_findings,
+            roles, max_findings, cache.clone(),
         )
         .await?
     };
@@ -512,6 +622,30 @@ async fn evaluate_pr_with_postprocessing(
     };
 
     let metrics = compute_metrics(&final_verdicts, pr.comments.len());
+
+    // ── Write metadata.json ─────────────────────────────────────────────
+    if let Some(ref c) = cache {
+        let metadata = serde_json::json!({
+            "pr_title": pr.pr_title,
+            "url": pr.url,
+            "model": model,
+            "skip_consensus": skip_consensus,
+            "timestamp": format!("{:?}", std::time::SystemTime::now()),
+            "findings_count": processed_findings.len(),
+            "golden_count": pr.comments.len(),
+            "metrics": {
+                "true_positives": metrics.true_positives,
+                "false_positives": metrics.false_positives,
+                "false_negatives": metrics.false_negatives,
+                "precision": metrics.precision,
+                "recall": metrics.recall,
+                "f1": metrics.f1,
+            },
+        });
+        if let Err(e) = c.save_metadata(&metadata) {
+            tracing::warn!("Failed to write cache metadata: {e}");
+        }
+    }
 
     Ok(PrResult {
         pr_title: pr.pr_title.clone(),
@@ -569,6 +703,7 @@ async fn evaluate_pr_single_agent(
     linter_findings: Vec<Finding>,
     rules_preamble: Option<&str>,
     prompt_lib: &PromptLibrary,
+    cache: Option<Arc<LlmCache>>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     let mut agent_set = tokio::task::JoinSet::new();
     let prompt_lib = prompt_lib.clone();
@@ -579,6 +714,7 @@ async fn evaluate_pr_single_agent(
         let diff = diff.to_string();
         let preamble = rules_preamble.map(String::from);
         let p_lib = prompt_lib.clone();
+        let cache_arc: Option<Arc<dyn CacheBackend>> = cache.clone().map(|c| c as Arc<dyn CacheBackend>);
 
         agent_set.spawn(async move {
             let span = info_span!("agent", role = %role);
@@ -586,11 +722,17 @@ async fn evaluate_pr_single_agent(
             let agent = build_agent(&client, &model, &role, preamble.as_deref(), Some(&p_lib), None);
             let result: Result<Vec<Finding>, String> = with_retry(
                 || async {
-                    agent
+                    let response = agent
                         .prompt(&diff)
                         .await
-                        .map_err(|e| e.to_string())
-                        .and_then(|response| parse_agent_findings(&response))
+                        .map_err(|e| e.to_string())?;
+
+                    // Cache the prompt+response if cache is active
+                    if let Some(ref c) = cache_arc {
+                        c.save_agent(&role, &diff, &response);
+                    }
+
+                    parse_agent_findings(&response)
                 },
                 3,    // max_retries
                 1000, // base_delay_ms
@@ -620,7 +762,14 @@ async fn evaluate_pr_single_agent(
             )
             .await
             {
-                Ok(verdict) => verdicts.push(verdict),
+                Ok(verdict) => {
+                    // Cache the judge call if cache is active
+                    if let Some(ref c) = cache {
+                        let verdict_json = serde_json::to_string(&verdict).unwrap_or_default();
+                        let _ = c.save_judge(&gc.comment, &finding.message, &verdict_json);
+                    }
+                    verdicts.push(verdict);
+                }
                 Err(e) => tracing::warn!("Judge call failed after retries: {e}"),
             }
         }
@@ -637,18 +786,19 @@ async fn evaluate_pr_consensus(
     judge: &rig_core::agent::Agent<
         rig_core::providers::openai::responses_api::ResponsesCompletionModel,
     >,
-    _diff: &str,
+    diff: &str,
     linter_findings: Vec<Finding>,
     rules_preamble: Option<&str>,
     prompt_lib: &PromptLibrary,
     roles: &str,
     max_findings: usize,
+    cache: Option<Arc<LlmCache>>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // Parse comma-separated roles
     let parsed_roles: Vec<&str> = roles.split(',').map(|r| r.trim()).filter(|r| !r.is_empty()).collect();
     let result = evaluate_pr_with_consensus(
-        pr, client, model, judge, rules_preamble, Some(prompt_lib), None,
-        &parsed_roles, max_findings,
+        pr, diff, client, model, judge, rules_preamble, Some(prompt_lib), None,
+        &parsed_roles, max_findings, cache.clone().map(|c| c as Arc<dyn CacheBackend>),
     )
     .await?;
 

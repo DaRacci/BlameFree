@@ -1,3 +1,5 @@
+IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
+
 # Security (SEC) Specialist
 
 ## Review Methodology

@@ -8,6 +8,7 @@
 //! the existing `evaluate_pr()` signature in `crb-harness` for drop-in use.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -23,6 +24,21 @@ use crb_agents::prompts::PromptLibrary;
 use crb_agents::{build_agent, Finding};
 use crb_judge::{run_judge, JudgeVerdict};
 use crb_reporting::{GoldenCommentEntry, PrResult};
+
+// ── Cache backend trait ──────────────────────────────────────────────────────
+
+/// Interface for caching LLM interactions (prompts, responses, judge calls).
+///
+/// This is a trait so that the harness can inject its own cache implementation
+/// without creating a circular dependency between `crb-consensus` and
+/// `crb-harness`.
+pub trait CacheBackend: Send + Sync {
+    /// Save an agent prompt+response pair for the given role.
+    fn save_agent(&self, role: &str, prompt: &str, response: &str);
+
+    /// Append a judge call entry (golden comment, finding message, verdict JSON).
+    fn save_judge(&self, golden: &str, finding: &str, verdict_json: &str);
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -124,6 +140,9 @@ pub fn build_reviewer_agent(
 /// Each agent is run with a 120-second timeout.  Findings are capped at
 /// `config.max_findings`.  Agents that time out or return errors yield an
 /// empty finding list with a warning — no hard failure.
+///
+/// If `cache` is provided, the prompt (diff) and response for each agent
+/// are saved via [`CacheBackend::save_agent`].
 pub async fn run_reviewers(
     configs: Vec<ReviewerConfig>,
     diff: &str,
@@ -131,6 +150,7 @@ pub async fn run_reviewers(
     rules_preamble: Option<&str>,
     prompt_lib: Option<&PromptLibrary>,
     template_vars: Option<&HashMap<&str, &str>>,
+    cache: Option<Arc<dyn CacheBackend>>,
 ) -> Vec<(Role, Vec<Finding>)> {
     let mut set = JoinSet::new();
 
@@ -141,16 +161,43 @@ pub async fn run_reviewers(
         let max_findings = config.max_findings;
         let preamble = rules_preamble.map(String::from);
         let agent = build_reviewer_agent(&client, &config, preamble.as_deref(), prompt_lib, template_vars);
+        let cache = cache.clone();
 
         set.spawn(async move {
             let outcome = tokio::time::timeout(Duration::from_secs(120), async {
                 let response = agent.prompt(&diff).await?;
+
+                // Cache the prompt+response if cache is active
+                if let Some(ref cache) = cache {
+                    cache.save_agent(role.as_str(), &diff, &response);
+                }
+
+                // Log raw response for debugging
+                let preview_len = std::cmp::min(500, response.len());
+                tracing::info!("Agent raw response (first 500 chars): {}", &response[..preview_len]);
+
+                // Strategy 1: Try direct JSON array parse
                 let mut findings: Vec<Finding> =
-                    serde_json::from_str(&response).unwrap_or_else(|e| {
+                    serde_json::from_str(&response).unwrap_or_else(|_| {
+                        // Strategy 2: Extract JSON from markdown code blocks
+                        let re = Regex::new(r"(?s)```(?:json)?\s*\n(.*?)\n\s*```").unwrap();
+                        if let Some(caps) = re.captures(&response) {
+                            let inner = caps.get(1).unwrap().as_str().trim();
+                            if let Ok(f) = serde_json::from_str::<Vec<Finding>>(inner) {
+                                return f;
+                            }
+                        }
+                        // Strategy 3: Find any JSON array in the response
+                        let array_re = Regex::new(r"\[[\s\S]*\]").unwrap();
+                        if let Some(m) = array_re.find(&response) {
+                            if let Ok(f) = serde_json::from_str::<Vec<Finding>>(m.as_str()) {
+                                return f;
+                            }
+                        }
                         tracing::warn!(
-                            "Failed to parse findings for role {:?}: {}",
+                            "Failed to parse findings for role {:?}. Raw response (truncated): {}",
                             role,
-                            e,
+                            &response[..std::cmp::min(200, response.len())],
                         );
                         Vec::new()
                     });
@@ -247,6 +294,8 @@ pub async fn judge_comment(
 /// 3. Goldens that do not match heuristically fall back to the LLM judge.
 /// 4. Remaining unmatched findings are classified as false positives.
 /// 5. Compute precision / recall / F1 metrics.
+///
+/// If `cache` is provided, agent interactions and judge calls are saved.
 pub async fn run_consensus(
     diff: &str,
     goldens: Vec<GoldenComment>,
@@ -256,9 +305,10 @@ pub async fn run_consensus(
     rules_preamble: Option<&str>,
     prompt_lib: Option<&PromptLibrary>,
     template_vars: Option<&HashMap<&str, &str>>,
+    cache: Option<Arc<dyn CacheBackend>>,
 ) -> ConsensusReport {
     // Step 1: run all reviewers concurrently
-    let agents = run_reviewers(reviewer_configs, diff, client, rules_preamble, prompt_lib, template_vars).await;
+    let agents = run_reviewers(reviewer_configs, diff, client, rules_preamble, prompt_lib, template_vars, cache.clone()).await;
 
     // Flatten all findings into a single mutable pool
     let mut unmatched: Vec<Finding> = agents
@@ -295,6 +345,11 @@ pub async fn run_consensus(
                         match run_judge(judge, &golden.message_regex, &unmatched[i].message).await
                         {
                             Ok(verdict) if verdict.match_ => {
+                                // Cache the judge call if cache is active
+                                if let Some(ref c) = cache {
+                                    let verdict_json = serde_json::to_string(&verdict).unwrap_or_default();
+                                    c.save_judge(&golden.message_regex, &unmatched[i].message, &verdict_json);
+                                }
                                 let matched = unmatched.remove(i);
                                 true_positives.push((golden.clone(), matched));
                                 break 'llm true;
@@ -370,8 +425,11 @@ pub async fn run_consensus(
 /// Because `crb-reporting::GoldenComment` lacks `file` / `line` fields, the
 /// conversion uses an empty file, line 0, and the comment text wrapped in
 /// [`regex::escape`] as the message regex.
+///
+/// If `cache` is provided, agent interactions and judge calls are cached.
 pub async fn evaluate_pr_with_consensus(
     pr: &GoldenCommentEntry,
+    diff: &str,
     client: &openai::Client,
     model: &str,
     judge: &Agent<ResponsesCompletionModel>,
@@ -380,6 +438,7 @@ pub async fn evaluate_pr_with_consensus(
     template_vars: Option<&HashMap<&str, &str>>,
     roles: &[&str],
     max_findings: usize,
+    cache: Option<Arc<dyn CacheBackend>>,
 ) -> Result<PrResult> {
     // Build one reviewer config per selected role.
     let reviewer_configs: Vec<ReviewerConfig> = roles
@@ -415,9 +474,9 @@ pub async fn evaluate_pr_with_consensus(
         })
         .collect();
 
-    // Run the pipeline (empty diff for MVP, matching existing evaluate_pr).
+    // Run the pipeline with the PR diff.
     let report = run_consensus(
-        "",
+        diff,
         consensus_goldens,
         reviewer_configs,
         client,
@@ -425,6 +484,7 @@ pub async fn evaluate_pr_with_consensus(
         rules_preamble,
         prompt_lib,
         template_vars,
+        cache,
     )
     .await;
     // Build verdicts for compatibility with crb-reporting::PrResult.

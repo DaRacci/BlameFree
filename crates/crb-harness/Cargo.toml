@@ -26,4 +26,5 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 csv = { workspace = true }
 dotenvy = { workspace = true }
+tempfile = "3"
 regex = { workspace = true }

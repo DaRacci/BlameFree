@@ -43,30 +43,40 @@ use crate::prompts::PromptLibrary;
 // ── Role-specific preamble prompts ─────────────────────────────────────────
 
 const SA_PREAMBLE: &str = "\
+IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
+
 You are a static analysis specialist. Analyze the provided code diff for \
 potential bugs, code smells, and violations of best practices. Focus on \
 correctness, error handling, and code quality issues. Respond with a JSON \
 array of findings.";
 
 const CL_PREAMBLE: &str = "\
+IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
+
 You are a code logic expert. Examine the diff for logical errors, incorrect \
 assumptions, off-by-one errors, race conditions, and concurrency issues. \
 Focus on whether the code correctly implements its intended logic. Respond \
 with a JSON array of findings.";
 
 const AR_PREAMBLE: &str = "\
+IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
+
 You are an architecture reviewer. Evaluate the diff for architectural concerns: \
 coupling, cohesion, separation of concerns, design pattern violations, and \
 maintainability issues. Focus on the high-level structure and design decisions. \
 Respond with a JSON array of findings.";
 
 const SEC_PREAMBLE: &str = "\
+IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
+
 You are a security specialist. Review the diff for security vulnerabilities: \
 injection flaws, authentication/authorization issues, data exposure, input \
 validation problems, and other security weaknesses. Focus on OWASP Top 10 \
 categories. Respond with a JSON array of findings.";
 
 const DEFAULT_PREAMBLE: &str = "\
+IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
+
 You are a code reviewer. Analyze the provided code diff and identify any \
 issues. Respond with a JSON array of findings.";
 

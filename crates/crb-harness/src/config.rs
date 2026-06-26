@@ -91,4 +91,9 @@ pub struct CliArgs {
     /// Useful for smoke tests. Example: --pr-filter "discourse-7,calcom-11059"
     #[arg(long)]
     pub pr_filter: Option<String>,
+
+    /// Directory to cache all LLM interactions for debugging/replay.
+    /// Creates per-PR subdirectories with prompts, responses, and judge calls.
+    #[arg(long, env = "CACHE_DIR")]
+    pub cache_dir: Option<PathBuf>,
 }

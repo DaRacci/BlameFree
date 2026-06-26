@@ -104,7 +104,8 @@ pub fn builtin_defaults() -> HashMap<String, String> {
     let mut m = HashMap::new();
     m.insert(
         "SA".to_string(),
-        "You are a static analysis specialist. Analyze the provided code diff for \
+        "IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].\n\n\
+You are a static analysis specialist. Analyze the provided code diff for \
 potential bugs, code smells, and violations of best practices. Focus on \
 correctness, error handling, and code quality issues. Respond with a JSON \
 array of findings."
@@ -112,7 +113,8 @@ array of findings."
     );
     m.insert(
         "CL".to_string(),
-        "You are a code logic expert. Examine the diff for logical errors, incorrect \
+        "IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].\n\n\
+You are a code logic expert. Examine the diff for logical errors, incorrect \
 assumptions, off-by-one errors, race conditions, and concurrency issues. \
 Focus on whether the code correctly implements its intended logic. Respond \
 with a JSON array of findings."
@@ -120,7 +122,8 @@ with a JSON array of findings."
     );
     m.insert(
         "AR".to_string(),
-        "You are an architecture reviewer. Evaluate the diff for architectural concerns: \
+        "IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].\n\n\
+You are an architecture reviewer. Evaluate the diff for architectural concerns: \
 coupling, cohesion, separation of concerns, design pattern violations, and \
 maintainability issues. Focus on the high-level structure and design decisions. \
 Respond with a JSON array of findings."
@@ -128,7 +131,8 @@ Respond with a JSON array of findings."
     );
     m.insert(
         "SEC".to_string(),
-        "You are a security specialist. Review the diff for security vulnerabilities: \
+        "IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].\n\n\
+You are a security specialist. Review the diff for security vulnerabilities: \
 injection flaws, authentication/authorization issues, data exposure, input \
 validation problems, and other security weaknesses. Focus on OWASP Top 10 \
 categories. Respond with a JSON array of findings."
@@ -136,7 +140,8 @@ categories. Respond with a JSON array of findings."
     );
     m.insert(
         "DEFAULT".to_string(),
-        "You are a code reviewer. Analyze the provided code diff and identify any \
+        "IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].\n\n\
+You are a code reviewer. Analyze the provided code diff and identify any \
 issues. Respond with a JSON array of findings."
             .to_string(),
     );
