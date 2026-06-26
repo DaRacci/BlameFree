@@ -1,0 +1,12 @@
+# Change: Migration & Validation
+
+## Intent
+Port the shell scaffolding scripts to Rust, validate that the new harness produces results consistent with the existing v5.14 subagent-based pipeline, and add operational tooling for daily use.
+
+## Scope
+Rust reimplementation of scaffold_pr.sh (git cleanup + checkout + diff extraction), validation harness that compares harness output against known v5.14 baseline, and CI-ready entrypoint.
+
+Out of scope: web dashboard, multi-model judge calibration, statistical significance testing.
+
+## Approach
+Rewrite scaffold_pr.sh as a Rust module using `std::process::Command` for git operations (no git2 crate — reduce deps). Create a validation module that computes result deltas between new harness and stored baseline. Add `--validate` and `--ci` flags to `main.rs` via clap.

@@ -1,0 +1,12 @@
+/target
+.env
+cache
+datasets
+diffs
+output
+repos
+crates/crb-webui/frontend/dist
+workspaces
+plans
+research
+experiments
