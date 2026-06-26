@@ -6,6 +6,7 @@
 //!
 //! Adds audit trail fields: `severity_audited` and `severity_audit_reason`.
 
+pub use crb_agents::Finding;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::{Map, Value};

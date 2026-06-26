@@ -21,7 +21,7 @@
 
 ## Phase 4 — Polish
 - [x] Add tracing spans per PR, per agent, per judge call with structured fields
-- [ ] Add retry logic with exponential backoff for transient LLM failures (reqwest retry middleware or manual)
+- [x] Add retry logic with exponential backoff for transient LLM failures (reqwest retry middleware or manual)
 - [x] Add --dry-run flag that shows config and PR count without making API calls
 - [x] Add --resume flag to skip already-processed PRs (check output dir for existing results)
 - [x] Write README.md with usage examples, provider setup, and benchmark workflow

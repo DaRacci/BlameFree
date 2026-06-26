@@ -18,7 +18,7 @@ use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
-use crb_agents::{build_agent, Finding, AGENT_ROLES};
+use crb_agents::{build_agent, Finding};
 use crb_judge::{run_judge, JudgeVerdict};
 use crb_reporting::{GoldenCommentEntry, PrResult};
 
@@ -99,14 +99,15 @@ pub struct ConsensusReport {
 
 /// Build a reviewer agent for the given role.
 ///
-/// Delegates to [`crb_agents::build_agent`] with the role's string identifier.
-/// The returned agent should be prompted with the diff to produce structured
-/// findings (parsed via `serde_json`).
+/// Delegates to [`crb_agents::build_agent`] with the role's string identifier
+/// and an optional rules preamble.  The returned agent should be prompted with
+/// the diff to produce structured findings (parsed via `serde_json`).
 pub fn build_reviewer_agent(
     client: &openai::Client,
     config: &ReviewerConfig,
+    rules_preamble: Option<&str>,
 ) -> Agent<ResponsesCompletionModel> {
-    build_agent(client, &config.model, config.role.as_str())
+    build_agent(client, &config.model, config.role.as_str(), rules_preamble)
 }
 
 // ── Concurrent execution ────────────────────────────────────────────────────
@@ -120,6 +121,7 @@ pub async fn run_reviewers(
     configs: Vec<ReviewerConfig>,
     diff: &str,
     client: &openai::Client,
+    rules_preamble: Option<&str>,
 ) -> Vec<(Role, Vec<Finding>)> {
     let mut set = JoinSet::new();
 
@@ -128,7 +130,8 @@ pub async fn run_reviewers(
         let diff = diff.to_string();
         let role = config.role;
         let max_findings = config.max_findings;
-        let agent = build_reviewer_agent(&client, &config);
+        let preamble = rules_preamble.map(String::from);
+        let agent = build_reviewer_agent(&client, &config, preamble.as_deref());
 
         set.spawn(async move {
             let outcome = tokio::time::timeout(Duration::from_secs(120), async {
@@ -241,9 +244,10 @@ pub async fn run_consensus(
     reviewer_configs: Vec<ReviewerConfig>,
     client: &openai::Client,
     judge: &Agent<ResponsesCompletionModel>,
+    rules_preamble: Option<&str>,
 ) -> ConsensusReport {
     // Step 1: run all reviewers concurrently
-    let agents = run_reviewers(reviewer_configs, diff, client).await;
+    let agents = run_reviewers(reviewer_configs, diff, client, rules_preamble).await;
 
     // Flatten all findings into a single mutable pool
     let mut unmatched: Vec<Finding> = agents
@@ -360,9 +364,12 @@ pub async fn evaluate_pr_with_consensus(
     client: &openai::Client,
     model: &str,
     judge: &Agent<ResponsesCompletionModel>,
+    rules_preamble: Option<&str>,
+    roles: &[&str],
+    max_findings: usize,
 ) -> Result<PrResult> {
-    // Build one reviewer config per standard role.
-    let reviewer_configs: Vec<ReviewerConfig> = AGENT_ROLES
+    // Build one reviewer config per selected role.
+    let reviewer_configs: Vec<ReviewerConfig> = roles
         .iter()
         .map(|role_str| {
             let role = match *role_str {
@@ -375,7 +382,7 @@ pub async fn evaluate_pr_with_consensus(
             ReviewerConfig {
                 role,
                 model: model.to_string(),
-                max_findings: 20,
+                max_findings,
             }
         })
         .collect();
@@ -402,9 +409,9 @@ pub async fn evaluate_pr_with_consensus(
         reviewer_configs,
         client,
         judge,
+        rules_preamble,
     )
     .await;
-
     // Build verdicts for compatibility with crb-reporting::PrResult.
     let mut verdicts = Vec::new();
     for _ in &report.true_positives {
@@ -495,6 +502,8 @@ mod tests {
             message: "Potential null pointer dereference".into(),
             severity: "error".into(),
             rule_code: Some("SA-001".into()),
+            severity_audited: false,
+            severity_audit_reason: None,
         }];
         let result =
             tokio::runtime::Runtime::new().unwrap().block_on(judge_comment(&golden, &candidates));
@@ -516,6 +525,8 @@ mod tests {
             message: "Potential null pointer".into(),
             severity: "error".into(),
             rule_code: Some("SA-001".into()),
+            severity_audited: false,
+            severity_audit_reason: None,
         }];
         let result =
             tokio::runtime::Runtime::new().unwrap().block_on(judge_comment(&golden, &candidates));
@@ -537,6 +548,8 @@ mod tests {
             message: "Potential null pointer".into(),
             severity: "error".into(),
             rule_code: Some("SA-001".into()),
+            severity_audited: false,
+            severity_audit_reason: None,
         }];
         let result =
             tokio::runtime::Runtime::new().unwrap().block_on(judge_comment(&golden, &candidates));
@@ -597,6 +610,8 @@ mod tests {
                         message: "foo".into(),
                         severity: "error".into(),
                         rule_code: None,
+                        severity_audited: false,
+                        severity_audit_reason: None,
                     },
                 ),
             ],
@@ -625,6 +640,8 @@ mod tests {
                 message: "unexpected".into(),
                 severity: "warning".into(),
                 rule_code: None,
+                severity_audited: false,
+                severity_audit_reason: None,
             }],
             false_negatives: vec![GoldenComment {
                 file: "a.rs".into(),

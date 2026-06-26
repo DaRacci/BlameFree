@@ -266,6 +266,8 @@ pub fn parse_ruff_output(stdout: &str) -> Result<Vec<Finding>, LinterError> {
             message: f.message,
             severity: "error".to_string(),
             rule_code: Some(f.code),
+            severity_audited: false,
+            severity_audit_reason: None,
         })
         .collect())
 }
@@ -318,6 +320,8 @@ pub fn parse_eslint_output(stdout: &str) -> Result<Vec<Finding>, LinterError> {
                 message: msg.message,
                 severity,
                 rule_code: msg.rule_id,
+                severity_audited: false,
+                severity_audit_reason: None,
             });
         }
     }
@@ -369,10 +373,39 @@ pub fn parse_govet_output(stdout: &str) -> Result<Vec<Finding>, LinterError> {
             message,
             severity: "warning".to_string(),
             rule_code: None,
+            severity_audited: false,
+            severity_audit_reason: None,
         });
     }
 
     Ok(findings)
+}
+
+/// Parse staticcheck JSON output into Finding values.
+///
+/// TODO: Implement staticcheck JSON output parsing.
+/// staticcheck outputs JSON lines with fields: file, line, column, message, severity.
+pub fn parse_staticcheck_output(_stdout: &str) -> Result<Vec<Finding>, LinterError> {
+    // TODO: Implement staticcheck JSON parser
+    Ok(Vec::new())
+}
+
+/// Parse rubocop JSON output into Finding values.
+///
+/// TODO: Implement rubocop JSON output parsing.
+/// rubocop outputs JSON with: files[].offenses[].{severity, message, cop_name, location.{line, column}}
+pub fn parse_rubocop_output(_stdout: &str) -> Result<Vec<Finding>, LinterError> {
+    // TODO: Implement rubocop JSON parser
+    Ok(Vec::new())
+}
+
+/// Parse checkstyle XML output into Finding values.
+///
+/// TODO: Implement checkstyle XML output parsing.
+/// checkstyle outputs XML with: <checkstyle><file><error line="..." column="..." severity="..." message="..." source="..."/></file></checkstyle>
+pub fn parse_checkstyle_output(_stdout: &str) -> Result<Vec<Finding>, LinterError> {
+    // TODO: Implement checkstyle XML parser
+    Ok(Vec::new())
 }
 
 // ── Linter Configuration ────────────────────────────────────────────────────
@@ -460,6 +493,36 @@ pub fn create_govet_tool(config: &LinterConfig) -> LinterTool {
         cmd: config.cmd.clone(),
         parser: parse_govet_output,
         timeout: Duration::from_secs(config.timeout_secs.unwrap_or(60)),
+    }
+}
+
+/// Create a LinterTool from staticcheck configuration.
+pub fn create_staticcheck_tool(config: &LinterConfig) -> LinterTool {
+    LinterTool {
+        name: config.name.clone(),
+        cmd: config.cmd.clone(),
+        parser: parse_staticcheck_output,
+        timeout: Duration::from_secs(config.timeout_secs.unwrap_or(120)),
+    }
+}
+
+/// Create a LinterTool from rubocop configuration.
+pub fn create_rubocop_tool(config: &LinterConfig) -> LinterTool {
+    LinterTool {
+        name: config.name.clone(),
+        cmd: config.cmd.clone(),
+        parser: parse_rubocop_output,
+        timeout: Duration::from_secs(config.timeout_secs.unwrap_or(120)),
+    }
+}
+
+/// Create a LinterTool from checkstyle configuration.
+pub fn create_checkstyle_tool(config: &LinterConfig) -> LinterTool {
+    LinterTool {
+        name: config.name.clone(),
+        cmd: config.cmd.clone(),
+        parser: parse_checkstyle_output,
+        timeout: Duration::from_secs(config.timeout_secs.unwrap_or(120)),
     }
 }
 

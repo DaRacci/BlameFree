@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::path::PathBuf;
 
 /// CLI arguments for the code review benchmark harness.
 #[derive(Debug, Clone, Parser)]
@@ -51,4 +52,32 @@ pub struct CliArgs {
     /// Path to linters.toml configuration file.
     #[arg(long, env = "LINTERS_CONFIG", default_value = "linters.toml")]
     pub linters_config: String,
+
+    /// Path to rules directory (e.g., .crb/rules/).
+    #[arg(long, default_value = ".crb/rules/")]
+    pub rules_dir: PathBuf,
+
+    /// Skip rule loading entirely.
+    #[arg(long, default_value_t = false)]
+    pub skip_rules: bool,
+
+    /// Validate mode: load baseline JSON and compare metrics against output.
+    #[arg(long, default_value_t = false)]
+    pub validate: bool,
+
+    /// CI mode: run full pipeline (scaffold → evaluate → validate → report) with exit code.
+    #[arg(long, default_value_t = false)]
+    pub ci: bool,
+
+    /// Skip scaffolding and use pre-extracted diffs.
+    #[arg(long, default_value_t = false)]
+    pub cached_diffs: bool,
+
+    /// Comma-separated list of agent roles to use (default: SA,CL,AR,SEC).
+    #[arg(long, env = "ROLES", default_value = "SA,CL,AR,SEC")]
+    pub roles: String,
+
+    /// Maximum number of findings per agent (default: 20).
+    #[arg(long, env = "MAX_FINDINGS", default_value_t = 20)]
+    pub max_findings: usize,
 }

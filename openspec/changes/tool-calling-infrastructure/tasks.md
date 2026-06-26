@@ -44,7 +44,7 @@
 
 ## Phase 3: Configuration & Wiring
 
-- [ ] **3.1 Create sample `linters.toml`**
+- [x] **3.1 Create sample `linters.toml`**
   - Define ruff, eslint, and govet entries.
   - Validate with the `load_linter_config()` function.
 

@@ -3,6 +3,7 @@
 //! Provides the core aggregation logic for code-review findings, including
 //! multi-format report parsing, semantic deduplication, and candidate formatting.
 
+pub use crb_agents::Finding;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Serialize;

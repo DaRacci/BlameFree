@@ -60,7 +60,7 @@
 ## Harness Integration
 - [x] Wire `crb-aggregator::aggregate_batch()` into evaluation pipeline in `crb-harness/src/main.rs`
 - [x] Wire `crb-auditor::apply_severity_auditor()` into evaluation pipeline in `crb-harness/src/main.rs`
-- [ ] Ensure `Finding` / `Candidate` / `Severity` types in `crb-agents` are compatible with both crates (add `severity_audited: bool`, `severity_audit_reason: Option<String>` to `Finding` if not present)
+- [x] Ensure `Finding` / `Candidate` / `Severity` types in `crb-agents` are compatible with both crates (add `severity_audited: bool`, `severity_audit_reason: Option<String>` to `Finding` if not present)
 - [ ] Add `aggregator_stats` and `severity_auditor_stats` to output metadata
 
 ## Testing (Unit Tests)

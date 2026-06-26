@@ -1,0 +1,60 @@
+# ── Linters Configuration ──────────────────────────────────────────────────────
+#
+# Each entry defines a linter that the review-harness will run on source code.
+#
+# Format:
+#   [linters.{id}]
+#   name          = "Display name for the linter"
+#   cmd           = ["executable", "arg1", "arg2", ...]   # command + arguments
+#   timeout_secs  = 60                                    # optional, default unspecified
+#   output_format = "json" | "text"                       # required, must be one of the two
+#   optional      = true | false                          # optional, default unspecified
+#
+# When `optional = true`, a missing binary or transient failure won't abort the
+# full review run.  When `output_format = "json"`, the tool must emit valid JSON
+# on stdout; when `"text"`, plain-text output is expected.
+
+[linters.ruff]
+name          = "ruff"
+cmd           = ["ruff", "check", "--output-format", "json", "--no-cache"]
+timeout_secs  = 60
+output_format = "json"
+optional      = false
+# Example (uncomment to use):
+# cmd = ["ruff", "check", "--output-format", "json", "--no-cache"]
+
+[linters.eslint]
+name          = "eslint"
+cmd           = ["eslint", "--format", "json", "--no-eslintrc", "--config", ".eslintrc.json"]
+timeout_secs  = 90
+output_format = "json"
+optional      = false
+# Example (uncomment to use):
+# cmd = ["eslint", "--format", "json", "--no-eslintrc", "--config", ".eslintrc.json"]
+
+[linters.go-vet]
+name          = "go vet"
+cmd           = ["go", "vet", "./..."]
+timeout_secs  = 120
+output_format = "text"
+optional      = true
+# Example (uncomment to use):
+# cmd = ["go", "vet", "./..."]
+
+[linters.staticcheck]
+name          = "staticcheck"
+cmd           = ["staticcheck", "-f", "json", "./..."]
+timeout_secs  = 120
+output_format = "json"
+optional      = true
+# Example (uncomment to use):
+# cmd = ["staticcheck", "-f", "json", "./..."]
+
+[linters.rubocop]
+name          = "rubocop"
+cmd           = ["rubocop", "--format", "json", "--no-color"]
+timeout_secs  = 90
+output_format = "json"
+optional      = true
+# Example (uncomment to use):
+# cmd = ["rubocop", "--format", "json", "--no-color"]

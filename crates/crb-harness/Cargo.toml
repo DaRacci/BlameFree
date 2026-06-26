@@ -15,6 +15,7 @@ crb-consensus = { path = "../crb-consensus" }
 crb-tools = { path = "../crb-tools" }
 crb-aggregator = { path = "../crb-aggregator" }
 crb-auditor = { path = "../crb-auditor" }
+crb-rules = { path = "../crb-rules" }
 rig-core = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }

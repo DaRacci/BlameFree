@@ -50,7 +50,7 @@
   - Call `run_consensus()`.
   - Print or serialize `ConsensusReport` to JSON.
 
-- [ ] **3.2 Add CLI flags**
+- [x] **3.2 Add CLI flags**
   - `--roles` to select subset of agents (default: all four).
   - `--model` to override model for all agents.
   - `--judge-model` to set judge model independently.
@@ -72,7 +72,7 @@
   - Test LLM-based matching with known golden/finding pairs (requires
     integration test setup).
 
-- [ ] **4.4 Integration tests**
+- [x] **4.4 Integration tests**
   - Run mock diff through full pipeline with known golden comments.
   - Verify metrics are correct: all TPs → 1.0/1.0/1.0.
   - Verify all FNs → 0.0/0.0/0.0.

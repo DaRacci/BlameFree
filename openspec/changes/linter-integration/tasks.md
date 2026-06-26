@@ -9,9 +9,9 @@
 - [x] Implement `RuffLinter` / `LinterTool` with `parser_kind = "ruff"`: `Tool` trait, `tokio::process::Command` for `ruff check --output-format json`, serde_json parse
 - [x] Implement `EslintLinter` / `parser_kind = "eslint"`: same pattern for `eslint --format json`
 - [x] Implement `GoVetLinter` / `parser_kind = "govet"`: same pattern for `go vet`
-- [ ] Implement `StaticcheckLinter` / `parser_kind = "staticcheck"`: same pattern for `staticcheck`
-- [ ] Implement `RubocopLinter` / `parser_kind = "rubocop"`: same pattern for `rubocop --format json`
-- [ ] Implement `CheckstyleLinter` / `parser_kind = "checkstyle"`: same pattern for `java -jar checkstyle.jar`
+- [x] Implement `StaticcheckLinter` / `parser_kind = "staticcheck"`: same pattern for `staticcheck`
+- [x] Implement `RubocopLinter` / `parser_kind = "rubocop"`: same pattern for `rubocop --format json`
+- [x] Implement `CheckstyleLinter` / `parser_kind = "checkstyle"`: same pattern for `java -jar checkstyle.jar`
 
 ## Harness Integration
 - [x] Wire linter Tool calls into `evaluate_pr()` via `tokio::task::JoinSet` alongside LLM agent calls
