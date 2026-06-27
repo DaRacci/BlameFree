@@ -260,12 +260,12 @@ pub fn RunDetailPage() -> impl IntoView {
                             <table class="table">
                                 <thead>
                                     <tr>
-                                        <th class="table__th table__th--sortable">"# <span class=\"table__sort-icon\">↕</span>"</th>
-                                        <th class="table__th table__th--sortable">"Title <span class=\"table__sort-icon\">↕</span>"</th>
-                                        <th class="table__th table__th--sortable">"F1 <span class=\"table__sort-icon\">↕</span>"</th>
-                                        <th class="table__th table__th--sortable">"Prec <span class=\"table__sort-icon\">↕</span>"</th>
-                                        <th class="table__th table__th--sortable">"Rec <span class=\"table__sort-icon\">↕</span>"</th>
-                                        <th class="table__th table__th--sortable">"Cost <span class=\"table__sort-icon\">↕</span>"</th>
+                                        <th class="table__th table__th--sortable">"# " <span class="table__sort-icon">"↕"</span></th>
+                                        <th class="table__th table__th--sortable">"Title " <span class="table__sort-icon">"↕"</span></th>
+                                        <th class="table__th table__th--sortable">"F1 " <span class="table__sort-icon">"↕"</span></th>
+                                        <th class="table__th table__th--sortable">"Prec " <span class="table__sort-icon">"↕"</span></th>
+                                        <th class="table__th table__th--sortable">"Rec " <span class="table__sort-icon">"↕"</span></th>
+                                        <th class="table__th table__th--sortable">"Cost " <span class="table__sort-icon">"↕"</span></th>
                                         <th class="table__th">"Status"</th>
                                     </tr>
                                 </thead>

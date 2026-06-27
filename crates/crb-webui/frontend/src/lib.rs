@@ -94,6 +94,8 @@ pub struct NewRunRequest {
     pub model: String,
     pub dataset: String,
     pub roles: Vec<String>,
+    #[serde(default)]
+    pub pr_filter: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

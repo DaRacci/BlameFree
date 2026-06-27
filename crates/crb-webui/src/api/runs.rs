@@ -155,6 +155,9 @@ pub struct BenchmarkConfig {
 
     #[serde(default)]
     pub skip_linters: bool,
+
+    #[serde(default)]
+    pub pr_filter: Option<String>,
 }
 
 /// Deserialize `roles` from either a comma-separated string or a Vec<String>.

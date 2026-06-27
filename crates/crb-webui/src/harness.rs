@@ -63,6 +63,9 @@ pub async fn run_harness(
     if let Some(ref cache_dir) = config.cache_dir {
         cmd.arg("--cache-dir").arg(cache_dir);
     }
+    if let Some(ref pr_filter) = config.pr_filter {
+        cmd.arg("--pr-filter").arg(pr_filter);
+    }
 
     // Set up stdout for reading JSON events
     cmd.stdout(Stdio::piped());

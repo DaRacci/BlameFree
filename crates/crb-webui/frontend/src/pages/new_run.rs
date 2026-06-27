@@ -14,6 +14,7 @@ pub fn NewRunPage() -> impl IntoView {
     let (model, set_model) = create_signal(String::new());
     let (dataset, set_dataset) = create_signal(String::new());
     let (roles, set_roles) = create_signal::<Vec<String>>(Vec::new());
+    let (pr_filter, set_pr_filter) = create_signal(String::new());
     let (submitting, set_submitting) = create_signal(false);
     let (submit_error, set_submit_error) = create_signal::<Option<String>>(None);
     let (submit_result, set_submit_result) = create_signal::<Option<String>>(None);
@@ -86,6 +87,10 @@ pub fn NewRunPage() -> impl IntoView {
             model: model.get(),
             dataset: dataset.get(),
             roles: roles.get(),
+            pr_filter: {
+                let val = pr_filter.get();
+                if val.is_empty() { None } else { Some(val) }
+            },
         };
 
         let navigator = navigator.clone();
@@ -233,6 +238,25 @@ pub fn NewRunPage() -> impl IntoView {
                                 </div>
                             }
                         }}
+                    </div>
+                </section>
+
+                // ─── PR Filter Section ─────────────────────────────
+                <section class="form-section">
+                    <h2 class="form-section__title">"Filtering"</h2>
+                    <div class="form-section__fields">
+                        <div class="form-field">
+                            <label class="form-field__label" for="pr_filter">"PR Filter (optional)"</label>
+                            <input
+                                id="pr_filter"
+                                class="input"
+                                type="text"
+                                prop:value=pr_filter.get()
+                                on:input=move |ev| { set_pr_filter.set(event_target_value(&ev)); }
+                                placeholder="discourse-7,calcom-11059"
+                            />
+                            <p class="form-field__helper">"Filter to specific PRs: discourse-7,calcom-11059. Leave empty for all PRs."</p>
+                        </div>
                     </div>
                 </section>
 
