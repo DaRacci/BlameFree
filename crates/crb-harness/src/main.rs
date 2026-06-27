@@ -17,7 +17,7 @@ use regex::Regex;
 use rig_core::client::ProviderClient;
 use rig_core::completion::Prompt;
 use rig_core::tool::Tool;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tracing::info;
 use tracing::info_span;
 use tracing_subscriber::EnvFilter;
@@ -248,20 +248,51 @@ async fn main() -> Result<()> {
     let start_time = std::time::Instant::now();
     let cache_dir = args.cache_dir.clone();
 
-    // ── Dashboard (optional TUI) ─────────────────────────────────────────
-    let dashboard_tx = if args.dashboard {
-        let (tx, rx) = tokio::sync::mpsc::channel::<DashboardEvent>(1024);
+    // ── Dashboard event system (TUI and/or JSON stdout) ─────────────────
+    // We use a broadcast channel so events can fan out to multiple consumers.
+    let (event_broadcast_tx, _) = broadcast::channel::<DashboardEvent>(256);
+
+    let dashboard_tx: Option<broadcast::Sender<DashboardEvent>> = if args.dashboard {
+        let mut rx = event_broadcast_tx.subscribe();
         let total_prs = prs_to_evaluate.len();
-        // Spawn the TUI render task
+        // Bridge broadcast → mpsc for the TUI (which expects mpsc::Receiver)
+        let (mpsc_tx, mpsc_rx) = mpsc::channel::<DashboardEvent>(1024);
         tokio::spawn(async move {
-            if let Err(e) = crb_dashboard::run_dashboard(total_prs, rx).await {
+            while let Ok(event) = rx.recv().await {
+                if mpsc_tx.send(event).await.is_err() {
+                    break;
+                }
+            }
+        });
+        tokio::spawn(async move {
+            if let Err(e) = crb_dashboard::run_dashboard(total_prs, mpsc_rx).await {
                 tracing::error!("Dashboard error: {e}");
             }
         });
-        Some(tx)
+        Some(event_broadcast_tx.clone())
+    } else if args.dashboard_events {
+        // --dashboard-events alone also needs a sender
+        Some(event_broadcast_tx.clone())
     } else {
         None
     };
+
+    // ── Dashboard Events (JSON stdout) ──────────────────────────────────
+    if args.dashboard_events {
+        let mut rx = event_broadcast_tx.subscribe();
+        tokio::spawn(async move {
+            use std::io::Write;
+            while let Ok(event) = rx.recv().await {
+                if let Ok(json) = serde_json::to_string(&event) {
+                    let stdout = std::io::stdout();
+                    let mut handle = stdout.lock();
+                    let _ = writeln!(handle, "{json}");
+                    let _ = handle.flush();
+                    // handle's Drop unlocks stdout before the next await
+                }
+            }
+        });
+    }
 
     // ── Concurrency ───────────────────────────────────────────────────────
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(args.concurrency));
@@ -374,7 +405,7 @@ async fn main() -> Result<()> {
             total_cost,
             total_tokens,
             total_agent_calls,
-        }).await;
+        });
     }
 
     // ── Report ────────────────────────────────────────────────────────────
@@ -695,7 +726,7 @@ async fn evaluate_pr_with_postprocessing(
     roles: &str,
     max_findings: usize,
     cache_dir: Option<&PathBuf>,
-    dashboard_tx: Option<&mpsc::Sender<DashboardEvent>>,
+    dashboard_tx: Option<&broadcast::Sender<DashboardEvent>>,
 ) -> Result<PrResult> {
 
     // ── Setup cache if enabled ────────────────────────────────────────────
@@ -795,7 +826,7 @@ async fn evaluate_pr_with_postprocessing(
             let _ = tx.send(DashboardEvent::AgentStarted {
                 pr_key: pr_key.clone(),
                 role: role.to_string(),
-            }).await;
+            });
         }
     }
 
@@ -833,7 +864,7 @@ async fn evaluate_pr_with_postprocessing(
                 role: role.to_string(),
                 findings: role_findings,
                 success: true,
-            }).await;
+            });
         }
     }
 
@@ -862,7 +893,7 @@ async fn evaluate_pr_with_postprocessing(
             total_tokens,
             agent_calls: total_agent_calls,
             findings_count: processed_findings.len(),
-        }).await;
+        });
     }
 
     // ── Write metadata.json ─────────────────────────────────────────────
@@ -950,7 +981,7 @@ async fn evaluate_pr_single_agent(
     prompt_lib: &PromptLibrary,
     cache: Option<Arc<LlmCache>>,
     cost_tracker: Arc<CostTracker>,
-    dashboard_tx: Option<&mpsc::Sender<DashboardEvent>>,
+    dashboard_tx: Option<&broadcast::Sender<DashboardEvent>>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // ── Pre-compute content-addressed cache key components ──────────────
     let diff_hash = LlmCache::sha256(diff);
@@ -1001,14 +1032,14 @@ async fn evaluate_pr_single_agent(
                         let _ = tx.send(DashboardEvent::AgentChunk {
                             role: role.clone(),
                             chunk: cached_response.clone(),
-                        }).await;
+                        });
                         let result = parse_agent_findings(&cached_response);
                         let findings_count = result.as_ref().map(|v| v.len()).unwrap_or(0);
                         let _ = tx.send(DashboardEvent::AgentFinished {
                             role,
                             findings: findings_count,
                             success: result.is_ok(),
-                        }).await;
+                        });
                     }
                     let result = parse_agent_findings(&cached_response);
                     return result;
@@ -1034,7 +1065,7 @@ async fn evaluate_pr_single_agent(
                         let _ = tx.send(DashboardEvent::AgentChunk {
                             role: role.clone(),
                             chunk: response.clone(),
-                        }).await;
+                        });
                     }
 
                     // Cache the prompt+response with content-addressed key
@@ -1050,7 +1081,7 @@ async fn evaluate_pr_single_agent(
                             role: role.clone(),
                             findings: findings_count,
                             success: findings.is_ok(),
-                        }).await;
+                        });
                     }
                     findings
                 },
@@ -1065,7 +1096,7 @@ async fn evaluate_pr_single_agent(
                         role: role.clone(),
                         findings: 0,
                         success: false,
-                    }).await;
+                    });
                 }
             }
             result

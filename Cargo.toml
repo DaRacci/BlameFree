@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*"]
+members = ["crates/*", "crates/crb-webui/frontend"]
 
 [workspace.dependencies]
 rig-core = "0.39"

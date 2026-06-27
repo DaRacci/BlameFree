@@ -109,4 +109,8 @@ pub struct CliArgs {
     /// When set, renders a 4-pane agent view with progress, cost, and summaries.
     #[arg(long, default_value_t = false)]
     pub dashboard: bool,
+
+    /// When set, output JSON dashboard events to stdout (one per line).
+    #[arg(long, default_value_t = false)]
+    pub dashboard_events: bool,
 }

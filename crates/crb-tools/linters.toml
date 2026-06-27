@@ -1,5 +1,3 @@
-# ── Linters Configuration ──────────────────────────────────────────────────────
-#
 # Each entry defines a linter that the review-harness will run on source code.
 #
 # Format:
@@ -20,8 +18,6 @@ cmd           = ["ruff", "check", "--output-format", "json", "--no-cache"]
 timeout_secs  = 60
 output_format = "json"
 optional      = false
-# Example (uncomment to use):
-# cmd = ["ruff", "check", "--output-format", "json", "--no-cache"]
 
 [linters.eslint]
 name          = "eslint"
@@ -29,8 +25,6 @@ cmd           = ["eslint", "--format", "json", "--no-eslintrc", "--config", ".es
 timeout_secs  = 90
 output_format = "json"
 optional      = false
-# Example (uncomment to use):
-# cmd = ["eslint", "--format", "json", "--no-eslintrc", "--config", ".eslintrc.json"]
 
 [linters.go-vet]
 name          = "go vet"
@@ -38,8 +32,6 @@ cmd           = ["go", "vet", "./..."]
 timeout_secs  = 120
 output_format = "text"
 optional      = true
-# Example (uncomment to use):
-# cmd = ["go", "vet", "./..."]
 
 [linters.staticcheck]
 name          = "staticcheck"
@@ -47,8 +39,6 @@ cmd           = ["staticcheck", "-f", "json", "./..."]
 timeout_secs  = 120
 output_format = "json"
 optional      = true
-# Example (uncomment to use):
-# cmd = ["staticcheck", "-f", "json", "./..."]
 
 [linters.rubocop]
 name          = "rubocop"
@@ -56,5 +46,3 @@ cmd           = ["rubocop", "--format", "json", "--no-color"]
 timeout_secs  = 90
 output_format = "json"
 optional      = true
-# Example (uncomment to use):
-# cmd = ["rubocop", "--format", "json", "--no-color"]

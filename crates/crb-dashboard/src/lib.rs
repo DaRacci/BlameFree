@@ -3,13 +3,25 @@
 /// This function takes ownership of the event receiver, sets up the terminal
 /// in raw mode, and runs the rendering loop until the run finishes or the
 /// user presses 'q'.
+///
+/// If stdout is not a real TTY, the dashboard falls back to a silent drain
+/// (events are consumed and discarded) so the sender side doesn't block.
 pub async fn run_dashboard(total_prs: usize, rx: mpsc::Receiver<DashboardEvent>) -> anyhow::Result<()> {
     use crossterm::event::{self, Event, KeyCode};
     use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
     use crossterm::ExecutableCommand;
     use ratatui::backend::CrosstermBackend;
     use ratatui::Terminal;
-    use std::io::stdout;
+    use std::io::{stdout, IsTerminal};
+
+    // If stdout isn't a real TTY, skip the TUI to avoid crashes on
+    // enable_raw_mode / EnterAlternateScreen.  Events are drained
+    // silently so senders never block.
+    if !std::io::stdout().is_terminal() {
+        tracing::warn!("stdout is not a terminal — TUI dashboard disabled, events drained");
+        drain_events(rx).await;
+        return Ok(());
+    }
 
     // Setup terminal
     enable_raw_mode()?;
@@ -57,9 +69,21 @@ pub async fn run_dashboard(total_prs: usize, rx: mpsc::Receiver<DashboardEvent>)
     Ok(())
 }
 
+/// Drain all events from the channel without rendering (non-TTY fallback).
+async fn drain_events(mut rx: mpsc::Receiver<DashboardEvent>) {
+    use tracing::info;
+    while let Some(event) = rx.recv().await {
+        if matches!(event, DashboardEvent::RunFinished { .. }) {
+            info!("Dashboard: run finished (events drained, no TTY)");
+            break;
+        }
+    }
+}
+
 use std::time::Instant;
 
 use crb_judge::Metrics;
+use serde::Serialize;
 use tokio::sync::mpsc;
 
 pub mod render;
@@ -67,7 +91,7 @@ pub mod render;
 // ── Event types ──────────────────────────────────────────────────────────────
 
 /// Events sent from the harness to the dashboard task.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum DashboardEvent {
     /// An agent has started its review for a given PR.
     AgentStarted {
@@ -105,7 +129,7 @@ pub enum DashboardEvent {
 }
 
 /// Aggregate metrics across all PRs.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct AggregateMetrics {
     pub total_tp: usize,
     pub total_fp: usize,
