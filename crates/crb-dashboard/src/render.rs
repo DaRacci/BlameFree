@@ -109,8 +109,8 @@ fn render_agent_panes(frame: &mut Frame, area: Rect, dash: &Dashboard) {
 /// Render a single agent pane with its status and response buffer.
 fn render_agent_pane(frame: &mut Frame, area: Rect, pane: &crate::AgentPane) {
     let (status_symbol, status_text, fg_color) = match &pane.status {
-        AgentStatus::Pending => ("⏳", "pending", Color::DarkGray),
-        AgentStatus::Reviewing => ("🔄", "reviewing...", Color::Yellow),
+        AgentStatus::Pending => ("⏳", "pending".to_string(), Color::DarkGray),
+        AgentStatus::Reviewing => ("🔄", "reviewing...".to_string(), Color::Yellow),
         AgentStatus::Done { findings } => {
             let text = if *findings > 0 {
                 format!("{} finding(s)", findings)
@@ -119,7 +119,7 @@ fn render_agent_pane(frame: &mut Frame, area: Rect, pane: &crate::AgentPane) {
             };
             ("✅", text, Color::Green)
         }
-        AgentStatus::Failed => ("❌", "failed/timeout", Color::Red),
+        AgentStatus::Failed => ("❌", "failed/timeout".to_string(), Color::Red),
     };
 
     let title = format!(" {} {} ({}) ", status_symbol, pane.role, status_text);
