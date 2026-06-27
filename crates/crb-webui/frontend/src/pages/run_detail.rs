@@ -2,7 +2,7 @@ use crate::components::log_viewer::LogViewer;
 use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crate::components::replay_overlay::ReplayOverlay;
-use crate::{api_url, LogsListResponse, PrResult, RunDetail};
+use crate::{api_url, ConvertStats, JudgeResult, LogsListResponse, PrResult, RunDetail};
 use leptos::*;
 use leptos_router::*;
 
@@ -37,6 +37,61 @@ pub fn RunDetailPage() -> impl IntoView {
             }
         },
     );
+
+    // ─── Judge state signals ─────────────────────────────────────
+    let (convert_result, set_convert_result) = create_signal::<Option<ConvertStats>>(None);
+    let (judge_result, set_judge_result) = create_signal::<Option<JudgeResult>>(None);
+    let (judge_loading, set_judge_loading) = create_signal(false);
+    let (convert_loading, set_convert_loading) = create_signal(false);
+    let (judge_error, set_judge_error) = create_signal::<Option<String>>(None);
+
+    // ─── Judge action handlers ───────────────────────────────────
+    let run_convert = move |id: String| {
+        set_convert_loading.set(true);
+        set_judge_error.set(None);
+        let c_result = set_convert_result.clone();
+        let c_loading = set_convert_loading.clone();
+        let c_error = set_judge_error.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = api_url(&format!("/api/runs/{}/convert", id));
+            match gloo_net::http::Request::post(&url).send().await {
+                Ok(r) => {
+                    if r.ok() {
+                        match r.json::<ConvertStats>().await {
+                            Ok(stats) => c_result.set(Some(stats)),
+                            Err(e) => c_error.set(Some(format!("Parse error: {}", e))),
+                        }
+                    } else {
+                        let txt = r.text().await.unwrap_or_default();
+                        c_error.set(Some(format!("Convert failed ({}): {}", r.status(), txt)));
+                    }
+                }
+                Err(e) => c_error.set(Some(format!("Network error: {}", e))),
+            }
+            c_loading.set(false);
+        });
+    };
+
+    let run_judge = move |id: String| {
+        set_judge_loading.set(true);
+        set_judge_error.set(None);
+        let j_result = set_judge_result.clone();
+        let j_loading = set_judge_loading.clone();
+        let j_error = set_judge_error.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = api_url(&format!("/api/runs/{}/judge", id));
+            match gloo_net::http::Request::post(&url).send().await {
+                Ok(r) => {
+                    match r.json::<JudgeResult>().await {
+                        Ok(result) => j_result.set(Some(result)),
+                        Err(e) => j_error.set(Some(format!("Parse error: {}", e))),
+                    }
+                }
+                Err(e) => j_error.set(Some(format!("Network error: {}", e))),
+            }
+            j_loading.set(false);
+        });
+    };
 
     view! {
         <div class="run-detail-page">
@@ -243,6 +298,113 @@ pub fn RunDetailPage() -> impl IntoView {
                                 </tbody>
                             </table>
                         </div>
+
+                        // ─── Judge Section ────────────────────────────
+                        <div class="section-header" style="margin-top: 24px;">
+                            <h2 class="section-header__title">"Benchmark Judge"</h2>
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                            <button
+                                class="btn btn--primary"
+                                disabled=move || convert_loading.get()
+                                on:click={
+                                    let id = detail.id.clone();
+                                    let run_convert = run_convert.clone();
+                                    move |_| run_convert(id.clone())
+                                }
+                            >
+                                {move || if convert_loading.get() {
+                                    "⏳ Converting..."
+                                } else {
+                                    "📐 Convert to candidates.json"
+                                }}
+                            </button>
+                            <button
+                                class="btn btn--success"
+                                disabled=move || judge_loading.get()
+                                on:click={
+                                    let id = detail.id.clone();
+                                    let run_judge = run_judge.clone();
+                                    move |_| run_judge(id.clone())
+                                }
+                            >
+                                {move || if judge_loading.get() {
+                                    "⏳ Judging..."
+                                } else {
+                                    "🧪 Run Python Judge"
+                                }}
+                            </button>
+                        </div>
+
+                        // ─── Judge Results ───────────────────────────
+                        {move || {
+                            if let Some(err) = judge_error.get() {
+                                view! {
+                                    <div class="card card--error" style="margin-bottom: 12px; border: 1px solid var(--color-danger, #f87171); background: rgba(248, 113, 113, 0.1); padding: 12px; border-radius: 6px;">
+                                        <p style="color: var(--color-danger, #f87171); font-weight: 600; margin: 0 0 4px 0;">"Error"</p>
+                                        <p style="color: var(--text-secondary, #94a3b8); margin: 0; font-size: 0.85rem;">{err}</p>
+                                    </div>
+                                }.into_view()
+                            } else if let Some(convert) = convert_result.get() {
+                                view! {
+                                    <div class="card" style="margin-bottom: 12px; padding: 12px; border-radius: 6px; background: var(--bg-card, #1e293b); border: 1px solid var(--border, #334155);">
+                                        <p style="font-weight: 600; margin: 0 0 8px 0; color: var(--accent-green, #4ade80);">
+                                            "✅ Conversion Complete"
+                                        </p>
+                                        <table style="font-size: 0.85rem; width: 100%;">
+                                            <tbody>
+                                                <tr><td style="padding: 4px 8px; color: var(--text-secondary, #94a3b8);">"PRs Converted"</td><td style="padding: 4px 8px;">{format!("{}", convert.pr_count)}</td></tr>
+                                                <tr><td style="padding: 4px 8px; color: var(--text-secondary, #94a3b8);">"Findings"</td><td style="padding: 4px 8px;">{format!("{}", convert.finding_count)}</td></tr>
+                                                <tr><td style="padding: 4px 8px; color: var(--text-secondary, #94a3b8);">"Output"</td><td style="padding: 4px 8px; font-family: monospace; font-size: 0.8rem;">{&convert.candidates_path}</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                }.into_view()
+                            } else {
+                                view! { <span></span> }.into_view()
+                            }
+                        }}
+
+                        {move || {
+                            if let Some(result) = judge_result.get() {
+                                let status_class = if result.success { "badge--success" } else { "badge--danger" };
+                                view! {
+                                    <div class="card" style="margin-bottom: 12px; padding: 12px; border-radius: 6px; background: var(--bg-card, #1e293b); border: 1px solid var(--border, #334155);">
+                                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                            <span class=format!("badge {}", status_class)>
+                                                {if result.success { "✅ Judge Passed" } else { "❌ Judge Failed" }}
+                                            </span>
+                                        </div>
+                                        <p style="margin: 0 0 8px 0; color: var(--text-secondary, #94a3b8); font-size: 0.85rem;">
+                                            {&result.message}
+                                        </p>
+                                        {if !result.stdout.is_empty() {
+                                            view! {
+                                                <details style="margin-bottom: 4px;">
+                                                    <summary style="cursor: pointer; font-size: 0.85rem; color: var(--text-secondary, #94a3b8);">"stdout"</summary>
+                                                    <pre style="background: #0f172a; padding: 8px; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; max-height: 300px; overflow-y: auto; margin-top: 4px;">{&result.stdout}</pre>
+                                                </details>
+                                            }.into_view()
+                                        } else {
+                                            view! { <span></span> }.into_view()
+                                        }}
+                                        {if !result.stderr.is_empty() {
+                                            view! {
+                                                <details>
+                                                    <summary style="cursor: pointer; font-size: 0.85rem; color: var(--text-secondary, #94a3b8);">"stderr"</summary>
+                                                    <pre style="background: #0f172a; padding: 8px; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; max-height: 300px; overflow-y: auto; margin-top: 4px; color: #f87171;">{&result.stderr}</pre>
+                                                </details>
+                                            }.into_view()
+                                        } else {
+                                            view! { <span></span> }.into_view()
+                                        }}
+                                    </div>
+                                }.into_view()
+                            } else {
+                                view! { <span></span> }.into_view()
+                            }
+                        }}
+
                     }.into_view()
                 } else {
                     view! { <p>"No data."</p> }.into_view()

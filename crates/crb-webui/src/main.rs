@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use clap::Parser;
 
 mod api;
+mod converter;
 mod events;
 mod harness;
 mod server;

@@ -1071,3 +1071,58 @@ pub async fn replay_status(
         .into_response()
     }
 }
+
+/// POST /api/runs/:id/convert — convert findings to candidates.json format
+///
+/// Reads per-PR JSON files from the run directory, converts findings to
+/// `candidates.json`, and returns conversion statistics.
+pub async fn convert_to_candidates(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> impl IntoResponse {
+    tracing::info!("POST /api/runs/{}/convert", id);
+    let run_dir = state.output_dir.join(&id);
+
+    match crate::converter::convert_run(&run_dir) {
+        Ok(stats) => {
+            tracing::info!(
+                "Converted run '{}': {} PRs, {} findings → candidates.json",
+                id,
+                stats.pr_count,
+                stats.finding_count
+            );
+            (StatusCode::OK, Json(serde_json::to_value(&stats).unwrap())).into_response()
+        }
+        Err(e) => {
+            tracing::error!("Conversion failed for run '{}': {}", id, e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// POST /api/runs/:id/judge — run the Python step3 judge on converted candidates
+///
+/// Expects `candidates.json` to exist in the run directory (run convert first).
+/// Locates the `offline/` directory and runs `uv run python -m code_review_benchmark.step3_judge_comments --tool hermes`.
+pub async fn run_judge(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> impl IntoResponse {
+    tracing::info!("POST /api/runs/{}/judge", id);
+    let run_dir = state.output_dir.join(&id);
+
+    let result = crate::converter::run_judge(&run_dir).await;
+    tracing::info!("Judge for run '{}': success={}, message={}", id, result.success, result.message);
+
+    let status = if result.success {
+        StatusCode::OK
+    } else {
+        StatusCode::INTERNAL_SERVER_ERROR
+    };
+
+    (status, Json(serde_json::to_value(&result).unwrap())).into_response()
+}

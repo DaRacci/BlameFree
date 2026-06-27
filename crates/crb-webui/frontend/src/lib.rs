@@ -171,6 +171,24 @@ pub struct ReplayStatusResponse {
     pub message: String,
 }
 
+/// Response from POST /api/runs/:id/convert
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConvertStats {
+    pub run_id: String,
+    pub pr_count: usize,
+    pub finding_count: usize,
+    pub candidates_path: String,
+}
+
+/// Result from POST /api/runs/:id/judge
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JudgeResult {
+    pub success: bool,
+    pub message: String,
+    pub stdout: String,
+    pub stderr: String,
+}
+
 // ─── Helper: Build API URL ───────────────────────────────────────────────────
 
 pub fn api_url(path: &str) -> String {
