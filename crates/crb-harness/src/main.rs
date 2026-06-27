@@ -8,7 +8,6 @@ use clap::Parser;
 use crb_agents::prompts::PromptLibrary;
 use crb_agents::{build_agent, Finding, AGENT_ROLES};
 use crb_consensus::evaluate_pr_with_consensus;
-use crb_consensus::CacheBackend;
 use crb_judge::{build_judge, compute_metrics, run_judge};
 use crb_reporting::{load_golden_datasets, write_report, GoldenCommentEntry, PrResult};
 use crb_rules::RuleSet;
@@ -20,9 +19,7 @@ use tracing::info;
 use tracing::info_span;
 use tracing_subscriber::EnvFilter;
 
-mod cache;
 mod config;
-use cache::LlmCache;
 use config::CliArgs;
 
 mod validation;
@@ -193,6 +190,18 @@ async fn main() -> Result<()> {
         None
     };
 
+    // ── MCP tools ────────────────────────────────────────────────────────
+    let mcp_tools: Option<Arc<Vec<crb_tools::mcp::RigCoreMcpTool>>> = match crb_tools::mcp::load_mcp_tools(&args.mcp_config) {
+        Ok(tools) => {
+            info!("Loaded {} MCP tool(s) from {}", tools.len(), args.mcp_config.display());
+            Some(Arc::new(tools))
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load MCP tools from {}: {e}", args.mcp_config.display());
+            None
+        }
+    };
+
     // ── Rule loading ──────────────────────────────────────────────────────
     let ruleset = if !args.skip_rules {
         let rules_dir = std::path::Path::new(&args.rules_dir);
@@ -240,10 +249,6 @@ async fn main() -> Result<()> {
         lib
     });
 
-    // ── Cache directory ───────────────────────────────────────────────────
-    let start_time = std::time::Instant::now();
-    let cache_dir = args.cache_dir.clone();
-
     // ── Concurrency ───────────────────────────────────────────────────────
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(args.concurrency));
     let mut set = tokio::task::JoinSet::new();
@@ -256,13 +261,13 @@ async fn main() -> Result<()> {
         let model = args.model.clone();
         let repos_dir = repos_dir.clone();
         let linter_configs = linter_configs.clone();
+        let mcp_tools = mcp_tools.clone();
         let skip_consensus = args.skip_consensus;
         let linters_only = args.linters_only;
         let ruleset = ruleset.clone();
         let prompt_lib = prompt_lib.clone();
         let roles = args.roles.clone();
         let max_findings = args.max_findings;
-        let cache_dir = cache_dir.clone();
 
         set.spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
@@ -273,13 +278,13 @@ async fn main() -> Result<()> {
                 &judge,
                 &repos_dir,
                 linter_configs.as_ref(),
+                mcp_tools.as_deref(),
                 skip_consensus,
                 linters_only,
                 ruleset.as_ref(),
                 prompt_lib.as_ref(),
                 &roles,
                 max_findings,
-                cache_dir.as_ref(),
             )
             .await
         });
@@ -310,10 +315,8 @@ async fn main() -> Result<()> {
         output_dir.display()
     );
 
-    // ── Write _summary.json ──────────────────────────────────────────────
-    if let Some(ref cache_dir_path) = cache_dir {
-        write_summary(cache_dir_path, &args, &results, start_time.elapsed())?;
-    }
+    // ── Terminal summary ────────────────────────────────────────────────
+    print_terminal_summary(&results);
 
     // ── --ci flag: validate and exit with proper code ─────────────────────
     if args.ci {
@@ -342,50 +345,32 @@ async fn main() -> Result<()> {
     }
 }
 
-/// Write the `_summary.json` aggregate statistics file to the cache directory.
-fn write_summary(
-    cache_dir: &PathBuf,
-    args: &CliArgs,
-    results: &[PrResult],
-    duration: Duration,
-) -> Result<()> {
-    let total_llm_calls: usize = results.iter().map(|r| r.findings_count).sum();
-    let total_judge_calls: usize = results.iter().map(|r| r.verdicts.len()).sum();
+/// Print a terminal summary of all PR evaluations.
+fn print_terminal_summary(results: &[PrResult]) {
+    let separator = "═══════════════════════════════════════════════";
+    println!("\n{separator}");
 
-    let aggregate_metrics = if results.is_empty() {
-        serde_json::json!({})
-    } else {
-        let avg_precision = results.iter().map(|r| r.metrics.precision).sum::<f64>() / results.len() as f64;
-        let avg_recall = results.iter().map(|r| r.metrics.recall).sum::<f64>() / results.len() as f64;
-        let avg_f1 = results.iter().map(|r| r.metrics.f1).sum::<f64>() / results.len() as f64;
-        serde_json::json!({
-            "avg_precision": avg_precision,
-            "avg_recall": avg_recall,
-            "avg_f1": avg_f1,
-            "total_true_positives": results.iter().map(|r| r.metrics.true_positives).sum::<usize>(),
-            "total_false_positives": results.iter().map(|r| r.metrics.false_positives).sum::<usize>(),
-            "total_false_negatives": results.iter().map(|r| r.metrics.false_negatives).sum::<usize>(),
-        })
-    };
+    for result in results {
+        // Extract repo/PR info from URL for display
+        let pr_label = extract_pr_info(&result.url)
+            .map(|(owner, repo, num)| format!("{owner}/{repo}/{num}"))
+            .unwrap_or_else(|| result.pr_title.clone());
 
-    let summary = serde_json::json!({
-        "run_id": std::env::current_dir()
-            .ok()
-            .and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string()))
-            .unwrap_or_default(),
-        "model": args.model,
-        "judge_model": args.judge_model,
-        "total_prs": results.len(),
-        "total_llm_calls": total_llm_calls,
-        "total_judge_calls": total_judge_calls,
-        "duration_secs": duration.as_secs_f64(),
-        "aggregate_metrics": aggregate_metrics,
-    });
+        let f1 = result.metrics.f1;
+        let findings_count = result.findings_count;
 
-    let summary_path = cache_dir.join("_summary.json");
-    std::fs::write(&summary_path, serde_json::to_string_pretty(&summary)?)?;
-    info!("Cache summary written to: {}", summary_path.display());
-    Ok(())
+        println!(
+            " {}: F1={:.3}, {} findings, -- tokens, $--",
+            pr_label, f1, findings_count,
+        );
+    }
+
+    println!("{separator}");
+    println!(
+        " TOTAL: {} PR(s), -- tokens, $--",
+        results.len(),
+    );
+    println!("{separator}");
 }
 
 /// Extract owner, repo name, and PR number from a GitHub PR URL.
@@ -499,31 +484,14 @@ async fn evaluate_pr_with_postprocessing(
     >,
     repos_dir: &PathBuf,
     linter_configs: Option<&std::collections::HashMap<String, crb_tools::LinterConfig>>,
+    mcp_tools: Option<&Vec<crb_tools::mcp::RigCoreMcpTool>>,
     skip_consensus: bool,
     linters_only: bool,
     ruleset: Option<&RuleSet>,
     prompt_lib: &PromptLibrary,
     roles: &str,
     max_findings: usize,
-    cache_dir: Option<&PathBuf>,
 ) -> Result<PrResult> {
-
-    // ── Setup cache if enabled ────────────────────────────────────────────
-    let cache: Option<Arc<LlmCache>> = if let Some(dir) = cache_dir {
-        let pr_key = utils::sanitize_filename(&pr.pr_title);
-        match LlmCache::new(dir, &pr_key) {
-            Ok(c) => {
-                info!("LLM cache enabled for PR '{}' at {}", pr.pr_title, c.dir().display());
-                Some(Arc::new(c))
-            }
-            Err(e) => {
-                tracing::warn!("Failed to create LLM cache for PR '{}': {e}", pr.pr_title);
-                None
-            }
-        }
-    } else {
-        None
-    };
 
     // ── Diff loading ──────────────────────────────────────────────────────
     let diff = match extract_pr_info(&pr.url) {
@@ -585,6 +553,7 @@ async fn evaluate_pr_with_postprocessing(
             golden_count: pr.comments.len(),
             metrics: crb_judge::Metrics::default(),
             verdicts: vec![],
+            cost: None,
         });
     }
 
@@ -597,14 +566,14 @@ async fn evaluate_pr_with_postprocessing(
         // Original single-agent evaluation
         evaluate_pr_single_agent(
             pr, client, model, judge, &diff, linter_findings, rules_preamble.as_deref(), prompt_lib,
-            cache.clone(),
+            mcp_tools,
         )
         .await?
     } else {
         // Multi-agent consensus evaluation
         evaluate_pr_consensus(
             pr, client, model, judge, &diff, linter_findings, rules_preamble.as_deref(), prompt_lib,
-            roles, max_findings, cache.clone(),
+            roles, max_findings, mcp_tools,
         )
         .await?
     };
@@ -623,30 +592,6 @@ async fn evaluate_pr_with_postprocessing(
 
     let metrics = compute_metrics(&final_verdicts, pr.comments.len());
 
-    // ── Write metadata.json ─────────────────────────────────────────────
-    if let Some(ref c) = cache {
-        let metadata = serde_json::json!({
-            "pr_title": pr.pr_title,
-            "url": pr.url,
-            "model": model,
-            "skip_consensus": skip_consensus,
-            "timestamp": format!("{:?}", std::time::SystemTime::now()),
-            "findings_count": processed_findings.len(),
-            "golden_count": pr.comments.len(),
-            "metrics": {
-                "true_positives": metrics.true_positives,
-                "false_positives": metrics.false_positives,
-                "false_negatives": metrics.false_negatives,
-                "precision": metrics.precision,
-                "recall": metrics.recall,
-                "f1": metrics.f1,
-            },
-        });
-        if let Err(e) = c.save_metadata(&metadata) {
-            tracing::warn!("Failed to write cache metadata: {e}");
-        }
-    }
-
     Ok(PrResult {
         pr_title: pr.pr_title.clone(),
         url: pr.url.clone(),
@@ -654,6 +599,7 @@ async fn evaluate_pr_with_postprocessing(
         golden_count: pr.comments.len(),
         metrics,
         verdicts: final_verdicts,
+        cost: None,
     })
 }
 
@@ -692,8 +638,6 @@ where
 }
 
 /// Run the original single-agent evaluation with finding collection.
-/// Uses content-addressed caching: computes SHA256 keys from inputs,
-/// skips API calls on cache hit.
 async fn evaluate_pr_single_agent(
     pr: &GoldenCommentEntry,
     client: &rig_core::providers::openai::Client,
@@ -705,64 +649,36 @@ async fn evaluate_pr_single_agent(
     linter_findings: Vec<Finding>,
     rules_preamble: Option<&str>,
     prompt_lib: &PromptLibrary,
-    cache: Option<Arc<LlmCache>>,
+    mcp_tools: Option<&Vec<crb_tools::mcp::RigCoreMcpTool>>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
-    // ── Pre-compute content-addressed cache key components ──────────────
-    let diff_hash = LlmCache::sha256(diff);
-    let rules_hash = LlmCache::sha256(rules_preamble.unwrap_or(""));
-    let judge_prompt_hash = LlmCache::sha256(crb_judge::JUDGE_PROMPT);
-    let judge_model = ""; // We don't have judge_model here; it's baked into the judge Agent
-
     let mut agent_set = tokio::task::JoinSet::new();
     let prompt_lib = prompt_lib.clone();
+    // Compute MCP tool names once for all agents
+    let mcp_tool_names: Vec<String> = mcp_tools
+        .map(|tools| tools.iter().map(|t| t.tool_name().to_string()).collect())
+        .unwrap_or_default();
     for &role in AGENT_ROLES {
         let client = client.clone();
         let model = model.to_string();
         let role = role.to_string();
         let diff = diff.to_string();
-        let diff_hash = diff_hash.clone();
-        let rules_hash = rules_hash.clone();
         let preamble = rules_preamble.map(String::from);
         let p_lib = prompt_lib.clone();
-        let cache_arc: Option<Arc<dyn CacheBackend>> = cache.clone().map(|c| c as Arc<dyn CacheBackend>);
+        let mcp_names = mcp_tool_names.clone();
 
         agent_set.spawn(async move {
             let span = info_span!("agent", role = %role);
             let _guard = span.enter();
 
-            // Compute agent cache key
-            let prompt_hash = LlmCache::sha256(p_lib.get(&role));
-            let agent_cache_key = LlmCache::compute_agent_key(
-                &prompt_hash,
-                &diff_hash,
-                &model,
-                &role,
-                &rules_hash,
-            );
-
-            // Check cache first
-            if let Some(ref c) = cache_arc {
-                if let Some(cached_response) = c.lookup_agent_by_key(&agent_cache_key) {
-                    tracing::info!("CACHE HIT for agent role={} (key={})", role, &agent_cache_key[..12]);
-                    let result = parse_agent_findings(&cached_response);
-                    return result;
-                }
-            }
-            tracing::info!("CACHE MISS for agent role={} (key={})", role, &agent_cache_key[..12]);
-
-            // Cache miss — make API call
-            let agent = build_agent(&client, &model, &role, preamble.as_deref(), Some(&p_lib), None);
+            // Make API call
+            let tool_preamble = crb_tools::tool_prompt_section(&role, &crb_tools::budget::ToolCallBudget::default(), &mcp_names);
+            let agent = build_agent(&client, &model, &role, preamble.as_deref(), Some(&p_lib), None, Some(&tool_preamble));
             let result: Result<Vec<Finding>, String> = with_retry(
                 || async {
                     let response = agent
                         .prompt(&diff)
                         .await
                         .map_err(|e| e.to_string())?;
-
-                    // Cache the prompt+response with content-addressed key
-                    if let Some(ref c) = cache_arc {
-                        c.save_agent_with_key(&agent_cache_key, &role, &diff, &response);
-                    }
 
                     parse_agent_findings(&response)
                 },
@@ -787,25 +703,6 @@ async fn evaluate_pr_single_agent(
     let mut verdicts = Vec::new();
     for finding in &all_findings {
         for gc in &pr.comments {
-            // Compute judge cache key
-            let judge_key = LlmCache::compute_judge_key(
-                &judge_prompt_hash,
-                &finding.message,
-                &gc.comment,
-                judge_model,
-            );
-
-            // Check judge cache first
-            if let Some(ref c) = cache {
-                if let Some(cached_verdict) = c.lookup_judge_by_key(&judge_key) {
-                    tracing::info!("CACHE HIT for judge (key={})", &judge_key[..12]);
-                    verdicts.push(cached_verdict);
-                    continue;
-                }
-            }
-
-            // Cache miss — make API call
-            tracing::info!("CACHE MISS for judge (key={})", &judge_key[..12]);
             match with_retry(
                 || run_judge(judge, &gc.comment, &finding.message),
                 3,    // max_retries
@@ -814,11 +711,6 @@ async fn evaluate_pr_single_agent(
             .await
             {
                 Ok(verdict) => {
-                    // Cache the judge call if cache is active
-                    if let Some(ref c) = cache {
-                        let verdict_json = serde_json::to_string(&verdict).unwrap_or_default();
-                        let _ = c.save_judge_with_key(&judge_key, &gc.comment, &finding.message, &verdict_json);
-                    }
                     verdicts.push(verdict);
                 }
                 Err(e) => tracing::warn!("Judge call failed after retries: {e}"),
@@ -843,27 +735,14 @@ async fn evaluate_pr_consensus(
     prompt_lib: &PromptLibrary,
     roles: &str,
     max_findings: usize,
-    cache: Option<Arc<LlmCache>>,
+    _mcp_tools: Option<&Vec<crb_tools::mcp::RigCoreMcpTool>>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // Parse comma-separated roles
     let parsed_roles: Vec<&str> = roles.split(',').map(|r| r.trim()).filter(|r| !r.is_empty()).collect();
 
-    // ── Pre-compute content-addressed cache key components ──────────────
-    let diff_hash = LlmCache::sha256(diff);
-    let rules_hash = LlmCache::sha256(rules_preamble.unwrap_or(""));
-    let judge_prompt_hash = LlmCache::sha256(crb_judge::JUDGE_PROMPT);
-    // Use the first agent role's prompt hash as the prompt hash — in practice
-    // each role has its own prompt template, but the consensus pipeline uses
-    // one prompt_hash for all reviewers. For a more granular approach, we'd
-    // compute per-role cache keys inside run_reviewers.
-    let first_role = parsed_roles.first().copied().unwrap_or("SA");
-    let prompt_hash = LlmCache::sha256(prompt_lib.get(first_role));
-    let judge_model = ""; // We don't have judge_model here
-
     let result = evaluate_pr_with_consensus(
         pr, diff, client, model, judge, rules_preamble, Some(prompt_lib), None,
-        &parsed_roles, max_findings, cache.clone().map(|c| c as Arc<dyn CacheBackend>),
-        &diff_hash, &prompt_hash, &rules_hash, &judge_prompt_hash, judge_model,
+        &parsed_roles, max_findings,
     )
     .await?;
 

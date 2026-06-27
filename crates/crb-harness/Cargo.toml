@@ -24,8 +24,7 @@ serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-csv = { workspace = true }
 dotenvy = { workspace = true }
 tempfile = "3"
 regex = { workspace = true }
-sha2 = { workspace = true }
+rig-tokudo = { workspace = true }

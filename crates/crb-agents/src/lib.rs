@@ -80,8 +80,8 @@ IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no expl
 You are a code reviewer. Analyze the provided code diff and identify any \
 issues. Respond with a JSON array of findings.";
 
-/// Build a rig agent for the given role with optional prompt library and
-/// template variables.
+/// Build a rig agent for the given role with optional prompt library,
+/// template variables, and extra preamble text.
 ///
 /// If `prompt_lib` is `Some`, the role preamble is resolved through the
 /// library (custom prompts from files, falling back to built-in defaults).
@@ -92,6 +92,9 @@ issues. Respond with a JSON array of findings.";
 /// level rules to be injected into the agent's system prompt before its
 /// role-specific instructions.
 ///
+/// If `extra_preamble` is `Some`, it is appended after the role preamble.
+/// This is used for tool-calling instructions and other supplementary content.
+///
 /// `template_vars` provides variable substitutions for the prompt template
 /// (e.g. `{diff}`, `{role}`, `{file_list}`, `{language}`).
 pub fn build_agent(
@@ -101,6 +104,7 @@ pub fn build_agent(
     rules_preamble: Option<&str>,
     prompt_lib: Option<&PromptLibrary>,
     template_vars: Option<&HashMap<&str, &str>>,
+    extra_preamble: Option<&str>,
 ) -> Agent<ResponsesCompletionModel> {
     let role_preamble = match prompt_lib {
         Some(lib) => {
@@ -116,10 +120,18 @@ pub fn build_agent(
             _ => DEFAULT_PREAMBLE.to_string(),
         },
     };
-    let full_preamble = match rules_preamble {
-        Some(rp) if !rp.is_empty() => format!("{}\n\n{}", rp, role_preamble),
+    let mut full_preamble = match rules_preamble {
+        Some(rp) if !rp.is_empty() => format!("{rp}\n\n{role_preamble}"),
         _ => role_preamble.to_string(),
     };
+
+    // Append extra preamble (tool instructions, etc.)
+    if let Some(extra) = extra_preamble {
+        if !extra.is_empty() {
+            full_preamble = format!("{full_preamble}\n\n{extra}");
+        }
+    }
+
     client.agent(model).preamble(&full_preamble).build()
 }
 

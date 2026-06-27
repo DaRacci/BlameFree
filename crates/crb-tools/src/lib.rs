@@ -1,22 +1,26 @@
 //! Tool implementations for the code review benchmark harness.
 //!
-//! This crate provides Rig `Tool` trait implementations for running linters
-//! and git operations as typed, concurrent, and safe subprocesses.
+//! This crate provides Rig `Tool` trait implementations for:
 //!
-//! # Linters
+//! - **Agent tools** — [`ShellTool`], [`ReadFileTool`], [`GitTool`], [`MCPTool`]
+//!   for LLM-agent-in-the-loop tool calling.
+//! - **Linter tools** — [`LinterTool`] (generic), with parsers for ruff (JSON),
+//!   ESLint (JSON), `go vet` (text).
+//! - **Git tools** — [`GitCleanTool`], [`GitDiffTool`] for pre-review git operations.
+//! - **Budgets** — [`ToolCallBudget`] / [`ToolCallTracker`] for limiting tool usage.
 //!
-//! - [`LinterTool`] — generic linter wrapper parameterized by command and parser.
-//! - Parser functions for ruff (JSON), ESLint (JSON), and `go vet` (text).
+//! # Per-role tool assignment
 //!
-//! # Git
-//!
-//! - [`GitCleanTool`] — runs `git clean -fdx`.
-//! - [`GitDiffTool`] — runs `git diff base...head --no-color`.
-//!
-//! # Configuration
-//!
-//! - [`load_linter_config`] — loads linter definitions from a TOML file.
-//! - [`LinterConfig`] — per-linter definition.
+//! [`tools_for_role()`] returns the set of [`Tool`] instances appropriate for a
+//! given reviewer role (SA, CL, AR, SEC).  [`tool_prompt_section()`] renders the
+//! tool-calling preamble for inclusion in the agent's system prompt.
+
+pub mod budget;
+pub mod git;
+pub mod mcp;
+pub mod mcp_config;
+pub mod read_file;
+pub mod shell;
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -675,6 +679,76 @@ pub fn check_binary_exists(name: &str) -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+// ── Per-role Tool Assignment ──────────────────────────────────────────────
+
+use crate::budget::ToolCallBudget;
+
+/// Returns the tool names appropriate for a given reviewer role.
+///
+/// Each role gets a different set of tools based on what it needs to do:
+/// - **SA** (Static Analysis): shell, read_file
+/// - **CL** (Code Logic): shell, read_file, git
+/// - **AR** (Architecture): shell, read_file, git
+/// - **SEC** (Security): shell, read_file, git
+pub fn tools_for_role(role: &str) -> Vec<&'static str> {
+    match role {
+        "CL" | "AR" | "SEC" => vec!["shell", "read_file", "git"],
+        _ => vec!["shell", "read_file"],
+    }
+}
+
+/// Renders the tool-calling preamble section for inclusion in an LLM
+/// agent system prompt.
+///
+/// This tells the agent what tools are available, how to use them, and
+/// what budget constraints apply.
+///
+/// If `mcp_tool_names` is non-empty, those MCP tool names are appended
+/// to the available-tools list so the agent knows about them.
+pub fn tool_prompt_section(
+    role: &str,
+    budget: &ToolCallBudget,
+    mcp_tool_names: &[String],
+) -> String {
+    let tool_names = tools_for_role(role);
+
+    let tools_description = tool_names.join(", ");
+    let call_limit = budget.max_per_tool;
+
+    let mcp_section = if mcp_tool_names.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nMCP tools available:\n{}\n",
+            mcp_tool_names
+                .iter()
+                .map(|n| format!("- **{n}**: An MCP (Model Context Protocol) tool. Use it by calling it with JSON arguments as specified by its tool definition."))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+
+    format!(
+        "You have access to the following tools during this review: {tools_description}.\
+{mcp_section}
+
+Tool usage rules:
+- Each tool invocation returns text output. Use tools to inspect files, run commands, or check git history.
+- You may call tools multiple times but are limited to a total of {call_limit} calls per tool and {} overall.
+- If a tool fails, try again with different arguments or skip that check.
+- Use `read_file` to examine specific files, `shell` to run commands like grep/build/tests, and `git` to inspect commit history or diffs.
+- Keep your tool usage targeted and efficient — prefer `read_file` over `shell cat`.
+
+Available tools:
+- **read_file**: Read a file from the repository. Specify path (relative to repo root), optional start_line (1-indexed), and optional max_lines.
+- **shell**: Run a shell command in the repository working directory. Use for building, testing, grepping, or any CLI operation.
+- **git**: Run git operations on the repository: log, diff, show, status.
+
+Use tools by calling them with JSON arguments as specified by each tool's definition.",
+        budget.max_total_calls,
+    )
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────

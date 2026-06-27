@@ -28,6 +28,18 @@ pub struct GoldenComment {
     pub severity: String,
 }
 
+/// Summary of cost data for a single PR, suitable for JSON serialization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CostSummary {
+    pub agent_tokens_in: usize,
+    pub agent_tokens_out: usize,
+    pub judge_tokens_in: usize,
+    pub judge_tokens_out: usize,
+    pub total_usd: f64,
+    pub agent_cache_hit_rate: f64,
+    pub judge_cache_hit_rate: f64,
+}
+
 /// Result of evaluating a single PR.
 #[derive(Debug, Clone, Serialize)]
 pub struct PrResult {
@@ -37,6 +49,9 @@ pub struct PrResult {
     pub golden_count: usize,
     pub metrics: Metrics,
     pub verdicts: Vec<JudgeVerdict>,
+    /// Cost tracking data for this PR evaluation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<CostSummary>,
 }
 
 // ── Output ──────────────────────────────────────────────────────────────────

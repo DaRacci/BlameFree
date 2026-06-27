@@ -53,6 +53,10 @@ pub struct CliArgs {
     #[arg(long, env = "LINTERS_CONFIG", default_value = "linters.toml")]
     pub linters_config: String,
 
+    /// Path to MCP server configuration TOML file.
+    #[arg(long, default_value = "mcp_servers.toml")]
+    pub mcp_config: PathBuf,
+
     /// Path to rules directory (e.g., .crb/rules/).
     #[arg(long, default_value = ".crb/rules/")]
     pub rules_dir: PathBuf,
@@ -96,4 +100,8 @@ pub struct CliArgs {
     /// Creates per-PR subdirectories with prompts, responses, and judge calls.
     #[arg(long, env = "CACHE_DIR")]
     pub cache_dir: Option<PathBuf>,
+
+    /// Directory containing pre-recorded LLM interactions for deterministic replay.
+    #[arg(long, env = "REPLAY_DIR")]
+    pub replay_dir: Option<PathBuf>,
 }
