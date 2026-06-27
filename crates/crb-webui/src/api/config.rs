@@ -103,13 +103,19 @@ fn count_prs_in_dir(dir: &Path) -> usize {
             let path = entry.path();
             if path.extension().map_or(false, |e| e == "json") {
                 if let Ok(content) = std::fs::read_to_string(&path) {
-                    if let Ok(val) =
-                        serde_json::from_str::<std::collections::HashMap<String, serde_json::Value>>(
-                            &content,
-                        )
-                    {
-                        if let Some(entries) = val.get("entries").and_then(|v| v.as_array()) {
-                            count += entries.len();
+                    // Dataset files are JSON arrays of PR entries
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                        match val {
+                            serde_json::Value::Array(arr) => {
+                                count += arr.len();
+                            }
+                            serde_json::Value::Object(obj) => {
+                                // Also support {"entries": [...]} format
+                                if let Some(entries) = obj.get("entries").and_then(|v| v.as_array()) {
+                                    count += entries.len();
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }

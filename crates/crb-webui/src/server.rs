@@ -72,8 +72,8 @@ impl AppState {
 pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
     let api_router = Router::new()
         .route("/api/runs", get(crate::api::list_runs).post(crate::api::start_run))
-        .route("/api/runs/{id}", get(crate::api::get_run))
-        .route("/api/runs/{id}/live", get(crate::api::live_stream))
+        .route("/api/runs/:id", get(crate::api::get_run))
+        .route("/api/runs/:id/live", get(crate::api::live_stream))
         .route("/api/config", get(crate::api::get_config))
         .route("/api/config/datasets", get(crate::api::list_datasets));
 
