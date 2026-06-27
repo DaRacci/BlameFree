@@ -21,7 +21,7 @@ pub fn LivePage() -> impl IntoView {
         total: 0,
         status: "connecting".into(),
     });
-    let (connected, set_connected) = create_signal(false);
+    let (_connected, set_connected) = create_signal(false);
 
     // ─── SSE connection ───────────────────────────────────────────────
     let _connect = {
@@ -88,83 +88,136 @@ pub fn LivePage() -> impl IntoView {
     };
 
     view! {
-        <div class="live-nav">
-            <span class="dot"></span>
-            <span style="font-weight: 600;">
-                {move || {
-                    let p = progress.get();
-                    match p.status.as_str() {
-                        "connecting" => "Connecting...",
-                        "running" => "Live",
-                        "complete" => "Complete",
-                        s => s,
-                    }
-                    .to_string()
-                }}
-            </span>
-            <span style="color: #64748b; font-size: 0.85rem;">
-                {move || {
-                    if total() > 0 {
-                        format!("{} / {} PRs", done(), total())
-                    } else {
-                        "Waiting for data...".into()
-                    }
-                }}
-            </span>
-            <a href={format!("/runs/{}", run_id())} style="margin-left: auto; color: #94a3b8; text-decoration: none;">
-                "Detail View →"
-            </a>
-        </div>
+        <div class="live-view-page">
+            // ─── Page Header ──────────────────────────────────────────
+            <div class="page-header">
+                <div class="page-header__title">
+                    <span class="live-header__dot" style="width: 10px; height: 10px; border-radius: 50%; background: var(--accent-red, #f85149); display: inline-block;"></span>
+                    <span>
+                        {move || {
+                            let p = progress.get();
+                            match p.status.as_str() {
+                                "connecting" => format!("Live: {}", run_id()),
+                                "running" => format!("🔴 Live: {}", run_id()),
+                                "complete" => format!("✅ {} (completed)", run_id()),
+                                s => format!("{}: {}", s, run_id()),
+                            }
+                        }}
+                    </span>
+                </div>
+                <div class="page-header__actions">
+                    <a href={format!("/runs/{}", run_id())} class="btn btn--ghost">"⬅ Back"</a>
+                </div>
+            </div>
 
-        <div class="container">
-            // ─── Progress bar ────────────────────────────────────────
+            // ─── Status ───────────────────────────────────────────────
             {move || {
-                if total() > 0 {
+                let p = progress.get();
+                if p.status == "connecting" {
                     view! {
-                        <div class="card">
-                            <h3>"Overall Progress"</h3>
-                            <ProgressBar value=done() max=total() label=format!("{} / {} ({})", done(), total(), pct()) />
+                        <div class="content-grid content-grid--metrics">
+                            <div class="skeleton skeleton--metric"></div>
+                            <div class="skeleton skeleton--metric"></div>
+                            <div class="skeleton skeleton--metric"></div>
+                            <div class="skeleton skeleton--metric"></div>
+                        </div>
+                        <div class="content-grid content-grid--agent-panes" style="margin-top: var(--spacing-lg, 16px);">
+                            <div class="skeleton skeleton--card" style="height: 200px;"></div>
+                            <div class="skeleton skeleton--card" style="height: 200px;"></div>
+                            <div class="skeleton skeleton--card" style="height: 200px;"></div>
+                            <div class="skeleton skeleton--card" style="height: 200px;"></div>
                         </div>
                     }.into_view()
-                } else if progress.get().status == "running" {
+                } else if p.status.starts_with("error") || p.status == "no_run_id" {
                     view! {
-                        <div class="card">
-                            <h3>"Overall Progress"</h3>
-                            <ProgressBar value=0 max=1 label="Waiting...".to_string() />
+                        <div class="error-state" role="alert">
+                            <div class="error-state__icon">"⚠️"</div>
+                            <h3 class="error-state__heading">"Connection lost"</h3>
+                            <p class="error-state__message">{format!("Status: {}", p.status)}</p>
+                            <div class="error-state__action">
+                                <button class="btn btn--primary">"🔄 Reconnect"</button>
+                            </div>
                         </div>
                     }.into_view()
                 } else {
-                    view! { <span></span> }.into_view()
+                    view! {
+                        // ─── Live Metrics ─────────────────────────────
+                        <div class="content-grid content-grid--metrics">
+                            <div class="metric-card">
+                                <p class="metric-card__label">"Progress"</p>
+                                <p class="metric-card__value">{format!("{}/{}", done(), total())}</p>
+                            </div>
+                            <div class="metric-card">
+                                <p class="metric-card__label">"Status"</p>
+                                <p class="metric-card__value">{p.status.clone()}</p>
+                            </div>
+                            <div class="metric-card">
+                                <p class="metric-card__label">"Completed"</p>
+                                <p class="metric-card__value">{format!("{}%", pct())}</p>
+                            </div>
+                            {move || {
+                                let total_prs = total();
+                                if total_prs > 0 {
+                                    view! {
+                                        <div class="metric-card">
+                                            <p class="metric-card__label">"Current PR"</p>
+                                            <p class="metric-card__value">{format!("#{}", done() + 1)}</p>
+                                        </div>
+                                    }.into_view()
+                                } else {
+                                    view! { <span></span> }.into_view()
+                                }
+                            }}
+                        </div>
+
+                        // ─── Agent Panes Grid ─────────────────────────
+                        <div class="content-grid content-grid--agent-panes" style="margin-top: var(--spacing-lg, 16px);">
+                            <AgentPane
+                                name="Reviewer"
+                                status=move || agent_reviewer.get().status.clone()
+                                response=move || agent_reviewer.get().response.clone()
+                                current_pr=move || agent_reviewer.get().current_pr
+                            />
+                            <AgentPane
+                                name="Summarizer"
+                                status=move || agent_summarizer.get().status.clone()
+                                response=move || agent_summarizer.get().response.clone()
+                                current_pr=move || agent_summarizer.get().current_pr
+                            />
+                            <AgentPane
+                                name="Tester"
+                                status=move || agent_tester.get().status.clone()
+                                response=move || agent_tester.get().response.clone()
+                                current_pr=move || agent_tester.get().current_pr
+                            />
+                            <AgentPane
+                                name="Analyst"
+                                status=move || agent_analyst.get().status.clone()
+                                response=move || agent_analyst.get().response.clone()
+                                current_pr=move || agent_analyst.get().current_pr
+                            />
+                        </div>
+
+                        // ─── Bottom Progress Bar ──────────────────────
+                        <div class="bottom-bar" style="margin-top: var(--spacing-xl, 24px); padding: var(--spacing-md, 12px); background: var(--bg-surface, #161b22); border: 1px solid var(--border-default, #30363d); border-radius: var(--radius-lg, 8px);">
+                            {move || {
+                                if total() > 0 {
+                                    view! {
+                                        <ProgressBar value=done() max=total() label=format!("{} / {} PRs ({}%)", done(), total(), pct()) />
+                                        <div class="bottom-bar__info" style="display: flex; justify-content: space-between; align-items: center; margin-top: var(--spacing-sm, 8px); font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
+                                            <span>{format!("Current PR: #{}", done() + 1)}</span>
+                                        </div>
+                                    }.into_view()
+                                } else {
+                                    view! {
+                                        <ProgressBar value=0 max=1 label="Waiting for data...".to_string() />
+                                    }.into_view()
+                                }
+                            }}
+                        </div>
+                    }.into_view()
                 }
             }}
-
-            // ─── Agent grid ───────────────────────────────────────────
-            <div class="agent-grid">
-                <AgentPane
-                    name="Reviewer"
-                    status=move || agent_reviewer.get().status.clone()
-                    response=move || agent_reviewer.get().response.clone()
-                    current_pr=move || agent_reviewer.get().current_pr
-                />
-                <AgentPane
-                    name="Summarizer"
-                    status=move || agent_summarizer.get().status.clone()
-                    response=move || agent_summarizer.get().response.clone()
-                    current_pr=move || agent_summarizer.get().current_pr
-                />
-                <AgentPane
-                    name="Tester"
-                    status=move || agent_tester.get().status.clone()
-                    response=move || agent_tester.get().response.clone()
-                    current_pr=move || agent_tester.get().current_pr
-                />
-                <AgentPane
-                    name="Analyst"
-                    status=move || agent_analyst.get().status.clone()
-                    response=move || agent_analyst.get().response.clone()
-                    current_pr=move || agent_analyst.get().current_pr
-                />
-            </div>
         </div>
     }
 }

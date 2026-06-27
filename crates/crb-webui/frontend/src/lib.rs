@@ -135,6 +135,42 @@ pub struct AgentEvent {
     pub total: Option<u32>,
 }
 
+// ─── Log / Replay Types ─────────────────────────────────────────────┐
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogsListResponse {
+    pub run_id: String,
+    pub cache_available: bool,
+    pub prs: Vec<PrLogsEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrLogsEntry {
+    pub pr_key: String,
+    pub pr_title: String,
+    pub agents: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentLogResponse {
+    pub run_id: String,
+    pub pr_key: String,
+    pub role: String,
+    pub prompt: Option<String>,
+    pub response: Option<String>,
+    pub available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplayStatusResponse {
+    pub run_id: String,
+    pub status: String,
+    pub progress_pct: u32,
+    pub completed_prs: u32,
+    pub total_prs: u32,
+    pub message: String,
+}
+
 // ─── Helper: Build API URL ───────────────────────────────────────────────────
 
 pub fn api_url(path: &str) -> String {
@@ -151,40 +187,107 @@ pub fn App() -> impl IntoView {
     view! {
         <Html attr:lang="en" attr:dir="ltr" />
         <Router>
-            <NavBar />
-            <main>
-                <Routes>
-                    <Route path="/" view=|| view! { <pages::home::HomePage /> } />
-                    <Route path="/runs/:id" view=|| view! { <pages::run_detail::RunDetailPage /> } />
-                    <Route path="/runs/:id/live" view=|| view! { <pages::live::LivePage /> } />
-                    <Route path="/new" view=|| view! { <pages::new_run::NewRunPage /> } />
-                    <Route path="/*" view=|| view! {
-                        <div class="container">
-                            <h2>"404 — Page Not Found"</h2>
-                            <p>"The page you're looking for doesn't exist."</p>
-                            <a href="/" class="btn btn-primary">"Go Home"</a>
-                        </div>
-                    } />
-                </Routes>
-            </main>
+            <div class="app-shell">
+                <Sidebar />
+                <main class="main-content">
+                    <div class="content-container">
+                        <Routes>
+                            <Route path="/" view=|| view! { <pages::home::HomePage /> } />
+                            <Route path="/runs/:id" view=|| view! { <pages::run_detail::RunDetailPage /> } />
+                            <Route path="/runs/:id/live" view=|| view! { <pages::live::LivePage /> } />
+                            <Route path="/new" view=|| view! { <pages::new_run::NewRunPage /> } />
+                            <Route path="/*" view=|| view! {
+                                <div class="state-container">
+                                    <h2>"404 — Page Not Found"</h2>
+                                    <p>"The page you're looking for doesn't exist."</p>
+                                    <div class="error-state__action">
+                                        <a href="/" class="btn btn--primary">"Go Home"</a>
+                                    </div>
+                                </div>
+                            } />
+                        </Routes>
+                    </div>
+                </main>
+            </div>
         </Router>
     }
 }
 
-// ─── NavBar ──────────────────────────────────────────────────────────────────
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 #[component]
-fn NavBar() -> impl IntoView {
+fn Sidebar() -> impl IntoView {
+    let (collapsed, set_collapsed) = create_signal(false);
+    let (mobile_open, set_mobile_open) = create_signal(false);
+
     let active_class = move |path: &str| -> &'static str {
         let loc = use_location();
-        if loc.pathname.get().starts_with(path) { "active" } else { "" }
+        if loc.pathname.get().starts_with(path) { "sidebar__item--active" } else { "" }
+    };
+
+    let toggle_collapsed = move |_| {
+        set_collapsed.update(|v| *v = !*v);
+    };
+
+    let toggle_mobile = move |_| {
+        set_mobile_open.update(|v| *v = !*v);
+    };
+
+    let sidebar_class = move || {
+        let mut cls = "sidebar".to_string();
+        if collapsed.get() { cls.push_str(" sidebar--collapsed"); }
+        if mobile_open.get() { cls.push_str(" sidebar--mobile-open"); }
+        cls
     };
 
     view! {
-        <nav class="navbar">
-            <a href="/" class="brand">"Review Harness"</a>
-            <a href="/" class=active_class("/")>"Dashboard"</a>
-            <a href="/new" class=active_class("/new")>"New Run"</a>
+        // Mobile hamburger button (visible on small screens)
+        <button
+            class="btn btn--ghost sidebar__toggle"
+            style="position: fixed; top: 12px; left: 12px; z-index: 200; display: none;"
+            aria-label="Toggle navigation menu"
+            on:click=toggle_mobile
+        >
+            "☰"
+        </button>
+
+        // Mobile overlay backdrop
+        {move || {
+            if mobile_open.get() {
+                view! {
+                    <div class="sidebar-overlay sidebar-overlay--open" on:click=move |_| set_mobile_open.set(false)></div>
+                }.into_view()
+            } else {
+                view! { <span></span> }.into_view()
+            }
+        }}
+
+        <nav class=sidebar_class aria-label="Main navigation">
+            <div class="sidebar__header">
+                <button class="sidebar__toggle" on:click=toggle_collapsed aria-label="Toggle sidebar">
+                    "☰"
+                </button>
+                <span class="sidebar__brand">"Review Harness"</span>
+            </div>
+
+            <ul class="sidebar__nav">
+                <li>
+                    <a href="/" class=move || format!("sidebar__item {}", active_class("/runs/"))>
+                        <span class="sidebar__icon">"🏠"</span>
+                        <span class="sidebar__label">"Home"</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="/new" class=move || format!("sidebar__item {}", active_class("/new"))>
+                        <span class="sidebar__icon">"🆕"</span>
+                        <span class="sidebar__label">"New Run"</span>
+                    </a>
+                </li>
+            </ul>
+
+            <div class="sidebar__footer">
+                <span class="sidebar__version">"v0.1.0"</span>
+            </div>
         </nav>
     }
 }

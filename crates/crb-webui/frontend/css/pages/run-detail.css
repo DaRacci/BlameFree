@@ -1,0 +1,21 @@
+.run-detail-page .back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-lg);
+}
+
+.run-detail-page .back-link:hover {
+  color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.run-detail-page .table-wrapper {
+  margin-top: var(--spacing-md);
+}
+
+.run-detail-page .section-header {
+  margin-top: var(--spacing-2xl);
+}

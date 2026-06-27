@@ -1,5 +1,4 @@
 use leptos::*;
-use crate::AgentEvent;
 
 #[component]
 pub fn AgentPane(
@@ -11,76 +10,82 @@ pub fn AgentPane(
     let status = Signal::derive(status);
     let response = Signal::derive(response);
     let current_pr = Signal::derive(current_pr);
-    let status_class = move || -> &'static str {
+
+    let pane_class = move || -> &'static str {
         match status.get().as_str() {
-            "reviewing" => "status-reviewing",
-            "done" => "status-done",
-            "failed" => "status-failed",
-            _ => "status-pending",
+            "reviewing" | "running" => "agent-pane--running",
+            "done" | "completed" => "agent-pane--completed",
+            "failed" => "agent-pane--failed",
+            _ => "agent-pane--pending",
         }
     };
 
     let status_icon = move || -> &'static str {
         match status.get().as_str() {
-            "reviewing" => "⏳",
-            "done" => "✅",
+            "reviewing" | "running" => "🟡",
+            "done" | "completed" => "✅",
             "failed" => "❌",
             _ => "⏸",
         }
     };
 
+    let status_text = move || -> &'static str {
+        match status.get().as_str() {
+            "reviewing" | "running" => "reviewing...",
+            "done" | "completed" => "completed",
+            "failed" => "failed",
+            _ => "pending",
+        }
+    };
+
+    // Generate a short 2-letter code from name
+    let short_name = move || {
+        name.chars().take(2).collect::<String>().to_uppercase()
+    };
+    let _short = short_name();
+
     view! {
-        <div class="agent-pane">
-            <div class="header">
+        <div class=move || format!("agent-pane {}", pane_class())>
+            <div class="agent-pane__header">
                 <span>{status_icon()}</span>
-                <span>{name}</span>
-                <span class=status_class() style="margin-left: auto; font-size: 0.8rem;">
-                    {move || status.get()}
-                </span>
+                <span class="agent-pane__role">{name}</span>
+                <span class="agent-pane__status">{status_text()}</span>
             </div>
 
-            <div style="margin-bottom: 0.25rem;">
-                {move || {
-                    current_pr.get().map(|pr| {
-                        view! {
-                            <span style="color: #94a3b8; font-size: 0.8rem;">
-                                {format!("PR #{}", pr)}
-                            </span>
-                        }
-                    })
-                }}
-            </div>
-
-            <div>
+            <div class="agent-pane__content">
                 {move || {
                     match (status.get(), response.get()) {
-                        (s, Some(resp)) if !resp.is_empty() => {
+                        (_s, Some(resp)) if !resp.is_empty() => {
                             view! {
-                                <div class="response-line">{resp}</div>
+                                {resp}
                             }.into_view()
                         }
                         (s, _) if s == "pending" => {
                             view! {
-                                <div style="color: #64748b; font-size: 0.8rem; font-style: italic;">
-                                    "Waiting for task..."
-                                </div>
+                                <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"Waiting for task..."</span>
                             }.into_view()
                         }
-                        (s, _) if s == "reviewing" => {
+                        (s, _) if s == "reviewing" || s == "running" => {
                             view! {
-                                <div style="color: #94a3b8; font-size: 0.8rem; font-style: italic;">
-                                    "Processing..."
-                                </div>
+                                <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"Processing..."</span>
                             }.into_view()
                         }
                         (_, _) => {
                             view! {
-                                <div style="color: #64748b; font-size: 0.8rem; font-style: italic;">
-                                    "No response yet"
-                                </div>
+                                <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"No response yet"</span>
                             }.into_view()
                         }
                     }
+                }}
+            </div>
+
+            <div class="agent-pane__footer">
+                {move || {
+                    current_pr.get().map(|pr| {
+                        view! {
+                            <span class="agent-pane__findings">{format!("PR #{}", pr)}</span>
+                        }
+                    })
                 }}
             </div>
         </div>

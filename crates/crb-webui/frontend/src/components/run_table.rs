@@ -1,5 +1,4 @@
 use leptos::*;
-use leptos_router::*;
 use crate::RunSummary;
 
 #[component]
@@ -57,47 +56,55 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
         runs
     };
 
-    let sort_indicator = move |col| {
+    let _sort_indicator = move |col| {
         if sort_column.get() == col {
             if sort_asc.get() { " ▲" } else { " ▼" }
         } else {
-            ""
+            " ↕"
+        }
+    };
+
+    let sort_arrow = move |col| {
+        if sort_column.get() == col {
+            if sort_asc.get() { "↑" } else { "↓" }
+        } else {
+            "↕"
         }
     };
 
     view! {
-        <div class="card" style="padding: 0;">
-            <table>
+        <div class="table-wrapper">
+            <table class="table">
                 <thead>
                     <tr>
-                        <th on:click=move |_| toggle_sort(SortColumn::Name)>
-                            {move || format!("Name{}", sort_indicator(SortColumn::Name))}
+                        <th class="table__th table__th--sortable" on:click=move |_| toggle_sort(SortColumn::Name)>
+                            {move || format!("Name {}", sort_arrow(SortColumn::Name))}
                         </th>
-                        <th on:click=move |_| toggle_sort(SortColumn::Status)>
-                            {move || format!("Status{}", sort_indicator(SortColumn::Status))}
+                        <th class="table__th table__th--sortable" on:click=move |_| toggle_sort(SortColumn::Status)>
+                            {move || format!("Status {}", sort_arrow(SortColumn::Status))}
                         </th>
-                        <th on:click=move |_| toggle_sort(SortColumn::Model)>
-                            {move || format!("Model{}", sort_indicator(SortColumn::Model))}
+                        <th class="table__th table__th--sortable" on:click=move |_| toggle_sort(SortColumn::Model)>
+                            {move || format!("Model {}", sort_arrow(SortColumn::Model))}
                         </th>
-                        <th on:click=move |_| toggle_sort(SortColumn::PrCount)>
-                            {move || format!("PRs{}", sort_indicator(SortColumn::PrCount))}
+                        <th class="table__th table__th--sortable" on:click=move |_| toggle_sort(SortColumn::PrCount)>
+                            {move || format!("PRs {}", sort_arrow(SortColumn::PrCount))}
                         </th>
-                        <th on:click=move |_| toggle_sort(SortColumn::F1)>
-                            {move || format!("F1{}", sort_indicator(SortColumn::F1))}
+                        <th class="table__th table__th--sortable" on:click=move |_| toggle_sort(SortColumn::F1)>
+                            {move || format!("F1 {}", sort_arrow(SortColumn::F1))}
                         </th>
-                        <th on:click=move |_| toggle_sort(SortColumn::Cost)>
-                            {move || format!("Cost{}", sort_indicator(SortColumn::Cost))}
+                        <th class="table__th table__th--sortable" on:click=move |_| toggle_sort(SortColumn::Cost)>
+                            {move || format!("Cost {}", sort_arrow(SortColumn::Cost))}
                         </th>
-                        <th>"Details"</th>
+                        <th class="table__th">"Details"</th>
                     </tr>
                 </thead>
                 <tbody>
                     {move || sorted_runs().into_iter().map(|run| {
-                        let status_class = match run.status.as_str() {
-                            "done" => "status-done",
-                            "failed" => "status-failed",
-                            "running" => "status-reviewing",
-                            _ => "status-pending",
+                        let badge_variant = match run.status.as_str() {
+                            "done" => "badge--success",
+                            "failed" => "badge--danger",
+                            "running" => "badge--warning",
+                            _ => "badge--neutral",
                         };
                         let f1_str = run.avg_f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "—".into());
                         let cost_str = run.total_cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "—".into());
@@ -106,23 +113,24 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
                         let live_path = format!("/runs/{}/live", run.id);
 
                         view! {
-                            <tr>
-                                <td style="font-weight: 500;">{&run.name}</td>
-                                <td><span class=status_class>{&run.status}</span></td>
-                                <td>{model_str}</td>
-                                <td>{run.pr_count}</td>
-                                <td>{f1_str}</td>
-                                <td>{cost_str}</td>
-                                <td>
+                            <tr class="table__row table__row--clickable" data-href=&detail_path>
+                                <td class="table__td" style="font-weight: var(--weight-medium, 500);"><a href=&detail_path style="color: var(--text-link, #58a6ff);">{&run.name}</a></td>
+                                <td class="table__td">
+                                    <span class=format!("badge {}", badge_variant)>
+                                        <span class="badge__dot"></span>
+                                        <span class="badge__label">{&run.status}</span>
+                                    </span>
+                                </td>
+                                <td class="table__td">{model_str}</td>
+                                <td class="table__td">{run.pr_count}</td>
+                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{f1_str}</td>
+                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{cost_str}</td>
+                                <td class="table__td">
                                     <div style="display: flex; gap: 0.5rem;">
-                                        <span class="btn btn-primary" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">
-                                            <A href=detail_path>"View"</A>
-                                        </span>
+                                        <a href=&detail_path class="btn btn--sm btn--secondary">"View"</a>
                                         {if run.status == "running" || run.status == "pending" {
                                             view! {
-                                                <span class="btn btn-green" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">
-                                                    <A href=live_path>"Live"</A>
-                                                </span>
+                                                <a href=&live_path class="btn btn--sm btn--secondary">"Live"</a>
                                             }.into_view()
                                         } else {
                                             view! { <span></span> }.into_view()

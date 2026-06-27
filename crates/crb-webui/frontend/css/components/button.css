@@ -1,0 +1,118 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: none;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.btn:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 30%, transparent);
+  outline: none;
+}
+
+.btn:disabled,
+.btn--disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Variants */
+.btn--primary {
+  background: var(--accent-blue);
+  color: var(--text-inverse);
+}
+.btn--primary:hover {
+  filter: brightness(1.1);
+}
+.btn--primary:active {
+  filter: brightness(0.95);
+}
+
+.btn--success {
+  background: var(--accent-green);
+  color: var(--text-inverse);
+}
+.btn--success:hover {
+  filter: brightness(1.1);
+}
+.btn--success:active {
+  filter: brightness(0.95);
+}
+
+.btn--danger {
+  background: var(--accent-red);
+  color: var(--text-inverse);
+}
+.btn--danger:hover {
+  filter: brightness(1.1);
+}
+.btn--danger:active {
+  filter: brightness(0.95);
+}
+
+.btn--secondary {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+}
+.btn--secondary:hover {
+  background: var(--bg-surface-hover);
+}
+.btn--secondary:active {
+  background: var(--bg-surface);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+}
+.btn--ghost:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+}
+.btn--ghost:active {
+  background: var(--bg-surface);
+}
+
+/* Sizes */
+.btn--sm {
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--text-xs);
+}
+
+.btn--md {
+  padding: var(--spacing-sm) var(--spacing-lg);
+  font-size: var(--text-sm);
+}
+
+.btn--lg {
+  padding: var(--spacing-md) var(--spacing-xl);
+  font-size: var(--text-base);
+}
+
+.btn--full {
+  width: 100%;
+}
+
+/* Icon */
+.btn__icon {
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+.btn__label {
+  line-height: 1;
+}

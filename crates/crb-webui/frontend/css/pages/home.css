@@ -1,0 +1,38 @@
+.home-page .card {
+  cursor: pointer;
+}
+
+.home-page .card:hover {
+  background: var(--bg-surface-hover);
+}
+
+.home-page .card__body {
+  gap: var(--spacing-sm);
+}
+
+.home-page .card__meta-row {
+  display: flex;
+  gap: var(--spacing-lg);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.home-page .card__f1-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.home-page .card__progress {
+  margin-top: var(--spacing-sm);
+}
+
+/* Search filter section */
+.home-page__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-xl);
+  flex-wrap: wrap;
+}

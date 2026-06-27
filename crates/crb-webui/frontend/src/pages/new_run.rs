@@ -21,7 +21,7 @@ pub fn NewRunPage() -> impl IntoView {
     let navigator = use_navigate();
 
     // Fetch config
-    let fetch_config = create_local_resource(
+    let _fetch_config = create_local_resource(
         || (),
         move |_| {
             let set_config = set_config.clone();
@@ -106,81 +106,101 @@ pub fn NewRunPage() -> impl IntoView {
     };
 
     view! {
-        <div class="container">
-            <a href="/" style="color: #94a3b8; text-decoration: none; display: inline-block; margin-bottom: 1rem;">
-                "← Back to Dashboard"
-            </a>
+        <div class="new-run-page">
+            <div class="page-header">
+                <h1 class="page-header__title">"New Benchmark Run"</h1>
+                <div class="page-header__actions">
+                    <a href="/" class="btn btn--ghost">"Cancel"</a>
+                </div>
+            </div>
 
-            <h1>"New Benchmark Run"</h1>
-
+            // Config loading state
             {move || {
-                if config_loading.get() {
-                    view! { <p>"Loading configuration..."</p> }.into_view()
-                } else if let Some(e) = config_error.get() {
+                if config_loading.get() || datasets_loading.get() {
                     view! {
-                        <div class="card">
-                            <p style="color: #ef4444;">{format!("Failed to load config: {}", e)}</p>
-                            <p style="color: #94a3b8;">"You can still fill in the form manually."</p>
+                        <div style="display: flex; align-items: center; gap: 12px; color: var(--text-secondary, #8b949e); padding: 24px 0;">
+                            <div class="skeleton skeleton--text" style="width: 200px;"></div>
                         </div>
                     }.into_view()
-                } else {
-                    view! { <span></span> }.into_view()
-                }
+                } else { view! { <span></span> }.into_view() }
             }}
 
-            <div class="card">
-                <form on:submit=on_submit>
-                    <div class="form-group">
-                        <label for="model">"Model"</label>
-                        <select id="model" prop:value=model.get() on:change=move |ev| {
-                            set_model.set(event_target_value(&ev));
-                        }>
-                            {move || {
-                                let cfg = config.get();
-                                let models = if let Some(ref c) = cfg {
-                                    c.models.clone()
-                                } else {
-                                    vec![]
-                                };
-                                models.into_iter().map(|m| {
-                                    let is_selected = model.get() == m;
-                                    view! { <option value=&m selected=is_selected>{&m}</option> }
-                                }).collect::<Vec<_>>()
-                            }}
-                        </select>
-                    </div>
+            // Config error
+            {move || {
+                if let Some(e) = config_error.get() {
+                    view! {
+                        <div class="card" style="margin-bottom: var(--spacing-lg, 16px);">
+                            <div class="card__body">
+                                <p style="color: var(--accent-red, #f85149);">{format!("Failed to load config: {}", e)}</p>
+                                <p style="color: var(--text-secondary, #8b949e); font-size: var(--text-sm, 14px);">"You can still fill in the form manually."</p>
+                            </div>
+                        </div>
+                    }.into_view()
+                } else { view! { <span></span> }.into_view() }
+            }}
 
-                    <div class="form-group">
-                        <label for="dataset">"Dataset"</label>
-                        <select id="dataset" prop:value=dataset.get() on:change=move |ev| {
-                            set_dataset.set(event_target_value(&ev));
-                        }>
-                            {move || {
-                                let ds = datasets.get();
-                                if !ds.is_empty() {
-                                    ds.into_iter().map(|d| {
-                                        let is_selected = dataset.get() == d.id;
-                                        let label = format!("{} ({} PRs)", d.id, d.pr_count);
-                                        view! { <option value=&d.id selected=is_selected>{label}</option> }
-                                    }).collect::<Vec<_>>()
-                                } else {
+            <form on:submit=on_submit>
+                // ─── Configuration Section ───────────────────────────
+                <section class="form-section">
+                    <h2 class="form-section__title">"Configuration"</h2>
+                    <div class="form-section__fields">
+                        <div class="form-field">
+                            <label class="form-field__label" for="model">"Model"</label>
+                            <select id="model" class="input select" prop:value=model.get() on:change=move |ev| {
+                                set_model.set(event_target_value(&ev));
+                            }>
+                                {move || {
                                     let cfg = config.get();
-                                    let datasets = if let Some(ref c) = cfg {
-                                        c.datasets.clone()
+                                    let models = if let Some(ref c) = cfg {
+                                        c.models.clone()
                                     } else {
-                                        vec!["golden_comments".into()]
+                                        vec!["deepseek/deepseek-v4-flash".into(), "deepseek/deepseek-v4-pro".into()]
                                     };
-                                    datasets.into_iter().map(|d| {
-                                        let is_selected = dataset.get() == d;
-                                        view! { <option value=&d selected=is_selected>{&d}</option> }
+                                    models.into_iter().map(|m| {
+                                        let is_selected = model.get() == m;
+                                        view! { <option value=&m selected=is_selected>{&m}</option> }
                                     }).collect::<Vec<_>>()
-                                }
-                            }}
-                        </select>
-                    </div>
+                                }}
+                            </select>
+                            <p class="form-field__helper">"The model used for review agents"</p>
+                        </div>
 
-                    <div class="form-group">
-                        <label>"Roles / Agents"</label>
+                        <div class="form-field">
+                            <label class="form-field__label" for="dataset">"Dataset"</label>
+                            <select id="dataset" class="input select" prop:value=dataset.get() on:change=move |ev| {
+                                set_dataset.set(event_target_value(&ev));
+                            }>
+                                {move || {
+                                    let ds = datasets.get();
+                                    if !ds.is_empty() {
+                                        ds.into_iter().map(|d| {
+                                            let is_selected = dataset.get() == d.id;
+                                            let label = format!("{} ({} PRs)", d.id, d.pr_count);
+                                            view! { <option value=&d.id selected=is_selected>{label}</option> }
+                                        }).collect::<Vec<_>>()
+                                    } else {
+                                        let cfg = config.get();
+                                        let datasets = if let Some(ref c) = cfg {
+                                            c.datasets.clone()
+                                        } else {
+                                            vec!["golden_comments".into()]
+                                        };
+                                        datasets.into_iter().map(|d| {
+                                            let is_selected = dataset.get() == d;
+                                            view! { <option value=&d selected=is_selected>{&d}</option> }
+                                        }).collect::<Vec<_>>()
+                                    }
+                                }}
+                            </select>
+                            <p class="form-field__helper">"The dataset used for evaluation"</p>
+                        </div>
+                    </div>
+                </section>
+
+                // ─── Execution Section ──────────────────────────────
+                <section class="form-section">
+                    <h2 class="form-section__title">"Execution"</h2>
+                    <div class="form-section__fields">
                         {move || {
                             let cfg = config.get();
                             let roles_list: Vec<String> = if let Some(ref c) = cfg {
@@ -189,56 +209,63 @@ pub fn NewRunPage() -> impl IntoView {
                                 vec!["reviewer".into(), "summarizer".into(), "tester".into(), "analyst".into()]
                             };
                             view! {
-                                <div class="checkbox-group">
-                                    {roles_list.into_iter().map(|r| {
-                                        let checked = roles.get().contains(&r);
-                                        view! {
-                                            <label>
-                                                <input
-                                                    type="checkbox"
-                                                    prop:checked=checked
-                                                    on:click={
-                                                        let r_clone = r.clone();
-                                                        move |_| toggle_role(&r_clone)
-                                                    }
-                                                />
-                                                {r}
-                                            </label>
-                                        }
-                                    }).collect::<Vec<_>>()}
+                                <div class="form-field">
+                                    <label class="form-field__label">"Roles / Agents"</label>
+                                    <div class="checkbox-group">
+                                        {roles_list.into_iter().map(|r| {
+                                            let checked = roles.get().contains(&r);
+                                            view! {
+                                                <label class="checkbox-label">
+                                                    <input
+                                                        type="checkbox"
+                                                        prop:checked=checked
+                                                        on:click={
+                                                            let r_clone = r.clone();
+                                                            move |_| toggle_role(&r_clone)
+                                                        }
+                                                    />
+                                                    {r}
+                                                </label>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                    <p class="form-field__helper">"Select at least one role for this run."</p>
                                 </div>
-                                <p style="color: #64748b; font-size: 0.8rem; margin-top: 0.25rem;">
-                                    "Select at least one role for this run."
-                                </p>
                             }
                         }}
                     </div>
+                </section>
 
-                    <div style="margin-top: 1.5rem;">
-                        <button
-                            type="submit"
-                            class="btn btn-primary"
-                            disabled=move || submitting.get() || roles.get().is_empty()
-                        >
-                            {move || {
-                                if submitting.get() {
-                                    "Creating..."
-                                } else {
-                                    "Launch Run"
-                                }
-                            }}
-                        </button>
-                    </div>
+                // ─── Form Actions ──────────────────────────────────────
+                <div class="form-actions">
+                    <button
+                        type="submit"
+                        class="btn btn--primary btn--lg btn--full"
+                        disabled=move || submitting.get() || roles.get().is_empty()
+                    >
+                        {move || {
+                            if submitting.get() {
+                                "Creating..."
+                            } else {
+                                "🚀 Start Benchmark"
+                            }
+                        }}
+                    </button>
+                </div>
 
-                    {move || {
-                        if let Some(e) = submit_error.get() {
-                            view! { <p style="color: #ef4444; margin-top: 0.5rem;">{format!("Error: {}", e)}</p> }.into_view()
-                        } else {
-                            view! { <span></span> }.into_view()
-                        }
-                    }}
-                </form>
-            </div>
+                // Submit error
+                {move || {
+                    if let Some(e) = submit_error.get() {
+                        view! {
+                            <div class="error-state" role="alert" style="padding: var(--spacing-lg, 16px);">
+                                <p style="color: var(--accent-red, #f85149); font-size: var(--text-sm, 14px);">{format!("Error: {}", e)}</p>
+                            </div>
+                        }.into_view()
+                    } else {
+                        view! { <span></span> }.into_view()
+                    }
+                }}
+            </form>
         </div>
     }
 }

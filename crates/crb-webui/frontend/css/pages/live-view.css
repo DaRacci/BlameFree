@@ -1,0 +1,30 @@
+.live-view-page .live-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.live-view-page .live-header__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-red);
+  animation: pulse 1.5s infinite;
+}
+
+.live-view-page .bottom-bar {
+  margin-top: var(--spacing-xl);
+  padding: var(--spacing-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+.live-view-page .bottom-bar__info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: var(--spacing-sm);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}

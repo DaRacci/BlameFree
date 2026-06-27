@@ -8,8 +8,8 @@ pub fn MetricsCard(
     let value = value.into();
     view! {
         <div class="metric-card">
-            <div class="value">{&value}</div>
-            <div class="label">{label}</div>
+            <p class="metric-card__value">{&value}</p>
+            <p class="metric-card__label">{label}</p>
         </div>
     }
 }

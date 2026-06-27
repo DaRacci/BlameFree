@@ -14,10 +14,24 @@ pub fn ProgressBar(
         }
     };
 
+    let is_complete = move || max > 0 && value >= max;
+
     view! {
-        <div class="progress-bar" style="position: relative;">
-            <div class="fill" style=move || format!("width: {}%", pct())></div>
-            <div class="label">{label}</div>
+        <div
+            class=move || {
+                let mut cls = "progress".to_string();
+                if is_complete() { cls.push_str(" progress--complete"); }
+                cls
+            }
+            role="progressbar"
+            aria-valuenow=value
+            aria-valuemin=0u32
+            aria-valuemax=max
+        >
+            <div class="progress__track">
+                <div class="progress__fill" style=move || format!("width: {}%", pct())></div>
+            </div>
+            <span class="progress__label">{label}</span>
         </div>
     }
 }

@@ -1,0 +1,13 @@
+.new-run-page {
+  max-width: 720px;
+}
+
+.new-run-page .form-section {
+  margin-bottom: var(--spacing-xl);
+}
+
+.new-run-page .form-actions {
+  margin-top: var(--spacing-2xl);
+  padding-top: var(--spacing-xl);
+  border-top: 1px solid var(--border-muted);
+}
