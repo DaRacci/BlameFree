@@ -1,0 +1,15 @@
+[package]
+name = "crb-dashboard"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.28"
+crossterm = { version = "0.28", features = ["events"] }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+crb-judge = { path = "../crb-judge" }
+crb-reporting = { path = "../crb-reporting" }

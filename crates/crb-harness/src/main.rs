@@ -9,6 +9,7 @@ use crb_agents::prompts::PromptLibrary;
 use crb_agents::{build_agent, Finding, AGENT_ROLES};
 use crb_consensus::evaluate_pr_with_consensus;
 use crb_consensus::CacheBackend;
+use crb_dashboard::DashboardEvent;
 use crb_judge::{build_judge, compute_metrics, run_judge};
 use crb_reporting::{load_golden_datasets, write_report, GoldenCommentEntry, PrResult};
 use crb_rules::RuleSet;
@@ -16,6 +17,7 @@ use regex::Regex;
 use rig_core::client::ProviderClient;
 use rig_core::completion::Prompt;
 use rig_core::tool::Tool;
+use tokio::sync::mpsc;
 use tracing::info;
 use tracing::info_span;
 use tracing_subscriber::EnvFilter;
@@ -246,6 +248,21 @@ async fn main() -> Result<()> {
     let start_time = std::time::Instant::now();
     let cache_dir = args.cache_dir.clone();
 
+    // ── Dashboard (optional TUI) ─────────────────────────────────────────
+    let dashboard_tx = if args.dashboard {
+        let (tx, rx) = tokio::sync::mpsc::channel::<DashboardEvent>(1024);
+        let total_prs = prs_to_evaluate.len();
+        // Spawn the TUI render task
+        tokio::spawn(async move {
+            if let Err(e) = crb_dashboard::run_dashboard(total_prs, rx).await {
+                tracing::error!("Dashboard error: {e}");
+            }
+        });
+        Some(tx)
+    } else {
+        None
+    };
+
     // ── Concurrency ───────────────────────────────────────────────────────
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(args.concurrency));
     let mut set = tokio::task::JoinSet::new();
@@ -265,6 +282,7 @@ async fn main() -> Result<()> {
         let roles = args.roles.clone();
         let max_findings = args.max_findings;
         let cache_dir = cache_dir.clone();
+        let dashboard_tx = dashboard_tx.clone();
 
         set.spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
@@ -282,6 +300,7 @@ async fn main() -> Result<()> {
                 &roles,
                 max_findings,
                 cache_dir.as_ref(),
+                dashboard_tx.as_ref(),
             )
             .await
         });
@@ -302,6 +321,60 @@ async fn main() -> Result<()> {
                 tracing::error!("Join error: {e}");
             }
         }
+    }
+
+    // ── Send RunFinished event (if dashboard active) ─────────────────────
+    if let Some(tx) = &dashboard_tx {
+        let total_prs = results.len();
+        let mut total_cost = 0.0f64;
+        let mut total_tokens = 0usize;
+        let mut total_tp = 0usize;
+        let mut total_fp = 0usize;
+        let mut total_fn = 0usize;
+        let mut total_agent_calls = 0usize;
+
+        for r in &results {
+            total_tp += r.metrics.true_positives;
+            total_fp += r.metrics.false_positives;
+            total_fn += r.metrics.false_negatives;
+            total_agent_calls += 4; // 4 agents per PR
+            if let Some(ref c) = r.cost {
+                total_cost += c.total_usd;
+                total_tokens += c.agent_tokens_in + c.agent_tokens_out
+                    + c.judge_tokens_in + c.judge_tokens_out;
+            }
+        }
+
+        let avg_precision = if total_tp + total_fp > 0 {
+            total_tp as f64 / (total_tp + total_fp) as f64
+        } else {
+            0.0
+        };
+        let avg_recall = if total_tp + total_fn > 0 {
+            total_tp as f64 / (total_tp + total_fn) as f64
+        } else {
+            0.0
+        };
+        let avg_f1 = if (avg_precision + avg_recall) > 0.0 {
+            2.0 * avg_precision * avg_recall / (avg_precision + avg_recall)
+        } else {
+            0.0
+        };
+
+        let _ = tx.send(DashboardEvent::RunFinished {
+            total_prs,
+            aggregated: crb_dashboard::AggregateMetrics {
+                total_tp,
+                total_fp,
+                total_fn,
+                precision: avg_precision,
+                recall: avg_recall,
+                f1: avg_f1,
+            },
+            total_cost,
+            total_tokens,
+            total_agent_calls,
+        }).await;
     }
 
     // ── Report ────────────────────────────────────────────────────────────
@@ -622,6 +695,7 @@ async fn evaluate_pr_with_postprocessing(
     roles: &str,
     max_findings: usize,
     cache_dir: Option<&PathBuf>,
+    dashboard_tx: Option<&mpsc::Sender<DashboardEvent>>,
 ) -> Result<PrResult> {
 
     // ── Setup cache if enabled ────────────────────────────────────────────
@@ -713,11 +787,23 @@ async fn evaluate_pr_with_postprocessing(
     let rules_preamble = ruleset.map(|rs| rs.format_preamble(&[]));
 
     // ── Agent evaluation ──────────────────────────────────────────────────
+    let pr_key = utils::sanitize_filename(&pr.pr_title);
+
+    // Send AgentStarted for each role
+    if let Some(tx) = dashboard_tx {
+        for role in ["SA", "CL", "AR", "SEC"] {
+            let _ = tx.send(DashboardEvent::AgentStarted {
+                pr_key: pr_key.clone(),
+                role: role.to_string(),
+            }).await;
+        }
+    }
+
     let (all_findings, verdicts) = if skip_consensus {
         // Original single-agent evaluation
         evaluate_pr_single_agent(
             pr, client, model, judge, &diff, linter_findings, rules_preamble.as_deref(), prompt_lib,
-            cache.clone(), cost_tracker.clone(),
+            cache.clone(), cost_tracker.clone(), dashboard_tx,
         )
         .await?
     } else {
@@ -732,6 +818,25 @@ async fn evaluate_pr_with_postprocessing(
     // ── Post-processing: aggregator dedup + auditor severity check ────────
     let processed_findings = post_process_findings(&all_findings);
 
+    // ── Send AgentFinished for each role ────────────────────────────────
+    if let Some(tx) = dashboard_tx {
+        for (i, role) in ["SA", "CL", "AR", "SEC"].iter().enumerate() {
+            // Distribute findings count across the roles (rough estimate)
+            let role_findings = if skip_consensus {
+                // In single-agent mode, count how many the specific agent produced
+                let per_role = all_findings.len() / 4;
+                if i == 0 { all_findings.len() - per_role * 3 } else { per_role }
+            } else {
+                processed_findings.len() / 4
+            };
+            let _ = tx.send(DashboardEvent::AgentFinished {
+                role: role.to_string(),
+                findings: role_findings,
+                success: true,
+            }).await;
+        }
+    }
+
     // ── Judge evaluation ──────────────────────────────────────────────────
     // (if not already done by consensus path)
     let final_verdicts = if skip_consensus {
@@ -742,6 +847,23 @@ async fn evaluate_pr_with_postprocessing(
     };
 
     let metrics = compute_metrics(&final_verdicts, pr.comments.len());
+
+    // ── Send PrCompleted event ───────────────────────────────────────────
+    if let Some(tx) = dashboard_tx {
+        let pr_key = pr_key; // already computed above
+        let tokens = cost_tracker.total_tokens();
+        let total_tokens = tokens.0 + tokens.1;
+        let cost_usd = cost_tracker.total_cost_usd();
+        let total_agent_calls = 4; // SA, CL, AR, SEC
+        let _ = tx.send(DashboardEvent::PrCompleted {
+            pr_key,
+            metrics: metrics.clone(),
+            cost: cost_usd,
+            total_tokens,
+            agent_calls: total_agent_calls,
+            findings_count: processed_findings.len(),
+        }).await;
+    }
 
     // ── Write metadata.json ─────────────────────────────────────────────
     if let Some(ref c) = cache {
@@ -828,6 +950,7 @@ async fn evaluate_pr_single_agent(
     prompt_lib: &PromptLibrary,
     cache: Option<Arc<LlmCache>>,
     cost_tracker: Arc<CostTracker>,
+    dashboard_tx: Option<&mpsc::Sender<DashboardEvent>>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // ── Pre-compute content-addressed cache key components ──────────────
     let diff_hash = LlmCache::sha256(diff);
@@ -848,6 +971,7 @@ async fn evaluate_pr_single_agent(
         let p_lib = prompt_lib.clone();
         let cache_arc: Option<Arc<dyn CacheBackend>> = cache.clone().map(|c| c as Arc<dyn CacheBackend>);
         let ct = cost_tracker.clone();
+        let tx = dashboard_tx.map(|t| t.clone());
 
         agent_set.spawn(async move {
             let span = info_span!("agent", role = %role);
@@ -872,6 +996,20 @@ async fn evaluate_pr_single_agent(
                     tracing::info!("CACHE HIT for agent role={} (key={})", role, &agent_cache_key[..12]);
                     let tokens_out = cost::estimate_tokens(&cached_response);
                     ct.record_agent(tokens_in, tokens_out, true);
+                    // Send chunk + finished for cached response
+                    if let Some(ref tx) = tx {
+                        let _ = tx.send(DashboardEvent::AgentChunk {
+                            role: role.clone(),
+                            chunk: cached_response.clone(),
+                        }).await;
+                        let result = parse_agent_findings(&cached_response);
+                        let findings_count = result.as_ref().map(|v| v.len()).unwrap_or(0);
+                        let _ = tx.send(DashboardEvent::AgentFinished {
+                            role,
+                            findings: findings_count,
+                            success: result.is_ok(),
+                        }).await;
+                    }
                     let result = parse_agent_findings(&cached_response);
                     return result;
                 }
@@ -891,17 +1029,45 @@ async fn evaluate_pr_single_agent(
                     let tokens_out = cost::estimate_tokens(&response);
                     ct.record_agent(tokens_in, tokens_out, false);
 
+                    // Send chunk for live response
+                    if let Some(ref tx) = tx {
+                        let _ = tx.send(DashboardEvent::AgentChunk {
+                            role: role.clone(),
+                            chunk: response.clone(),
+                        }).await;
+                    }
+
                     // Cache the prompt+response with content-addressed key
                     if let Some(ref c) = cache_arc {
                         c.save_agent_with_key(&agent_cache_key, &role, &diff, &response);
                     }
 
-                    parse_agent_findings(&response)
+                    let findings = parse_agent_findings(&response);
+                    // Send finished event
+                    if let Some(ref tx) = tx {
+                        let findings_count = findings.as_ref().map(|v| v.len()).unwrap_or(0);
+                        let _ = tx.send(DashboardEvent::AgentFinished {
+                            role: role.clone(),
+                            findings: findings_count,
+                            success: findings.is_ok(),
+                        }).await;
+                    }
+                    findings
                 },
                 3,    // max_retries
                 1000, // base_delay_ms
             )
             .await;
+            // If the whole retry chain failed, send failed event
+            if result.is_err() {
+                if let Some(ref tx) = tx {
+                    let _ = tx.send(DashboardEvent::AgentFinished {
+                        role: role.clone(),
+                        findings: 0,
+                        success: false,
+                    }).await;
+                }
+            }
             result
         });
     }

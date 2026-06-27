@@ -104,4 +104,9 @@ pub struct CliArgs {
     /// Directory containing pre-recorded LLM interactions for deterministic replay.
     #[arg(long, env = "REPLAY_DIR")]
     pub replay_dir: Option<PathBuf>,
+
+    /// Enable live interactive dashboard (TUI).
+    /// When set, renders a 4-pane agent view with progress, cost, and summaries.
+    #[arg(long, default_value_t = false)]
+    pub dashboard: bool,
 }
