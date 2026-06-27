@@ -8,7 +8,7 @@ use axum::extract::{State};
 use axum::http::{StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::body::Body;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::CorsLayer;
@@ -31,6 +31,8 @@ pub struct AppState {
     pub models: String,
     /// Active (running) benchmark runs.
     pub active_runs: Arc<RwLock<HashMap<String, ActiveRun>>>,
+    /// Active replay operations.
+    pub replays: Arc<RwLock<HashMap<String, ReplayState>>>,
 }
 
 /// State for an actively running benchmark.
@@ -49,6 +51,16 @@ pub struct ActiveRun {
     pub finished: bool,
 }
 
+/// State of a replay operation.
+pub struct ReplayState {
+    pub status: String,        // "running", "completed", "failed"
+    pub progress_pct: u32,
+    pub completed_prs: u32,
+    pub total_prs: u32,
+    pub message: String,
+    pub output_dir: PathBuf,
+}
+
 impl AppState {
     pub fn new(
         output_dir: PathBuf,
@@ -64,6 +76,7 @@ impl AppState {
             static_dir,
             models,
             active_runs: Arc::new(RwLock::new(HashMap::new())),
+            replays: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -75,7 +88,11 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         .route("/api/runs/:id", get(crate::api::get_run))
         .route("/api/runs/:id/live", get(crate::api::live_stream))
         .route("/api/config", get(crate::api::get_config))
-        .route("/api/config/datasets", get(crate::api::list_datasets));
+        .route("/api/config/datasets", get(crate::api::list_datasets))
+        .route("/api/runs/:id/logs", get(crate::api::list_logs))
+        .route("/api/runs/:id/logs/:pr_key/:role", get(crate::api::get_agent_log))
+        .route("/api/runs/:id/replay", post(crate::api::start_replay))
+        .route("/api/runs/:id/replay/status", get(crate::api::replay_status));
 
     // Build the full router with SPA fallback
     let app = Router::new()

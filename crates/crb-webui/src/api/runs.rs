@@ -212,6 +212,52 @@ pub struct StartRunResponse {
     pub total_prs: usize,
 }
 
+/// Response from GET /api/runs/:id/logs
+#[derive(Debug, Clone, Serialize)]
+pub struct LogsListResponse {
+    pub run_id: String,
+    pub cache_available: bool,
+    pub prs: Vec<PrLogsEntry>,
+}
+
+/// A single PR's available log entries
+#[derive(Debug, Clone, Serialize)]
+pub struct PrLogsEntry {
+    pub pr_key: String,
+    pub pr_title: String,
+    pub agents: Vec<String>,
+}
+
+/// Response from GET /api/runs/:id/logs/:pr_key/:role
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentLogResponse {
+    pub run_id: String,
+    pub pr_key: String,
+    pub role: String,
+    pub prompt: Option<String>,
+    pub response: Option<String>,
+    pub available: bool,
+}
+
+/// Response from POST /api/runs/:id/replay
+#[derive(Debug, Clone, Serialize)]
+pub struct ReplayStartResponse {
+    pub run_id: String,
+    pub status: String,
+    pub cache_available: bool,
+}
+
+/// Response from GET /api/runs/:id/replay/status
+#[derive(Debug, Clone, Serialize)]
+pub struct ReplayStatusResponse {
+    pub run_id: String,
+    pub status: String,
+    pub progress_pct: u32,
+    pub completed_prs: u32,
+    pub total_prs: u32,
+    pub message: String,
+}
+
 // ── Handlers ────────────────────────────────────────────────────────────────
 
 /// GET /api/runs — list all completed benchmark runs.
@@ -650,4 +696,378 @@ fn count_prs_in_dataset(dataset_dir: &Path) -> usize {
         }
     }
     count
+}
+
+// ── Log viewing handlers ────────────────────────────────────────────────────
+
+/// Scan a PR cache directory for agent log files and return deduplicated roles.
+fn scan_agent_roles(pr_cache_dir: &Path) -> Vec<String> {
+    use std::collections::BTreeSet;
+    let mut roles = BTreeSet::new();
+
+    // Try content-addressed layout first: agents/*.agent_{role}_prompt.txt
+    let agents_dir = pr_cache_dir.join("agents");
+    if agents_dir.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+            for entry in entries.flatten() {
+                let fname = entry.file_name().to_string_lossy().to_string();
+                // Match: <hash>.agent_{role}_prompt.txt or <hash>.agent_{role}_response.txt
+                if let Some(rest) = fname.strip_suffix("_prompt.txt") {
+                    if let Some(role) = rest.rsplit(".agent_").next() {
+                        roles.insert(role.to_string());
+                    }
+                } else if let Some(rest) = fname.strip_suffix("_response.txt") {
+                    if let Some(role) = rest.rsplit(".agent_").next() {
+                        roles.insert(role.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Also check simple layout: agent_{role}_prompt.txt / agent_{role}_response.txt
+    if let Ok(entries) = std::fs::read_dir(pr_cache_dir) {
+        for entry in entries.flatten() {
+            let fname = entry.file_name().to_string_lossy().to_string();
+            if let Some(rest) = fname.strip_prefix("agent_") {
+                if let Some(role) = rest.strip_suffix("_prompt.txt")
+                    .or_else(|| rest.strip_suffix("_response.txt"))
+                {
+                    roles.insert(role.to_string());
+                }
+            }
+        }
+    }
+
+    roles.into_iter().collect()
+}
+
+/// Try to read an agent log file, returning the contents lossy-decoded.
+fn read_agent_log_file(cache_dir: &Path, pr_key: &str, role: &str, suffix: &str) -> Option<String> {
+    let pr_dir = cache_dir.join(pr_key);
+
+    // Content-addressed layout: agents/*.agent_{role}_{suffix}.txt
+    let agents_dir = pr_dir.join("agents");
+    if agents_dir.is_dir() {
+        let pattern = format!(".agent_{}_{}.txt", role, suffix);
+        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+            for entry in entries.flatten() {
+                let fname = entry.file_name().to_string_lossy().to_string();
+                if fname.ends_with(&pattern) {
+                    if let Ok(content) = std::fs::read(entry.path()) {
+                        return Some(String::from_utf8_lossy(&content).to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Simple layout: agent_{role}_{suffix}.txt
+    let simple_path = pr_dir.join(format!("agent_{}_{}.txt", role, suffix));
+    if simple_path.is_file() {
+        if let Ok(content) = std::fs::read(&simple_path) {
+            return Some(String::from_utf8_lossy(&content).to_string());
+        }
+    }
+
+    None
+}
+
+/// GET /api/runs/:id/logs — list available log files for a run
+pub async fn list_logs(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> impl IntoResponse {
+    tracing::info!("GET /api/runs/{}/logs", id);
+
+    let base_dir = state.output_dir.parent().unwrap_or(Path::new("."));
+    let cache_dir = base_dir.join("cache").join(&id);
+
+    if !cache_dir.exists() || !cache_dir.is_dir() {
+        return Json(LogsListResponse {
+            run_id: id,
+            cache_available: false,
+            prs: vec![],
+        })
+        .into_response();
+    }
+
+    let mut prs = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let pr_key = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+
+            // Try to find a PR title from the output directory
+            let pr_title = resolve_pr_title(&state.output_dir, &id, &pr_key);
+
+            let agents = scan_agent_roles(&path);
+
+            if !agents.is_empty() {
+                prs.push(PrLogsEntry {
+                    pr_key,
+                    pr_title,
+                    agents,
+                });
+            }
+        }
+    }
+
+    Json(LogsListResponse {
+        run_id: id,
+        cache_available: true,
+        prs,
+    })
+    .into_response()
+}
+
+/// Try to resolve a PR title from the run's output files.
+fn resolve_pr_title(output_dir: &Path, run_id: &str, pr_key: &str) -> String {
+    // The pr_key could be a number or URL fragment; try to find a matching result file
+    let run_path = output_dir.join(run_id);
+    if !run_path.is_dir() {
+        return pr_key.to_string();
+    }
+    if let Ok(entries) = std::fs::read_dir(&run_path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map_or(true, |e| e != "json") {
+                continue;
+            }
+            let fname = path.file_name().unwrap_or_default().to_string_lossy();
+            if fname == "_summary.json" {
+                continue;
+            }
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(pr) = serde_json::from_str::<PrResultJson>(&content) {
+                    // Match by PR number from URL being equal to parsed pr_key
+                    let pr_num_from_url = pr.url.rsplit('/').next().and_then(|s| s.parse::<u32>().ok());
+                    let pr_num_from_key = pr_key.parse::<u32>().ok();
+                    if pr_num_from_url.is_some() && pr_num_from_url == pr_num_from_key {
+                        if !pr.pr_title.is_empty() {
+                            return pr.pr_title;
+                        }
+                    }
+                    // Also match if the filename contains the pr_key (filename is often {pr_number}.json)
+                    if fname.contains(pr_key) && !pr.pr_title.is_empty() {
+                        return pr.pr_title;
+                    }
+                }
+            }
+        }
+    }
+    pr_key.to_string()
+}
+
+/// GET /api/runs/:id/logs/:pr_key/:role — get specific agent log
+pub async fn get_agent_log(
+    State(state): State<AppState>,
+    AxumPath((id, pr_key, role)): AxumPath<(String, String, String)>,
+) -> impl IntoResponse {
+    tracing::info!("GET /api/runs/{}/logs/{}/{}", id, pr_key, role);
+
+    let base_dir = state.output_dir.parent().unwrap_or(Path::new("."));
+    let cache_dir = base_dir.join("cache").join(&id);
+    let pr_dir = cache_dir.join(&pr_key);
+
+    if !pr_dir.exists() || !pr_dir.is_dir() {
+        return Json(AgentLogResponse {
+            run_id: id,
+            pr_key,
+            role,
+            prompt: None,
+            response: None,
+            available: false,
+        })
+        .into_response();
+    }
+
+    let prompt = read_agent_log_file(&cache_dir, &pr_key, &role, "prompt");
+    let response = read_agent_log_file(&cache_dir, &pr_key, &role, "response");
+    let available = prompt.is_some() || response.is_some();
+
+    Json(AgentLogResponse {
+        run_id: id,
+        pr_key,
+        role,
+        prompt,
+        response,
+        available,
+    })
+    .into_response()
+}
+
+/// POST /api/runs/:id/replay — start replay from cache
+pub async fn start_replay(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> impl IntoResponse {
+    tracing::info!("POST /api/runs/{}/replay", id);
+
+    let base_dir = state.output_dir.parent().unwrap_or(Path::new("."));
+    let cache_dir = base_dir.join("cache").join(&id);
+    let run_output_dir = state.output_dir.join(&id);
+    let summary_path = run_output_dir.join("_summary.json");
+
+    if !cache_dir.exists() || !cache_dir.is_dir() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": format!("Cache not available for run: {}", id)})),
+        )
+            .into_response();
+    }
+
+    if !summary_path.exists() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": format!("Summary not found for run: {}", id)})),
+        )
+            .into_response();
+    }
+
+    // Read summary to get original run config
+    let summary_content = match std::fs::read_to_string(&summary_path) {
+        Ok(c) => c,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("Failed to read summary: {}", e)})),
+            )
+                .into_response();
+        }
+    };
+
+    let summary: HashMap<String, serde_json::Value> = match serde_json::from_str(&summary_content) {
+        Ok(s) => s,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("Invalid summary JSON: {}", e)})),
+            )
+                .into_response();
+        }
+    };
+
+    let model = summary
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let dataset_dir = summary
+        .get("dataset_dir")
+        .and_then(|v| v.as_str())
+        .or_else(|| summary.get("dataset").and_then(|v| v.as_str()))
+        .unwrap_or("datasets/golden_comments")
+        .to_string();
+    let roles = summary
+        .get("roles")
+        .and_then(|v| v.as_str())
+        .unwrap_or("SA,CL,AR,SEC")
+        .to_string();
+
+    // Create replay output directory
+    let replay_output = base_dir.join("output").join(format!("{}-replay", id));
+
+    // Create replay state
+    let replay_state = crate::server::ReplayState {
+        status: "running".to_string(),
+        progress_pct: 0,
+        completed_prs: 0,
+        total_prs: 0,
+        message: "Starting replay...".to_string(),
+        output_dir: replay_output.clone(),
+    };
+
+    {
+        let mut replays = state.replays.write().await;
+        replays.insert(id.clone(), replay_state);
+    }
+
+    // Spawn crb-harness in background with --cache-dir
+    let harness_path = state.harness_path.clone();
+    let id_clone = id.clone();
+    let replays = state.replays.clone();
+    let cache_arg = cache_dir.to_string_lossy().to_string();
+    let replay_output_arg = replay_output.to_string_lossy().to_string();
+
+    tokio::spawn(async move {
+        let status = tokio::process::Command::new(&harness_path)
+            .arg("--model")
+            .arg(&model)
+            .arg("--dataset-dir")
+            .arg(&dataset_dir)
+            .arg("--roles")
+            .arg(&roles)
+            .arg("--cache-dir")
+            .arg(&cache_arg)
+            .arg("--output-dir")
+            .arg(&replay_output_arg)
+            .status()
+            .await;
+
+        let mut runs = replays.write().await;
+        if let Some(rstate) = runs.get_mut(&id_clone) {
+            match status {
+                Ok(s) if s.success() => {
+                    rstate.status = "completed".to_string();
+                    rstate.progress_pct = 100;
+                    rstate.completed_prs = rstate.total_prs;
+                    rstate.message = "Replay completed successfully".to_string();
+                }
+                Ok(s) => {
+                    rstate.status = "failed".to_string();
+                    rstate.message = format!("Harness exited with: {}", s);
+                }
+                Err(e) => {
+                    rstate.status = "failed".to_string();
+                    rstate.message = format!("Failed to run harness: {}", e);
+                }
+            }
+        }
+    });
+
+    Json(ReplayStartResponse {
+        run_id: id,
+        status: "started".to_string(),
+        cache_available: true,
+    })
+    .into_response()
+}
+
+/// GET /api/runs/:id/replay/status — poll replay progress
+pub async fn replay_status(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> impl IntoResponse {
+    tracing::info!("GET /api/runs/{}/replay/status", id);
+
+    let replays = state.replays.read().await;
+    if let Some(rstate) = replays.get(&id) {
+        Json(ReplayStatusResponse {
+            run_id: id,
+            status: rstate.status.clone(),
+            progress_pct: rstate.progress_pct,
+            completed_prs: rstate.completed_prs,
+            total_prs: rstate.total_prs,
+            message: rstate.message.clone(),
+        })
+        .into_response()
+    } else {
+        Json(ReplayStatusResponse {
+            run_id: id,
+            status: "idle".to_string(),
+            progress_pct: 0,
+            completed_prs: 0,
+            total_prs: 0,
+            message: "No replay in progress".to_string(),
+        })
+        .into_response()
+    }
 }
