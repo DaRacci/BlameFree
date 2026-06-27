@@ -4,7 +4,6 @@
 //! checkout, with a line limit to prevent context-window overflow.
 
 use std::fmt;
-use std::time::Duration;
 
 use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;

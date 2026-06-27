@@ -27,4 +27,4 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 dotenvy = { workspace = true }
 tempfile = "3"
 regex = { workspace = true }
-rig-tokudo = { workspace = true }
+sha2 = { workspace = true }

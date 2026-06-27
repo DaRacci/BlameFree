@@ -80,28 +80,6 @@ impl Default for GitTool {
     }
 }
 
-impl GitTool {
-    fn run_git(&self, args: &[&str]) -> Result<(String, String), GitToolError> {
-        let output = std::process::Command::new("git")
-            .args(["-C", &self.repo_root])
-            .args(args)
-            .output()
-            .map_err(|e| GitToolError::CommandFailed(e.to_string()))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-        if output.status.success() {
-            Ok((stdout, stderr))
-        } else {
-            Err(GitToolError::NonZeroExit(
-                output.status.code().unwrap_or(-1),
-                stderr,
-            ))
-        }
-    }
-}
-
 impl Tool for GitTool {
     const NAME: &'static str = "git";
 
