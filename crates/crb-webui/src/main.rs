@@ -50,6 +50,10 @@ pub struct CliArgs {
         default_value = "deepseek/deepseek-v4-flash,deepseek/deepseek-v4-pro"
     )]
     pub models: String,
+
+    /// Path to the code-review-benchmark directory (must contain offline/).
+    #[arg(long, env = "BENCHMARK_DIR")]
+    pub benchmark_dir: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -75,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
         args.harness_path,
         args.static_dir,
         args.models,
+        args.benchmark_dir,
     );
 
     server::start(app_state, args.port).await

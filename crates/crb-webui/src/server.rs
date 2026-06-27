@@ -29,6 +29,8 @@ pub struct AppState {
     pub static_dir: PathBuf,
     /// Comma-separated list of available models.
     pub models: String,
+    /// Path to the code-review-benchmark directory (must contain offline/).
+    pub benchmark_dir: Option<PathBuf>,
     /// Active (running) benchmark runs.
     pub active_runs: Arc<RwLock<HashMap<String, ActiveRun>>>,
     /// Active replay operations.
@@ -68,6 +70,7 @@ impl AppState {
         harness_path: PathBuf,
         static_dir: PathBuf,
         models: String,
+        benchmark_dir: Option<PathBuf>,
     ) -> Self {
         Self {
             output_dir,
@@ -75,6 +78,7 @@ impl AppState {
             harness_path,
             static_dir,
             models,
+            benchmark_dir,
             active_runs: Arc::new(RwLock::new(HashMap::new())),
             replays: Arc::new(RwLock::new(HashMap::new())),
         }

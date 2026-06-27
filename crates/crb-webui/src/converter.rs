@@ -188,8 +188,12 @@ pub fn convert_run(run_dir: &Path) -> Result<ConvertStats, String> {
 /// Run the Python step3_judge_comments.py judge on the converted candidates.
 ///
 /// Expects candidates.json to already exist in `run_dir`.
-/// Tries to locate `offline/` directory relative to the run directory or cwd.
-pub async fn run_judge(run_dir: &Path) -> JudgeResult {
+/// Uses `benchmark_dir` (path containing `offline/`) if provided, otherwise
+/// falls back to heuristic search relative to run_dir and cwd.
+pub async fn run_judge(
+    run_dir: &Path,
+    benchmark_dir: Option<&Path>,
+) -> JudgeResult {
     let candidates_path = run_dir.join("candidates.json");
     if !candidates_path.exists() {
         return JudgeResult {
@@ -201,23 +205,27 @@ pub async fn run_judge(run_dir: &Path) -> JudgeResult {
     }
 
     // Try to locate the offline/ directory
-    let run_dir_parent = run_dir.parent().unwrap_or(run_dir);
-    let output_parent = run_dir_parent.parent().unwrap_or(run_dir_parent);
-    let offline_dir = output_parent.join("offline");
-
-    let offline_dir = if offline_dir.exists() {
-        offline_dir
-    } else {
-        let cwd_offline = PathBuf::from("offline");
-        if cwd_offline.exists() {
-            cwd_offline
-        } else {
-            return JudgeResult {
-                success: false,
-                message: "offline/ directory not found — cannot run judge".to_string(),
-                stdout: String::new(),
-                stderr: String::new(),
-            };
+    let offline_dir = match benchmark_dir {
+        Some(dir) => dir.join("offline"),
+        None => {
+            let run_dir_parent = run_dir.parent().unwrap_or(run_dir);
+            let output_parent = run_dir_parent.parent().unwrap_or(run_dir_parent);
+            let heuristic_dir = output_parent.join("offline");
+            if heuristic_dir.exists() {
+                heuristic_dir
+            } else {
+                let cwd_offline = PathBuf::from("offline");
+                if cwd_offline.exists() {
+                    cwd_offline
+                } else {
+                    return JudgeResult {
+                        success: false,
+                        message: "offline/ directory not found — cannot run judge".to_string(),
+                        stdout: String::new(),
+                        stderr: String::new(),
+                    };
+                }
+            }
         }
     };
 

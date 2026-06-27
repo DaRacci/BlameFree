@@ -1115,7 +1115,7 @@ pub async fn run_judge(
     tracing::info!("POST /api/runs/{}/judge", id);
     let run_dir = state.output_dir.join(&id);
 
-    let result = crate::converter::run_judge(&run_dir).await;
+    let result = crate::converter::run_judge(&run_dir, state.benchmark_dir.as_deref()).await;
     tracing::info!("Judge for run '{}': success={}, message={}", id, result.success, result.message);
 
     let status = if result.success {
