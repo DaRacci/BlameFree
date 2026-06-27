@@ -135,6 +135,42 @@ pub struct AgentEvent {
     pub total: Option<u32>,
 }
 
+// ─── Log / Replay Types ─────────────────────────────────────────────┐
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogsListResponse {
+    pub run_id: String,
+    pub cache_available: bool,
+    pub prs: Vec<PrLogsEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrLogsEntry {
+    pub pr_key: String,
+    pub pr_title: String,
+    pub agents: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentLogResponse {
+    pub run_id: String,
+    pub pr_key: String,
+    pub role: String,
+    pub prompt: Option<String>,
+    pub response: Option<String>,
+    pub available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplayStatusResponse {
+    pub run_id: String,
+    pub status: String,
+    pub progress_pct: u32,
+    pub completed_prs: u32,
+    pub total_prs: u32,
+    pub message: String,
+}
+
 // ─── Helper: Build API URL ───────────────────────────────────────────────────
 
 pub fn api_url(path: &str) -> String {
