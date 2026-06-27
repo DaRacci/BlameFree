@@ -41,10 +41,9 @@ pub struct PrResult {
 
 // ── Output ──────────────────────────────────────────────────────────────────
 
-/// Write per-PR JSON result files and a summary CSV to `output_dir`.
+/// Write per-PR JSON result files to `output_dir`.
 ///
-/// Each PR gets `<sanitized-title>.json` with its full result.  A `summary.csv`
-/// contains aggregated metrics across all evaluated PRs.
+/// Each PR gets `<sanitized-title>.json` with its full result.
 pub fn write_report(results: &[PrResult], output_dir: &Path) -> Result<()> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -56,39 +55,6 @@ pub fn write_report(results: &[PrResult], output_dir: &Path) -> Result<()> {
         std::fs::write(&path, json)?;
         info!("Wrote per-PR result: {}", path.display());
     }
-
-    // Summary CSV
-    let csv_path = output_dir.join("summary.csv");
-    let mut wtr = csv::Writer::from_path(&csv_path)?;
-    wtr.write_record(&[
-        "pr_title",
-        "url",
-        "findings_count",
-        "golden_count",
-        "true_positives",
-        "false_positives",
-        "false_negatives",
-        "precision",
-        "recall",
-        "f1",
-    ])?;
-
-    for result in results {
-        wtr.write_record(&[
-            &result.pr_title,
-            &result.url,
-            &result.findings_count.to_string(),
-            &result.golden_count.to_string(),
-            &result.metrics.true_positives.to_string(),
-            &result.metrics.false_positives.to_string(),
-            &result.metrics.false_negatives.to_string(),
-            &format!("{:.4}", result.metrics.precision),
-            &format!("{:.4}", result.metrics.recall),
-            &format!("{:.4}", result.metrics.f1),
-        ])?;
-    }
-    wtr.flush()?;
-    info!("Wrote summary CSV: {}", csv_path.display());
 
     Ok(())
 }

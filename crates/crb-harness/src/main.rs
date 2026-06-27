@@ -692,6 +692,8 @@ where
 }
 
 /// Run the original single-agent evaluation with finding collection.
+/// Uses content-addressed caching: computes SHA256 keys from inputs,
+/// skips API calls on cache hit.
 async fn evaluate_pr_single_agent(
     pr: &GoldenCommentEntry,
     client: &rig_core::providers::openai::Client,
@@ -705,6 +707,12 @@ async fn evaluate_pr_single_agent(
     prompt_lib: &PromptLibrary,
     cache: Option<Arc<LlmCache>>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
+    // ── Pre-compute content-addressed cache key components ──────────────
+    let diff_hash = LlmCache::sha256(diff);
+    let rules_hash = LlmCache::sha256(rules_preamble.unwrap_or(""));
+    let judge_prompt_hash = LlmCache::sha256(crb_judge::JUDGE_PROMPT);
+    let judge_model = ""; // We don't have judge_model here; it's baked into the judge Agent
+
     let mut agent_set = tokio::task::JoinSet::new();
     let prompt_lib = prompt_lib.clone();
     for &role in AGENT_ROLES {
@@ -712,6 +720,8 @@ async fn evaluate_pr_single_agent(
         let model = model.to_string();
         let role = role.to_string();
         let diff = diff.to_string();
+        let diff_hash = diff_hash.clone();
+        let rules_hash = rules_hash.clone();
         let preamble = rules_preamble.map(String::from);
         let p_lib = prompt_lib.clone();
         let cache_arc: Option<Arc<dyn CacheBackend>> = cache.clone().map(|c| c as Arc<dyn CacheBackend>);
@@ -719,6 +729,28 @@ async fn evaluate_pr_single_agent(
         agent_set.spawn(async move {
             let span = info_span!("agent", role = %role);
             let _guard = span.enter();
+
+            // Compute agent cache key
+            let prompt_hash = LlmCache::sha256(p_lib.get(&role));
+            let agent_cache_key = LlmCache::compute_agent_key(
+                &prompt_hash,
+                &diff_hash,
+                &model,
+                &role,
+                &rules_hash,
+            );
+
+            // Check cache first
+            if let Some(ref c) = cache_arc {
+                if let Some(cached_response) = c.lookup_agent_by_key(&agent_cache_key) {
+                    tracing::info!("CACHE HIT for agent role={} (key={})", role, &agent_cache_key[..12]);
+                    let result = parse_agent_findings(&cached_response);
+                    return result;
+                }
+            }
+            tracing::info!("CACHE MISS for agent role={} (key={})", role, &agent_cache_key[..12]);
+
+            // Cache miss — make API call
             let agent = build_agent(&client, &model, &role, preamble.as_deref(), Some(&p_lib), None);
             let result: Result<Vec<Finding>, String> = with_retry(
                 || async {
@@ -727,9 +759,9 @@ async fn evaluate_pr_single_agent(
                         .await
                         .map_err(|e| e.to_string())?;
 
-                    // Cache the prompt+response if cache is active
+                    // Cache the prompt+response with content-addressed key
                     if let Some(ref c) = cache_arc {
-                        c.save_agent(&role, &diff, &response);
+                        c.save_agent_with_key(&agent_cache_key, &role, &diff, &response);
                     }
 
                     parse_agent_findings(&response)
@@ -755,6 +787,25 @@ async fn evaluate_pr_single_agent(
     let mut verdicts = Vec::new();
     for finding in &all_findings {
         for gc in &pr.comments {
+            // Compute judge cache key
+            let judge_key = LlmCache::compute_judge_key(
+                &judge_prompt_hash,
+                &finding.message,
+                &gc.comment,
+                judge_model,
+            );
+
+            // Check judge cache first
+            if let Some(ref c) = cache {
+                if let Some(cached_verdict) = c.lookup_judge_by_key(&judge_key) {
+                    tracing::info!("CACHE HIT for judge (key={})", &judge_key[..12]);
+                    verdicts.push(cached_verdict);
+                    continue;
+                }
+            }
+
+            // Cache miss — make API call
+            tracing::info!("CACHE MISS for judge (key={})", &judge_key[..12]);
             match with_retry(
                 || run_judge(judge, &gc.comment, &finding.message),
                 3,    // max_retries
@@ -766,7 +817,7 @@ async fn evaluate_pr_single_agent(
                     // Cache the judge call if cache is active
                     if let Some(ref c) = cache {
                         let verdict_json = serde_json::to_string(&verdict).unwrap_or_default();
-                        let _ = c.save_judge(&gc.comment, &finding.message, &verdict_json);
+                        let _ = c.save_judge_with_key(&judge_key, &gc.comment, &finding.message, &verdict_json);
                     }
                     verdicts.push(verdict);
                 }
@@ -796,9 +847,23 @@ async fn evaluate_pr_consensus(
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // Parse comma-separated roles
     let parsed_roles: Vec<&str> = roles.split(',').map(|r| r.trim()).filter(|r| !r.is_empty()).collect();
+
+    // ── Pre-compute content-addressed cache key components ──────────────
+    let diff_hash = LlmCache::sha256(diff);
+    let rules_hash = LlmCache::sha256(rules_preamble.unwrap_or(""));
+    let judge_prompt_hash = LlmCache::sha256(crb_judge::JUDGE_PROMPT);
+    // Use the first agent role's prompt hash as the prompt hash — in practice
+    // each role has its own prompt template, but the consensus pipeline uses
+    // one prompt_hash for all reviewers. For a more granular approach, we'd
+    // compute per-role cache keys inside run_reviewers.
+    let first_role = parsed_roles.first().copied().unwrap_or("SA");
+    let prompt_hash = LlmCache::sha256(prompt_lib.get(first_role));
+    let judge_model = ""; // We don't have judge_model here
+
     let result = evaluate_pr_with_consensus(
         pr, diff, client, model, judge, rules_preamble, Some(prompt_lib), None,
         &parsed_roles, max_findings, cache.clone().map(|c| c as Arc<dyn CacheBackend>),
+        &diff_hash, &prompt_hash, &rules_hash, &judge_prompt_hash, judge_model,
     )
     .await?;
 

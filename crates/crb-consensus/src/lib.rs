@@ -18,12 +18,65 @@ use rig_core::completion::Prompt;
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tokio::task::JoinSet;
 
 use crb_agents::prompts::PromptLibrary;
 use crb_agents::{build_agent, Finding};
 use crb_judge::{run_judge, JudgeVerdict};
 use crb_reporting::{GoldenCommentEntry, PrResult};
+
+// ── Cache key computation ──────────────────────────────────────────────────
+
+/// Compute a SHA256 hex digest of the input string.
+pub fn sha256_hex(input: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// Compute a content-addressed cache key for an agent LLM call.
+///
+/// Components (all SHA256 hex digests or plain strings) are concatenated
+/// and hashed again to produce a single deterministic key.
+pub fn compute_agent_cache_key(
+    prompt_hash: &str,
+    diff_hash: &str,
+    model_name: &str,
+    role: &str,
+    rules_hash: &str,
+) -> String {
+    sha256_hex(&format!(
+        "{}:{}:{}:{}:{}",
+        prompt_hash, diff_hash, model_name, role, rules_hash
+    ))
+}
+
+/// Compute a content-addressed cache key for a judge LLM call.
+pub fn compute_judge_cache_key(
+    judge_prompt_hash: &str,
+    finding_message: &str,
+    golden_comment: &str,
+    judge_model: &str,
+) -> String {
+    sha256_hex(&format!(
+        "{}:{}:{}:{}",
+        judge_prompt_hash, finding_message, golden_comment, judge_model
+    ))
+}
+
+/// Compute a content-addressed cache key for a context gatherer LLM call.
+pub fn compute_context_cache_key(
+    gatherer_prompt_hash: &str,
+    diff_hash: &str,
+    repo_state_hash: &str,
+    model_name: &str,
+) -> String {
+    sha256_hex(&format!(
+        "{}:{}:{}:{}",
+        gatherer_prompt_hash, diff_hash, repo_state_hash, model_name
+    ))
+}
 
 // ── Cache backend trait ──────────────────────────────────────────────────────
 
@@ -38,6 +91,34 @@ pub trait CacheBackend: Send + Sync {
 
     /// Append a judge call entry (golden comment, finding message, verdict JSON).
     fn save_judge(&self, golden: &str, finding: &str, verdict_json: &str);
+
+    // ── Content-addressed caching methods ─────────────────────────────
+
+    /// Look up a cached agent response by its content-addressed key.
+    /// Returns `Some(response_text)` on cache hit, `None` on miss.
+    fn lookup_agent_by_key(&self, _cache_key: &str) -> Option<String> {
+        None
+    }
+
+    /// Look up a cached judge verdict by its content-addressed key.
+    /// Returns `Some(JudgeVerdict)` on cache hit, `None` on miss.
+    fn lookup_judge_by_key(&self, _cache_key: &str) -> Option<JudgeVerdict> {
+        None
+    }
+
+    /// Save an agent prompt+response pair with a content-addressed cache key.
+    fn save_agent_with_key(&self, _cache_key: &str, _role: &str, _prompt: &str, _response: &str) {}
+
+    /// Save a judge verdict with a content-addressed cache key.
+    fn save_judge_with_key(&self, _cache_key: &str, _golden: &str, _finding: &str, _verdict_json: &str) {}
+
+    /// Look up a cached context gatherer response by its content-addressed key.
+    fn lookup_context_by_key(&self, _cache_key: &str) -> Option<String> {
+        None
+    }
+
+    /// Save a context gatherer prompt+response pair with a content-addressed cache key.
+    fn save_context_with_key(&self, _cache_key: &str, _prompt: &str, _response: &str) {}
 }
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -109,7 +190,7 @@ pub struct ConsensusReport {
     pub precision: f64,
     /// TP / (TP + FN)
     pub recall: f64,
-    /// Harmonic mean of precision and recall.
+    /// F1 = harmonic mean of precision and recall
     pub f1: f64,
 }
 
@@ -141,35 +222,100 @@ pub fn build_reviewer_agent(
 /// `config.max_findings`.  Agents that time out or return errors yield an
 /// empty finding list with a warning — no hard failure.
 ///
-/// If `cache` is provided, the prompt (diff) and response for each agent
-/// are saved via [`CacheBackend::save_agent`].
+/// If `cache` is provided, uses content-addressed caching:
+/// - Computes cache key from prompt_hash, diff_hash, model, role, rules_hash
+/// - On cache hit: skips API call, logs "CACHE HIT", uses cached response
+/// - On cache miss: makes API call, saves response, logs "CACHE MISS"
 pub async fn run_reviewers(
     configs: Vec<ReviewerConfig>,
     diff: &str,
+    diff_hash: &str,
     client: &openai::Client,
     rules_preamble: Option<&str>,
     prompt_lib: Option<&PromptLibrary>,
     template_vars: Option<&HashMap<&str, &str>>,
     cache: Option<Arc<dyn CacheBackend>>,
+    prompt_hash: &str,
+    rules_hash: &str,
 ) -> Vec<(Role, Vec<Finding>)> {
     let mut set = JoinSet::new();
 
     for config in configs {
         let client = client.clone();
         let diff = diff.to_string();
+        let diff_hash = diff_hash.to_string();
         let role = config.role;
         let max_findings = config.max_findings;
         let preamble = rules_preamble.map(String::from);
         let agent = build_reviewer_agent(&client, &config, preamble.as_deref(), prompt_lib, template_vars);
         let cache = cache.clone();
+        let prompt_hash = prompt_hash.to_string();
+        let rules_hash = rules_hash.to_string();
+        let model_name = config.model.clone();
 
         set.spawn(async move {
+            let cache_key = compute_agent_cache_key(
+                &prompt_hash,
+                &diff_hash,
+                &model_name,
+                role.as_str(),
+                &rules_hash,
+            );
+
+            // Check cache first
+            if let Some(ref cache) = cache {
+                if let Some(cached_response) = cache.lookup_agent_by_key(&cache_key) {
+                    tracing::info!("CACHE HIT for role {:?} (key={})", role, &cache_key[..12]);
+                    // Parse findings from cached response
+                    let response = cached_response;
+                    let preview_len = std::cmp::min(500, response.len());
+                    tracing::info!("Agent cached response (first 500 chars): {}", &response[..preview_len]);
+
+                    let mut findings: Vec<Finding> =
+                        serde_json::from_str(&response).unwrap_or_else(|_| {
+                            // Strategy 2: Extract JSON from markdown code blocks
+                            let re = Regex::new(r"(?s)```(?:json)?\s*\n(.*?)\n\s*```").unwrap();
+                            if let Some(caps) = re.captures(&response) {
+                                let inner = caps.get(1).unwrap().as_str().trim();
+                                if let Ok(f) = serde_json::from_str::<Vec<Finding>>(inner) {
+                                    return f;
+                                }
+                            }
+                            // Strategy 3: Find any JSON array in the response
+                            let array_re = Regex::new(r"\[[\s\S]*\]").unwrap();
+                            if let Some(m) = array_re.find(&response) {
+                                if let Ok(f) = serde_json::from_str::<Vec<Finding>>(m.as_str()) {
+                                    return f;
+                                }
+                            }
+                            tracing::warn!(
+                                "Failed to parse CACHED findings for role {:?}. Response (truncated): {}",
+                                role,
+                                &response[..std::cmp::min(200, response.len())],
+                            );
+                            Vec::new()
+                        });
+                    if findings.len() > max_findings {
+                        tracing::warn!(
+                            "Role {:?} produced {} findings (cached), capping at {}",
+                            role,
+                            findings.len(),
+                            max_findings,
+                        );
+                        findings.truncate(max_findings);
+                    }
+                    return (role, findings);
+                }
+            }
+
+            // Cache miss — make the API call
+            tracing::info!("CACHE MISS for role {:?} (key={})", role, &cache_key[..12]);
             let outcome = tokio::time::timeout(Duration::from_secs(120), async {
                 let response = agent.prompt(&diff).await?;
 
-                // Cache the prompt+response if cache is active
+                // Cache the response if cache is active
                 if let Some(ref cache) = cache {
-                    cache.save_agent(role.as_str(), &diff, &response);
+                    cache.save_agent_with_key(&cache_key, role.as_str(), &diff, &response);
                 }
 
                 // Log raw response for debugging
@@ -295,7 +441,8 @@ pub async fn judge_comment(
 /// 4. Remaining unmatched findings are classified as false positives.
 /// 5. Compute precision / recall / F1 metrics.
 ///
-/// If `cache` is provided, agent interactions and judge calls are saved.
+/// If `cache` is provided, agent interactions and judge calls are cached
+/// using content-addressed keys derived from prompt hashes, diff hash, etc.
 pub async fn run_consensus(
     diff: &str,
     goldens: Vec<GoldenComment>,
@@ -306,9 +453,18 @@ pub async fn run_consensus(
     prompt_lib: Option<&PromptLibrary>,
     template_vars: Option<&HashMap<&str, &str>>,
     cache: Option<Arc<dyn CacheBackend>>,
+    diff_hash: &str,
+    prompt_hash: &str,
+    rules_hash: &str,
+    judge_prompt_hash: &str,
+    judge_model: &str,
 ) -> ConsensusReport {
-    // Step 1: run all reviewers concurrently
-    let agents = run_reviewers(reviewer_configs, diff, client, rules_preamble, prompt_lib, template_vars, cache.clone()).await;
+    // Step 1: run all reviewers concurrently with content-addressed caching
+    let agents = run_reviewers(
+        reviewer_configs, diff, diff_hash, client, rules_preamble,
+        prompt_lib, template_vars, cache.clone(),
+        prompt_hash, rules_hash,
+    ).await;
 
     // Flatten all findings into a single mutable pool
     let mut unmatched: Vec<Finding> = agents
@@ -320,7 +476,7 @@ pub async fn run_consensus(
     let mut true_positives: Vec<(GoldenComment, Finding)> = Vec::new();
     let mut false_negatives: Vec<GoldenComment> = Vec::new();
 
-    // Step 2 & 3: match each golden, with LLM fallback
+    // Step 2 & 3: match each golden, with LLM fallback (using cache)
     for golden in &goldens {
         let heuristic_result = judge_comment(golden, &unmatched).await;
 
@@ -342,13 +498,40 @@ pub async fn run_consensus(
                 // LLM judge fallback: try each unmatched finding
                 let llm_matched = 'llm: {
                     for i in 0..unmatched.len() {
+                        // Compute judge cache key
+                        let judge_key = compute_judge_cache_key(
+                            judge_prompt_hash,
+                            &unmatched[i].message,
+                            &golden.message_regex,
+                            judge_model,
+                        );
+
+                        // Check judge cache first
+                        if let Some(ref c) = cache {
+                            if let Some(cached_verdict) = c.lookup_judge_by_key(&judge_key) {
+                                tracing::info!("CACHE HIT for judge (key={})", &judge_key[..12]);
+                                if cached_verdict.match_ {
+                                    if let Some(ref c) = cache {
+                                        let verdict_json = serde_json::to_string(&cached_verdict).unwrap_or_default();
+                                        c.save_judge_with_key(&judge_key, &golden.message_regex, &unmatched[i].message, &verdict_json);
+                                    }
+                                    let matched = unmatched.remove(i);
+                                    true_positives.push((golden.clone(), matched));
+                                    break 'llm true;
+                                }
+                                continue;
+                            }
+                        }
+
+                        // Cache miss — make API call
+                        tracing::info!("CACHE MISS for judge (key={})", &judge_key[..12]);
                         match run_judge(judge, &golden.message_regex, &unmatched[i].message).await
                         {
                             Ok(verdict) if verdict.match_ => {
                                 // Cache the judge call if cache is active
                                 if let Some(ref c) = cache {
                                     let verdict_json = serde_json::to_string(&verdict).unwrap_or_default();
-                                    c.save_judge(&golden.message_regex, &unmatched[i].message, &verdict_json);
+                                    c.save_judge_with_key(&judge_key, &golden.message_regex, &unmatched[i].message, &verdict_json);
                                 }
                                 let matched = unmatched.remove(i);
                                 true_positives.push((golden.clone(), matched));
@@ -439,6 +622,12 @@ pub async fn evaluate_pr_with_consensus(
     roles: &[&str],
     max_findings: usize,
     cache: Option<Arc<dyn CacheBackend>>,
+    // Content-addressed cache key components
+    diff_hash: &str,
+    prompt_hash: &str,
+    rules_hash: &str,
+    judge_prompt_hash: &str,
+    judge_model: &str,
 ) -> Result<PrResult> {
     // Build one reviewer config per selected role.
     let reviewer_configs: Vec<ReviewerConfig> = roles
@@ -485,6 +674,11 @@ pub async fn evaluate_pr_with_consensus(
         prompt_lib,
         template_vars,
         cache,
+        diff_hash,
+        prompt_hash,
+        rules_hash,
+        judge_prompt_hash,
+        judge_model,
     )
     .await;
     // Build verdicts for compatibility with crb-reporting::PrResult.
@@ -558,6 +752,29 @@ mod tests {
         assert!(fn_.is_string());
         assert_ne!(tp, fp);
         assert_ne!(fp, fn_);
+    }
+
+    #[test]
+    fn test_compute_agent_cache_key_deterministic() {
+        let key1 = compute_agent_cache_key("abc", "def", "gpt-4o", "SA", "rules123");
+        let key2 = compute_agent_cache_key("abc", "def", "gpt-4o", "SA", "rules123");
+        assert_eq!(key1, key2);
+        // Different input should produce different key
+        let key3 = compute_agent_cache_key("abc", "xyz", "gpt-4o", "SA", "rules123");
+        assert_ne!(key1, key3);
+    }
+
+    #[test]
+    fn test_compute_judge_cache_key_deterministic() {
+        let key1 = compute_judge_cache_key("jph", "finding msg", "golden comment", "gpt-4o-mini");
+        let key2 = compute_judge_cache_key("jph", "finding msg", "golden comment", "gpt-4o-mini");
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn test_sha256_hex() {
+        let h = sha256_hex("hello");
+        assert_eq!(h.len(), 64); // SHA256 hex is 64 chars
     }
 
     // ── judge_comment tests ─────────────────────────────────────────
