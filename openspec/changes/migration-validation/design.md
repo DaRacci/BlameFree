@@ -165,8 +165,8 @@ cargo build --release -p crb-harness
     --repos repos/ \
     --output results/$(date +%Y%m%d_%H%M%S)/ \
     --validate --baseline baselines/v5.14.json \
-    --model deepseek/deepseek-v4-flash \
-    --judge-model openai/gpt-4o-mini \
+    --model deepseek/deepseek-v4-pro \
+    --judge-model deepseek/deepseek-v4-flash \
     --concurrency 24
 ```
 

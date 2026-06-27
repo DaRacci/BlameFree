@@ -128,8 +128,8 @@ impl Role {
 /// Configuration for a single reviewer agent.
 pub struct ReviewerConfig {
     pub role: Role,
-    pub model: String,        // e.g. "gpt-4o"
-    pub max_findings: usize,  // max findings per agent
+    pub model: String,
+    pub max_findings: usize,
 }
 ```
 

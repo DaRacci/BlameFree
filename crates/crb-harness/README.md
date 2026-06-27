@@ -21,7 +21,7 @@ cargo run --bin crb-harness -- \
 
 # Full run with 8 concurrent PRs, TUI dashboard, and CI validation
 cargo run --bin crb-harness -- \
-  --model gpt-4o \
+  --model deepseek/deepseek-v4-flash \
   --concurrency 8 \
   --dashboard \
   --ci

@@ -6,47 +6,47 @@ Professional dark theme inspired by GitHub Dark. All colors defined as CSS custo
 
 ### Surface & Background
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--bg-page` | `#0d1117` | Main page background |
-| `--bg-surface` | `#161b22` | Card, sidebar, panel backgrounds |
-| `--bg-surface-hover` | `#1c2333` | Card/row hover state |
+| Token                 | Value     | Usage                                |
+| --------------------- | --------- | ------------------------------------ |
+| `--bg-page`           | `#0d1117` | Main page background                 |
+| `--bg-surface`        | `#161b22` | Card, sidebar, panel backgrounds     |
+| `--bg-surface-hover`  | `#1c2333` | Card/row hover state                 |
 | `--bg-surface-raised` | `#1c2128` | Modals, dropdowns, elevated surfaces |
-| `--bg-input` | `#0d1117` | Form input fields |
+| `--bg-input`          | `#0d1117` | Form input fields                    |
 
 ### Accent Colors (Semantic)
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--accent-blue` | `#58a6ff` | Primary actions, links, active nav items |
-| `--accent-green` | `#3fb950` | Success states, completed runs, positive metrics |
-| `--accent-orange` | `#f0883e` | Warnings, pending states, medium metrics |
-| `--accent-red` | `#f85149` | Errors, failures, negative metrics, stop buttons |
-| `--accent-purple` | `#bc8cff` | Agent role indicators (optional distinction) |
+| Token             | Value     | Usage                                            |
+| ----------------- | --------- | ------------------------------------------------ |
+| `--accent-blue`   | `#58a6ff` | Primary actions, links, active nav items         |
+| `--accent-green`  | `#3fb950` | Success states, completed runs, positive metrics |
+| `--accent-orange` | `#f0883e` | Warnings, pending states, medium metrics         |
+| `--accent-red`    | `#f85149` | Errors, failures, negative metrics, stop buttons |
+| `--accent-purple` | `#bc8cff` | Agent role indicators (optional distinction)     |
 
 ### Text
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--text-primary` | `#c9d1d9` | Body text, headings |
-| `--text-secondary` | `#8b949e` | Labels, helper text, timestamps |
-| `--text-tertiary` | `#6e7681` | Placeholders, disabled text |
-| `--text-inverse` | `#ffffff` | Text on accent backgrounds |
-| `--text-link` | `--accent-blue` | Hyperlinks |
+| Token              | Value           | Usage                           |
+| ------------------ | --------------- | ------------------------------- |
+| `--text-primary`   | `#c9d1d9`       | Body text, headings             |
+| `--text-secondary` | `#8b949e`       | Labels, helper text, timestamps |
+| `--text-tertiary`  | `#6e7681`       | Placeholders, disabled text     |
+| `--text-inverse`   | `#ffffff`       | Text on accent backgrounds      |
+| `--text-link`      | `--accent-blue` | Hyperlinks                      |
 
 ### Borders & Dividers
 
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--border-default` | `#30363d` | Card borders, table borders, dividers |
-| `--border-muted` | `#21262d` | Subtle dividers, separator lines |
-| `--border-accent` | `--accent-blue` | Focus rings, active selection borders |
+| Token              | Value           | Usage                                 |
+| ------------------ | --------------- | ------------------------------------- |
+| `--border-default` | `#30363d`       | Card borders, table borders, dividers |
+| `--border-muted`   | `#21262d`       | Subtle dividers, separator lines      |
+| `--border-accent`  | `--accent-blue` | Focus rings, active selection borders |
 
 ### Shadows
 
-| Token | Value |
-|-------|-------|
-| `--shadow-sm` | `0 1px 2px rgba(0,0,0,0.3)` |
+| Token         | Value                        |
+| ------------- | ---------------------------- |
+| `--shadow-sm` | `0 1px 2px rgba(0,0,0,0.3)`  |
 | `--shadow-md` | `0 4px 12px rgba(0,0,0,0.4)` |
 | `--shadow-lg` | `0 8px 24px rgba(0,0,0,0.5)` |
 
@@ -115,24 +115,25 @@ Professional dark theme inspired by GitHub Dark. All colors defined as CSS custo
 ### Font Stack
 
 ```css
---font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI',
-             Roboto, Oxygen, Ubuntu, Cantarell,
-             'Helvetica Neue', Arial, sans-serif;
---font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code',
-             'JetBrains Mono', Menlo, Consolas, monospace;
+--font-sans:
+  -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+  Cantarell, "Helvetica Neue", Arial, sans-serif;
+--font-mono:
+  "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", Menlo, Consolas,
+  monospace;
 ```
 
 ### Type Scale
 
-| Token | Size | Weight | Line Height | Usage |
-|-------|------|--------|-------------|-------|
-| `--text-xs` | 12px | 400 | 1.4 | Captions, timestamps |
-| `--text-sm` | 14px | 400 | 1.5 | Body text, table cells |
-| `--text-base` | 16px | 400 | 1.6 | Default body text |
-| `--text-lg` | 18px | 500 | 1.5 | Section titles |
-| `--text-xl` | 20px | 600 | 1.4 | Page titles (h2) |
-| `--text-2xl` | 24px | 700 | 1.3 | Main heading (h1) |
-| `--text-3xl` | 32px | 700 | 1.3 | Hero / page heading |
+| Token         | Size | Weight | Line Height | Usage                  |
+| ------------- | ---- | ------ | ----------- | ---------------------- |
+| `--text-xs`   | 12px | 400    | 1.4         | Captions, timestamps   |
+| `--text-sm`   | 14px | 400    | 1.5         | Body text, table cells |
+| `--text-base` | 16px | 400    | 1.6         | Default body text      |
+| `--text-lg`   | 18px | 500    | 1.5         | Section titles         |
+| `--text-xl`   | 20px | 600    | 1.4         | Page titles (h2)       |
+| `--text-2xl`  | 24px | 700    | 1.3         | Main heading (h1)      |
+| `--text-3xl`  | 32px | 700    | 1.3         | Hero / page heading    |
 
 ### Heading Hierarchy
 
@@ -193,13 +194,13 @@ The fundamental building block.
 
 ### 5.2 Button
 
-| Variant | Background | Text | Border | Hover |
-|---------|-----------|------|--------|-------|
-| Primary | `--accent-blue` | `--text-inverse` | none | Lighter blue |
-| Success | `--accent-green` | `--text-inverse` | none | Lighter green |
-| Danger | `--accent-red` | `--text-inverse` | none | Lighter red |
-| Secondary | transparent | `--text-primary` | `--border-default` | `--bg-surface-hover` |
-| Ghost | transparent | `--text-secondary` | none | `--bg-surface-hover` |
+| Variant   | Background       | Text               | Border             | Hover                |
+| --------- | ---------------- | ------------------ | ------------------ | -------------------- |
+| Primary   | `--accent-blue`  | `--text-inverse`   | none               | Lighter blue         |
+| Success   | `--accent-green` | `--text-inverse`   | none               | Lighter green        |
+| Danger    | `--accent-red`   | `--text-inverse`   | none               | Lighter red          |
+| Secondary | transparent      | `--text-primary`   | `--border-default` | `--bg-surface-hover` |
+| Ghost     | transparent      | `--text-secondary` | none               | `--bg-surface-hover` |
 
 - Padding: `--spacing-sm --spacing-lg`
 - Radius: `--radius-md`
@@ -548,16 +549,17 @@ frontend/
   --border-accent: var(--accent-blue);
 
   /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.5);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
 
   /* Typography */
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI',
-               Roboto, Oxygen, Ubuntu, Cantarell,
-               'Helvetica Neue', Arial, sans-serif;
-  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code',
-               'JetBrains Mono', Menlo, Consolas, monospace;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+    Cantarell, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", Menlo, Consolas,
+    monospace;
   --text-xs: 12px;
   --text-sm: 14px;
   --text-base: 16px;
@@ -593,17 +595,31 @@ frontend/
 ```css
 /* Sidebar toggle */
 @media (max-width: 1199px) {
-  .sidebar { width: 64px; }
-  .sidebar .nav-label { display: none; }
-  .main-content { margin-left: 64px; }
+  .sidebar {
+    width: 64px;
+  }
+  .sidebar .nav-label {
+    display: none;
+  }
+  .main-content {
+    margin-left: 64px;
+  }
 }
 
 /* Mobile */
 @media (max-width: 767px) {
-  .sidebar { display: none; }
-  .mobile-nav { display: flex; }
-  .content-grid { grid-template-columns: 1fr; }
-  .main-content { padding: var(--spacing-lg); }
+  .sidebar {
+    display: none;
+  }
+  .mobile-nav {
+    display: flex;
+  }
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+  .main-content {
+    padding: var(--spacing-lg);
+  }
 }
 ```
 

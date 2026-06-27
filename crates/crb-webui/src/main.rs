@@ -32,7 +32,11 @@ pub struct CliArgs {
     pub dataset_dir: PathBuf,
 
     /// Path to the `crb-harness` binary.
-    #[arg(long, env = "HARNESS_PATH", default_value = "../target/debug/crb-harness")]
+    #[arg(
+        long,
+        env = "HARNESS_PATH",
+        default_value = "../target/debug/crb-harness"
+    )]
     pub harness_path: PathBuf,
 
     /// Directory of the static frontend files to serve.
@@ -40,7 +44,10 @@ pub struct CliArgs {
     pub static_dir: PathBuf,
 
     /// Comma-separated list of available models.
-    #[arg(long, default_value = "gpt-4o,gpt-4o-mini,claude-sonnet-4-20250514,claude-opus-4-20250514")]
+    #[arg(
+        long,
+        default_value = "deepseek/deepseek-v4-flash,deepseek/deepseek-v4-pro"
+    )]
     pub models: String,
 }
 
@@ -48,8 +55,7 @@ pub struct CliArgs {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 

@@ -8,7 +8,6 @@ use axum::extract::State;
 use axum::response::sse::{Event, Sse};
 use axum::response::IntoResponse;
 use axum::Json;
-use futures::stream::Stream;
 use std::convert::Infallible;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
@@ -28,16 +27,13 @@ pub async fn live_stream(
 
     match tx {
         Some(tx) => {
-            let stream = BroadcastStream::new(tx.subscribe())
-                .filter_map(|result| match result {
-                    Ok(event) => {
-                        let json = serde_json::to_string(&event).ok()?;
-                        Some(Ok::<Event, Infallible>(
-                            Event::default().data(json),
-                        ))
-                    }
-                    Err(_) => None, // Lagged — skip
-                });
+            let stream = BroadcastStream::new(tx.subscribe()).filter_map(|result| match result {
+                Ok(event) => {
+                    let json = serde_json::to_string(&event).ok()?;
+                    Some(Ok::<Event, Infallible>(Event::default().data(json)))
+                }
+                Err(_) => None, // Lagged — skip
+            });
 
             Sse::new(stream)
                 .keep_alive(

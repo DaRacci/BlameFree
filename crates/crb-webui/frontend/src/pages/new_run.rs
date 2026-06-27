@@ -1,6 +1,6 @@
+use crate::{api_url, AppConfig, DatasetInfo, NewRunRequest, NewRunResponse};
 use leptos::*;
 use leptos_router::*;
-use crate::{AppConfig, DatasetInfo, NewRunRequest, NewRunResponse, api_url};
 
 #[component]
 pub fn NewRunPage() -> impl IntoView {
@@ -140,11 +140,7 @@ pub fn NewRunPage() -> impl IntoView {
                                 let models = if let Some(ref c) = cfg {
                                     c.models.clone()
                                 } else {
-                                    vec![
-                                        "deepseek/deepseek-v4-flash".into(),
-                                        "openai/gpt-4o".into(),
-                                        "anthropic/claude-3.5-sonnet".into(),
-                                    ]
+                                    vec![]
                                 };
                                 models.into_iter().map(|m| {
                                     let is_selected = model.get() == m;
@@ -257,9 +253,17 @@ async fn get_config() -> Result<AppConfig, String> {
     if !response.ok() {
         // Return sensible defaults
         return Ok(AppConfig {
-            models: vec!["gpt-4o".into(), "gpt-4o-mini".into(), "claude-3-opus".into(), "claude-3-sonnet".into()],
+            models: vec![
+                "deepseek/deepseek-v4-flash".into(),
+                "deepseek/deepseek-v4-pro".into(),
+            ],
             datasets: vec!["swir-bench".into(), "code-review-bench".into()],
-            roles: vec!["reviewer".into(), "summarizer".into(), "tester".into(), "analyst".into()],
+            roles: vec![
+                "reviewer".into(),
+                "summarizer".into(),
+                "tester".into(),
+                "analyst".into(),
+            ],
         });
     }
 
@@ -277,7 +281,8 @@ async fn create_run(req: NewRunRequest) -> Result<NewRunResponse, String> {
 
     let response = gloo_net::http::Request::post(&url)
         .header("Content-Type", "application/json")
-        .body(&body).map_err(|e| format!("Body error: {e}"))?
+        .body(&body)
+        .map_err(|e| format!("Body error: {e}"))?
         .send()
         .await
         .map_err(|e| format!("Network error: {e}"))?;

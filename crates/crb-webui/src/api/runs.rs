@@ -129,21 +129,30 @@ pub struct RunConfigResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkConfig {
     pub model: String,
+
     #[serde(default = "default_judge_model")]
     pub judge_model: String,
+
     #[serde(default = "default_dataset_dir", alias = "dataset")]
     pub dataset_dir: String,
+
     #[serde(default = "default_concurrency")]
     pub concurrency: usize,
+
     #[serde(default = "default_max_findings")]
     pub max_findings: usize,
+
     #[serde(default = "default_prompts_dir")]
     pub prompts_dir: String,
+
     pub cache_dir: Option<String>,
+
     #[serde(default = "default_roles", deserialize_with = "deserialize_roles")]
     pub roles: String,
+
     #[serde(default)]
     pub skip_consensus: bool,
+
     #[serde(default)]
     pub skip_linters: bool,
 }
@@ -171,12 +180,29 @@ fn deserialize_roles<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D
     d.deserialize_any(RolesVisitor)
 }
 
-fn default_judge_model() -> String { "gpt-4o-mini".to_string() }
-fn default_dataset_dir() -> String { "datasets/golden_comments".to_string() }
-fn default_concurrency() -> usize { 4 }
-fn default_max_findings() -> usize { 20 }
-fn default_prompts_dir() -> String { "prompts/builtin".to_string() }
-fn default_roles() -> String { "SA,CL,AR,SEC".to_string() }
+fn default_judge_model() -> String {
+    "deepseek/deepseek-v4-flash".to_string()
+}
+
+fn default_dataset_dir() -> String {
+    "datasets/golden_comments".to_string()
+}
+
+fn default_concurrency() -> usize {
+    4
+}
+
+fn default_max_findings() -> usize {
+    20
+}
+
+fn default_prompts_dir() -> String {
+    "prompts/builtin".to_string()
+}
+
+fn default_roles() -> String {
+    "SA,CL,AR,SEC".to_string()
+}
 
 /// Response returned when a benchmark is started.
 #[derive(Debug, Clone, Serialize)]
@@ -236,29 +262,78 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
         if file_path.extension().map_or(true, |e| e != "json") {
             continue;
         }
-        let file_name = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let file_name = file_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
 
         if file_name == "_summary.json" {
             if let Ok(content) = fs::read_to_string(&file_path) {
-                if let Ok(summary) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&content) {
+                if let Ok(summary) =
+                    serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
+                {
                     if let Some(metrics) = summary.get("aggregate_metrics") {
                         if let Some(am) = metrics.as_object() {
                             let ag = AggregateMetricsResponse {
                                 avg_f1: am.get("avg_f1").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                avg_precision: am.get("avg_precision").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                avg_recall: am.get("avg_recall").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                total_tp: am.get("total_true_positives").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-                                total_fp: am.get("total_false_positives").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-                                total_fn: am.get("total_false_negatives").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
-                                total_cost: summary.get("total_cost_usd").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                total_prs: summary.get("total_prs").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                                duration_secs: summary.get("duration_secs").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                                avg_precision: am
+                                    .get("avg_precision")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0),
+                                avg_recall: am
+                                    .get("avg_recall")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0),
+                                total_tp: am
+                                    .get("total_true_positives")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0)
+                                    as usize,
+                                total_fp: am
+                                    .get("total_false_positives")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0)
+                                    as usize,
+                                total_fn: am
+                                    .get("total_false_negatives")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0)
+                                    as usize,
+                                total_cost: summary
+                                    .get("total_cost_usd")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0),
+                                total_prs: summary
+                                    .get("total_prs")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0) as u32,
+                                duration_secs: summary
+                                    .get("duration_secs")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0),
                             };
-                            let pr_count = summary.get("total_prs").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-                            let model = summary.get("model").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
-                            duration_secs = summary.get("duration_secs").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                            total_cost = summary.get("total_cost_usd").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                            total_tokens = summary.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                            let pr_count = summary
+                                .get("total_prs")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0) as usize;
+                            let model = summary
+                                .get("model")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                            duration_secs = summary
+                                .get("duration_secs")
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0);
+                            total_cost = summary
+                                .get("total_cost_usd")
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0);
+                            total_tokens = summary
+                                .get("total_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0) as usize;
 
                             return Ok(RunSummary {
                                 id: name.to_string(),
@@ -368,11 +443,17 @@ pub async fn get_run(
         if file_path.extension().map_or(true, |e| e != "json") {
             continue;
         }
-        let file_name = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let file_name = file_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
 
         if file_name == "_summary.json" {
             if let Ok(content) = std::fs::read_to_string(&file_path) {
-                if let Ok(summary) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&content) {
+                if let Ok(summary) =
+                    serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
+                {
                     model = summary
                         .get("model")
                         .and_then(|v| v.as_str())
@@ -557,7 +638,9 @@ fn count_prs_in_dataset(dataset_dir: &Path) -> usize {
             let path = entry.path();
             if path.extension().map_or(false, |e| e == "json") {
                 if let Ok(content) = std::fs::read_to_string(&path) {
-                    if let Ok(val) = serde_json::from_str::<HashMap<String, serde_json::Value>>(&content) {
+                    if let Ok(val) =
+                        serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
+                    {
                         if let Some(entries) = val.get("entries").and_then(|v| v.as_array()) {
                             count += entries.len();
                         }

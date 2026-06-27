@@ -22,7 +22,7 @@ The system SHALL compare agent findings against golden comments using an LLM jud
 The system SHALL support configurable judge model, temperature, and structured output mode.
 
 #### Scenario: Model override
-- GIVEN a command-line flag `--judge-model gpt-4o-mini`
+- GIVEN a command-line flag `--judge-model deepseek/deepseek-v4-flash`
 - WHEN the harness runs
 - THEN all judge calls use the specified model instead of the default
 

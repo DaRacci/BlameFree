@@ -18,11 +18,15 @@ pub struct CliArgs {
     pub output_dir: String,
 
     /// Model to use for agent reviews (e.g. gpt-4o, claude-sonnet-4-20250514).
-    #[arg(long, env = "MODEL", default_value = "gpt-4o")]
+    #[arg(long, env = "MODEL", default_value = "deepseek/deepseek-v4-pro")]
     pub model: String,
 
     /// Model to use for the LLM judge (e.g. gpt-4o-mini).
-    #[arg(long, env = "JUDGE_MODEL", default_value = "gpt-4o-mini")]
+    #[arg(
+        long,
+        env = "JUDGE_MODEL",
+        default_value = "deepseek/deepseek-v4-flash"
+    )]
     pub judge_model: String,
 
     /// Maximum number of PRs to evaluate concurrently.
