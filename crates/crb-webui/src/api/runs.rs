@@ -318,7 +318,7 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
         }
     }
 
-    // 3) Sort: active (running) first by creation time, then completed by name
+    // 3) Sort: active (running) first by creation time, then completed by time
     runs.sort_by(|a, b| {
         let a_running = a.status == "running";
         let b_running = b.status == "running";
@@ -326,8 +326,8 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
         a_running
             .cmp(&b_running)
             .reverse()
-            // Within same group, most recent first (name = timestamp-based)
-            .then_with(|| b.name.cmp(&a.name))
+            // Within same group, most recent first (created_at is RFC 3339, lexicographically sortable)
+            .then_with(|| b.created_at.cmp(&a.created_at))
     });
 
     Json(runs).into_response()
@@ -507,6 +507,11 @@ pub async fn get_run(
     {
         let runs = state.active_runs.read().await;
         if let Some(active_run) = runs.get(&id) {
+            let status = if active_run.finished {
+                "completed".to_string()
+            } else {
+                "running".to_string()
+            };
             let roles: Vec<String> = active_run
                 .config
                 .roles
@@ -523,7 +528,7 @@ pub async fn get_run(
                 total_tokens: 0,
                 duration_secs: None,
                 model: active_run.config.model.clone(),
-                status: "running".to_string(),
+                status,
                 config: Some(RunConfigResponse {
                     model: active_run.config.model.clone(),
                     dataset: active_run.config.dataset_dir.clone(),
@@ -765,12 +770,18 @@ fn count_prs_in_dataset(dataset_dir: &Path) -> usize {
             let path = entry.path();
             if path.extension().map_or(false, |e| e == "json") {
                 if let Ok(content) = std::fs::read_to_string(&path) {
+                    // Try parsing as an object with "entries" key first
                     if let Ok(val) =
                         serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
                     {
                         if let Some(entries) = val.get("entries").and_then(|v| v.as_array()) {
                             count += entries.len();
+                            continue;
                         }
+                    }
+                    // Try parsing as a raw array
+                    if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
+                        count += arr.len();
                     }
                 }
             }

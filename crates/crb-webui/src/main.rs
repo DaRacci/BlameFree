@@ -58,6 +58,12 @@ pub struct CliArgs {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Load .env file before anything else, so all env-based config picks it up
+    match dotenvy::dotenv() {
+        Ok(path) => tracing::info!("Loaded .env from: {}", path.display()),
+        Err(e) => tracing::info!("No .env file loaded: {e}"),
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),

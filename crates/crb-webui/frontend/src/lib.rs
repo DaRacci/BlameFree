@@ -157,18 +157,63 @@ pub struct PrEntry {
     pub pr_number: u32,
 }
 
+// ─── Role display utilities ──────────────────────────────────────────
+
+/// Map a role abbreviation (SA/CL/AR/SEC) to a human-readable display name.
+pub fn role_display_name(role: &str) -> &'static str {
+    match role {
+        "SA" => "Security Auditor",
+        "CL" => "Code Logician",
+        "AR" => "Architecture Reviewer",
+        "SEC" => "Security Evaluator",
+        _ => role,
+    }
+}
+
+/// The canonical agent role identifiers, matching crb-agents::AGENT_ROLES.
+pub const AGENT_ROLES: &[&str] = &["SA", "CL", "AR", "SEC"];
+
+/// A DashboardEvent as serialized by the backend SSE endpoint.
+/// Uses the same tagged-enum format (`event`/`data`) as the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentEvent {
-    pub agent: String,
-    pub status: String,
-    #[serde(default)]
-    pub response: Option<String>,
-    #[serde(default)]
-    pub pr_number: Option<u32>,
-    #[serde(default)]
-    pub progress: Option<u32>,
-    #[serde(default)]
-    pub total: Option<u32>,
+#[serde(tag = "event", content = "data")]
+pub enum DashboardEvent {
+    /// An agent has started its review for a given PR.
+    #[serde(rename = "agent_started")]
+    AgentStarted {
+        pr_key: String,
+        role: String,
+    },
+    /// A chunk of streaming response text from an agent.
+    #[serde(rename = "agent_chunk")]
+    AgentChunk {
+        role: String,
+        chunk: String,
+    },
+    /// An agent has finished its review.
+    #[serde(rename = "agent_finished")]
+    AgentFinished {
+        role: String,
+        findings: usize,
+        success: bool,
+    },
+    /// A single PR has been fully evaluated.
+    #[serde(rename = "pr_completed")]
+    PrCompleted {
+        pr_key: String,
+    },
+    /// Progress update during a run.
+    #[serde(rename = "run_progress")]
+    RunProgress {
+        completed_prs: usize,
+        total_prs: usize,
+        current_pr: Option<String>,
+    },
+    /// The entire run has finished.
+    #[serde(rename = "run_finished")]
+    RunFinished {
+        total_prs: usize,
+    },
 }
 
 // ─── Log / Replay Types ─────────────────────────────────────────────┐

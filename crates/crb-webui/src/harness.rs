@@ -67,6 +67,13 @@ pub async fn run_harness(
         cmd.arg("--pr-filter").arg(pr_filter);
     }
 
+    // Pass relevant environment variables to the harness subprocess
+    for (key, val) in std::env::vars() {
+        if key.starts_with("OPENAI_") || key.starts_with("OPENROUTER_") || key.starts_with("ANTHROPIC_") {
+            cmd.env(key, val);
+        }
+    }
+
     // Log the full command for debugging
     let cmd_str = format!("{:?}", cmd.as_std());
     tracing::info!("Spawning harness command: {}", cmd_str);
@@ -121,12 +128,10 @@ pub async fn run_harness(
     // Wait for the child process to exit
     let status = child.wait().await?;
 
-    // Update run as finished
+    // Remove run from active_runs so GET /api/runs/:id falls through to disk
     {
         let mut runs = active_runs.write().await;
-        if let Some(run) = runs.get_mut(run_id) {
-            run.finished = true;
-        }
+        runs.remove(run_id);
     }
 
     let elapsed = start_time.elapsed();
