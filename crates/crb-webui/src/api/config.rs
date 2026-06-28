@@ -2,9 +2,9 @@
 
 use std::path::Path;
 
-use axum::extract::State;
+use axum::extract::{Path as AxumPath, State};
 use axum::Json;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::server::AppState;
 
@@ -23,12 +23,36 @@ pub struct ModelInfo {
     pub name: String,
 }
 
+/// Per-dataset config loaded from dataset.toml
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DatasetConfig {
+    #[serde(default)]
+    pub defaults: DatasetDefaults,
+}
+
+/// Default values that auto-fill the New Run form when a dataset is selected.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DatasetDefaults {
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub pr_filter: Option<String>,
+    #[serde(default)]
+    pub concurrency: Option<usize>,
+    #[serde(default)]
+    pub max_findings: Option<usize>,
+    #[serde(default)]
+    pub roles: Option<String>,
+}
+
 /// Information about an available dataset.
 #[derive(Debug, Clone, Serialize)]
 pub struct DatasetInfo {
     pub id: String,
     pub path: String,
     pub pr_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config: Option<DatasetConfig>,
 }
 
 /// GET /api/config — list available models, datasets, and roles.
@@ -83,10 +107,15 @@ fn scan_datasets(dataset_dir: &Path) -> Vec<DatasetInfo> {
                     .to_string_lossy()
                     .to_string();
                 let pr_count = count_prs_in_dir(&path);
+
+                // Try to load dataset.toml config
+                let config = load_dataset_config(&path);
+
                 datasets.push(DatasetInfo {
                     id,
                     path: path.to_string_lossy().to_string(),
                     pr_count,
+                    config,
                 });
             }
         }
@@ -94,6 +123,32 @@ fn scan_datasets(dataset_dir: &Path) -> Vec<DatasetInfo> {
 
     datasets.sort_by(|a, b| b.pr_count.cmp(&a.pr_count));
     datasets
+}
+
+fn load_dataset_config(dir: &Path) -> Option<DatasetConfig> {
+    let config_path = dir.join("dataset.toml");
+    if !config_path.exists() {
+        return None;
+    }
+    match std::fs::read_to_string(&config_path) {
+        Ok(content) => match toml::from_str::<DatasetConfig>(&content) {
+            Ok(cfg) => Some(cfg),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to parse dataset.toml in {}: {e}",
+                    dir.display()
+                );
+                None
+            }
+        },
+        Err(e) => {
+            tracing::warn!(
+                "Failed to read dataset.toml in {}: {e}",
+                dir.display()
+            );
+            None
+        }
+    }
 }
 
 fn count_prs_in_dir(dir: &Path) -> usize {
@@ -123,4 +178,101 @@ fn count_prs_in_dir(dir: &Path) -> usize {
         }
     }
     count
+}
+
+/// A single PR entry returned by GET /api/datasets/:id/prs.
+#[derive(Debug, Clone, Serialize)]
+pub struct PrEntry {
+    pub key: String,
+    pub url: String,
+    pub title: String,
+    pub repo: String,
+    pub pr_number: u32,
+}
+
+/// GET /api/datasets/:id/prs — list all PRs in a dataset.
+pub async fn list_dataset_prs(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Json<Vec<PrEntry>> {
+    tracing::info!("GET /api/datasets/{id}/prs");
+    let dataset_dir = state.dataset_dir.join(&id);
+
+    if !dataset_dir.exists() || !dataset_dir.is_dir() {
+        tracing::warn!("Dataset directory not found: {}", dataset_dir.display());
+        return Json(Vec::new());
+    }
+
+    let mut prs = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(&dataset_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "json") {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    read_prs_from_json(&path, &content, &mut prs);
+                }
+            }
+        }
+    }
+
+    Json(prs)
+}
+
+/// Parse PR entries from a dataset JSON file and append them to `prs`.
+fn read_prs_from_json(path: &Path, content: &str, prs: &mut Vec<PrEntry>) {
+    // Try parsing as array first
+    let items: Vec<serde_json::Value> = match serde_json::from_str(content) {
+        Ok(val) => {
+            match val {
+                serde_json::Value::Array(arr) => arr,
+                serde_json::Value::Object(obj) => {
+                    obj.get("entries")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default()
+                }
+                _ => return,
+            }
+        }
+        Err(_) => return,
+    };
+
+    // Derive the repo name from the filename (e.g., "discourse.json" -> "discourse")
+    let repo_hint = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    for item in items {
+        let url = item
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let title = item
+            .get("pr_title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        // Extract PR number from URL (last path segment)
+        let pr_number: u32 = url
+            .rsplit('/')
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        // Derive key: use repo hint + pr_number (e.g. "discourse-7")
+        let key = format!("{}-{}", repo_hint, pr_number);
+
+        prs.push(PrEntry {
+            key,
+            url,
+            title,
+            repo: repo_hint.clone(),
+            pr_number,
+        });
+    }
 }

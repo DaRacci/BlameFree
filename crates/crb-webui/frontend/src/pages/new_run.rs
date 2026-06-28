@@ -1,4 +1,4 @@
-use crate::{api_url, AppConfig, DatasetInfo, NewRunRequest, NewRunResponse};
+use crate::{api_url, AppConfig, DatasetInfo, NewRunRequest, NewRunResponse, PrEntry};
 use leptos::*;
 use leptos_router::*;
 
@@ -14,12 +14,81 @@ pub fn NewRunPage() -> impl IntoView {
     let (model, set_model) = create_signal(String::new());
     let (dataset, set_dataset) = create_signal(String::new());
     let (roles, set_roles) = create_signal::<Vec<String>>(Vec::new());
-    let (pr_filter, set_pr_filter) = create_signal(String::new());
+
+    // Multi-select PR checklist state
+    let (available_prs, set_available_prs) = create_signal::<Vec<PrEntry>>(Vec::new());
+    let (selected_prs, set_selected_prs) = create_signal::<Vec<String>>(Vec::new());
+    let (prs_loading, set_prs_loading) = create_signal(false);
+
+    let (concurrency, set_concurrency) = create_signal(String::new());
+    let (max_findings, set_max_findings) = create_signal(String::new());
     let (submitting, set_submitting) = create_signal(false);
     let (submit_error, set_submit_error) = create_signal::<Option<String>>(None);
     let (submit_result, set_submit_result) = create_signal::<Option<String>>(None);
 
     let navigator = use_navigate();
+
+    // Fetch PRs for a given dataset
+    let fetch_prs = move |ds_id: String| {
+        if ds_id.is_empty() {
+            set_available_prs.set(Vec::new());
+            set_selected_prs.set(Vec::new());
+            return;
+        }
+        set_prs_loading.set(true);
+        let set_available = set_available_prs.clone();
+        let set_selected = set_selected_prs.clone();
+        let set_loading = set_prs_loading.clone();
+        spawn_local(async move {
+            match get_dataset_prs(&ds_id).await {
+                Ok(prs) => {
+                    // Select all PRs by default
+                    let all_keys: Vec<String> = prs.iter().map(|p| p.key.clone()).collect();
+                    set_available.set(prs);
+                    set_selected.set(all_keys);
+                }
+                Err(_) => {
+                    set_available.set(Vec::new());
+                    set_selected.set(Vec::new());
+                }
+            }
+            set_loading.set(false);
+        });
+    };
+
+    // When dataset selection changes, auto-fill from config defaults and fetch PRs
+    let on_dataset_change = move |ev: leptos::ev::Event| {
+        let new_ds = event_target_value(&ev);
+        set_dataset.set(new_ds.clone());
+
+        // Look up the selected dataset in the datasets list
+        let ds_list = datasets.get();
+        if let Some(ds_info) = ds_list.iter().find(|d| d.id == new_ds) {
+            if let Some(ref cfg) = ds_info.config {
+                let defaults = &cfg.defaults;
+                if let Some(ref m) = defaults.model {
+                    set_model.set(m.clone());
+                }
+                if let Some(c) = defaults.concurrency {
+                    set_concurrency.set(c.to_string());
+                }
+                if let Some(mf) = defaults.max_findings {
+                    set_max_findings.set(mf.to_string());
+                }
+                if let Some(ref r) = defaults.roles {
+                    let roles_vec: Vec<String> = r
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    set_roles.set(roles_vec);
+                }
+            }
+        }
+
+        // Fetch PRs for this dataset
+        fetch_prs(new_ds);
+    };
 
     // Fetch config
     let _fetch_config = create_local_resource(
@@ -29,9 +98,14 @@ pub fn NewRunPage() -> impl IntoView {
             let set_loading = set_config_loading.clone();
             let set_error = set_config_error.clone();
             let set_model = set_model.clone();
+            let dataset = dataset.clone();
             let set_dataset = set_dataset.clone();
             let set_datasets = set_datasets.clone();
             let set_datasets_loading = set_datasets_loading.clone();
+            let set_concurrency = set_concurrency.clone();
+            let set_max_findings = set_max_findings.clone();
+            let set_roles = set_roles.clone();
+            let fetch_prs = fetch_prs.clone();
             async move {
                 set_loading.set(true);
                 set_datasets_loading.set(true);
@@ -52,15 +126,47 @@ pub fn NewRunPage() -> impl IntoView {
                         set_loading.set(false);
                     }
                 }
-                // Then fetch dataset details
+                // Then fetch dataset details (with config)
                 match get_datasets().await {
                     Ok(ds) => {
+                        // Auto-fill from first dataset's config defaults
+                        if let Some(first) = ds.first() {
+                            let current_ds = dataset.get();
+                            // If the first dataset is already selected, apply its defaults
+                            if first.id == current_ds {
+                                if let Some(ref cfg) = first.config {
+                                    if let Some(ref m) = cfg.defaults.model {
+                                        set_model.set(m.clone());
+                                    }
+                                    if let Some(c) = cfg.defaults.concurrency {
+                                        set_concurrency.set(c.to_string());
+                                    }
+                                    if let Some(mf) = cfg.defaults.max_findings {
+                                        set_max_findings.set(mf.to_string());
+                                    }
+                                    if let Some(ref r) = cfg.defaults.roles {
+                                        let roles_vec: Vec<String> = r
+                                            .split(',')
+                                            .map(|s| s.trim().to_string())
+                                            .filter(|s| !s.is_empty())
+                                            .collect();
+                                        set_roles.set(roles_vec);
+                                    }
+                                }
+                            }
+                        }
                         set_datasets.set(ds);
                         set_datasets_loading.set(false);
                     }
                     Err(_) => {
                         set_datasets_loading.set(false);
                     }
+                }
+
+                // Fetch PRs for the initially selected dataset
+                let initial_ds = dataset.get();
+                if !initial_ds.is_empty() {
+                    fetch_prs(initial_ds);
                 }
             }
         },
@@ -83,14 +189,22 @@ pub fn NewRunPage() -> impl IntoView {
         set_submit_error.set(None);
         set_submit_result.set(None);
 
+        // If all PRs are selected, send None (run all); otherwise send comma-joined keys
+        let total_keys = available_prs.get().len();
+        let selected = selected_prs.get();
+        let pr_filter = if selected.len() == total_keys {
+            None
+        } else if selected.is_empty() {
+            None
+        } else {
+            Some(selected.join(","))
+        };
+
         let req = NewRunRequest {
             model: model.get(),
             dataset: dataset.get(),
             roles: roles.get(),
-            pr_filter: {
-                let val = pr_filter.get();
-                if val.is_empty() { None } else { Some(val) }
-            },
+            pr_filter,
         };
 
         let navigator = navigator.clone();
@@ -172,9 +286,7 @@ pub fn NewRunPage() -> impl IntoView {
 
                         <div class="form-field">
                             <label class="form-field__label" for="dataset">"Dataset"</label>
-                            <select id="dataset" class="input select" prop:value=dataset.get() on:change=move |ev| {
-                                set_dataset.set(event_target_value(&ev));
-                            }>
+                            <select id="dataset" class="input select" prop:value=dataset.get() on:change=on_dataset_change>
                                 {move || {
                                     let ds = datasets.get();
                                     if !ds.is_empty() {
@@ -243,19 +355,119 @@ pub fn NewRunPage() -> impl IntoView {
 
                 // ─── PR Filter Section ─────────────────────────────
                 <section class="form-section">
-                    <h2 class="form-section__title">"Filtering"</h2>
+                    <h2 class="form-section__title">"PR Selection"</h2>
                     <div class="form-section__fields">
                         <div class="form-field">
-                            <label class="form-field__label" for="pr_filter">"PR Filter (optional)"</label>
+                            <label class="form-field__label">"Select PRs to evaluate"</label>
+                            {move || {
+                                if prs_loading.get() {
+                                    view! {
+                                        <div style="color: var(--text-secondary, #8b949e); padding: 8px 0;">
+                                            "Loading PRs..."
+                                        </div>
+                                    }.into_view()
+                                } else {
+                                    let prs = available_prs.get();
+                                    if prs.is_empty() {
+                                        view! {
+                                            <div style="color: var(--text-secondary, #8b949e); padding: 8px 0;">
+                                                "Select a dataset to see available PRs."
+                                            </div>
+                                        }.into_view()
+                                    } else {
+                                        let sel = selected_prs.get();
+                                        let total = prs.len();
+                                        let checked = sel.len();
+                                        view! {
+                                            <div style="margin-bottom: 8px; display: flex; gap: 8px; align-items: center;">
+                                                <span style="color: var(--text-secondary, #8b949e); font-size: var(--text-sm, 14px);">
+                                                    {format!("{} / {} PRs selected", checked, total)}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    class="btn btn--ghost btn--sm"
+                                                    on:click=move |_| {
+                                                        let all_keys: Vec<String> = available_prs.get().iter().map(|p| p.key.clone()).collect();
+                                                        set_selected_prs.set(all_keys);
+                                                    }
+                                                >
+                                                    "Select All"
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class="btn btn--ghost btn--sm"
+                                                    on:click=move |_| {
+                                                        set_selected_prs.set(Vec::new());
+                                                    }
+                                                >
+                                                    "Deselect All"
+                                                </button>
+                                            </div>
+                                            <div class="checkbox-group" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border, #30363d); border-radius: 6px; padding: 8px;">
+                                                {prs.into_iter().map(|pr| {
+                                                    let is_checked = sel.contains(&pr.key);
+                                                    let label = format!("{} — {}", pr.repo, pr.title);
+                                                    view! {
+                                                        <label class="checkbox-label" style="padding: 4px 0;">
+                                                            <input
+                                                                type="checkbox"
+                                                                prop:checked=is_checked
+                                                                on:click={
+                                                                    let key = pr.key.clone();
+                                                                    move |_| {
+                                                                        set_selected_prs.update(|sel| {
+                                                                            if let Some(pos) = sel.iter().position(|k| k == &key) {
+                                                                                sel.remove(pos);
+                                                                            } else {
+                                                                                sel.push(key.clone());
+                                                                            }
+                                                                        });
+                                                                    }
+                                                                }
+                                                            />
+                                                            <span style="font-size: var(--text-sm, 14px);">{label}</span>
+                                                        </label>
+                                                    }
+                                                }).collect::<Vec<_>>()}
+                                            </div>
+                                            <p class="form-field__helper">"Uncheck PRs you want to skip. All PRs selected = run entire dataset."</p>
+                                        }.into_view()
+                                    }
+                                }
+                            }}
+                        </div>
+                    </div>
+                </section>
+
+                // ─── Advanced Section ─────────────────────────────
+                <section class="form-section">
+                    <h2 class="form-section__title">"Advanced"</h2>
+                    <div class="form-section__fields">
+                        <div class="form-field">
+                            <label class="form-field__label" for="concurrency">"Concurrency"</label>
                             <input
-                                id="pr_filter"
+                                id="concurrency"
                                 class="input"
-                                type="text"
-                                prop:value=pr_filter.get()
-                                on:input=move |ev| { set_pr_filter.set(event_target_value(&ev)); }
-                                placeholder="discourse-7,calcom-11059"
+                                type="number"
+                                prop:value=concurrency.get()
+                                on:input=move |ev| { set_concurrency.set(event_target_value(&ev)); }
+                                placeholder="4"
+                                min="1"
                             />
-                            <p class="form-field__helper">"Filter to specific PRs: discourse-7,calcom-11059. Leave empty for all PRs."</p>
+                            <p class="form-field__helper">"Number of concurrent agent evaluations"</p>
+                        </div>
+                        <div class="form-field">
+                            <label class="form-field__label" for="max_findings">"Max Findings per Agent"</label>
+                            <input
+                                id="max_findings"
+                                class="input"
+                                type="number"
+                                prop:value=max_findings.get()
+                                on:input=move |ev| { set_max_findings.set(event_target_value(&ev)); }
+                                placeholder="20"
+                                min="1"
+                            />
+                            <p class="form-field__helper">"Maximum number of findings per agent per PR"</p>
                         </div>
                     </div>
                 </section>
@@ -363,6 +575,25 @@ async fn get_datasets() -> Result<Vec<DatasetInfo>, String> {
     }
 
     let data: Vec<DatasetInfo> = response
+        .json()
+        .await
+        .map_err(|e| format!("Parse error: {e}"))?;
+
+    Ok(data)
+}
+
+async fn get_dataset_prs(id: &str) -> Result<Vec<PrEntry>, String> {
+    let url = api_url(&format!("/api/datasets/{}/prs", id));
+    let response = gloo_net::http::Request::get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {e}"))?;
+
+    if !response.ok() {
+        return Ok(Vec::new());
+    }
+
+    let data: Vec<PrEntry> = response
         .json()
         .await
         .map_err(|e| format!("Parse error: {e}"))?;

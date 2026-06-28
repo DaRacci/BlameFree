@@ -4,7 +4,7 @@ pub mod config;
 pub mod live;
 pub mod runs;
 
-pub use config::{get_config, list_datasets};
+pub use config::{get_config, list_datasets, list_dataset_prs};
 pub use runs::{
     get_run, list_runs, start_run, BenchmarkConfig,
     list_logs, get_agent_log, start_replay, replay_status,

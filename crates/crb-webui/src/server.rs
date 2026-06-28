@@ -98,7 +98,8 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         .route("/api/runs/:id/replay", post(crate::api::start_replay))
         .route("/api/runs/:id/replay/status", get(crate::api::replay_status))
         .route("/api/runs/:id/convert", post(crate::api::convert_to_candidates))
-        .route("/api/runs/:id/judge", post(crate::api::run_judge));
+        .route("/api/runs/:id/judge", post(crate::api::run_judge))
+        .route("/api/datasets/:id/prs", get(crate::api::list_dataset_prs));
 
     // Build the full router with SPA fallback
     let app = Router::new()

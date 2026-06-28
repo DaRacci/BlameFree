@@ -115,12 +115,46 @@ pub struct AppConfig {
     pub roles: Vec<String>,
 }
 
+/// Per-dataset config loaded from dataset.toml
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DatasetConfig {
+    #[serde(default)]
+    pub defaults: DatasetDefaults,
+}
+
+/// Default values that auto-fill the New Run form when a dataset is selected.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DatasetDefaults {
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub pr_filter: Option<String>,
+    #[serde(default)]
+    pub concurrency: Option<usize>,
+    #[serde(default)]
+    pub max_findings: Option<usize>,
+    #[serde(default)]
+    pub roles: Option<String>,
+}
+
 /// Dataset info from GET /api/config/datasets
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatasetInfo {
     pub id: String,
     pub path: String,
     pub pr_count: usize,
+    #[serde(default)]
+    pub config: Option<DatasetConfig>,
+}
+
+/// A single PR entry returned by GET /api/datasets/:id/prs
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrEntry {
+    pub key: String,
+    pub url: String,
+    pub title: String,
+    pub repo: String,
+    pub pr_number: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
