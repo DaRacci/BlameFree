@@ -67,11 +67,16 @@ pub async fn run_harness(
         cmd.arg("--pr-filter").arg(pr_filter);
     }
 
+    // Log the full command for debugging
+    let cmd_str = format!("{:?}", cmd.as_std());
+    tracing::info!("Spawning harness command: {}", cmd_str);
+
     // Set up stdout for reading JSON events
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::inherit()); // Keep stderr visible for debugging
 
     let mut child = cmd.spawn().map_err(|e| {
+        tracing::error!("Failed to spawn crb-harness: {} — command was: {}", e, cmd_str);
         anyhow::anyhow!("Failed to spawn crb-harness: {e}")
     })?;
 

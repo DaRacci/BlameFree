@@ -263,12 +263,13 @@ pub struct ReplayStatusResponse {
 
 // ── Handlers ────────────────────────────────────────────────────────────────
 
-/// GET /api/runs — list all completed benchmark runs.
+/// GET /api/runs — list all benchmark runs (both completed and active).
 pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
     tracing::info!("GET /api/runs");
     let output_dir = state.output_dir.clone();
-    let mut runs = Vec::new();
+    let mut runs: Vec<RunSummary> = Vec::new();
 
+    // 1) Read completed runs from disk
     if output_dir.exists() {
         let entries = match std::fs::read_dir(&output_dir) {
             Ok(entries) => entries,
@@ -292,8 +293,51 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
         }
     }
 
-    runs.sort_by(|a, b| b.name.cmp(&a.name));
+    // 2) Include active (in-memory) runs that haven't been written to disk yet
+    {
+        let active = state.active_runs.read().await;
+        for (id, ar) in active.iter() {
+            // Skip if already in the completed list (duplicate)
+            if runs.iter().any(|r| r.id == *id) {
+                continue;
+            }
+            runs.push(RunSummary {
+                id: id.clone(),
+                name: id.clone(),
+                pr_count: ar.total_prs,
+                avg_f1: 0.0,
+                avg_precision: 0.0,
+                avg_recall: 0.0,
+                total_cost: 0.0,
+                total_tokens: 0,
+                duration_secs: 0.0,
+                created_at: format_timestamp(ar.created_at),
+                model: ar.config.model.clone(),
+                status: if ar.finished { "completed".to_string() } else { "running".to_string() },
+            });
+        }
+    }
+
+    // 3) Sort: active (running) first by creation time, then completed by name
+    runs.sort_by(|a, b| {
+        let a_running = a.status == "running";
+        let b_running = b.status == "running";
+        // Active runs come first
+        a_running
+            .cmp(&b_running)
+            .reverse()
+            // Within same group, most recent first (name = timestamp-based)
+            .then_with(|| b.name.cmp(&a.name))
+    });
+
     Json(runs).into_response()
+}
+
+/// Format a Unix timestamp seconds as an RFC 3339 string.
+fn format_timestamp(secs: u64) -> String {
+    chrono::DateTime::from_timestamp(secs as i64, 0)
+        .map(|dt| dt.to_rfc3339())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 /// Scan a run directory and compute summary metrics.
@@ -458,6 +502,38 @@ pub async fn get_run(
     AxumPath(id): AxumPath<String>,
 ) -> impl IntoResponse {
     tracing::info!("GET /api/runs/{}", id);
+
+    // Check if run is still in progress (in active_runs before output dir exists)
+    {
+        let runs = state.active_runs.read().await;
+        if let Some(active_run) = runs.get(&id) {
+            let roles: Vec<String> = active_run
+                .config
+                .roles
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+            let detail = RunDetail {
+                id: id.clone(),
+                name: id.clone(),
+                pr_count: active_run.total_prs,
+                results: vec![],
+                aggregate: None,
+                total_cost: None,
+                total_tokens: 0,
+                duration_secs: None,
+                model: active_run.config.model.clone(),
+                status: "running".to_string(),
+                config: Some(RunConfigResponse {
+                    model: active_run.config.model.clone(),
+                    dataset: active_run.config.dataset_dir.clone(),
+                    roles,
+                }),
+            };
+            return Json(detail).into_response();
+        }
+    }
+
     let run_path = state.output_dir.join(&id);
 
     if !run_path.exists() || !run_path.is_dir() {
@@ -624,6 +700,11 @@ pub async fn start_run(
             .as_secs()
     );
 
+    // Calculate total PRs before constructing ActiveRun so the frontend
+    // can see it immediately when polling GET /api/runs/:id
+    let dataset_dir = PathBuf::from(&config.dataset_dir);
+    let total_prs = count_prs_in_dataset(&dataset_dir);
+
     let (tx, _rx) = tokio::sync::broadcast::channel::<crate::events::DashboardEvent>(1024);
 
     let active_run = ActiveRun {
@@ -634,7 +715,7 @@ pub async fn start_run(
         config: config.clone(),
         tx: tx.clone(),
         completed_prs: 0,
-        total_prs: 0,
+        total_prs,
         finished: false,
     };
 
@@ -663,9 +744,6 @@ pub async fn start_run(
             tracing::error!("Harness run {} failed: {}", run_id_clone, e);
         }
     });
-
-    let dataset_dir = PathBuf::from(&config.dataset_dir);
-    let total_prs = count_prs_in_dataset(&dataset_dir);
 
     let response = StartRunResponse {
         run_id,
