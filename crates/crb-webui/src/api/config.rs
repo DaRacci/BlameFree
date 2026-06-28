@@ -238,12 +238,8 @@ fn read_prs_from_json(path: &Path, content: &str, prs: &mut Vec<PrEntry>) {
         Err(_) => return,
     };
 
-    // Derive the repo name from the filename (e.g., "discourse.json" -> "discourse")
-    let repo_hint = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_string();
+    // Pre-compile regex to extract owner/repo/pull/N from GitHub URLs
+    let re = regex::Regex::new(r"github\.com/[^/]+/([^/]+)/pull/(\d+)").unwrap();
 
     for item in items {
         let url = item
@@ -264,14 +260,27 @@ fn read_prs_from_json(path: &Path, content: &str, prs: &mut Vec<PrEntry>) {
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
 
-        // Derive key: use repo hint + pr_number (e.g. "discourse-7")
-        let key = format!("{}-{}", repo_hint, pr_number);
+        // Derive key from URL so it's a substring of the URL itself.
+        // This ensures the harness's pr.url.to_lowercase().contains(key) match works.
+        // URL format: https://github.com/owner/repo/pull/N
+        // Key format: repo/pull/N  (e.g., "discourse-graphite/pull/1")
+        let repo = re
+            .captures(&url)
+            .map(|caps| caps[1].to_string())
+            .unwrap_or_else(|| {
+                // Fallback: derive repo from filename (e.g., "discourse.json" -> "discourse")
+                path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("unknown")
+                    .to_string()
+            });
+        let key = format!("{}/pull/{}", repo, pr_number);
 
         prs.push(PrEntry {
             key,
             url,
             title,
-            repo: repo_hint.clone(),
+            repo,
             pr_number,
         });
     }
