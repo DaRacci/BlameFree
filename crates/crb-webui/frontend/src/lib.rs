@@ -166,7 +166,7 @@ pub fn role_display_name(role: &str) -> &'static str {
         "CL" => "Code Logician",
         "AR" => "Architecture Reviewer",
         "SEC" => "Security Evaluator",
-        _ => role,
+        _ => "Unknown",
     }
 }
 

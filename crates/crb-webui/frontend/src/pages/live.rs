@@ -1,87 +1,163 @@
 use leptos::*;
 use leptos_router::*;
-use crate::{AgentEvent, api_url};
+use std::collections::HashMap;
+use crate::{DashboardEvent, api_url, role_display_name, AGENT_ROLES};
 use crate::components::agent_pane::AgentPane;
 use crate::components::progress_bar::ProgressBar;
+
+// ─── Per-PR agent state ─────────────────────────────────────────────────────
+
+/// State for a single agent (role) within a single PR.
+#[derive(Debug, Clone)]
+struct PerAgentState {
+    role: String,
+    status: String,      // "pending", "reviewing", "done", "failed"
+    response: String,     // accumulated response chunks
+    findings: Option<usize>,
+}
+
+impl PerAgentState {
+    fn new(role: &str) -> Self {
+        Self {
+            role: role.to_string(),
+            status: "pending".into(),
+            response: String::new(),
+            findings: None,
+        }
+    }
+}
+
+/// State for a single PR — holds one agent pane per role.
+#[derive(Debug, Clone)]
+struct PrState {
+    pr_key: String,
+    agents: HashMap<String, PerAgentState>,
+    completed: bool,
+}
+
+impl PrState {
+    fn new(pr_key: &str) -> Self {
+        let mut agents = HashMap::new();
+        for role in AGENT_ROLES {
+            agents.insert(role.to_string(), PerAgentState::new(role));
+        }
+        Self {
+            pr_key: pr_key.to_string(),
+            agents,
+            completed: false,
+        }
+    }
+
+    fn all_completed(&self) -> bool {
+        self.agents.values().all(|a| a.status == "done" || a.status == "failed")
+    }
+}
+
+// ─── LivePage Component ────────────────────────────────────────────────────
 
 #[component]
 pub fn LivePage() -> impl IntoView {
     let params = use_params_map();
     let run_id = move || params.get().get("id").cloned().unwrap_or_default();
 
-    // ─── Agent state ─────────────────────────────────────────────────
-    let (agent_reviewer, set_agent_reviewer) = create_signal::<AgentState>(AgentState::default("reviewer"));
-    let (agent_summarizer, set_agent_summarizer) = create_signal::<AgentState>(AgentState::default("summarizer"));
-    let (agent_tester, set_agent_tester) = create_signal::<AgentState>(AgentState::default("tester"));
-    let (agent_analyst, set_agent_analyst) = create_signal::<AgentState>(AgentState::default("analyst"));
+    // ─── Reactive state ──────────────────────────────────────────────
+    let (pr_states, set_pr_states) = create_signal::<HashMap<String, PrState>>(HashMap::new());
+    let (pr_order, set_pr_order) = create_signal::<Vec<String>>(Vec::new());
+    let (selected_pr, set_selected_pr) = create_signal::<Option<String>>(None);
+    // Track which PR each role is currently working on (for AgentChunk/AgentFinished which lack pr_key)
+    let (role_current_pr, set_role_current_pr) = create_signal::<HashMap<String, String>>(HashMap::new());
 
     // ─── Overall progress ─────────────────────────────────────────────
-    let (progress, set_progress) = create_signal::<ProgressInfo>(ProgressInfo {
-        done: 0,
-        total: 0,
-        status: "connecting".into(),
-    });
+    let (progress_done, set_progress_done) = create_signal(0usize);
+    let (progress_total, set_progress_total) = create_signal(0usize);
+    let (status, set_status) = create_signal::<String>("connecting".into());
     let (_connected, set_connected) = create_signal(false);
 
     // ─── SSE connection ───────────────────────────────────────────────
     let _connect = {
         let id = run_id();
-        let set_rev = set_agent_reviewer.clone();
-        let set_sum = set_agent_summarizer.clone();
-        let set_test = set_agent_tester.clone();
-        let set_anal = set_agent_analyst.clone();
-        let set_prog = set_progress.clone();
+        let set_states = set_pr_states.clone();
+        let set_order = set_pr_order.clone();
+        let set_selected = set_selected_pr.clone();
+        let set_role_pr = set_role_current_pr.clone();
+        let set_done = set_progress_done.clone();
+        let set_total = set_progress_total.clone();
+        let set_stat = set_status.clone();
         let set_conn = set_connected.clone();
+        // Read signals needed for handle_event
+        let role_pr = role_current_pr.clone();
 
         spawn_local(async move {
             if id.is_empty() {
-                set_prog.update(|p| p.status = "no_run_id".into());
+                set_stat.update(|s| *s = "no_run_id".into());
                 return;
             }
 
             let url = api_url(&format!("/api/runs/{}/live", id));
 
-            // EventSource via wasm_bindgen
             match connect_sse(&url).await {
                 Ok(mut rx) => {
                     set_conn.set(true);
-                    set_prog.update(|p| p.status = "running".into());
+                    set_stat.update(|s| *s = "running".into());
                     while let Ok(event) = rx.recv().await {
-                        match serde_json::from_str::<AgentEvent>(&event) {
+                        match serde_json::from_str::<DashboardEvent>(&event) {
                             Ok(ev) => {
-                                // Update the correct agent
-                                match ev.agent.as_str() {
-                                    "reviewer" => set_rev.update(|s| s.update_from_event(&ev)),
-                                    "summarizer" => set_sum.update(|s| s.update_from_event(&ev)),
-                                    "tester" => set_test.update(|s| s.update_from_event(&ev)),
-                                    "analyst" => set_anal.update(|s| s.update_from_event(&ev)),
-                                    _ => {}
-                                }
-                                // Update progress
-                                if let (Some(p), Some(t)) = (ev.progress, ev.total) {
-                                    set_prog.update(|pr| {
-                                        pr.done = p;
-                                        pr.total = t;
-                                    });
-                                }
+                                handle_event(
+                                    ev,
+                                    &set_states,
+                                    &set_order,
+                                    &set_selected,
+                                    &set_role_pr,
+                                    &role_pr,
+                                    &set_done,
+                                    &set_total,
+                                    &set_stat,
+                                );
                             }
                             Err(e) => {
-                                // Keep going — skip malformed events
                                 log::warn!("Failed to parse SSE event: {}", e);
                             }
                         }
                     }
-                    set_prog.update(|p| p.status = "complete".into());
+                    set_stat.update(|s| *s = "complete".into());
                 }
                 Err(e) => {
-                    set_prog.update(|p| p.status = format!("error: {}", e));
+                    set_stat.update(|s| *s = format!("error: {}", e));
                 }
             }
         });
     };
 
-    let total = move || progress.get().total;
-    let done = move || progress.get().done;
+    // ─── Derived signals ──────────────────────────────────────────────
+
+    // The currently selected PR — auto-select first on initial data
+    let pr_list = move || {
+        let order = pr_order.get();
+        let states = pr_states.get();
+        order.iter().filter_map(|key| {
+            states.get(key).map(|s| (key.clone(), s.completed))
+        }).collect::<Vec<_>>()
+    };
+
+    // Ensure there's always a selection once PRs arrive
+    let _ensure_selection = {
+        let set_sel = set_selected_pr.clone();
+        let order = pr_order.get();
+        let sel = selected_pr.get();
+        if !order.is_empty() && sel.is_none() {
+            set_sel.set(Some(order[0].clone()));
+        }
+    };
+
+    let active_pr_key = move || selected_pr.get();
+    let active_pr_state = move || {
+        let key = selected_pr.get()?;
+        pr_states.get().get(&key).cloned()
+    };
+    let is_complete = move || status.get() == "complete";
+
+    let total = move || progress_total.get();
+    let done = move || progress_done.get();
     let pct = move || {
         let t = total();
         if t > 0 { (done() as f64 / t as f64 * 100.0) as u32 } else { 0 }
@@ -95,8 +171,8 @@ pub fn LivePage() -> impl IntoView {
                     <span class="live-header__dot" style="width: 10px; height: 10px; border-radius: 50%; background: var(--accent-red, #f85149); display: inline-block;"></span>
                     <span>
                         {move || {
-                            let p = progress.get();
-                            match p.status.as_str() {
+                            let s = status.get();
+                            match s.as_str() {
                                 "connecting" => format!("Live: {}", run_id()),
                                 "running" => format!("🔴 Live: {}", run_id()),
                                 "complete" => format!("✅ {} (completed)", run_id()),
@@ -110,10 +186,10 @@ pub fn LivePage() -> impl IntoView {
                 </div>
             </div>
 
-            // ─── Status ───────────────────────────────────────────────
+            // ─── Status / Content ─────────────────────────────────────
             {move || {
-                let p = progress.get();
-                if p.status == "connecting" {
+                let s = status.get();
+                if s == "connecting" {
                     view! {
                         <div class="content-grid content-grid--metrics">
                             <div class="skeleton skeleton--metric"></div>
@@ -128,12 +204,12 @@ pub fn LivePage() -> impl IntoView {
                             <div class="skeleton skeleton--card" style="height: 200px;"></div>
                         </div>
                     }.into_view()
-                } else if p.status.starts_with("error") || p.status == "no_run_id" {
+                } else if s.starts_with("error") || s == "no_run_id" {
                     view! {
                         <div class="error-state" role="alert">
                             <div class="error-state__icon">"⚠️"</div>
                             <h3 class="error-state__heading">"Connection lost"</h3>
-                            <p class="error-state__message">{format!("Status: {}", p.status)}</p>
+                            <p class="error-state__message">{format!("Status: {}", s)}</p>
                             <div class="error-state__action">
                                 <button class="btn btn--primary">"🔄 Reconnect"</button>
                             </div>
@@ -141,7 +217,7 @@ pub fn LivePage() -> impl IntoView {
                     }.into_view()
                 } else {
                     view! {
-                        // ─── Live Metrics ─────────────────────────────
+                        // ─── Metrics ─────────────────────────────────
                         <div class="content-grid content-grid--metrics">
                             <div class="metric-card">
                                 <p class="metric-card__label">"Progress"</p>
@@ -149,19 +225,19 @@ pub fn LivePage() -> impl IntoView {
                             </div>
                             <div class="metric-card">
                                 <p class="metric-card__label">"Status"</p>
-                                <p class="metric-card__value">{p.status.clone()}</p>
+                                <p class="metric-card__value">{status.get().clone()}</p>
                             </div>
                             <div class="metric-card">
                                 <p class="metric-card__label">"Completed"</p>
                                 <p class="metric-card__value">{format!("{}%", pct())}</p>
                             </div>
                             {move || {
-                                let total_prs = total();
-                                if total_prs > 0 {
+                                let t = total();
+                                if t > 0 {
                                     view! {
                                         <div class="metric-card">
-                                            <p class="metric-card__label">"Current PR"</p>
-                                            <p class="metric-card__value">{format!("#{}", done() + 1)}</p>
+                                            <p class="metric-card__label">"Active PRs"</p>
+                                            <p class="metric-card__value">{format!("{}", pr_order.get().len())}</p>
                                         </div>
                                     }.into_view()
                                 } else {
@@ -170,32 +246,66 @@ pub fn LivePage() -> impl IntoView {
                             }}
                         </div>
 
-                        // ─── Agent Panes Grid ─────────────────────────
+                        // ─── PR Selector ──────────────────────────────
+                        <div class="pr-selector">
+                            <div class="pr-selector__tabs">
+                                <span class="pr-selector__label">"PR:"</span>
+                                {move || {
+                                    let order = pr_order.get();
+                                    let states = pr_states.get();
+                                    let sel = selected_pr.get();
+                                    order.into_iter().map(|key| {
+                                        let is_sel = sel.as_deref() == Some(&key);
+                                        let completed = states.get(&key).map(|s| s.completed).unwrap_or(false);
+                                        let click_key = key.clone();
+                                        let set_sel = set_selected_pr.clone();
+                                        view! {
+                                            <button
+                                                class=move || {
+                                                    let mut cls = "pr-tab".to_string();
+                                                    if is_sel { cls.push_str(" pr-tab--active"); }
+                                                    if completed { cls.push_str(" pr-tab--completed"); }
+                                                    cls
+                                                }
+                                                on:click=move |_| set_sel.set(Some(click_key.clone()))
+                                            >
+                                                {if completed { "✅ " } else { "" }}
+                                                {key.clone()}
+                                            </button>
+                                        }
+                                    }).collect::<Vec<_>>()
+                                }}
+                            </div>
+                        </div>
+
+                        // ─── Agent Panes for Selected PR ──────────────
                         <div class="content-grid content-grid--agent-panes" style="margin-top: var(--spacing-lg, 16px);">
-                            <AgentPane
-                                name="Reviewer"
-                                status=move || agent_reviewer.get().status.clone()
-                                response=move || agent_reviewer.get().response.clone()
-                                current_pr=move || agent_reviewer.get().current_pr
-                            />
-                            <AgentPane
-                                name="Summarizer"
-                                status=move || agent_summarizer.get().status.clone()
-                                response=move || agent_summarizer.get().response.clone()
-                                current_pr=move || agent_summarizer.get().current_pr
-                            />
-                            <AgentPane
-                                name="Tester"
-                                status=move || agent_tester.get().status.clone()
-                                response=move || agent_tester.get().response.clone()
-                                current_pr=move || agent_tester.get().current_pr
-                            />
-                            <AgentPane
-                                name="Analyst"
-                                status=move || agent_analyst.get().status.clone()
-                                response=move || agent_analyst.get().response.clone()
-                                current_pr=move || agent_analyst.get().current_pr
-                            />
+                            {move || {
+                                let pr_state = active_pr_state();
+                                let sel_key = selected_pr.get().unwrap_or_default();
+                                if let Some(state) = pr_state {
+                                    AGENT_ROLES.iter().map(|role| {
+                                        let agent_ref = state.agents.get(*role);
+                                        let name: &'static str = role_display_name(role);
+                                        // Clone values so closures don't borrow from temporary state
+                                        let status_val = agent_ref.map(|a| a.status.clone()).unwrap_or_else(|| "pending".into());
+                                        let resp_val = agent_ref.and_then(|a| {
+                                            if a.response.is_empty() { None } else { Some(a.response.clone()) }
+                                        });
+                                        let pr_key = sel_key.clone();
+                                        view! {
+                                            <AgentPane
+                                                name=name
+                                                status=move || status_val.clone()
+                                                response=move || resp_val.clone()
+                                                current_pr=move || Some(pr_key.clone())
+                                            />
+                                        }
+                                    }).collect::<Vec<_>>()
+                                } else {
+                                    Vec::<leptos::View>::new()
+                                }
+                            }}
                         </div>
 
                         // ─── Bottom Progress Bar ──────────────────────
@@ -203,9 +313,9 @@ pub fn LivePage() -> impl IntoView {
                             {move || {
                                 if total() > 0 {
                                     view! {
-                                        <ProgressBar value=done() max=total() label=format!("{} / {} PRs ({}%)", done(), total(), pct()) />
+                                        <ProgressBar value=done() as u32 max=total() as u32 label=format!("{} / {} PRs ({}%)", done(), total(), pct()) />
                                         <div class="bottom-bar__info" style="display: flex; justify-content: space-between; align-items: center; margin-top: var(--spacing-sm, 8px); font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
-                                            <span>{format!("Current PR: #{}", done() + 1)}</span>
+                                            <span>{format!("PRs loaded: {}", pr_order.get().len())}</span>
                                         </div>
                                     }.into_view()
                                 } else {
@@ -222,38 +332,118 @@ pub fn LivePage() -> impl IntoView {
     }
 }
 
-// ─── Data structures ─────────────────────────────────────────────────────────
+// ─── Event handler ──────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
-struct AgentState {
-    name: String,
-    status: String,
-    response: Option<String>,
-    current_pr: Option<u32>,
-}
+fn handle_event(
+    ev: DashboardEvent,
+    set_states: &WriteSignal<HashMap<String, PrState>>,
+    set_order: &WriteSignal<Vec<String>>,
+    set_selected: &WriteSignal<Option<String>>,
+    set_role_pr: &WriteSignal<HashMap<String, String>>,
+    role_current_pr: &ReadSignal<HashMap<String, String>>,
+    set_done: &WriteSignal<usize>,
+    set_total: &WriteSignal<usize>,
+    set_stat: &WriteSignal<String>,
+) {
+    match ev {
+        DashboardEvent::AgentStarted { pr_key, role } => {
+            // Ensure PR state exists
+            set_states.update(|states| {
+                if !states.contains_key(&pr_key) {
+                    states.insert(pr_key.clone(), PrState::new(&pr_key));
+                }
+                if let Some(pr) = states.get_mut(&pr_key) {
+                    if let Some(agent) = pr.agents.get_mut(&role) {
+                        agent.status = "reviewing".into();
+                    }
+                }
+            });
+            // Track which PR this role is working on
+            set_role_pr.update(|rp| {
+                rp.insert(role, pr_key.clone());
+            });
+            // Add to order list if new
+            set_order.update(|order| {
+                if !order.contains(&pr_key) {
+                    order.push(pr_key.clone());
+                }
+            });
+            // Auto-select first PR
+            set_selected.update(|sel| {
+                if sel.is_none() {
+                    *sel = Some(pr_key);
+                }
+            });
+        }
 
-impl AgentState {
-    fn default(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            status: "pending".into(),
-            response: None,
-            current_pr: None,
+        DashboardEvent::AgentChunk { role, chunk } => {
+            // Look up the PR this role is currently working on
+            let pr_key = role_current_pr.get().get(&role).cloned();
+            if let Some(key) = pr_key {
+                set_states.update(|states| {
+                    if let Some(pr) = states.get_mut(&key) {
+                        if let Some(agent) = pr.agents.get_mut(&role) {
+                            agent.response.push_str(&chunk);
+                        }
+                    }
+                });
+            }
+        }
+
+        DashboardEvent::AgentFinished { role, findings, success } => {
+            let pr_key = role_current_pr.get().get(&role).cloned();
+            if let Some(key) = pr_key {
+                set_states.update(|states| {
+                    if let Some(pr) = states.get_mut(&key) {
+                        if let Some(agent) = pr.agents.get_mut(&role) {
+                            agent.status = if success { "done".into() } else { "failed".into() };
+                            agent.findings = Some(findings);
+                        }
+                        // Check if all agents for this PR are done
+                        if pr.all_completed() {
+                            pr.completed = true;
+                        }
+                    }
+                });
+            }
+        }
+
+        DashboardEvent::RunProgress { completed_prs, total_prs, current_pr } => {
+            set_done.set(completed_prs);
+            set_total.set(total_prs);
+            if let Some(pr_key) = current_pr {
+                // Ensure this PR is tracked
+                set_states.update(|states| {
+                    if !states.contains_key(&pr_key) {
+                        states.insert(pr_key.clone(), PrState::new(&pr_key));
+                    }
+                });
+                set_order.update(|order| {
+                    if !order.contains(&pr_key) {
+                        order.push(pr_key.clone());
+                    }
+                });
+                // Get first PR key for auto-selection (we can't read WriteSignal inside another update closure)
+                set_selected.update(|sel| {
+                    if sel.is_none() {
+                        *sel = Some(pr_key.clone());
+                    }
+                });
+            }
+        }
+
+        DashboardEvent::PrCompleted { pr_key } => {
+            set_states.update(|states| {
+                if let Some(pr) = states.get_mut(&pr_key) {
+                    pr.completed = true;
+                }
+            });
+        }
+
+        DashboardEvent::RunFinished { .. } => {
+            set_stat.update(|s| *s = "complete".into());
         }
     }
-
-    fn update_from_event(&mut self, ev: &AgentEvent) {
-        self.status = ev.status.clone();
-        self.response = ev.response.clone();
-        self.current_pr = ev.pr_number;
-    }
-}
-
-#[derive(Debug, Clone)]
-struct ProgressInfo {
-    done: u32,
-    total: u32,
-    status: String,
 }
 
 // ─── SSE connection via web_sys::EventSource ──────────────────────────────────

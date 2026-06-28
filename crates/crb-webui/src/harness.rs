@@ -35,6 +35,17 @@ pub async fn run_harness(
 ) -> anyhow::Result<()> {
     let output_subdir = output_dir.join(run_id);
 
+    tracing::info!(
+        run_id = %run_id,
+        harness_path = %harness_path.display(),
+        output_dir = %output_subdir.display(),
+        model = %config.model,
+        dataset = %config.dataset_dir,
+        roles = %config.roles,
+        concurrency = config.concurrency,
+        "Preparing to spawn harness subprocess"
+    );
+
     let mut cmd = Command::new(harness_path);
     cmd.arg("--dashboard-events")
         .arg("--model")
@@ -82,10 +93,34 @@ pub async fn run_harness(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::inherit()); // Keep stderr visible for debugging
 
+    // Verify the harness binary exists before spawning
+    let harness_path_str = harness_path.to_string_lossy().to_string();
+    if !harness_path.exists() {
+        tracing::error!(
+            harness_path = %harness_path_str,
+            "Harness binary not found — check --harness-path or HARNESS_PATH"
+        );
+        return Err(anyhow::anyhow!(
+            "Harness binary not found at {}",
+            harness_path.display()
+        ));
+    }
+
+    tracing::info!("Spawning harness: {}", cmd_str);
     let mut child = cmd.spawn().map_err(|e| {
-        tracing::error!("Failed to spawn crb-harness: {} — command was: {}", e, cmd_str);
+        tracing::error!(
+            harness_path = %harness_path_str,
+            error = %e,
+            "Failed to spawn crb-harness"
+        );
         anyhow::anyhow!("Failed to spawn crb-harness: {e}")
     })?;
+
+    tracing::info!(
+        run_id = %run_id,
+        pid = child.id().unwrap_or(0),
+        "Harness spawned successfully"
+    );
 
     let stdout = child.stdout.take().ok_or_else(|| {
         anyhow::anyhow!("Failed to capture harness stdout")
@@ -95,8 +130,10 @@ pub async fn run_harness(
     let mut lines = reader.lines();
 
     let start_time = std::time::Instant::now();
+    let mut event_count = 0usize;
 
     while let Some(line) = lines.next_line().await? {
+        event_count += 1;
         if let Some(event) = parse_event_line(&line) {
             // Update active run state
             match &event {
@@ -128,19 +165,34 @@ pub async fn run_harness(
     // Wait for the child process to exit
     let status = child.wait().await?;
 
-    // Remove run from active_runs so GET /api/runs/:id falls through to disk
+    // Mark run as finished so GET /api/runs/:id shows completed status
     {
         let mut runs = active_runs.write().await;
-        runs.remove(run_id);
+        if let Some(run) = runs.get_mut(run_id) {
+            run.finished = true;
+        }
     }
 
     let elapsed = start_time.elapsed();
     tracing::info!(
-        "Harness run {} finished (status: {}, elapsed: {:.1}s)",
-        run_id,
-        status,
-        elapsed.as_secs_f64()
+        run_id = %run_id,
+        status = %status,
+        events_received = event_count,
+        elapsed_secs = elapsed.as_secs_f64(),
+        "Harness run finished"
     );
+
+    if event_count == 0 {
+        tracing::warn!(
+            run_id = %run_id,
+            status = %status,
+            "Harness produced zero events — possible causes: \
+             (1) harness binary not found/invalid, \
+             (2) dataset path issue — 0 PRs matched, \
+             (3) harness crashed before producing output, \
+             (4) missing API keys causing immediate failure"
+        );
+    }
 
     // Send final event
     let _ = tx.send(DashboardEvent::RunFinished {

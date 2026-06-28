@@ -5,7 +5,7 @@ pub fn AgentPane(
     name: &'static str,
     status: impl Fn() -> String + 'static,
     response: impl Fn() -> Option<String> + 'static,
-    current_pr: impl Fn() -> Option<u32> + 'static,
+    current_pr: impl Fn() -> Option<String> + 'static,
 ) -> impl IntoView {
     let status = Signal::derive(status);
     let response = Signal::derive(response);
@@ -38,7 +38,7 @@ pub fn AgentPane(
         }
     };
 
-    // Generate a short 2-letter code from name
+    // Generate a short code from name
     let short_name = move || {
         name.chars().take(2).collect::<String>().to_uppercase()
     };
@@ -57,7 +57,7 @@ pub fn AgentPane(
                     match (status.get(), response.get()) {
                         (_s, Some(resp)) if !resp.is_empty() => {
                             view! {
-                                {resp}
+                                <pre style="white-space: pre-wrap; word-break: break-word; margin: 0; font-size: var(--text-sm, 13px); line-height: 1.4;">{resp}</pre>
                             }.into_view()
                         }
                         (s, _) if s == "pending" => {
@@ -83,7 +83,7 @@ pub fn AgentPane(
                 {move || {
                     current_pr.get().map(|pr| {
                         view! {
-                            <span class="agent-pane__findings">{format!("PR #{}", pr)}</span>
+                            <span class="agent-pane__findings">{format!("PR: {}", pr)}</span>
                         }
                     })
                 }}

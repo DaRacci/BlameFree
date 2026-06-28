@@ -323,7 +323,7 @@ pub fn NewRunPage() -> impl IntoView {
                             let roles_list: Vec<String> = if let Some(ref c) = cfg {
                                 c.roles.clone()
                             } else {
-                                vec!["reviewer".into(), "summarizer".into(), "tester".into(), "analyst".into()]
+                                vec!["SA".into(), "CL".into(), "AR".into(), "SEC".into()]
                             };
                             view! {
                                 <div class="form-field">
@@ -522,10 +522,10 @@ async fn get_config() -> Result<AppConfig, String> {
             ],
             datasets: vec!["swir-bench".into(), "code-review-bench".into()],
             roles: vec![
-                "reviewer".into(),
-                "summarizer".into(),
-                "tester".into(),
-                "analyst".into(),
+                "SA".into(),
+                "CL".into(),
+                "AR".into(),
+                "SEC".into(),
             ],
         });
     }

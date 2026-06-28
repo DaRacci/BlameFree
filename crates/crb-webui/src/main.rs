@@ -7,8 +7,12 @@
 //! - Per-PR result viewer
 
 use std::path::PathBuf;
+use std::fs::OpenOptions;
 
 use clap::Parser;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 mod api;
 mod converter;
@@ -54,23 +58,54 @@ pub struct CliArgs {
     /// Path to the code-review-benchmark directory (must contain offline/).
     #[arg(long, env = "BENCHMARK_DIR")]
     pub benchmark_dir: Option<PathBuf>,
+
+    /// Write logs to this file in addition to stderr.
+    #[arg(long, env = "LOG_FILE")]
+    pub log_file: Option<PathBuf>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Load .env file before anything else, so all env-based config picks it up
-    match dotenvy::dotenv() {
-        Ok(path) => tracing::info!("Loaded .env from: {}", path.display()),
-        Err(e) => tracing::info!("No .env file loaded: {e}"),
+    let args = CliArgs::parse();
+
+    // Load .env file before setting up tracing so env-based filter works
+    let dotenv_result = dotenvy::dotenv();
+    match &dotenv_result {
+        Ok(path) => println!("Loaded .env from: {}", path.display()),
+        Err(e) => println!("No .env file loaded: {e}"),
     }
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .init();
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
 
-    let args = CliArgs::parse();
+    if let Some(ref log_path) = args.log_file {
+        let log_path = log_path.clone();
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_writer(move || {
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_path)
+                    .expect("failed to open log file")
+            })
+            .with_ansi(false);
+        let stderr_layer = tracing_subscriber::fmt::layer()
+            .with_writer(std::io::stderr);
+
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(stderr_layer)
+            .with(file_layer)
+            .init();
+    } else {
+        tracing_subscriber::fmt()
+            .with_env_filter(env_filter)
+            .init();
+    }
+
+    tracing::info!(
+        "Loaded .env from: {}",
+        dotenv_result.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|_| "none".to_string())
+    );
 
     tracing::info!(
         "Starting crb-webui on port {} (output={}, datasets={})",
