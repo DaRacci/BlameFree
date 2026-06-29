@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,6 +8,7 @@ use anyhow::Result;
 use clap::Parser;
 use crb_agents::prompts::PromptLibrary;
 use crb_agents::{build_agent, Finding, AGENT_ROLES};
+use crb_benchmark::diffs;
 use crb_consensus::evaluate_pr_with_consensus;
 use crb_consensus::CacheBackend;
 use crb_dashboard::DashboardEvent;
@@ -60,6 +62,7 @@ async fn main() -> Result<()> {
     let output_dir = PathBuf::from(&args.output_dir);
     let dataset_dir = PathBuf::from(&args.dataset_dir);
     let repos_dir = PathBuf::from(&args.repos_dir);
+    let scaffold_dir = args.scaffold_dir.clone();
 
     // Determine workspace root (where baselines/ lives)
     let workspace_root = std::env::current_dir()
@@ -305,6 +308,7 @@ async fn main() -> Result<()> {
         let pr = pr.clone();
         let model = args.model.clone();
         let repos_dir = repos_dir.clone();
+        let scaffold_dir = scaffold_dir.clone();
         let linter_configs = linter_configs.clone();
         let skip_consensus = args.skip_consensus;
         let linters_only = args.linters_only;
@@ -323,6 +327,7 @@ async fn main() -> Result<()> {
                 &model,
                 &judge,
                 &repos_dir,
+                scaffold_dir.as_deref(),
                 linter_configs.as_ref(),
                 skip_consensus,
                 linters_only,
@@ -718,6 +723,7 @@ async fn evaluate_pr_with_postprocessing(
         rig_core::providers::openai::responses_api::ResponsesCompletionModel,
     >,
     repos_dir: &PathBuf,
+    scaffold_dir: Option<&Path>,
     linter_configs: Option<&std::collections::HashMap<String, crb_tools::LinterConfig>>,
     skip_consensus: bool,
     linters_only: bool,
@@ -750,19 +756,75 @@ async fn evaluate_pr_with_postprocessing(
     let cost_tracker = Arc::new(CostTracker::new());
 
     // ── Diff loading ──────────────────────────────────────────────────────
-    let diff = match extract_pr_info(&pr.url) {
-        Some((owner, repo, pr_num)) => {
-            load_cached_diff(repos_dir, &owner, &repo, pr_num)
-                .unwrap_or_default()
-        }
-        None => {
-            tracing::warn!(
-                "Could not extract PR info from URL '{}'. Using empty diff.",
-                pr.url
-            );
-            String::new()
-        }
-    };
+    let (diff, pr_repo_dir): (String, Option<std::path::PathBuf>) =
+        match extract_pr_info(&pr.url) {
+            Some((owner, repo, pr_num)) => {
+                if let Some(s_dir) = scaffold_dir {
+                    // Use scaffolded repo for full context
+                    let repo_path = s_dir.join(format!("{owner}_{repo}"));
+                    if repo_path.join(".git").exists() {
+                        info!(
+                            "Using scaffolded repo at {} for PR #{}",
+                            repo_path.display(),
+                            pr_num
+                        );
+                        match diffs::checkout_pr(&repo_path, pr_num) {
+                            Ok(()) => {
+                                match diffs::fetch_single_diff(&repo_path, pr_num) {
+                                    Ok(d) => {
+                                        info!(
+                                            "Extracted diff ({} bytes) from scaffolded repo",
+                                            d.len()
+                                        );
+                                        (d, Some(repo_path))
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "Failed to extract diff from scaffolded repo: {e}. Falling back to cached diff."
+                                        );
+                                        let d = load_cached_diff(
+                                            repos_dir, &owner, &repo, pr_num,
+                                        )
+                                        .unwrap_or_default();
+                                        (d, Some(repo_path))
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to checkout PR #{} in scaffolded repo: {e}. Falling back to cached diff.",
+                                    pr_num
+                                );
+                                let d = load_cached_diff(
+                                    repos_dir, &owner, &repo, pr_num,
+                                )
+                                .unwrap_or_default();
+                                (d, None)
+                            }
+                        }
+                    } else {
+                        info!(
+                            "Scaffolded repo not found at {}, falling back to cached diff",
+                            repo_path.display()
+                        );
+                        let d = load_cached_diff(repos_dir, &owner, &repo, pr_num)
+                            .unwrap_or_default();
+                        (d, None)
+                    }
+                } else {
+                    let d = load_cached_diff(repos_dir, &owner, &repo, pr_num)
+                        .unwrap_or_default();
+                    (d, None)
+                }
+            }
+            None => {
+                tracing::warn!(
+                    "Could not extract PR info from URL '{}'. Using empty diff.",
+                    pr.url
+                );
+                (String::new(), None)
+            }
+        };
     if diff.is_empty() {
         tracing::warn!("Empty diff for PR: {} (url: {})", pr.pr_title, pr.url);
     } else {
@@ -772,11 +834,15 @@ async fn evaluate_pr_with_postprocessing(
     // ── Linters ───────────────────────────────────────────────────────────
     let mut linter_findings: Vec<Finding> = Vec::new();
     if let Some(configs) = linter_configs {
+        let host_repo_path = pr_repo_dir
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| repos_dir.to_string_lossy().to_string());
         let mut linter_set = tokio::task::JoinSet::new();
         for (_name, lconfig) in configs {
             let tool = crb_tools::create_linter_tool(lconfig);
             let args = crb_tools::LinterArgs {
-                repo_path: repos_dir.to_string_lossy().to_string(),
+                repo_path: host_repo_path.clone(),
             };
             linter_set.spawn(async move {
                 // Run the linter via the rig Tool interface
@@ -1113,9 +1179,36 @@ async fn evaluate_pr_single_agent(
     }
 
     // Judge evaluation: compare each finding against golden comments
+    // Uses hybrid approach: Jaccard heuristic first, LLM judge fallback
     let mut verdicts = Vec::new();
+    let jaccard_threshold = 0.12; // Matches Python step3_judge_comments threshold
     for finding in &all_findings {
         for gc in &pr.comments {
+            // Step 1: Try Jaccard heuristic (no API call)
+            if let Some(score) = crb_judge::jaccard_match(&finding.message, &gc.comment, jaccard_threshold) {
+                tracing::info!(
+                    "Jaccard match: finding='{}' golden='{}' score={:.2}",
+                    &finding.message[..std::cmp::min(60, finding.message.len())],
+                    &gc.comment[..std::cmp::min(60, gc.comment.len())],
+                    score
+                );
+                verdicts.push(crb_judge::JudgeVerdict {
+                    reasoning: format!("Matched by {:.0}% word overlap (Jaccard heuristic)", score * 100.0),
+                    match_: true,
+                    confidence: score,
+                });
+                continue;
+            }
+
+            // Step 2: File/line pre-filter (if available)
+            if let Some(golden_file) = &gc.file {
+                if let Some(finding_file) = &finding.file {
+                    if golden_file != finding_file {
+                        continue; // file mismatch — skip
+                    }
+                }
+            }
+
             // Compute judge cache key
             let judge_key = LlmCache::compute_judge_key(
                 &judge_prompt_hash,

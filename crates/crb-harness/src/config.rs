@@ -13,6 +13,11 @@ pub struct CliArgs {
     #[arg(long, env = "REPOS_DIR", default_value = "repos")]
     pub repos_dir: String,
 
+    /// Directory containing scaffolded repos (from crb-benchmark scaffold).
+    /// When set, agents are placed in the repo CWD for full context.
+    #[arg(long, env = "SCAFFOLD_DIR")]
+    pub scaffold_dir: Option<PathBuf>,
+
     /// Directory for evaluation output (JSON per-PR + summary CSV).
     #[arg(long, env = "OUTPUT_DIR", short = 'o', default_value = "output")]
     pub output_dir: String,

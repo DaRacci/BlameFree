@@ -667,6 +667,7 @@ dependencies = [
  "crb-agents",
  "crb-aggregator",
  "crb-auditor",
+ "crb-benchmark",
  "crb-consensus",
  "crb-dashboard",
  "crb-judge",

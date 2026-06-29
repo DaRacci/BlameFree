@@ -7,6 +7,10 @@ edition = "2021"
 name = "crb-benchmark"
 path = "src/main.rs"
 
+[lib]
+name = "crb_benchmark"
+path = "src/lib.rs"
+
 [dependencies]
 crb-reporting = { path = "../crb-reporting" }
 clap = { workspace = true }
