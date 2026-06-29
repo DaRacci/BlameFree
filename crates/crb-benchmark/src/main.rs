@@ -23,19 +23,15 @@ enum Commands {
         #[arg(long, default_value = "datasets/golden_comments")]
         dataset_dir: PathBuf,
 
-        /// Directory to clone/fetch repos into.
-        #[arg(long, default_value = "repos")]
-        repos_dir: PathBuf,
+        /// Benchmark directory (contains base-repos/, diffs/, worktrees/).
+        #[arg(long, default_value = "benchmark")]
+        benchmark_dir: PathBuf,
     },
-    /// Extract diffs from scaffolded repos.
+    /// Extract diffs from scaffolded repos into persistent worktrees.
     FetchDiffs {
-        /// Directory containing scaffolded repos.
-        #[arg(long, default_value = "repos")]
-        repos_dir: PathBuf,
-
-        /// Directory to write extracted diffs.
-        #[arg(long, default_value = "diffs")]
-        output_dir: PathBuf,
+        /// Benchmark directory (contains base-repos/, diffs/, worktrees/).
+        #[arg(long, default_value = "benchmark")]
+        benchmark_dir: PathBuf,
     },
     /// Validate golden datasets for integrity.
     Validate {
@@ -49,6 +45,16 @@ enum Commands {
         #[arg(long, default_value = "datasets/golden_comments")]
         dataset_dir: PathBuf,
     },
+    /// Remove worktrees and optionally diffs from a benchmark directory.
+    Clean {
+        /// Benchmark directory (contains base-repos/, diffs/, worktrees/).
+        #[arg(long, default_value = "benchmark")]
+        benchmark_dir: PathBuf,
+
+        /// Also remove diffs directory.
+        #[arg(long, default_value_t = false)]
+        all: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -59,17 +65,20 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Scaffold { dataset_dir, repos_dir } => {
-            scaffold::run(&dataset_dir, &repos_dir)?;
+        Commands::Scaffold { dataset_dir, benchmark_dir } => {
+            scaffold::run(&dataset_dir, &benchmark_dir)?;
         }
-        Commands::FetchDiffs { repos_dir, output_dir } => {
-            diffs::run(&repos_dir, &output_dir)?;
+        Commands::FetchDiffs { benchmark_dir } => {
+            diffs::run(&benchmark_dir)?;
         }
         Commands::Validate { dataset_dir } => {
             validate::run_validate(&dataset_dir)?;
         }
         Commands::List { dataset_dir } => {
             run_list(&dataset_dir)?;
+        }
+        Commands::Clean { benchmark_dir, all } => {
+            run_clean(&benchmark_dir, all)?;
         }
     }
 
@@ -100,5 +109,55 @@ fn run_list(dataset_dir: &PathBuf) -> Result<()> {
     }
 
     println!("\nTotal: {} PRs across {} repos", entries.len(), repos.len());
+    Ok(())
+}
+
+/// Remove worktrees and optionally diffs from a benchmark directory.
+fn run_clean(benchmark_dir: &PathBuf, all: bool) -> Result<()> {
+    let worktrees_dir = benchmark_dir.join("worktrees");
+
+    if worktrees_dir.exists() {
+        // Remove each worktree using `git worktree remove --force`
+        for entry in std::fs::read_dir(&worktrees_dir)? {
+            let entry = entry?;
+            let wt_path = entry.path();
+            if !wt_path.is_dir() {
+                continue;
+            }
+            if wt_path.join(".git").exists() {
+                let status = std::process::Command::new("git")
+                    .args(["worktree", "remove", "--force"])
+                    .arg(&wt_path)
+                    .status()?;
+                if status.success() {
+                    println!("Removed worktree: {}", wt_path.display());
+                } else {
+                    tracing::warn!("Failed to remove worktree at {}", wt_path.display());
+                }
+            }
+        }
+
+        // Prune orphaned worktree metadata
+        let _ = std::process::Command::new("git")
+            .args(["worktree", "prune"])
+            .status();
+
+        // Remove the worktrees directory itself
+        std::fs::remove_dir_all(&worktrees_dir)?;
+        println!("Removed worktrees directory: {}", worktrees_dir.display());
+    } else {
+        println!("No worktrees directory found at {}", worktrees_dir.display());
+    }
+
+    if all {
+        let diffs_dir = benchmark_dir.join("diffs");
+        if diffs_dir.exists() {
+            std::fs::remove_dir_all(&diffs_dir)?;
+            println!("Removed diffs directory: {}", diffs_dir.display());
+        } else {
+            println!("No diffs directory found at {}", diffs_dir.display());
+        }
+    }
+
     Ok(())
 }

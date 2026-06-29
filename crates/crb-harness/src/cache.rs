@@ -141,14 +141,6 @@ impl LlmCache {
         self.dir.join("index.json")
     }
 
-    /// Save the in-memory index to disk.
-    fn save_index(&self) {
-        let path = self.index_path();
-        if let Ok(index) = self.index.lock() {
-            index.save(&path);
-        }
-    }
-
     /// Generate a timestamp string for the current time.
     fn now() -> String {
         format!("{:?}", SystemTime::now())

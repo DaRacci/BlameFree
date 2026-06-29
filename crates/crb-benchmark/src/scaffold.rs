@@ -5,12 +5,25 @@ use anyhow::Result;
 use regex::Regex;
 use tracing::info;
 
-/// Clone/fetch all repos referenced in the dataset, checking out PR merge commits.
-pub fn run(dataset_dir: &Path, repos_dir: &Path) -> Result<()> {
+/// Clone/fetch all repos referenced in the dataset into a unified benchmark directory.
+///
+/// Layout:
+///   {benchmark_dir}/base-repos/{owner}_{repo}/    — shallow clones, never checked out directly
+///   {benchmark_dir}/diffs/                          — pre-extracted per-PR diffs
+///   {benchmark_dir}/worktrees/{owner}_{repo}_{pr}/  — persistent per-PR worktrees
+pub fn run(dataset_dir: &Path, benchmark_dir: &Path) -> Result<()> {
     let entries = crb_reporting::load_golden_datasets(dataset_dir)?;
-    std::fs::create_dir_all(repos_dir)?;
 
-    let mut unique_repos = std::collections::BTreeSet::new();
+    let base_repos_dir = benchmark_dir.join("base-repos");
+    std::fs::create_dir_all(&base_repos_dir)?;
+
+    // Also ensure diffs/ and worktrees/ dirs exist
+    std::fs::create_dir_all(benchmark_dir.join("diffs"))?;
+    std::fs::create_dir_all(benchmark_dir.join("worktrees"))?;
+
+    // Build a map: (owner, repo) -> Vec<pr_number>
+    let mut repo_prs: std::collections::BTreeMap<(String, String), Vec<u32>> =
+        std::collections::BTreeMap::new();
 
     for entry in &entries {
         let (owner, repo_name, pr_number) = match parse_github_url(&entry.url) {
@@ -20,17 +33,33 @@ pub fn run(dataset_dir: &Path, repos_dir: &Path) -> Result<()> {
                 continue;
             }
         };
+        repo_prs
+            .entry((owner, repo_name))
+            .or_default()
+            .push(pr_number);
+    }
 
+    let mut unique_repos = std::collections::BTreeSet::new();
+    let mut total_fetched = 0usize;
+
+    for ((owner, repo_name), pr_numbers) in &repo_prs {
         let full_name = format!("{owner}/{repo_name}");
-        let repo_path = repos_dir.join(format!("{owner}_{repo_name}"));
+        let repo_path = base_repos_dir.join(format!("{owner}_{repo_name}"));
 
+        // Shallow clone if not already present
         if !repo_path.join(".git").exists() {
-            info!("Cloning {}/{} into {}...", owner, repo_name, repo_path.display());
+            info!(
+                "Cloning {}/{} into {}...",
+                owner,
+                repo_name,
+                repo_path.display()
+            );
             let status = Command::new("git")
                 .args([
                     "clone",
                     "--depth",
                     "1",
+                    "--single-branch",
                     &format!("https://github.com/{}/{}.git", owner, repo_name),
                     &repo_path.to_string_lossy(),
                 ])
@@ -44,54 +73,60 @@ pub fn run(dataset_dir: &Path, repos_dir: &Path) -> Result<()> {
             info!("Repo {full_name} already exists at {}", repo_path.display());
         }
 
-        // Try to fetch and checkout the PR merge ref (pull/N/merge)
-        let fetch_result = Command::new("git")
-            .args(["fetch", "origin", &format!("pull/{pr_number}/merge")])
-            .current_dir(&repo_path)
-            .status();
+        // Pre-fetch ALL PR merge refs for this repo (not just the current PR)
+        for pr_num in pr_numbers {
+            let fetch_result = Command::new("git")
+                .args([
+                    "fetch",
+                    "origin",
+                    &format!("pull/{pr_num}/merge:refs/remotes/origin/pull/{pr_num}/merge"),
+                ])
+                .current_dir(&repo_path)
+                .status();
 
-        if let Ok(status) = fetch_result {
-            if status.success() {
-                let _ = Command::new("git")
-                    .args(["checkout", "FETCH_HEAD"])
-                    .current_dir(&repo_path)
-                    .status();
-                info!(
-                    "Checked out PR #{} merge commit in {}",
-                    pr_number,
-                    repo_path.display()
-                );
-            } else {
-                // Fallback: fetch the PR head ref
-                tracing::warn!(
-                    "PR #{} merge ref not available, falling back to PR head",
-                    pr_number
-                );
-                let _ = Command::new("git")
-                    .args(["fetch", "origin", &format!("pull/{pr_number}/head")])
-                    .current_dir(&repo_path)
-                    .status();
-                let _ = Command::new("git")
-                    .args(["checkout", "FETCH_HEAD"])
-                    .current_dir(&repo_path)
-                    .status();
-                info!(
-                    "Checked out PR #{} head commit in {}",
-                    pr_number,
-                    repo_path.display()
-                );
+            match fetch_result {
+                Ok(status) if status.success() => {
+                    info!(
+                        "Fetched PR #{} merge ref for {}/{}",
+                        pr_num, owner, repo_name
+                    );
+                    total_fetched += 1;
+                }
+                Ok(_) => {
+                    // Fallback: fetch PR head ref
+                    tracing::warn!(
+                        "PR #{} merge ref not available for {}/{}, trying PR head",
+                        pr_num,
+                        owner,
+                        repo_name
+                    );
+                    let _ = Command::new("git")
+                        .args([
+                            "fetch",
+                            "origin",
+                            &format!("pull/{pr_num}/head:refs/remotes/origin/pull/{pr_num}/head"),
+                        ])
+                        .current_dir(&repo_path)
+                        .status();
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Fetch failed for PR #{} in {}: {}",
+                        pr_num,
+                        full_name,
+                        e
+                    );
+                }
             }
-        } else {
-            tracing::warn!("PR #{} fetch failed for {}, skipping", pr_number, full_name);
         }
 
         unique_repos.insert(full_name.clone());
     }
 
     info!(
-        "Scaffold summary: {} unique repos processed for {} PRs",
+        "Scaffold summary: {} unique repos processed, {} PR merge refs pre-fetched",
         unique_repos.len(),
-        entries.len()
+        total_fetched
     );
 
     if !unique_repos.is_empty() {
@@ -99,6 +134,7 @@ pub fn run(dataset_dir: &Path, repos_dir: &Path) -> Result<()> {
         for repo in &unique_repos {
             println!("  https://github.com/{}.git", repo);
         }
+        println!("Pre-fetched {} PR merge refs", total_fetched);
     }
 
     Ok(())

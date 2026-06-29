@@ -20,3 +20,4 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 regex = { workspace = true }
+crb-judge = { path = "../crb-judge" }

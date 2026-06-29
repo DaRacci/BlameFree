@@ -10,3 +10,5 @@ workspaces
 plans
 research
 experiments
+benchmark/
+test-diffs/
