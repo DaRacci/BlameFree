@@ -11,8 +11,7 @@ use anyhow::Context;
 use anyhow::Result;
 use crb_agents::prompts::PromptLibrary;
 use crb_agents::{build_agent, Finding, AGENT_ROLES};
-use crb_consensus::evaluate_pr_with_consensus;
-use crb_consensus::CacheBackend;
+use crb_consensus::{evaluate_pr_with_consensus, CacheBackend};
 use crb_dashboard::DashboardEvent;
 use crb_judge::{compute_metrics, run_judge};
 use crb_reporting::{GoldenCommentEntry, PrResult};
@@ -62,6 +61,364 @@ pub struct ReviewParams {
     pub cache_dir: Option<PathBuf>,
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Diff Preprocessing: filtering and chunking
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// File path patterns whose entire diff sections are always stripped.
+const FILTERED_FILE_PATTERNS: &[&str] = &[
+    // Lock files
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "yarn.lock",
+    "Cargo.lock",
+    "Gemfile.lock",
+    "composer.lock",
+    "Pipfile.lock",
+    "poetry.lock",
+    "bun.lockb",
+    "deno.lock",
+    "flake.lock",
+    // Vendor / dependency directories
+    "/node_modules/",
+    "/vendor/",
+    "/Pods/",
+    // Build output directories
+    "/dist/",
+    "/build/",
+    "/.next/",
+    "/.nuxt/",
+    // Minified assets
+    ".min.js",
+    ".min.css",
+    // Source maps
+    ".map",
+    // Coverage reports
+    "/coverage/",
+    "/htmlcov/",
+    // Jest / test snapshots
+    "__snapshots__/",
+];
+
+/// Check whether `path` (from a `diff --git a/path b/path` header) matches
+/// any of the filtered patterns.
+fn is_filtered_path(path: &str) -> bool {
+    FILTERED_FILE_PATTERNS
+        .iter()
+        .any(|pat| {
+            // Direct match: path contains the pattern or ends with it
+            if path.contains(pat) || path.ends_with(pat) {
+                return true;
+            }
+            // For patterns starting with '/', also check without the leading slash
+            // (git diff paths are relative, e.g. "node_modules/pkg/index.js")
+            if let Some(stripped) = pat.strip_prefix('/') {
+                if path.contains(stripped) || path.starts_with(stripped) || path.ends_with(stripped)
+                {
+                    return true;
+                }
+            }
+            false
+        })
+}
+
+/// Count the categories of filtered files (for the summary note).
+#[derive(Default)]
+struct FilterCounts {
+    lock: usize,
+    vendor: usize,
+    build: usize,
+    minified: usize,
+    map: usize,
+    coverage: usize,
+    snapshot: usize,
+    other: usize,
+}
+
+impl FilterCounts {
+    fn total(&self) -> usize {
+        self.lock + self.vendor + self.build + self.minified + self.map + self.coverage
+            + self.snapshot + self.other
+    }
+
+    fn classify(path: &str) -> &'static str {
+        let patterns: &[(&[&str], &str)] = &[
+            (
+                &[
+                    "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "Cargo.lock",
+                    "Gemfile.lock", "composer.lock", "Pipfile.lock", "poetry.lock",
+                    "bun.lockb", "deno.lock", "flake.lock",
+                ],
+                "lock",
+            ),
+            (
+                &["/node_modules/", "/vendor/", "/Pods/"],
+                "vendor",
+            ),
+            (
+                &["/dist/", "/build/", "/.next/", "/.nuxt/"],
+                "build",
+            ),
+            (&[".min.js", ".min.css"], "minified"),
+            (&[".map"], "map"),
+            (&["/coverage/", "/htmlcov/"], "coverage"),
+            (&["__snapshots__/"], "snapshot"),
+        ];
+        for (pats, label) in patterns {
+            for p in *pats {
+                if path.contains(p) || path.ends_with(p) {
+                    return label;
+                }
+                // For patterns starting with '/', also check relative paths
+                if let Some(stripped) = p.strip_prefix('/') {
+                    if path.contains(stripped) || path.starts_with(stripped) || path.ends_with(stripped) {
+                        return label;
+                    }
+                }
+            }
+        }
+        "other"
+    }
+
+    fn add(&mut self, path: &str) {
+        match Self::classify(path) {
+            "lock" => self.lock += 1,
+            "vendor" => self.vendor += 1,
+            "build" => self.build += 1,
+            "minified" => self.minified += 1,
+            "map" => self.map += 1,
+            "coverage" => self.coverage += 1,
+            "snapshot" => self.snapshot += 1,
+            _ => self.other += 1,
+        }
+    }
+
+    fn fmt_note(&self) -> String {
+        if self.total() == 0 {
+            return String::new();
+        }
+        let mut parts: Vec<String> = Vec::new();
+        if self.lock > 0 {
+            parts.push(format!("{} lock", self.lock));
+        }
+        if self.vendor > 0 {
+            parts.push(format!("{} vendor", self.vendor));
+        }
+        if self.build > 0 {
+            parts.push(format!("{} build", self.build));
+        }
+        if self.minified > 0 {
+            parts.push(format!("{} minified", self.minified));
+        }
+        if self.map > 0 {
+            parts.push(format!("{} map", self.map));
+        }
+        if self.coverage > 0 {
+            parts.push(format!("{} coverage", self.coverage));
+        }
+        if self.snapshot > 0 {
+            parts.push(format!("{} snapshot", self.snapshot));
+        }
+        let detail = parts.join(", ");
+        format!(
+            "[{} files filtered: {} — see raw diff for details]",
+            self.total(),
+            detail
+        )
+    }
+}
+
+/// Extract the file path from a `diff --git a/path b/path` header line.
+fn parse_diff_git_path(line: &str) -> Option<&str> {
+    // Format: "diff --git a/some/path b/some/path"
+    let line = line.trim();
+    let rest = line.strip_prefix("diff --git a/")?;
+    // Find the " b/" separator
+    let end = rest.find(" b/")?;
+    Some(&rest[..end])
+}
+
+/// Split a raw unified diff into per-file sections, returning the header
+/// separator and section body for each.
+///
+/// Each section begins with `diff --git a/...` and extends until the next
+/// `diff --git` or end-of-string.
+fn split_diff_sections(diff: &str) -> Vec<(String, String)> {
+    let mut sections: Vec<(String, String)> = Vec::new();
+    let mut current_header = String::new();
+    let mut current_body = String::new();
+
+    for line in diff.lines() {
+        if line.starts_with("diff --git ") {
+            // Save previous section
+            if !current_header.is_empty() || !current_body.is_empty() {
+                sections.push((std::mem::take(&mut current_header), std::mem::take(&mut current_body)));
+            }
+            current_header = line.to_string();
+        } else if !current_header.is_empty() {
+            if !current_body.is_empty() {
+                current_body.push('\n');
+            }
+            current_body.push_str(line);
+        }
+    }
+
+    // Last section
+    if !current_header.is_empty() || !current_body.is_empty() {
+        sections.push((current_header, current_body));
+    }
+
+    sections
+}
+
+/// Filter out files matching FILTERED_FILE_PATTERNS from a raw diff.
+/// Returns the filtered diff with a summary note at the top.
+fn filter_files(diff: &str) -> String {
+    let sections = split_diff_sections(diff);
+    let mut counts = FilterCounts::default();
+    let mut kept_sections: Vec<String> = Vec::new();
+
+    for (header, body) in &sections {
+        let path = parse_diff_git_path(header).unwrap_or("");
+        if path.is_empty() || !is_filtered_path(path) {
+            // Keep this section
+            let mut section = header.clone();
+            if !body.is_empty() {
+                section.push('\n');
+                section.push_str(body);
+            }
+            kept_sections.push(section);
+        } else {
+            counts.add(path);
+        }
+    }
+
+    let note = counts.fmt_note();
+    let mut result = String::new();
+    if !note.is_empty() {
+        result.push_str(&note);
+        result.push('\n');
+    }
+    // Add a blank line after the note if we have content
+    if !note.is_empty() && !kept_sections.is_empty() {
+        result.push('\n');
+    }
+    for section in &kept_sections {
+        result.push_str(section);
+        result.push('\n');
+    }
+    result
+}
+
+/// Strip diff metadata and reduce context to -U1 for unified diffs.
+///
+/// 1. Reduces context to -U1: keeps 1 context line before/after changed lines
+/// 2. Strips `diff --git` headers
+/// 3. Strips `index` lines
+/// 4. Strips trailing hunk context text (after `@@` line-count portion)
+/// 5. Keeps `--- a/path`, `+++ b/path`, `new file mode`, `deleted file mode`,
+///    `@@` hunk headers (with stripped context text)
+#[cfg(feature = "reduce-diff")]
+pub fn strip_diff_metadata(diff: &str) -> String {
+    let mut result = Vec::new();
+    let mut current_hunk_lines: Vec<&str> = Vec::new();
+    let mut in_hunk = false;
+
+    // Helper: strip trailing text after the @@ line-count portion
+    // Header format: @@ -a,b +c,d @@ optional text
+    let strip_hunk_header_text = |header: &str| -> String {
+        let parts: Vec<&str> = header.split("@@").collect();
+        // split on "@@" gives: ["", " -a,b +c,d ", " optional text"]
+        // We want: @@ + middle + @@
+        if parts.len() >= 3 {
+            format!("@@{}@@", parts[1])
+        } else {
+            header.to_string()
+        }
+    };
+
+    // Helper: flush the current hunk with -U1 reduction
+    let flush_hunk = |hunk_lines: &[&str], output: &mut Vec<String>| {
+        if hunk_lines.is_empty() {
+            return;
+        }
+
+        // Split: first line is the @@ header, rest are body lines
+        let header = hunk_lines[0];
+        let body = &hunk_lines[1..];
+
+        // Find first and last changed lines (+ or -)
+        let first_changed = body.iter().position(|l| l.starts_with('+') || l.starts_with('-'));
+        let last_changed = body.iter().rposition(|l| l.starts_with('+') || l.starts_with('-'));
+
+        if let (Some(first), Some(last)) = (first_changed, last_changed) {
+            // Determine start: 1 context line before first changed, or 0 if not enough
+            let start = if first > 0 { first - 1 } else { 0 };
+            // Determine end: 1 context line after last changed
+            let end = if last + 2 < body.len() { last + 2 } else { body.len() };
+
+            // Emit the @@ header (stripped of trailing context)
+            let stripped_header = strip_hunk_header_text(header);
+            output.push(stripped_header);
+
+            // Emit the reduced body lines
+            for line in &body[start..end] {
+                output.push(line.to_string());
+            }
+        } else {
+            // No changed lines — keep hunk as-is
+            output.push(header.to_string());
+            for line in body {
+                output.push(line.to_string());
+            }
+        }
+    };
+
+    for line in diff.lines() {
+        // Skip diff --git and index lines entirely
+        if line.starts_with("diff --git") || line.starts_with("index ") {
+            continue;
+        }
+
+        if line.starts_with("@@ ") && line.contains(" @@") {
+            // Start of a new hunk — flush previous hunk if any
+            if in_hunk && !current_hunk_lines.is_empty() {
+                flush_hunk(&current_hunk_lines, &mut result);
+                current_hunk_lines.clear();
+            }
+            in_hunk = true;
+            current_hunk_lines.push(line);
+        } else if in_hunk {
+            // Inside a hunk: collect body lines
+            current_hunk_lines.push(line);
+        } else {
+            // Outside a hunk: pass through (e.g. ---, +++, new file mode, deleted file mode)
+            result.push(line.to_string());
+        }
+    }
+
+    // Flush the last hunk
+    if !current_hunk_lines.is_empty() {
+        flush_hunk(&current_hunk_lines, &mut result);
+    }
+
+    result.join("\n")
+}
+
+/// Filter a raw diff to remove noise files. Returns the filtered diff
+/// with a summary note at the top if any files were removed.
+pub fn preprocess_diff(raw_diff: &str) -> String {
+    #[cfg(feature = "reduce-diff")]
+    {
+        let filtered = filter_files(raw_diff);
+        strip_diff_metadata(&filtered)
+    }
+    #[cfg(not(feature = "reduce-diff"))]
+    {
+        raw_diff.to_string()
+    }
+}
+
 // =========================================================================
 // Public API
 // =========================================================================
@@ -86,7 +443,7 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
 
     for &role in &roles {
         // Build agent with built-in prompts (no prompt lib, no rules)
-        let agent = build_agent(&client, &params.model, role, None, None, None, None);
+        let agent = build_agent(&client, &params.model, role, None, None, None, None, None);
 
         // Call agent with the diff — get real token usage via extended_details
         match agent.prompt(&diff).extended_details().await {
@@ -154,6 +511,9 @@ pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>
         diff.len(),
         args.path.display()
     );
+
+    // Preprocess: filter noise files and chunk oversized diffs
+    let diff = crate::preprocess_diff(&diff);
 
     // Build ReviewParams and call review_pr
     let roles = vec![
@@ -474,6 +834,7 @@ pub async fn evaluate_pr_single_agent(
                 Some(&p_lib),
                 None,
                 Some(&tool_preamble),
+                None, // workdir — not available in single-agent path
             );
             let result: Result<Vec<Finding>, String> = with_retry(
                 || async {
@@ -639,6 +1000,7 @@ pub async fn evaluate_pr_consensus(
     max_findings: usize,
     cache: Option<Arc<crate::cache::LlmCache>>,
     cost_tracker: Arc<crate::cost::CostTracker>,
+    workdir: Option<&str>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // Parse comma-separated roles
     let parsed_roles: Vec<&str> = roles
@@ -647,17 +1009,30 @@ pub async fn evaluate_pr_consensus(
         .filter(|r| !r.is_empty())
         .collect();
 
+    if diff.is_empty() {
+        info!("No diff — returning empty result");
+        return Ok((Vec::new(), Vec::new()));
+    }
+
     // ── Pre-compute content-addressed cache key components ──────────────
-    let diff_hash = crate::cache::LlmCache::sha256(diff);
-    let rules_hash = crate::cache::LlmCache::sha256(rules_preamble.unwrap_or(""));
-    let judge_prompt_hash = crate::cache::LlmCache::sha256(crb_judge::JUDGE_PROMPT);
     let first_role = parsed_roles.first().copied().unwrap_or("SA");
     let prompt_hash = crate::cache::LlmCache::sha256(prompt_lib.get(first_role));
+    let rules_hash = crate::cache::LlmCache::sha256(rules_preamble.unwrap_or(""));
+    let judge_prompt_hash = crate::cache::LlmCache::sha256(crb_judge::JUDGE_PROMPT);
+    let diff_hash = crate::cache::LlmCache::sha256(diff);
     let judge_model = "";
 
-    // Compute tool preamble for the first role
-    let default_budget = crb_tools::budget::ToolCallBudget::default();
-    let tool_preamble = crb_tools::tool_prompt_section(first_role, &default_budget, &[]);
+    // Compute tool preamble only when workdir is provided
+    let tool_preamble = workdir.map(|_| {
+        let default_budget = crb_tools::budget::ToolCallBudget::default();
+        crb_tools::tool_prompt_section(first_role, &default_budget, &[])
+    });
+
+    info!(
+        "Consensus pipeline: {} agent role(s), max {} findings per role",
+        parsed_roles.len(),
+        max_findings,
+    );
 
     let (result, agent_usage, judge_usage, agent_api_calls, judge_api_calls, judge_cache_hits) = evaluate_pr_with_consensus(
         pr,
@@ -676,12 +1051,12 @@ pub async fn evaluate_pr_consensus(
         &rules_hash,
         &judge_prompt_hash,
         judge_model,
-        Some(&tool_preamble),
+        tool_preamble.as_deref(),
+        workdir,
     )
     .await?;
 
     // ── Record real token usage from consensus pipeline ────────────────
-    // Agent usage: distribute aggregate usage across role-count calls
     let role_count = parsed_roles.len();
     if role_count > 0 {
         let per_agent = Usage {
@@ -838,6 +1213,9 @@ pub async fn evaluate_pr_with_postprocessing(
         info!("Loaded diff ({} bytes) for PR: {}", diff.len(), pr.pr_title);
     }
 
+    // ── Preprocess diff: filter noise + chunk oversized files ──────────
+    let diff = crate::preprocess_diff(&diff);
+
     // ── Linters ───────────────────────────────────────────────────────────
     let mut linter_findings: Vec<Finding> = Vec::new();
     if let Some(configs) = linter_configs {
@@ -929,6 +1307,7 @@ pub async fn evaluate_pr_with_postprocessing(
             max_findings,
             Some(cache.clone()),
             cost_tracker.clone(),
+            None,
         )
         .await?
     };

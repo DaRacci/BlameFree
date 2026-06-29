@@ -7,6 +7,9 @@ edition = "2021"
 name = "crb-harness"
 path = "src/main.rs"
 
+[features]
+reduce-diff = []
+
 [dependencies]
 crb-agents = { path = "../crb-agents" }
 crb-judge = { path = "../crb-judge" }

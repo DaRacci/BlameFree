@@ -7,10 +7,13 @@ edition = "2021"
 name = "crb-webui"
 path = "src/main.rs"
 
+[features]
+reduce-diff = ["crb-harness/reduce-diff"]
+
 [dependencies]
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "process", "time"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
@@ -24,3 +27,13 @@ toml = "0.8"
 futures = "0.3"
 regex = "1"
 dotenvy = "0.15"
+
+# Library dependencies (replaces subprocess spawning)
+crb-harness = { path = "../crb-harness" }
+crb-dashboard = { path = "../crb-dashboard" }
+crb-reporting = { path = "../crb-reporting" }
+crb-judge = { path = "../crb-judge" }
+crb-tools = { path = "../crb-tools" }
+crb-rules = { path = "../crb-rules" }
+crb-agents = { path = "../crb-agents" }
+rig-core = { workspace = true }

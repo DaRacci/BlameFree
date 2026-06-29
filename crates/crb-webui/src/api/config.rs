@@ -14,6 +14,8 @@ pub struct ConfigResponse {
     pub models: Vec<String>,
     pub datasets: Vec<String>,
     pub roles: Vec<String>,
+    /// Whether reduce-diff mode is enabled (compile-time feature flag).
+    pub reduce_diff_enabled: bool,
 }
 
 /// Information about an available model.
@@ -81,6 +83,7 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
         models,
         datasets,
         roles,
+        reduce_diff_enabled: cfg!(feature = "reduce-diff"),
     })
 }
 

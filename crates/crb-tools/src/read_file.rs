@@ -79,12 +79,20 @@ impl Tool for ReadFileTool {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "Read a file from the repository. Specify path (relative to repo root), optional start_line (1-indexed), and optional max_lines.".to_string(),
+            description: "Read a file from the repository. Use with optional start_line/max_lines to read specific sections rather than entire files at once. Prefer this over using the terminal tool to cat files.".to_string(),
             parameters: serde_json::to_value(schemars::schema_for!(ReadFileArgs)).unwrap(),
         }
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        // Reject absolute paths
+        if args.path.starts_with('/') {
+            return Err(ReadFileError::IoError(format!(
+                "absolute paths not allowed: {}",
+                args.path
+            )));
+        }
+
         let repo_root = dunce::canonicalize(&self.repo_root)
             .map_err(|e| ReadFileError::IoError(e.to_string()))?;
         let target = repo_root.join(&args.path);
@@ -109,7 +117,7 @@ impl Tool for ReadFileTool {
             .map_err(|e| ReadFileError::IoError(e.to_string()))?;
 
         let start = args.start_line.unwrap_or(1).max(1) as usize - 1;
-        let max_lines = args.max_lines.unwrap_or(self.default_max_lines) as usize;
+        let max_lines = args.max_lines.unwrap_or(self.default_max_lines).max(50) as usize;
 
         let lines: Vec<&str> = content.lines().skip(start).take(max_lines).collect();
         let result = lines.join("\n");

@@ -1,207 +1,575 @@
-//! Subprocess management for launching and monitoring crb-harness.
+//! In-process harness execution via library calls.
 //!
-//! The backend spawns `crb-harness --dashboard-events` as a subprocess,
-//! reads JSON events from its stdout line-by-line, and forwards them
-//! to all SSE clients via a broadcast channel.
+//! Previously this module spawned `crb-harness --dashboard-events` as a
+//! subprocess.  Now it calls `crb_harness::evaluate_pr_with_postprocessing`
+//! directly, forwarding progress events to all SSE clients via the same
+//! broadcast channel.
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::process::Stdio;
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use tokio::io::AsyncBufReadExt;
-use tokio::process::Command;
+use crb_agents::prompts::PromptLibrary;
+use crb_dashboard::DashboardEvent as HarnessEvent;
+use crb_judge::build_judge;
+use crb_reporting::{load_golden_datasets, write_report, PrResult};
+use crb_rules::RuleSet;
+use rig_core::client::ProviderClient;
 use tokio::sync::{broadcast, RwLock};
 
 use crate::api::BenchmarkConfig;
-use crate::events::{parse_event_line, DashboardEvent};
+use crate::events::DashboardEvent;
+use crate::events::MetricsData;
+use crate::events::AggregateMetrics;
 use crate::server::ActiveRun;
+use crate::server::AppState;
 
-/// Run the harness as a subprocess and forward events to the broadcast channel.
+/// Run the harness inline, calling library functions directly.
 ///
 /// This function:
-/// 1. Spawns `crb-harness --dashboard-events [config args]`
-/// 2. Reads stdout line-by-line, parsing JSON events
-/// 3. Forwards parsed events to all SSE clients via `tx`
-/// 4. Updates `active_runs` state with progress
-/// 5. Cleans up on completion or error
+/// 1. Sets up the OpenAI client, judge agent, prompt library, rules, linters
+/// 2. Loads the dataset and filters PRs according to config
+/// 3. Spawns a bridge task that converts `crb_dashboard::DashboardEvent` to
+///    the web UI's `DashboardEvent` on the SSE broadcast channel
+/// 4. Evaluates each PR via `crb_harness::evaluate_pr_with_postprocessing`
+/// 5. Writes per-PR result files + a `_summary.json`
+/// 6. Sends a final `RunFinished` event
 pub async fn run_harness(
-    harness_path: &Path,
     run_id: &str,
     config: &BenchmarkConfig,
     output_dir: &Path,
-    tx: broadcast::Sender<DashboardEvent>,
+    benchmark_dir: Option<&Path>,
+    webui_tx: broadcast::Sender<DashboardEvent>,
     active_runs: Arc<RwLock<HashMap<String, ActiveRun>>>,
 ) -> anyhow::Result<()> {
     let output_subdir = output_dir.join(run_id);
+    let dataset_dir = Path::new(&config.dataset_dir);
+    let cache_dir = output_subdir.join("cache");
 
     tracing::info!(
         run_id = %run_id,
-        harness_path = %harness_path.display(),
         output_dir = %output_subdir.display(),
         model = %config.model,
         dataset = %config.dataset_dir,
         roles = %config.roles,
         concurrency = config.concurrency,
-        "Preparing to spawn harness subprocess"
+        "Starting harness run via library"
     );
 
-    let mut cmd = Command::new(harness_path);
-    cmd.arg("--dashboard-events")
-        .arg("--model")
-        .arg(&config.model)
-        .arg("--judge-model")
-        .arg(&config.judge_model)
-        .arg("--dataset-dir")
-        .arg(&config.dataset_dir)
-        .arg("--concurrency")
-        .arg(config.concurrency.to_string())
-        .arg("--max-findings")
-        .arg(config.max_findings.to_string())
-        .arg("--prompts-dir")
-        .arg(&config.prompts_dir)
-        .arg("--roles")
-        .arg(&config.roles)
-        .arg("--output-dir")
-        .arg(output_subdir.to_string_lossy().to_string());
+    // ── OpenAI client ────────────────────────────────────────────────────────
+    let client = rig_core::providers::openai::Client::from_env()
+        .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
 
-    if config.skip_consensus {
-        cmd.arg("--skip-consensus");
-    }
-    if config.skip_linters {
-        cmd.arg("--skip-linters");
-    }
-    if let Some(ref cache_dir) = config.cache_dir {
-        cmd.arg("--cache-dir").arg(cache_dir);
-    }
-    if let Some(ref pr_filter) = config.pr_filter {
-        cmd.arg("--pr-filter").arg(pr_filter);
-    }
+    // ── Judge agent ──────────────────────────────────────────────────────────
+    let judge = build_judge(&client, &config.judge_model);
 
-    // Pass relevant environment variables to the harness subprocess
-    for (key, val) in std::env::vars() {
-        if key.starts_with("OPENAI_") || key.starts_with("OPENROUTER_") || key.starts_with("ANTHROPIC_") {
-            cmd.env(key, val);
+    // ── Prompt library ───────────────────────────────────────────────────────
+    let prompts_dir = Path::new(&config.prompts_dir);
+    let prompt_lib = Arc::new({
+        let mut lib = PromptLibrary::new();
+        if prompts_dir.exists() {
+            match lib.load_from_dir(prompts_dir) {
+                Ok(()) => tracing::info!("Loaded prompts from: {}", prompts_dir.display()),
+                Err(e) => tracing::warn!("Failed to load prompts from {}: {e}", prompts_dir.display()),
+            }
+        } else if prompts_dir.to_string_lossy() != "prompts/builtin" {
+            tracing::warn!("Prompts directory '{}' not found — using built-in defaults", prompts_dir.display());
         }
+        lib
+    });
+
+    // ── Rule loading ─────────────────────────────────────────────────────────
+    let ruleset = {
+        let rules_dir = Path::new(".crb/rules/");
+        match RuleSet::load_from_dir(rules_dir) {
+            Ok(rs) => {
+                tracing::info!(
+                    "Loaded {} rules from {}",
+                    rs.rules.len() + rs.always_rules.len(),
+                    rules_dir.display()
+                );
+                Some(rs)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to load rules from {}: {e}", rules_dir.display());
+                None
+            }
+        }
+    };
+
+    // ── Linter config ────────────────────────────────────────────────────────
+    let linter_config_path = Path::new("linters.toml");
+    let linter_configs = if linter_config_path.exists() && !config.skip_linters {
+        match crb_tools::load_linter_config("linters.toml") {
+            Ok(configs) => {
+                tracing::info!("Loaded {} linter(s) from linters.toml", configs.len());
+                Some(configs)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to load linter config: {e}. Linters disabled.");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // ── Create cache directory ────────────────────────────────────────────────
+    std::fs::create_dir_all(&cache_dir)?;
+
+    // ── Load dataset ─────────────────────────────────────────────────────────
+    tracing::info!("Loading golden datasets from: {}", dataset_dir.display());
+    let all_prs = match load_golden_datasets(dataset_dir) {
+        Ok(prs) => prs,
+        Err(e) => {
+            tracing::error!("Failed to load dataset: {e}");
+            return Err(e.context("Failed to load golden datasets"));
+        }
+    };
+    tracing::info!("Loaded {} PR entries total", all_prs.len());
+
+    // ── PR filter ─────────────────────────────────────────────────────────────
+    use std::collections::HashSet;
+    let filtered_prs: Vec<crb_reporting::GoldenCommentEntry> = if let Some(ref filter) = config.pr_filter {
+        let filter_patterns: HashSet<String> = filter
+            .split(',')
+            .map(|s| s.trim().to_lowercase())
+            .collect();
+
+        let available_urls: Vec<String> = all_prs.iter().map(|pr| pr.url.clone()).collect();
+
+        let filtered: Vec<_> = all_prs
+            .into_iter()
+            .filter(|pr| {
+                let url_lower = pr.url.to_lowercase();
+                filter_patterns.iter().any(|pattern| {
+                    if let Some((repo_part, pr_num_str)) = pattern.split_once('/') {
+                        if let Ok(pr_num) = pr_num_str.parse::<u32>() {
+                            let pr_tag = format!("/pull/{}", pr_num);
+                            if let Some(pos) = url_lower.find(&pr_tag) {
+                                let after = &url_lower[pos + pr_tag.len()..];
+                                if after.is_empty() || !after.chars().next().unwrap().is_ascii_digit() {
+                                    if url_lower.contains(repo_part) {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    url_lower.contains(pattern)
+                })
+            })
+            .collect();
+
+        if filtered.is_empty() {
+            tracing::warn!(
+                "--pr-filter \"{}\" matched no PRs. Available URLs:\n  {}",
+                filter,
+                available_urls.join("\n  ")
+            );
+        }
+        filtered
+    } else {
+        all_prs
+    };
+
+    tracing::info!("After PR filter: {} PR(s) to evaluate", filtered_prs.len());
+
+    if filtered_prs.is_empty() {
+        tracing::warn!("No PRs to evaluate");
+        let _ = webui_tx.send(DashboardEvent::RunFinished {
+            total_prs: 0,
+            aggregated: AggregateMetrics::default(),
+            total_cost: 0.0,
+            total_tokens: 0,
+            total_agent_calls: 0,
+        });
+        return Ok(());
     }
 
-    // Log the full command for debugging
-    let cmd_str = format!("{:?}", cmd.as_std());
-    tracing::info!("Spawning harness command: {}", cmd_str);
+    let total_prs = filtered_prs.len();
 
-    // Set up stdout for reading JSON events
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::inherit()); // Keep stderr visible for debugging
+    // ── Event bridge: harness → web UI ─────────────────────────────────────
+    // The library emits `crb_dashboard::DashboardEvent`; we convert and
+    // forward to the SSE broadcast channel.
+    let (harness_tx, mut harness_rx) = broadcast::channel::<HarnessEvent>(256);
+    let forward_tx = webui_tx.clone();
 
-    // Verify the harness binary exists before spawning
-    let harness_path_str = harness_path.to_string_lossy().to_string();
-    if !harness_path.exists() {
-        tracing::error!(
-            harness_path = %harness_path_str,
-            "Harness binary not found — check --harness-path or HARNESS_PATH"
+    tokio::spawn(async move {
+        while let Ok(event) = harness_rx.recv().await {
+            if let Some(converted) = convert_harness_event(event) {
+                let _ = forward_tx.send(converted);
+            }
+        }
+    });
+
+    let dashboard_tx: Option<broadcast::Sender<HarnessEvent>> = Some(harness_tx);
+
+    // ── Benchmark directory ──────────────────────────────────────────────────
+    // If no explicit benchmark_dir was passed, fall back to the dataset dir's
+    // parent — the convention is that datasets live under a benchmark root.
+    let bench_dir = benchmark_dir.unwrap_or_else(|| {
+        // Use the output dir's parent as a reasonable fallback
+        let parent = output_dir.parent().unwrap_or(Path::new("."));
+        tracing::warn!(
+            "No --benchmark-dir set; using parent of output dir: {}",
+            parent.display()
         );
-        return Err(anyhow::anyhow!(
-            "Harness binary not found at {}",
-            harness_path.display()
-        ));
-    }
+        parent
+    });
 
-    tracing::info!("Spawning harness: {}", cmd_str);
-    let mut child = cmd.spawn().map_err(|e| {
-        tracing::error!(
-            harness_path = %harness_path_str,
-            error = %e,
-            "Failed to spawn crb-harness"
-        );
-        anyhow::anyhow!("Failed to spawn crb-harness: {e}")
-    })?;
-
-    tracing::info!(
-        run_id = %run_id,
-        pid = child.id().unwrap_or(0),
-        "Harness spawned successfully"
-    );
-
-    let stdout = child.stdout.take().ok_or_else(|| {
-        anyhow::anyhow!("Failed to capture harness stdout")
-    })?;
-
-    let reader = tokio::io::BufReader::new(stdout);
-    let mut lines = reader.lines();
-
+    // ── Concurrency ───────────────────────────────────────────────────────────
+    let sem = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
+    let mut set = tokio::task::JoinSet::new();
     let start_time = std::time::Instant::now();
-    let mut event_count = 0usize;
 
-    while let Some(line) = lines.next_line().await? {
-        event_count += 1;
-        if let Some(event) = parse_event_line(&line) {
-            // Update active run state
-            match &event {
-                DashboardEvent::RunProgress {
+    for pr in filtered_prs {
+        let permit = sem.clone().acquire_owned().await.expect("semaphore closed");
+        let client = client.clone();
+        let judge = judge.clone();
+        let model = config.model.clone();
+        let bench_dir = bench_dir.to_path_buf();
+        let linter_configs = linter_configs.clone();
+        let skip_consensus = config.skip_consensus;
+        let ruleset = ruleset.clone();
+        let prompt_lib = prompt_lib.clone();
+        let roles = config.roles.clone();
+        let max_findings = config.max_findings;
+        let cache_dir = cache_dir.clone();
+        let dashboard_tx = dashboard_tx.clone();
+
+        set.spawn(async move {
+            let _permit = permit;
+            crb_harness::evaluate_pr_with_postprocessing(
+                &pr,
+                &client,
+                &model,
+                &judge,
+                &bench_dir,
+                linter_configs.as_ref(),
+                skip_consensus,
+                false, // linters_only
+                ruleset.as_ref(),
+                prompt_lib.as_ref(),
+                &roles,
+                max_findings,
+                &cache_dir,
+                dashboard_tx.as_ref(),
+            )
+            .await
+        });
+    }
+
+    // ── Collect results ───────────────────────────────────────────────────────
+    let mut results: Vec<PrResult> = Vec::new();
+    let mut total_cost = 0.0f64;
+    let mut total_tokens = 0usize;
+    let mut total_tp = 0usize;
+    let mut total_fp = 0usize;
+    let mut total_fn = 0usize;
+    let mut total_agent_calls = 0usize;
+    let mut completed_prs = 0usize;
+
+    while let Some(res) = set.join_next().await {
+        match res {
+            Ok(Ok(result)) => {
+                tracing::info!("Completed: {}", result.pr_title);
+                completed_prs += 1;
+
+                // Accumulate totals
+                total_tp += result.metrics.true_positives;
+                total_fp += result.metrics.false_positives;
+                total_fn += result.metrics.false_negatives;
+                total_agent_calls += 4;
+                if let Some(ref c) = result.cost {
+                    total_cost += c.total_usd;
+                    total_tokens +=
+                        c.agent_tokens_in + c.agent_tokens_out + c.judge_tokens_in + c.judge_tokens_out;
+                }
+
+                results.push(result);
+
+                // Update active run state
+                {
+                    let mut runs = active_runs.write().await;
+                    if let Some(run) = runs.get_mut(run_id) {
+                        run.completed_prs = completed_prs;
+                    }
+                }
+
+                // Send RunProgress
+                let _ = webui_tx.send(DashboardEvent::RunProgress {
                     completed_prs,
                     total_prs,
-                    ..
-                } => {
-                    let mut runs = active_runs.write().await;
-                    if let Some(run) = runs.get_mut(run_id) {
-                        run.completed_prs = *completed_prs;
-                        run.total_prs = *total_prs;
-                    }
-                }
-                DashboardEvent::RunFinished { .. } => {
-                    let mut runs = active_runs.write().await;
-                    if let Some(run) = runs.get_mut(run_id) {
-                        run.finished = true;
-                    }
-                }
-                _ => {}
+                    elapsed_secs: start_time.elapsed().as_secs_f64(),
+                    total_cost,
+                    current_pr: results.last().map(|r| r.pr_title.clone()),
+                });
             }
-
-            // Broadcast to all SSE clients (ignore send errors if no clients)
-            let _ = tx.send(event);
-        }
-    }
-
-    // Wait for the child process to exit
-    let status = child.wait().await?;
-
-    // Mark run as finished so GET /api/runs/:id shows completed status
-    {
-        let mut runs = active_runs.write().await;
-        if let Some(run) = runs.get_mut(run_id) {
-            run.finished = true;
+            Ok(Err(e)) => {
+                tracing::error!("PR evaluation failed: {e}");
+            }
+            Err(e) => {
+                tracing::error!("Join error: {e}");
+            }
         }
     }
 
     let elapsed = start_time.elapsed();
+
+    // ── Compute aggregate metrics ────────────────────────────────────────────
+    let avg_precision = if total_tp + total_fp > 0 {
+        total_tp as f64 / (total_tp + total_fp) as f64
+    } else {
+        0.0
+    };
+    let avg_recall = if total_tp + total_fn > 0 {
+        total_tp as f64 / (total_tp + total_fn) as f64
+    } else {
+        0.0
+    };
+    let avg_f1 = if (avg_precision + avg_recall) > 0.0 {
+        2.0 * avg_precision * avg_recall / (avg_precision + avg_recall)
+    } else {
+        0.0
+    };
+
+    // Mark run as finished
+    {
+        let mut runs = active_runs.write().await;
+        if let Some(run) = runs.get_mut(run_id) {
+            run.finished = true;
+            run.completed_prs = completed_prs;
+        }
+    }
+
     tracing::info!(
         run_id = %run_id,
-        status = %status,
-        events_received = event_count,
+        prs_completed = completed_prs,
+        prs_total = total_prs,
         elapsed_secs = elapsed.as_secs_f64(),
+        total_cost = total_cost,
         "Harness run finished"
     );
 
-    if event_count == 0 {
-        tracing::warn!(
-            run_id = %run_id,
-            status = %status,
-            "Harness produced zero events — possible causes: \
-             (1) harness binary not found/invalid, \
-             (2) dataset path issue — 0 PRs matched, \
-             (3) harness crashed before producing output, \
-             (4) missing API keys causing immediate failure"
-        );
+    // ── Write per-PR result files ────────────────────────────────────────────
+    std::fs::create_dir_all(&output_subdir)?;
+    if let Err(e) = write_report(&results, &output_subdir) {
+        tracing::error!("Failed to write per-PR results: {e}");
     }
 
-    // Send final event
-    let _ = tx.send(DashboardEvent::RunFinished {
-        total_prs: 0,
-        aggregated: Default::default(),
-        total_cost: 0.0,
-        total_tokens: 0,
-        total_agent_calls: 0,
+    // ── Write _summary.json ──────────────────────────────────────────────────
+    if let Err(e) = crb_harness::write_summary(
+        &output_subdir,
+        &config.model,
+        &config.judge_model,
+        &results,
+        elapsed,
+    ) {
+        tracing::error!("Failed to write summary: {e}");
+    }
+
+    // ── Send RunFinished event ───────────────────────────────────────────────
+    let _ = webui_tx.send(DashboardEvent::RunFinished {
+        total_prs: results.len(),
+        aggregated: AggregateMetrics {
+            total_tp,
+            total_fp,
+            total_fn,
+            precision: avg_precision,
+            recall: avg_recall,
+            f1: avg_f1,
+        },
+        total_cost,
+        total_tokens,
+        total_agent_calls,
     });
+
+    // ── Terminal summary ─────────────────────────────────────────────────────
+    crb_harness::print_terminal_summary(&results);
+
+    Ok(())
+}
+
+/// Convert a `crb_dashboard::DashboardEvent` (used by the harne ss library) to
+/// a web UI `DashboardEvent` (used for SSE streaming to the frontend).
+fn convert_harness_event(event: HarnessEvent) -> Option<DashboardEvent> {
+    match event {
+        HarnessEvent::AgentStarted { pr_key, role } => {
+            Some(DashboardEvent::AgentStarted { pr_key, role })
+        }
+        HarnessEvent::AgentChunk { role, chunk } => {
+            Some(DashboardEvent::AgentChunk { role, chunk })
+        }
+        HarnessEvent::AgentFinished { role, findings, success } => {
+            Some(DashboardEvent::AgentFinished { role, findings, success })
+        }
+        HarnessEvent::PrCompleted {
+            pr_key,
+            metrics,
+            cost,
+            total_tokens,
+            agent_calls,
+            findings_count,
+        } => {
+            Some(DashboardEvent::PrCompleted {
+                pr_key,
+                metrics: MetricsData {
+                    true_positives: metrics.true_positives,
+                    false_positives: metrics.false_positives,
+                    false_negatives: metrics.false_negatives,
+                    precision: metrics.precision,
+                    recall: metrics.recall,
+                    f1: metrics.f1,
+                },
+                cost,
+                total_tokens,
+                agent_calls,
+                findings_count,
+            })
+        }
+        HarnessEvent::RunFinished {
+            total_prs,
+            aggregated,
+            total_cost,
+            total_tokens,
+            total_agent_calls,
+        } => {
+            Some(DashboardEvent::RunFinished {
+                total_prs,
+                aggregated: AggregateMetrics {
+                    total_tp: aggregated.total_tp,
+                    total_fp: aggregated.total_fp,
+                    total_fn: aggregated.total_fn,
+                    precision: aggregated.precision,
+                    recall: aggregated.recall,
+                    f1: aggregated.f1,
+                },
+                total_cost,
+                total_tokens,
+                total_agent_calls,
+            })
+        }
+    }
+}
+
+/// Run a replay of a previous run using existing cached LLM responses.
+///
+/// This is called by POST /api/runs/:id/replay. It re-runs the evaluation
+/// with the existing cache directory so that cached responses are used
+/// instead of making new API calls.  Results are written to `output_subdir`.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_replay_via_library(
+    run_id: &str,
+    model: &str,
+    dataset_dir: &str,
+    roles: &str,
+    cache_dir: &PathBuf,
+    output_subdir: &PathBuf,
+    state: &AppState,
+) -> anyhow::Result<()> {
+    let dataset_path = Path::new(dataset_dir);
+
+    tracing::info!(
+        run_id = %run_id,
+        model = %model,
+        dataset = %dataset_dir,
+        roles = %roles,
+        cache_dir = %cache_dir.display(),
+        output = %output_subdir.display(),
+        "Starting replay via library"
+    );
+
+    let client = rig_core::providers::openai::Client::from_env()
+        .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
+
+    let judge = build_judge(&client, model);
+
+    // Use a default prompt library (built-in prompts)
+    let prompt_lib = Arc::new(PromptLibrary::new());
+
+    // No rules or linters for replay
+    let ruleset: Option<RuleSet> = None;
+    let linter_configs: Option<std::collections::HashMap<String, crb_tools::LinterConfig>> = None;
+    let max_findings = 20;
+    let skip_consensus = false;
+
+    // ── Load dataset ─────────────────────────────────────────────────────────
+    tracing::info!("Loading golden datasets from: {}", dataset_path.display());
+    let all_prs = match load_golden_datasets(dataset_path) {
+        Ok(prs) => prs,
+        Err(e) => {
+            tracing::error!("Failed to load dataset: {e}");
+            return Err(e.context("Failed to load golden datasets"));
+        }
+    };
+    tracing::info!("Loaded {} PR entries total", all_prs.len());
+
+    if all_prs.is_empty() {
+        return Ok(());
+    }
+
+    let total_prs = all_prs.len();
+
+    std::fs::create_dir_all(output_subdir)?;
+
+    // ── Evaluate each PR with existing cache ────────────────────────────────
+    let bench_dir = state
+        .benchmark_dir
+        .clone()
+        .unwrap_or_else(|| Path::new(".").to_path_buf());
+
+    let mut results = Vec::new();
+    let start_time = std::time::Instant::now();
+
+    for pr in &all_prs {
+        let result = crb_harness::evaluate_pr_with_postprocessing(
+            pr,
+            &client,
+            model,
+            &judge,
+            &bench_dir,
+            linter_configs.as_ref(),
+            skip_consensus,
+            false, // linters_only
+            ruleset.as_ref(),
+            prompt_lib.as_ref(),
+            roles,
+            max_findings,
+            cache_dir,
+            None, // No dashboard tx for replay
+        )
+        .await;
+
+        match result {
+            Ok(result) => {
+                tracing::info!("Replayed: {}", result.pr_title);
+                results.push(result);
+            }
+            Err(e) => {
+                tracing::error!("Replay failed for PR {}: {e}", pr.pr_title);
+            }
+        }
+    }
+
+    let elapsed = start_time.elapsed();
+
+    // ── Write results ────────────────────────────────────────────────────────
+    if let Err(e) = write_report(&results, output_subdir) {
+        tracing::error!("Failed to write replay results: {e}");
+    }
+
+    if let Err(e) = crb_harness::write_summary(output_subdir, model, model, &results, elapsed) {
+        tracing::error!("Failed to write replay summary: {e}");
+    }
+
+    tracing::info!(
+        run_id = %run_id,
+        prs = results.len(),
+        elapsed_secs = elapsed.as_secs_f64(),
+        "Replay finished"
+    );
 
     Ok(())
 }

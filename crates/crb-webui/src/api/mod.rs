@@ -8,7 +8,7 @@ pub use config::{get_config, list_datasets, list_dataset_prs};
 pub use runs::{
     get_run, list_runs, start_run, BenchmarkConfig,
     list_logs, get_agent_log, start_replay, replay_status,
-    convert_to_candidates, run_judge,
+    convert_to_candidates, run_judge, get_pr_detail,
 };
 
 // Re-export live handler with different name to avoid conflicts

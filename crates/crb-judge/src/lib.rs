@@ -57,6 +57,7 @@ pub fn build_judge(
     client
         .agent(model)
         .preamble(JUDGE_PROMPT)
+        .temperature(0.3)
         .build()
 }
 

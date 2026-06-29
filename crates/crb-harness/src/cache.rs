@@ -394,6 +394,7 @@ impl LlmCache {
 
     /// Write per-PR metadata to `metadata.json`.
     pub fn save_metadata(&self, metadata: &serde_json::Value) -> Result<()> {
+        std::fs::create_dir_all(&self.dir)?;
         std::fs::write(
             self.dir.join("metadata.json"),
             serde_json::to_string_pretty(metadata)?,

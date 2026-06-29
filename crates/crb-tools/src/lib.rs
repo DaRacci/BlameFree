@@ -17,21 +17,68 @@
 
 pub mod budget;
 pub mod git;
+pub mod grep;
+pub mod list_dir;
 pub mod mcp;
 pub mod mcp_config;
 pub mod read_file;
 pub mod shell;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::time::Duration;
 
-pub use crb_agents::Finding;
+pub use grep::GrepTool;
+pub use list_dir::ListDirTool;
 use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+
+// ── Finding type ────────────────────────────────────────────────────────────
+
+/// A structured finding returned by an agent.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct Finding {
+    pub file: Option<String>,
+    pub line: Option<u32>,
+    pub message: String,
+    pub severity: String,
+    pub rule_code: Option<String>,
+    /// Whether the severity has been audited/downgraded by the severity auditor.
+    #[serde(default)]
+    pub severity_audited: bool,
+    /// Reason for the severity audit result (e.g., downgrade category, protection reason).
+    #[serde(default)]
+    pub severity_audit_reason: Option<String>,
+}
+
+// ── Deduplication ────────────────────────────────────────────────────────────
+
+/// Deduplicate a list of findings by (file, line) pairs.
+///
+/// When two findings share the same file path and line number, only the first
+/// occurrence is kept. This avoids double-counting findings that multiple
+/// agents or chunks produced for the same location.
+///
+/// # Ordering
+///
+/// The deduplication is stable: the first occurrence of each (file, line) pair
+/// is retained, and subsequent duplicates are dropped.
+pub fn deduplicate_findings(findings: Vec<Finding>) -> Vec<Finding> {
+    let mut seen: HashSet<(String, u32)> = HashSet::new();
+    let mut result = Vec::with_capacity(findings.len());
+
+    for f in findings {
+        let key = (f.file.clone().unwrap_or_default(), f.line.unwrap_or(0));
+        if seen.insert(key) {
+            result.push(f);
+        }
+    }
+
+    result
+}
 
 // ── Error Types ─────────────────────────────────────────────────────────────
 

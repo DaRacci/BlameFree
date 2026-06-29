@@ -7,6 +7,9 @@
 use std::fmt;
 use std::time::Duration;
 
+/// Maximum output size in bytes (100 KB). Output beyond this is truncated.
+const MAX_OUTPUT: usize = 100_000;
+
 use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;
@@ -24,25 +27,15 @@ pub struct ShellArgs {
 pub enum ShellError {
     /// The subprocess could not be spawned.
     SpawnFailed(String),
-    /// The command exited with non-zero status.
-    NonZeroExit(i32, String),
     /// The command exceeded its time limit.
     TimeoutElapsed,
-    /// Output exceeded max size.
-    OutputTooLarge(usize),
 }
 
 impl fmt::Display for ShellError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::SpawnFailed(e) => write!(f, "shell spawn failed: {e}"),
-            Self::NonZeroExit(code, stderr) => {
-                write!(f, "shell exited with code {code}: {stderr}")
-            }
             Self::TimeoutElapsed => write!(f, "shell command timed out"),
-            Self::OutputTooLarge(n) => {
-                write!(f, "shell output too large: {n} bytes (max 100KB)")
-            }
         }
     }
 }
@@ -81,7 +74,7 @@ impl Tool for ShellTool {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "Run a shell command in the repository working directory. Use for building, testing, grepping, or any CLI operation.".to_string(),
+            description: "Execute a shell command in the repository working directory. Use for running tests, builds, linters, or any CLI operation. Output is capped at 100KB; very long output will be truncated with a note. IMPORTANT: Do NOT use this for reading files (use read_file), searching code (use grep), or listing directories (use list_dir).".to_string(),
             parameters: serde_json::to_value(schemars::schema_for!(ShellArgs)).unwrap(),
         }
     }
@@ -108,16 +101,26 @@ impl Tool for ShellTool {
         .map_err(|_| ShellError::TimeoutElapsed)??;
 
         if !result.status.success() {
+            let code = result.status.code().unwrap_or(-1);
+            let mut output = String::new();
+            if !result.stdout.is_empty() {
+                output = String::from_utf8_lossy(&result.stdout).to_string();
+            }
             let stderr = String::from_utf8_lossy(&result.stderr).to_string();
-            return Err(ShellError::NonZeroExit(
-                result.status.code().unwrap_or(-1),
-                stderr,
-            ));
+            if !output.is_empty() || !stderr.is_empty() {
+                let sep = if !output.is_empty() && !stderr.is_empty() { "\n" } else { "" };
+                output = format!("{}{}{}", output, sep, stderr);
+            }
+            output = format!("{}\n[exit code: {code}]", output);
+            if output.len() > max_output {
+                output = format!("{}\n... (output truncated at {} bytes)", &output[..MAX_OUTPUT], MAX_OUTPUT);
+            }
+            return Ok(output);
         }
 
-        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
+        let mut stdout = String::from_utf8_lossy(&result.stdout).to_string();
         if stdout.len() > max_output {
-            return Err(ShellError::OutputTooLarge(stdout.len()));
+            stdout = format!("{}\n... (output truncated at {} bytes)", &stdout[..MAX_OUTPUT], MAX_OUTPUT);
         }
 
         Ok(stdout)
@@ -132,12 +135,6 @@ mod tests {
     fn test_shell_error_display() {
         let err = ShellError::TimeoutElapsed;
         assert_eq!(err.to_string(), "shell command timed out");
-
-        let err = ShellError::NonZeroExit(127, "not found".into());
-        assert_eq!(err.to_string(), "shell exited with code 127: not found");
-
-        let err = ShellError::OutputTooLarge(200_000);
-        assert!(err.to_string().contains("output too large"));
     }
 
     #[tokio::test]
@@ -163,10 +160,7 @@ mod tests {
                 command: "exit 42".into(),
             })
             .await;
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            ShellError::NonZeroExit(code, _) => assert_eq!(code, 42),
-            other => panic!("expected NonZeroExit, got {other:?}"),
-        }
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("[exit code: 42]"));
     }
 }

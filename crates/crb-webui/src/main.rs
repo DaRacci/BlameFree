@@ -36,14 +36,6 @@ pub struct CliArgs {
     #[arg(long, env = "DATASET_DIR", default_value = "datasets")]
     pub dataset_dir: PathBuf,
 
-    /// Path to the `crb-harness` binary.
-    #[arg(
-        long,
-        env = "HARNESS_PATH",
-        default_value = "../target/debug/crb-harness"
-    )]
-    pub harness_path: PathBuf,
-
     /// Directory of the static frontend files to serve.
     #[arg(long, default_value = "crates/crb-webui/frontend/dist")]
     pub static_dir: PathBuf,
@@ -107,6 +99,12 @@ async fn main() -> anyhow::Result<()> {
         dotenv_result.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|_| "none".to_string())
     );
 
+    if cfg!(feature = "reduce-diff") {
+        tracing::info!("reduce-diff: enabled (-U1 context + metadata stripping)");
+    } else {
+        tracing::info!("reduce-diff: disabled (full diff)");
+    }
+
     tracing::info!(
         "Starting crb-webui on port {} (output={}, datasets={})",
         args.port,
@@ -117,7 +115,6 @@ async fn main() -> anyhow::Result<()> {
     let app_state = server::AppState::new(
         args.output_dir,
         args.dataset_dir,
-        args.harness_path,
         args.static_dir,
         args.models,
         args.benchmark_dir,

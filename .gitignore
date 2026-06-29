@@ -1,6 +1,9 @@
 /target
 .env
 cache
+cache.bak*
+cache.old
+*.py
 datasets
 diffs
 output

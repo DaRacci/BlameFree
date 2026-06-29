@@ -15,10 +15,12 @@ use std::time::Duration;
 
 use anyhow::Result;
 use regex::Regex;
-use rig_core::agent::PromptResponse;
-use rig_core::agent::Agent;
-use rig_core::completion::Prompt;
-use rig_core::completion::Usage;
+use rig_core::agent::{
+    Agent, HookAction, PromptHook, PromptResponse, ToolCallHookAction,
+};
+use rig_core::completion::{
+    AssistantContent, CompletionResponse, Message, Prompt, PromptError, Usage,
+};
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use serde::{Deserialize, Serialize};
@@ -29,6 +31,109 @@ use crb_agents::prompts::PromptLibrary;
 use crb_agents::{build_agent, Finding};
 use crb_judge::{run_judge, JudgeVerdict};
 use crb_reporting::{GoldenCommentEntry, PrResult};
+
+// ── Turn budget hook ─────────────────────────────────────────────────────―
+
+/// A [`PromptHook`] that skips tool calls with budget nudge messages when the
+/// agent is approaching its turn limit.
+///
+/// Mechanism:
+/// - Counts model-completion calls via [`on_completion_response`].
+/// - When ≤2 completions remain, [`on_tool_call`] returns `Skip` with a
+///   progressively firmer nudge ("X turns remaining…" → "LAST TURN: …").
+/// - The skipped reason is fed back to the model as a synthetic tool result,
+///   effectively "stripping tools" without requiring internal loop access.
+///
+/// See arXiv:2510.16786 for the two-tier nudge pattern at ~70 % / ~90 % of
+/// the turn budget.
+#[derive(Clone)]
+struct TurnBudgetHook {
+    max_turns: usize,
+    completion_count: Arc<AtomicUsize>,
+}
+
+impl TurnBudgetHook {
+    fn new(max_turns: usize) -> Self {
+        Self {
+            max_turns,
+            completion_count: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+}
+
+impl<M: rig_core::completion::CompletionModel> PromptHook<M> for TurnBudgetHook {
+    /// Increment the completion call counter after each model response.
+    async fn on_completion_response(
+        &self,
+        _prompt: &Message,
+        _response: &CompletionResponse<M::Response>,
+    ) -> HookAction {
+        self.completion_count.fetch_add(1, Ordering::SeqCst);
+        HookAction::cont()
+    }
+
+    /// Skip tool calls when the agent is close to exhausting its turn budget.
+    ///
+    /// The 70 % / 90 % pattern from arXiv:2510.16786 translates to:
+    /// - ≤2 remaining → "You have X turns remaining."
+    /// - ≤1 remaining → "LAST TURN: …"
+    async fn on_tool_call(
+        &self,
+        _tool_name: &str,
+        _tool_call_id: Option<String>,
+        _internal_call_id: &str,
+        _args: &str,
+    ) -> ToolCallHookAction {
+        let calls_made = self.completion_count.load(Ordering::SeqCst);
+        // Total possible completion calls = max_turns + 1 (the final text-only
+        // turn before the error fires at max_turns + 2).
+        let total_possible = self.max_turns + 1;
+        let remaining = total_possible.saturating_sub(calls_made);
+
+        if remaining <= 1 {
+            ToolCallHookAction::Skip {
+                reason: "\
+LAST TURN: This is your final opportunity. Do NOT call any more tools. \
+Output your JSON findings directly."
+                    .to_string(),
+            }
+        } else if remaining <= 2 {
+            ToolCallHookAction::Skip {
+                reason: format!(
+                    "You have {} turns remaining. Stop exploring and output your JSON findings.",
+                    remaining
+                ),
+            }
+        } else {
+            ToolCallHookAction::cont()
+        }
+    }
+}
+
+// ── MaxTurnsError recovery ────────────────────────────────────────────────
+
+/// Try to extract the last assistant text message from a chat history.
+///
+/// When [`PromptError::MaxTurnsError`] fires, the agent's accumulated
+/// conversation is available in `chat_history`.  This function walks it in
+/// reverse to find the most recent `Message::Assistant` whose content includes
+/// an `AssistantContent::Text` variant — that text is often a partial or
+/// complete JSON findings array the model produced before being cut off.
+fn extract_last_assistant_text(history: &[Message]) -> Option<String> {
+    for msg in history.iter().rev() {
+        if let Message::Assistant { content, .. } = msg {
+            for item in content.iter() {
+                if let AssistantContent::Text(text) = item {
+                    let t = text.text.trim().to_string();
+                    if !t.is_empty() {
+                        return Some(t);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
 
 // ── Cache key computation ──────────────────────────────────────────────────
 
@@ -237,15 +342,16 @@ pub fn build_reviewer_agent(
     prompt_lib: Option<&PromptLibrary>,
     template_vars: Option<&HashMap<&str, &str>>,
     tool_preamble: Option<&str>,
+    workdir: Option<&str>,
 ) -> Agent<ResponsesCompletionModel> {
-    build_agent(client, &config.model, config.role.as_str(), rules_preamble, prompt_lib, template_vars, tool_preamble)
+    build_agent(client, &config.model, config.role.as_str(), rules_preamble, prompt_lib, template_vars, tool_preamble, workdir)
 }
 
 // ── Concurrent execution ────────────────────────────────────────────────────
 
 /// Spawn all reviewer agents concurrently and collect their findings.
 ///
-/// Each agent is run with a 120-second timeout.  Findings are capped at
+/// Each agent is run with a 300-second timeout.  Findings are capped at
 /// `config.max_findings`.  Agents that time out or return errors yield an
 /// empty finding list with a warning — no hard failure.
 ///
@@ -265,6 +371,7 @@ pub async fn run_reviewers(
     prompt_hash: &str,
     rules_hash: &str,
     tool_preamble: Option<&str>,
+    workdir: Option<&str>,
 ) -> (Vec<(Role, Vec<Finding>)>, usize, Usage) {
     let mut set = JoinSet::new();
     let agent_api_calls = Arc::new(AtomicUsize::new(0));
@@ -278,7 +385,7 @@ pub async fn run_reviewers(
         let max_findings = config.max_findings;
         let preamble = rules_preamble.map(String::from);
         let tool_preamble = tool_preamble.map(String::from);
-        let agent = build_reviewer_agent(&client, &config, preamble.as_deref(), prompt_lib, template_vars, tool_preamble.as_deref());
+        let agent = build_reviewer_agent(&client, &config, preamble.as_deref(), prompt_lib, template_vars, tool_preamble.as_deref(), workdir);
         let cache = cache.clone();
         let prompt_hash = prompt_hash.to_string();
         let rules_hash = rules_hash.to_string();
@@ -356,8 +463,17 @@ pub async fn run_reviewers(
             // Cache miss — make the API call
             agent_api_calls.fetch_add(1, Ordering::SeqCst);
             tracing::info!("CACHE MISS for role {:?} (key={})", role, &cache_key[..12]);
-            let outcome = tokio::time::timeout(Duration::from_secs(120), async {
-                let resp: PromptResponse = agent.prompt(&diff).extended_details().await?;
+
+            // Connect the turn-budget hook that nudges the model to stop
+            // exploring and produce JSON findings before max_turns is reached.
+            let turn_budget_hook = TurnBudgetHook::new(agent.default_max_turns.unwrap_or(6));
+
+            let outcome = tokio::time::timeout(Duration::from_secs(300), async {
+                let resp: PromptResponse = agent
+                    .prompt(&diff)
+                    .with_hook(turn_budget_hook)
+                    .extended_details()
+                    .await?;
                 let response = resp.output;
                 let usage = resp.usage;
 
@@ -422,11 +538,60 @@ pub async fn run_reviewers(
             match outcome {
                 Ok(Ok(pair)) => pair,
                 Ok(Err(e)) => {
+                    // Check for MaxTurnsError — the model may have produced
+                    // text findings that were cut off by the turn limit.
+                    if let Some(PromptError::MaxTurnsError { chat_history, .. }) =
+                        e.downcast_ref::<PromptError>()
+                    {
+                        if let Some(text) = extract_last_assistant_text(chat_history) {
+                            tracing::info!(
+                                "Role {:?} hit MaxTurnsError but chat_history contains text \
+                                 — attempting to recover findings",
+                                role,
+                            );
+                            let preview_len = std::cmp::min(500, text.len());
+                            tracing::info!(
+                                "Recovered text (first 500 chars): {}",
+                                &text[..preview_len]
+                            );
+
+                            // Attempt to parse findings from the recovered text
+                            let mut findings: Vec<Finding> =
+                                serde_json::from_str(&text).unwrap_or_else(|_| {
+                                    let re =
+                                        Regex::new(r"(?s)```(?:json)?\s*\n(.*?)\n\s*```")
+                                            .unwrap();
+                                    if let Some(caps) = re.captures(&text) {
+                                        let inner = caps.get(1).unwrap().as_str().trim();
+                                        if let Ok(f) =
+                                            serde_json::from_str::<Vec<Finding>>(inner)
+                                        {
+                                            return f;
+                                        }
+                                    }
+                                    let array_re = Regex::new(r"\[[\s\S]*\]").unwrap();
+                                    if let Some(m) = array_re.find(&text) {
+                                        if let Ok(f) =
+                                            serde_json::from_str::<Vec<Finding>>(m.as_str())
+                                        {
+                                            return f;
+                                        }
+                                    }
+                                    Vec::new()
+                                });
+                            if findings.len() > max_findings {
+                                findings.truncate(max_findings);
+                            }
+                            if !findings.is_empty() {
+                                return (role, findings);
+                            }
+                        }
+                    }
                     tracing::warn!("Role {:?} agent failed: {e}", role);
                     (role, Vec::new())
                 }
                 Err(_) => {
-                    tracing::warn!("Role {:?} timed out after 120s", role);
+                    tracing::warn!("Role {:?} timed out after 300s", role);
                     (role, Vec::new())
                 }
             }
@@ -522,12 +687,13 @@ pub async fn run_consensus(
     judge_prompt_hash: &str,
     judge_model: &str,
     tool_preamble: Option<&str>,
+    workdir: Option<&str>,
 ) -> ConsensusReport {
     // Step 1: run all reviewers concurrently with content-addressed caching
     let (agents, agent_api_calls, agent_usage) = run_reviewers(
         reviewer_configs, diff, diff_hash, client, rules_preamble,
         prompt_lib, template_vars, cache.clone(),
-        prompt_hash, rules_hash, tool_preamble,
+        prompt_hash, rules_hash, tool_preamble, workdir,
     ).await;
 
     // Track aggregate judge usage
@@ -724,6 +890,7 @@ pub async fn evaluate_pr_with_consensus(
     judge_prompt_hash: &str,
     judge_model: &str,
     tool_preamble: Option<&str>,
+    workdir: Option<&str>,
 ) -> Result<(PrResult, Usage, Usage, usize, usize, usize)> {
     // Build one reviewer config per selected role.
     let reviewer_configs: Vec<ReviewerConfig> = roles
@@ -776,6 +943,7 @@ pub async fn evaluate_pr_with_consensus(
         judge_prompt_hash,
         judge_model,
         tool_preamble,
+        workdir,
     )
     .await;
     // Build verdicts for compatibility with crb-reporting::PrResult.

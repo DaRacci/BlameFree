@@ -258,6 +258,25 @@ pub fn NewRunPage() -> impl IntoView {
                 } else { view! { <span></span> }.into_view() }
             }}
 
+            // Reduce-diff badge
+            {move || {
+                config.get().map(|cfg| {
+                    if cfg.reduce_diff_enabled {
+                        view! {
+                            <div style="margin-bottom: var(--spacing-lg, 16px);">
+                                <span class="badge badge--green">"Reduce Diff: ON (-U1 + stripped)"</span>
+                            </div>
+                        }.into_view()
+                    } else {
+                        view! {
+                            <div style="margin-bottom: var(--spacing-lg, 16px);">
+                                <span class="badge badge--muted">"Reduce Diff: OFF (full diff)"</span>
+                            </div>
+                        }.into_view()
+                    }
+                }).unwrap_or_else(|| view! { <span></span> }.into_view())
+            }}
+
             <form on:submit=on_submit>
                 // ─── Configuration Section ───────────────────────────
                 <section class="form-section">
@@ -527,6 +546,7 @@ async fn get_config() -> Result<AppConfig, String> {
                 "AR".into(),
                 "SEC".into(),
             ],
+            reduce_diff_enabled: false,
         });
     }
 

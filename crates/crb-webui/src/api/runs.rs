@@ -46,6 +46,25 @@ pub struct RunDetail {
     pub config: Option<RunConfigResponse>,
 }
 
+/// Cost information embedded in per-PR result JSON files.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CostJson {
+    #[serde(default)]
+    pub total_usd: f64,
+    #[serde(default)]
+    pub agent_tokens_in: u64,
+    #[serde(default)]
+    pub agent_tokens_out: u64,
+    #[serde(default)]
+    pub judge_tokens_in: u64,
+    #[serde(default)]
+    pub judge_tokens_out: u64,
+    #[serde(default)]
+    pub agent_call_count: u64,
+    #[serde(default)]
+    pub judge_call_count: u64,
+}
+
 /// A single PR result as it appears in the JSON files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrResultJson {
@@ -61,6 +80,14 @@ pub struct PrResultJson {
     pub metrics: MetricsJson,
     #[serde(default)]
     pub verdicts: Vec<VerdictJson>,
+    #[serde(default)]
+    pub cost: Option<CostJson>,
+    /// Raw findings JSON from agents (optional, may not exist in older files)
+    #[serde(default)]
+    pub findings: serde_json::Value,
+    /// Raw agent response texts (optional, may not exist in older files)
+    #[serde(default)]
+    pub agent_responses: Vec<String>,
 }
 
 /// API response shape for a single PR result (matching frontend PrResult).
@@ -95,7 +122,7 @@ pub struct MetricsJson {
 pub struct VerdictJson {
     #[serde(default)]
     pub reasoning: String,
-    #[serde(default)]
+    #[serde(default, rename = "match")]
     pub match_: bool,
     #[serde(default)]
     pub confidence: f64,
@@ -340,6 +367,38 @@ fn format_timestamp(secs: u64) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+/// Compute duration from the newest and oldest file timestamps in a directory.
+fn compute_duration_from_timestamps(path: &Path) -> f64 {
+    use std::fs;
+    let mut oldest = f64::MAX;
+    let mut newest = 0.0f64;
+    if let Ok(entries) = fs::read_dir(path) {
+        for entry in entries.flatten() {
+            if let Ok(meta) = entry.path().metadata() {
+                if let Ok(modified) = meta.modified() {
+                    let secs = modified
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs_f64();
+                    if secs > 0.0 {
+                        if secs < oldest {
+                            oldest = secs;
+                        }
+                        if secs > newest {
+                            newest = secs;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if newest > oldest && oldest < f64::MAX {
+        newest - oldest
+    } else {
+        0.0
+    }
+}
+
 /// Scan a run directory and compute summary metrics.
 fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
     use std::fs;
@@ -349,6 +408,7 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
     let mut total_cost = 0.0f64;
     let mut total_tokens = 0usize;
     let mut duration_secs = 0.0f64;
+    let mut has_summary = false;
 
     for entry in entries.flatten() {
         let file_path = entry.path();
@@ -366,6 +426,7 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
                 if let Ok(summary) =
                     serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
                 {
+                    has_summary = true;
                     if let Some(metrics) = summary.get("aggregate_metrics") {
                         if let Some(am) = metrics.as_object() {
                             let ag = AggregateMetricsResponse {
@@ -464,6 +525,18 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
     let avg_f1 = results.iter().map(|r| r.metrics.f1).sum::<f64>() / pr_count as f64;
     let avg_precision = results.iter().map(|r| r.metrics.precision).sum::<f64>() / pr_count as f64;
     let avg_recall = results.iter().map(|r| r.metrics.recall).sum::<f64>() / pr_count as f64;
+
+    // Aggregate per-PR cost if available
+    if total_cost == 0.0 {
+        total_cost = results.iter()
+            .filter_map(|r| r.cost.as_ref().map(|c| c.total_usd))
+            .sum();
+    }
+
+    // Fallback: compute duration from file timestamps if not found in summary
+    if duration_secs == 0.0 && !has_summary {
+        duration_secs = compute_duration_from_timestamps(path);
+    }
 
     Ok(RunSummary {
         id: name.to_string(),
@@ -623,7 +696,7 @@ pub async fn get_run(
                         f1: Some(pr.metrics.f1),
                         precision: Some(pr.metrics.precision),
                         recall: Some(pr.metrics.recall),
-                        cost: None,
+                        cost: pr.cost.as_ref().map(|c| c.total_usd),
                         status: Some("done".to_string()),
                     });
                 }
@@ -658,6 +731,12 @@ pub async fn get_run(
     } else {
         0.0
     };
+
+    // Fallback: compute duration from file timestamps if not found in summary
+    if duration_secs == 0.0 {
+        let run_path = state.output_dir.join(&id);
+        duration_secs = compute_duration_from_timestamps(&run_path);
+    }
 
     let detail = RunDetail {
         id: id.clone(),
@@ -729,18 +808,18 @@ pub async fn start_run(
         runs.insert(run_id.clone(), active_run);
     }
 
-    let harness_path = state.harness_path.clone();
     let output_dir = state.output_dir.clone();
     let run_id_clone = run_id.clone();
     let active_runs = state.active_runs.clone();
     let config_clone = config.clone();
+    let benchmark_dir = state.benchmark_dir.clone();
 
     tokio::spawn(async move {
         if let Err(e) = harness::run_harness(
-            &harness_path,
             &run_id_clone,
             &config_clone,
             &output_dir,
+            benchmark_dir.as_deref(),
             tx,
             active_runs,
         )
@@ -865,6 +944,23 @@ fn read_agent_log_file(cache_dir: &Path, pr_key: &str, role: &str, suffix: &str)
     None
 }
 
+/// Resolve the actual cache directory for a given run, trying multiple layouts:
+/// 1. `output_dir.parent()/cache/<run_id>/` (nested by run_id)
+/// 2. `output_dir.parent()/cache/` (flat, no run_id subdirectory)
+fn resolve_cache_dir(output_dir: &Path, run_id: &str) -> Option<PathBuf> {
+    let base_dir = output_dir.parent().unwrap_or(Path::new("."));
+    let candidates = [
+        base_dir.join("cache").join(run_id),
+        base_dir.join("cache"),
+    ];
+    for path in &candidates {
+        if path.is_dir() {
+            return Some(path.clone());
+        }
+    }
+    None
+}
+
 /// GET /api/runs/:id/logs — list available log files for a run
 pub async fn list_logs(
     State(state): State<AppState>,
@@ -872,17 +968,17 @@ pub async fn list_logs(
 ) -> impl IntoResponse {
     tracing::info!("GET /api/runs/{}/logs", id);
 
-    let base_dir = state.output_dir.parent().unwrap_or(Path::new("."));
-    let cache_dir = base_dir.join("cache").join(&id);
-
-    if !cache_dir.exists() || !cache_dir.is_dir() {
-        return Json(LogsListResponse {
-            run_id: id,
-            cache_available: false,
-            prs: vec![],
-        })
-        .into_response();
-    }
+    let cache_dir = match resolve_cache_dir(&state.output_dir, &id) {
+        Some(d) => d,
+        None => {
+            return Json(LogsListResponse {
+                run_id: id,
+                cache_available: false,
+                prs: vec![],
+            })
+            .into_response();
+        }
+    };
 
     let mut prs = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&cache_dir) {
@@ -896,6 +992,11 @@ pub async fn list_logs(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
+
+            // Skip non-PR directories (like _summary)
+            if pr_key.starts_with('_') || pr_key.starts_with('.') {
+                continue;
+            }
 
             // Try to find a PR title from the output directory
             let pr_title = resolve_pr_title(&state.output_dir, &id, &pr_key);
@@ -965,10 +1066,22 @@ pub async fn get_agent_log(
 ) -> impl IntoResponse {
     tracing::info!("GET /api/runs/{}/logs/{}/{}", id, pr_key, role);
 
-    let base_dir = state.output_dir.parent().unwrap_or(Path::new("."));
-    let cache_dir = base_dir.join("cache").join(&id);
-    let pr_dir = cache_dir.join(&pr_key);
+    let cache_dir = match resolve_cache_dir(&state.output_dir, &id) {
+        Some(d) => d,
+        None => {
+            return Json(AgentLogResponse {
+                run_id: id.clone(),
+                pr_key,
+                role,
+                prompt: None,
+                response: None,
+                available: false,
+            })
+            .into_response();
+        }
+    };
 
+    let pr_dir = cache_dir.join(&pr_key);
     if !pr_dir.exists() || !pr_dir.is_dir() {
         return Json(AgentLogResponse {
             run_id: id,
@@ -1082,44 +1195,37 @@ pub async fn start_replay(
         replays.insert(id.clone(), replay_state);
     }
 
-    // Spawn crb-harness in background with --cache-dir
-    let harness_path = state.harness_path.clone();
+    // Spawn harness in background using library with --cache-dir
     let id_clone = id.clone();
     let replays = state.replays.clone();
-    let cache_arg = cache_dir.to_string_lossy().to_string();
-    let replay_output_arg = replay_output.to_string_lossy().to_string();
+    let cache_arg = cache_dir.to_path_buf();
+    let replay_output_arg = replay_output.to_path_buf();
+    let state_clone = state.clone();
 
     tokio::spawn(async move {
-        let status = tokio::process::Command::new(&harness_path)
-            .arg("--model")
-            .arg(&model)
-            .arg("--dataset-dir")
-            .arg(&dataset_dir)
-            .arg("--roles")
-            .arg(&roles)
-            .arg("--cache-dir")
-            .arg(&cache_arg)
-            .arg("--output-dir")
-            .arg(&replay_output_arg)
-            .status()
-            .await;
+        let result = harness::run_replay_via_library(
+            &id_clone,
+            &model,
+            &dataset_dir,
+            &roles,
+            &cache_arg,
+            &replay_output_arg,
+            &state_clone,
+        )
+        .await;
 
         let mut runs = replays.write().await;
         if let Some(rstate) = runs.get_mut(&id_clone) {
-            match status {
-                Ok(s) if s.success() => {
+            match result {
+                Ok(()) => {
                     rstate.status = "completed".to_string();
                     rstate.progress_pct = 100;
                     rstate.completed_prs = rstate.total_prs;
                     rstate.message = "Replay completed successfully".to_string();
                 }
-                Ok(s) => {
-                    rstate.status = "failed".to_string();
-                    rstate.message = format!("Harness exited with: {}", s);
-                }
                 Err(e) => {
                     rstate.status = "failed".to_string();
-                    rstate.message = format!("Failed to run harness: {}", e);
+                    rstate.message = format!("Replay failed: {e}");
                 }
             }
         }
@@ -1217,4 +1323,98 @@ pub async fn run_judge(
     };
 
     (status, Json(serde_json::to_value(&result).unwrap())).into_response()
+}
+
+/// Detailed per-PR response with verdicts, findings count, cost breakdown.
+#[derive(Debug, Clone, Serialize)]
+pub struct PrDetailResponse {
+    pub run_id: String,
+    pub pr_title: String,
+    pub url: String,
+    pub findings_count: usize,
+    pub golden_count: usize,
+    pub metrics: MetricsJson,
+    pub verdicts: Vec<VerdictJson>,
+    pub cost: Option<CostJson>,
+    /// Raw findings JSON from agents
+    #[serde(default)]
+    pub findings: serde_json::Value,
+    /// Raw agent response texts
+    #[serde(default)]
+    pub agent_responses: Vec<String>,
+}
+
+/// GET /api/runs/:id/pr-detail/:pr_key — get full details for a specific PR from its result file
+pub async fn get_pr_detail(
+    State(state): State<AppState>,
+    AxumPath((id, pr_key)): AxumPath<(String, String)>,
+) -> impl IntoResponse {
+    tracing::info!("GET /api/runs/{}/pr-detail/{}", id, pr_key);
+
+    let run_path = state.output_dir.join(&id);
+    if !run_path.exists() || !run_path.is_dir() {
+        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": format!("Run not found: {}", id) }))).into_response();
+    }
+
+    // Find the matching PR result file — pr_key could be a filename fragment or PR number
+    let entries = match std::fs::read_dir(&run_path) {
+        Ok(e) => e,
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Cannot read run directory"}))).into_response(),
+    };
+
+    let pr_key_lower = pr_key.to_lowercase();
+    for entry in entries.flatten() {
+        let file_path = entry.path();
+        if file_path.extension().map_or(true, |e| e != "json") {
+            continue;
+        }
+        let fname = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        if fname == "_summary.json" || fname.starts_with("candidates") {
+            continue;
+        }
+
+        // Match by filename containing pr_key, or by PR number extracted from URL
+        let content = match std::fs::read_to_string(&file_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let pr: PrResultJson = match serde_json::from_str(&content) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+
+        // Match by filename containing pr_key (normalize spaces to underscores for filename matching),
+        // or by PR number extracted from URL, or by PR title containing pr_key
+        let pr_num_from_url = pr.url.rsplit('/').next().and_then(|s| s.parse::<u32>().ok());
+        let pr_num_from_key = pr_key.parse::<u32>().ok();
+        // Normalize spaces to underscores in the pr_key for filename matching (files use underscores)
+        let pr_key_normalized = pr_key_lower.replace(' ', "_");
+        let fname_lower = fname.to_lowercase();
+        let matches = fname_lower.contains(&pr_key_lower)
+            || fname_lower.contains(&pr_key_normalized)
+            || (pr_num_from_url.is_some() && pr_num_from_url == pr_num_from_key)
+            || pr.pr_title.to_lowercase().contains(&pr_key_lower);
+
+        tracing::debug!(
+            "pr-detail matching: pr_key='{}', fname='{}', fname_lower='{}', pr_key_normalized='{}', matches={}",
+            pr_key, fname, fname_lower, pr_key_normalized, matches
+        );
+
+        if matches {
+            return Json(PrDetailResponse {
+                run_id: id,
+                pr_title: pr.pr_title,
+                url: pr.url,
+                findings_count: pr.findings_count,
+                golden_count: pr.golden_count,
+                metrics: pr.metrics,
+                verdicts: pr.verdicts,
+                cost: pr.cost,
+                findings: pr.findings,
+                agent_responses: pr.agent_responses,
+            }).into_response();
+        }
+    }
+
+    (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": format!("PR not found: {}", pr_key) }))).into_response()
 }

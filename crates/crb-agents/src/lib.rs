@@ -2,27 +2,11 @@ use rig_core::agent::Agent;
 use rig_core::client::CompletionClient;
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub mod prompts;
 
-/// A structured finding returned by an agent.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct Finding {
-    pub file: Option<String>,
-    pub line: Option<u32>,
-    pub message: String,
-    pub severity: String,
-    pub rule_code: Option<String>,
-    /// Whether the severity has been audited/downgraded by the severity auditor.
-    #[serde(default)]
-    pub severity_audited: bool,
-    /// Reason for the severity audit result (e.g., downgrade category, protection reason).
-    #[serde(default)]
-    pub severity_audit_reason: Option<String>,
-}
+pub use crb_tools::Finding;
 
 /// Convert Finding to serde_json::Map for backward compatibility
 pub fn finding_to_map(f: &Finding) -> serde_json::Map<String, serde_json::Value> {
@@ -81,7 +65,7 @@ You are a code reviewer. Analyze the provided code diff and identify any \
 issues. Respond with a JSON array of findings.";
 
 /// Build a rig agent for the given role with optional prompt library,
-/// template variables, and extra preamble text.
+/// template variables, extra preamble text, and filesystem tools.
 ///
 /// If `prompt_lib` is `Some`, the role preamble is resolved through the
 /// library (custom prompts from files, falling back to built-in defaults).
@@ -97,6 +81,11 @@ issues. Respond with a JSON array of findings.";
 ///
 /// `template_vars` provides variable substitutions for the prompt template
 /// (e.g. `{diff}`, `{role}`, `{file_list}`, `{language}`).
+///
+/// If `workdir` is `Some`, four filesystem tools are registered on the agent:
+/// `read_file`, `grep`, `terminal`, and `list_dir` — all scoped to the given
+/// working directory (typically the PR worktree checkout).  If `workdir` is
+/// `None`, no tools are registered and the agent operates on the diff text alone.
 pub fn build_agent(
     client: &openai::Client,
     model: &str,
@@ -105,6 +94,7 @@ pub fn build_agent(
     prompt_lib: Option<&PromptLibrary>,
     template_vars: Option<&HashMap<&str, &str>>,
     extra_preamble: Option<&str>,
+    workdir: Option<&str>,
 ) -> Agent<ResponsesCompletionModel> {
     let role_preamble = match prompt_lib {
         Some(lib) => {
@@ -132,7 +122,34 @@ pub fn build_agent(
         }
     }
 
-    client.agent(model).preamble(&full_preamble).build()
+    // Register filesystem tools if a workdir is provided.
+    // Note: AgentBuilder's ToolState generic changes when .tool() is called
+    // (NoToolConfig → WithBuilderTools), so we must use two separate build paths.
+    if let Some(wd) = workdir {
+        let wd = wd.to_string();
+        client
+            .agent(model)
+            .preamble(&full_preamble)
+            .tool(crb_tools::read_file::ReadFileTool {
+                repo_root: wd.clone(),
+                ..Default::default()
+            })
+            .tool(crb_tools::shell::ShellTool {
+                work_dir: wd.clone(),
+                ..Default::default()
+            })
+            .tool(crb_tools::grep::GrepTool { workdir: wd.clone() })
+            .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
+            .default_max_turns(6)
+            .temperature(0.3)
+            .build()
+    } else {
+        client
+            .agent(model)
+            .preamble(&full_preamble)
+            .temperature(0.3)
+            .build()
+    }
 }
 
 /// All supported agent role identifiers.

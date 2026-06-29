@@ -11,6 +11,9 @@ path = "src/main.rs"
 name = "crb_benchmark"
 path = "src/lib.rs"
 
+[features]
+reduce-diff = ["crb-harness/reduce-diff"]
+
 [dependencies]
 crb-harness = { path = "../crb-harness" }
 crb-reporting = { path = "../crb-reporting" }

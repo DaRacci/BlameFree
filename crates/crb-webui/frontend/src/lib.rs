@@ -113,6 +113,9 @@ pub struct AppConfig {
     pub datasets: Vec<String>,
     #[serde(default)]
     pub roles: Vec<String>,
+    /// Whether reduce-diff mode is enabled (compile-time feature flag).
+    #[serde(default)]
+    pub reduce_diff_enabled: bool,
 }
 
 /// Per-dataset config loaded from dataset.toml
@@ -268,6 +271,74 @@ pub struct JudgeResult {
     pub message: String,
     pub stdout: String,
     pub stderr: String,
+}
+
+/// Per-PR detail response with verdicts and cost breakdown
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrDetailResponse {
+    pub run_id: String,
+    pub pr_title: String,
+    pub url: String,
+    pub findings_count: usize,
+    pub golden_count: usize,
+    /// PR-level metrics (true_positives, false_positives, etc.) matching backend MetricsJson
+    pub metrics: PrDetailMetrics,
+    pub verdicts: Vec<VerdictDetail>,
+    pub cost: Option<PrCostDetail>,
+    /// Raw findings JSON from agents
+    #[serde(default)]
+    pub findings: serde_json::Value,
+    /// Raw agent response texts
+    #[serde(default)]
+    pub agent_responses: Vec<String>,
+}
+
+/// PR-level metrics matching backend `MetricsJson` — not the same as AggregateMetrics.
+/// The backend returns `metrics` with these exact field names from the per-PR result file.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PrDetailMetrics {
+    #[serde(default)]
+    pub true_positives: usize,
+    #[serde(default)]
+    pub false_positives: usize,
+    #[serde(default)]
+    pub false_negatives: usize,
+    #[serde(default)]
+    pub precision: f64,
+    #[serde(default)]
+    pub recall: f64,
+    #[serde(default)]
+    pub f1: f64,
+}
+
+/// A single judge verdict
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerdictDetail {
+    #[serde(default)]
+    pub reasoning: String,
+    #[serde(default, rename = "match")]
+    pub match_: bool,
+    #[serde(default)]
+    pub confidence: f64,
+}
+
+/// Cost breakdown for a single PR
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrCostDetail {
+    #[serde(default)]
+    pub total_usd: f64,
+    #[serde(default)]
+    pub agent_tokens_in: u64,
+    #[serde(default)]
+    pub agent_tokens_out: u64,
+    #[serde(default)]
+    pub judge_tokens_in: u64,
+    #[serde(default)]
+    pub judge_tokens_out: u64,
+    #[serde(default)]
+    pub agent_call_count: u64,
+    #[serde(default)]
+    pub judge_call_count: u64,
 }
 
 // ─── Helper: Build API URL ───────────────────────────────────────────────────

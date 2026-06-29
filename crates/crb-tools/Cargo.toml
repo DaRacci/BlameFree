@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-crb-agents = { path = "../crb-agents" }
 rig-core = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }

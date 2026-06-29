@@ -23,8 +23,6 @@ pub struct AppState {
     pub output_dir: PathBuf,
     /// Directory containing datasets.
     pub dataset_dir: PathBuf,
-    /// Path to the `crb-harness` binary.
-    pub harness_path: PathBuf,
     /// Directory of the static frontend files.
     pub static_dir: PathBuf,
     /// Comma-separated list of available models.
@@ -67,7 +65,6 @@ impl AppState {
     pub fn new(
         output_dir: PathBuf,
         dataset_dir: PathBuf,
-        harness_path: PathBuf,
         static_dir: PathBuf,
         models: String,
         benchmark_dir: Option<PathBuf>,
@@ -75,7 +72,6 @@ impl AppState {
         Self {
             output_dir,
             dataset_dir,
-            harness_path,
             static_dir,
             models,
             benchmark_dir,
@@ -99,6 +95,7 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         .route("/api/runs/:id/replay/status", get(crate::api::replay_status))
         .route("/api/runs/:id/convert", post(crate::api::convert_to_candidates))
         .route("/api/runs/:id/judge", post(crate::api::run_judge))
+        .route("/api/runs/:id/pr-detail/:pr_key", get(crate::api::get_pr_detail))
         .route("/api/datasets/:id/prs", get(crate::api::list_dataset_prs));
 
     // Build the full router with SPA fallback
