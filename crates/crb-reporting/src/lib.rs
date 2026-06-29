@@ -49,6 +49,27 @@ pub struct CostSummary {
     pub total_usd: f64,
     pub agent_cache_hit_rate: f64,
     pub judge_cache_hit_rate: f64,
+    // NEW FIELDS — marked #[serde(default)] for backward compat with old JSON
+    #[serde(default)]
+    pub agent_cached_input_tokens: usize,
+    #[serde(default)]
+    pub agent_cache_creation_input_tokens: usize,
+    #[serde(default)]
+    pub agent_reasoning_tokens: usize,
+    #[serde(default)]
+    pub agent_tool_use_prompt_tokens: usize,
+    #[serde(default)]
+    pub judge_cached_input_tokens: usize,
+    #[serde(default)]
+    pub judge_cache_creation_input_tokens: usize,
+    #[serde(default)]
+    pub judge_reasoning_tokens: usize,
+    #[serde(default)]
+    pub judge_tool_use_prompt_tokens: usize,
+    #[serde(default)]
+    pub agent_call_count: usize,
+    #[serde(default)]
+    pub judge_call_count: usize,
 }
 
 /// Result of evaluating a single PR.

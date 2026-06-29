@@ -3,11 +3,10 @@
 //! Tracks token counts, cache hit rates, and computes USD cost
 //! from pricing rates configured via environment variables.
 //!
-//! # Token estimation
-//! We don't get real token counts from rig-core's completion API yet.
-//! Token counts are estimated as `char_count / 4`, which is a rough
-//! approximation. This should be replaced with real API token counts
-//! when the provider reports them.
+//! # Real API usage
+//! Token counts now come from real `Usage` data reported by the API
+//! through rig-core's `PromptResponse.usage` field (obtained via
+//! `.extended_details()` on agent/judge prompt calls).
 //!
 //! # Pricing
 //! Pricing rates are read from environment variables:
@@ -19,6 +18,7 @@
 use std::sync::Mutex;
 
 use crb_reporting::CostSummary;
+use rig_core::completion::Usage;
 
 /// Thread-safe cost tracker for a single PR evaluation.
 ///
@@ -30,10 +30,27 @@ pub struct CostTracker {
 
 #[derive(Debug, Clone, Default)]
 struct CostTrackerInner {
+    // ── Token counts from real Usage data ──────────────────────────────
     agent_tokens_in: usize,
     agent_tokens_out: usize,
     judge_tokens_in: usize,
     judge_tokens_out: usize,
+
+    // ── Extended token analytics ───────────────────────────────────────
+    agent_cached_input_tokens: usize,
+    agent_cache_creation_input_tokens: usize,
+    agent_reasoning_tokens: usize,
+    agent_tool_use_prompt_tokens: usize,
+    judge_cached_input_tokens: usize,
+    judge_cache_creation_input_tokens: usize,
+    judge_reasoning_tokens: usize,
+    judge_tool_use_prompt_tokens: usize,
+
+    // ── Call counts ────────────────────────────────────────────────────
+    agent_call_count: usize,
+    judge_call_count: usize,
+
+    // ── Cache stats ────────────────────────────────────────────────────
     agent_cache_hits: usize,
     agent_cache_misses: usize,
     judge_cache_hits: usize,
@@ -48,15 +65,21 @@ impl CostTracker {
         }
     }
 
-    /// Record an agent LLM call with estimated token counts.
+    /// Record an agent LLM call with real API usage data.
     ///
-    /// `tokens_in` and `tokens_out` should be character-count estimates
-    /// (see [`estimate_tokens`]). Pass `cache_hit = true` if the call
-    /// was served from cache, `false` if it was a fresh API call.
-    pub fn record_agent(&self, tokens_in: usize, tokens_out: usize, cache_hit: bool) {
+    /// `usage` contains the token counts reported by the API.
+    /// Pass `cache_hit = true` if the call was served from cache,
+    /// `false` if it was a fresh API call.  On cache hits, usage is still
+    /// recorded so analytics show token counts (cost is computed as 0).
+    pub fn record_agent(&self, usage: &Usage, cache_hit: bool) {
         if let Ok(mut inner) = self.inner.lock() {
-            inner.agent_tokens_in += tokens_in;
-            inner.agent_tokens_out += tokens_out;
+            inner.agent_tokens_in += usage.input_tokens as usize;
+            inner.agent_tokens_out += usage.output_tokens as usize;
+            inner.agent_cached_input_tokens += usage.cached_input_tokens as usize;
+            inner.agent_cache_creation_input_tokens += usage.cache_creation_input_tokens as usize;
+            inner.agent_reasoning_tokens += usage.reasoning_tokens as usize;
+            inner.agent_tool_use_prompt_tokens += usage.tool_use_prompt_tokens as usize;
+            inner.agent_call_count += 1;
             if cache_hit {
                 inner.agent_cache_hits += 1;
             } else {
@@ -65,21 +88,39 @@ impl CostTracker {
         }
     }
 
-    /// Record a judge LLM call with estimated token counts.
+    /// Record a judge LLM call with real API usage data.
     ///
-    /// `tokens_in` and `tokens_out` should be character-count estimates
-    /// (see [`estimate_tokens`]). Pass `cache_hit = true` if the call
-    /// was served from cache, `false` if it was a fresh API call.
-    pub fn record_judge(&self, tokens_in: usize, tokens_out: usize, cache_hit: bool) {
+    /// `usage` contains the token counts reported by the API.
+    /// Pass `cache_hit = true` if the call was served from cache,
+    /// `false` if it was a fresh API call.  On cache hits, usage is still
+    /// recorded so analytics show token counts (cost is computed as 0).
+    pub fn record_judge(&self, usage: &Usage, cache_hit: bool) {
         if let Ok(mut inner) = self.inner.lock() {
-            inner.judge_tokens_in += tokens_in;
-            inner.judge_tokens_out += tokens_out;
+            inner.judge_tokens_in += usage.input_tokens as usize;
+            inner.judge_tokens_out += usage.output_tokens as usize;
+            inner.judge_cached_input_tokens += usage.cached_input_tokens as usize;
+            inner.judge_cache_creation_input_tokens += usage.cache_creation_input_tokens as usize;
+            inner.judge_reasoning_tokens += usage.reasoning_tokens as usize;
+            inner.judge_tool_use_prompt_tokens += usage.tool_use_prompt_tokens as usize;
+            inner.judge_call_count += 1;
             if cache_hit {
                 inner.judge_cache_hits += 1;
             } else {
                 inner.judge_cache_misses += 1;
             }
         }
+    }
+
+    /// Record an agent call with a default (zero) Usage.
+    /// Used when usage data isn't available (e.g., legacy cache hits
+    /// that have no stored usage).
+    pub fn record_agent_empty(&self, cache_hit: bool) {
+        self.record_agent(&Usage::new(), cache_hit);
+    }
+
+    /// Record a judge call with a default (zero) Usage.
+    pub fn record_judge_empty(&self, cache_hit: bool) {
+        self.record_judge(&Usage::new(), cache_hit);
     }
 
     /// Total estimated cost in USD, computed from env-configured pricing rates.
@@ -182,6 +223,16 @@ impl CostTracker {
                 } else {
                     inner.judge_cache_hits as f64 / judge_total as f64
                 },
+                agent_cached_input_tokens: inner.agent_cached_input_tokens,
+                agent_cache_creation_input_tokens: inner.agent_cache_creation_input_tokens,
+                agent_reasoning_tokens: inner.agent_reasoning_tokens,
+                agent_tool_use_prompt_tokens: inner.agent_tool_use_prompt_tokens,
+                judge_cached_input_tokens: inner.judge_cached_input_tokens,
+                judge_cache_creation_input_tokens: inner.judge_cache_creation_input_tokens,
+                judge_reasoning_tokens: inner.judge_reasoning_tokens,
+                judge_tool_use_prompt_tokens: inner.judge_tool_use_prompt_tokens,
+                agent_call_count: inner.agent_call_count,
+                judge_call_count: inner.judge_call_count,
             }
         } else {
             CostSummary {
@@ -192,6 +243,16 @@ impl CostTracker {
                 total_usd: 0.0,
                 agent_cache_hit_rate: 0.0,
                 judge_cache_hit_rate: 0.0,
+                agent_cached_input_tokens: 0,
+                agent_cache_creation_input_tokens: 0,
+                agent_reasoning_tokens: 0,
+                agent_tool_use_prompt_tokens: 0,
+                judge_cached_input_tokens: 0,
+                judge_cache_creation_input_tokens: 0,
+                judge_reasoning_tokens: 0,
+                judge_tool_use_prompt_tokens: 0,
+                agent_call_count: 0,
+                judge_call_count: 0,
             }
         }
     }
@@ -201,18 +262,6 @@ impl Default for CostTracker {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Estimate the number of tokens from a character count.
-///
-/// Uses a rough 4:1 character-to-token ratio, which is a reasonable
-/// approximation for English text.
-///
-/// **Note:** This is an estimate and should be replaced with real API
-/// token counts when the provider reports them (e.g., via the OpenAI
-/// token usage API response field).
-pub fn estimate_tokens(text: &str) -> usize {
-    text.chars().count() / 4
 }
 
 /// Read a `f64` environment variable, returning `default` if unset or invalid.
@@ -227,14 +276,23 @@ fn read_price_env(key: &str, default: f64) -> f64 {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_estimate_tokens() {
-        // 46 chars → 11 tokens (integer division)
-        assert_eq!(estimate_tokens("hello world, this is a test string right here!"), 11);
-        // Empty string → 0 tokens
-        assert_eq!(estimate_tokens(""), 0);
-        // Single char → 0 tokens (integer division)
-        assert_eq!(estimate_tokens("a"), 0);
+    fn make_usage(
+        input: u64,
+        output: u64,
+        cached: u64,
+        cache_create: u64,
+        reasoning: u64,
+        tool: u64,
+    ) -> Usage {
+        let mut u = Usage::new();
+        u.input_tokens = input;
+        u.output_tokens = output;
+        u.total_tokens = input + output;
+        u.cached_input_tokens = cached;
+        u.cache_creation_input_tokens = cache_create;
+        u.reasoning_tokens = reasoning;
+        u.tool_use_prompt_tokens = tool;
+        u
     }
 
     #[test]
@@ -249,9 +307,13 @@ mod tests {
     #[test]
     fn test_record_agent_and_judge() {
         let tracker = CostTracker::new();
-        tracker.record_agent(100, 50, true);
-        tracker.record_agent(200, 100, false);
-        tracker.record_judge(30, 20, true);
+        let usage1 = make_usage(100, 50, 10, 5, 3, 2);
+        let usage2 = make_usage(200, 100, 20, 10, 6, 4);
+        let usage3 = make_usage(30, 20, 5, 0, 1, 0);
+
+        tracker.record_agent(&usage1, true);   // cache hit
+        tracker.record_agent(&usage2, false);  // cache miss
+        tracker.record_judge(&usage3, true);    // cache hit
 
         let (total_in, total_out) = tracker.total_tokens();
         assert_eq!(total_in, 100 + 200 + 30);
@@ -259,6 +321,16 @@ mod tests {
 
         assert!((tracker.agent_cache_hit_rate() - 0.5).abs() < 1e-6);
         assert!((tracker.judge_cache_hit_rate() - 1.0).abs() < 1e-6);
+
+        // Check extended analytics
+        let summary = tracker.to_summary();
+        assert_eq!(summary.agent_cached_input_tokens, 10 + 20);
+        assert_eq!(summary.agent_reasoning_tokens, 3 + 6);
+        assert_eq!(summary.agent_tool_use_prompt_tokens, 2 + 4);
+        assert_eq!(summary.judge_cached_input_tokens, 5);
+        assert_eq!(summary.judge_reasoning_tokens, 1);
+        assert_eq!(summary.agent_call_count, 2);
+        assert_eq!(summary.judge_call_count, 1);
     }
 
     #[test]
@@ -271,8 +343,11 @@ mod tests {
     #[test]
     fn test_cost_summary_serialization() {
         let tracker = CostTracker::new();
-        tracker.record_agent(4000, 1000, true);
-        tracker.record_judge(500, 200, false);
+        let usage1 = make_usage(4000, 1000, 500, 200, 50, 30);
+        let usage2 = make_usage(500, 200, 100, 50, 20, 10);
+
+        tracker.record_agent(&usage1, true);
+        tracker.record_judge(&usage2, false);
 
         let summary = tracker.to_summary();
         assert_eq!(summary.agent_tokens_in, 4000);
@@ -286,14 +361,32 @@ mod tests {
         let json = serde_json::to_string(&summary).unwrap();
         assert!(json.contains("\"agent_tokens_in\":4000"));
         assert!(json.contains("\"total_usd\""));
+        assert!(json.contains("\"agent_cached_input_tokens\":500"));
+        assert!(json.contains("\"agent_call_count\":1"));
+        assert!(json.contains("\"judge_call_count\":1"));
     }
 
     #[test]
     fn test_usd_cost_with_default_rates() {
         let tracker = CostTracker::new();
         // 1M tokens in @ $0.14/1M = $0.14; 500K out @ $0.28/1M = $0.14; total = $0.28
-        tracker.record_agent(1_000_000, 500_000, false);
+        let usage = make_usage(1_000_000, 500_000, 0, 0, 0, 0);
+        tracker.record_agent(&usage, false);
         let cost = tracker.total_cost_usd();
         assert!((cost - 0.28).abs() < 0.001, "Expected ~0.28, got {cost}");
+    }
+
+    #[test]
+    fn test_record_empty_usage() {
+        let tracker = CostTracker::new();
+        tracker.record_agent_empty(false);
+        tracker.record_judge_empty(true);
+
+        let summary = tracker.to_summary();
+        assert_eq!(summary.agent_tokens_in, 0);
+        assert_eq!(summary.agent_call_count, 1);
+        assert_eq!(summary.judge_call_count, 1);
+        assert!((summary.judge_cache_hit_rate - 1.0).abs() < 0.001, "Expected judge_cache_hit_rate ~1.0");
+        assert!((summary.agent_cache_hit_rate - 0.0).abs() < 0.001, "Expected agent_cache_hit_rate ~0.0");
     }
 }

@@ -1,6 +1,8 @@
+use rig_core::agent::PromptResponse;
 use rig_core::agent::Agent;
 use rig_core::client::CompletionClient;
-use rig_core::completion::Prompt;
+use rig_core::completion::Prompt;  // needed for .prompt() on Agent
+use rig_core::completion::Usage;
 use rig_core::providers::openai::{Client, responses_api::ResponsesCompletionModel};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -65,16 +67,17 @@ pub fn format_judge_prompt(golden_comment: &str, candidate: &str) -> String {
         .replace("{candidate}", candidate)
 }
 
-/// Run the judge agent to produce a verdict for a single comparison.
+/// Run the judge agent to produce a verdict for a single comparison,
+/// returning both the verdict and the API usage statistics.
 pub async fn run_judge(
     judge: &Agent<ResponsesCompletionModel>,
     golden_comment: &str,
     candidate: &str,
-) -> Result<JudgeVerdict, anyhow::Error> {
+) -> Result<(JudgeVerdict, Usage), anyhow::Error> {
     let prompt = format_judge_prompt(golden_comment, candidate);
-    let response = judge.prompt(&prompt).await?;
-    let verdict: JudgeVerdict = serde_json::from_str(&response)?;
-    Ok(verdict)
+    let resp: PromptResponse = judge.prompt(&prompt).extended_details().await?;
+    let verdict: JudgeVerdict = serde_json::from_str(&resp.output)?;
+    Ok((verdict, resp.usage))
 }
 
 // ── Jaccard heuristic matching ─────────────────────────────────────────────

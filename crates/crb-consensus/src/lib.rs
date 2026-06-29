@@ -8,13 +8,17 @@
 //! the existing `evaluate_pr()` signature in `crb-harness` for drop-in use.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use anyhow::Result;
 use regex::Regex;
+use rig_core::agent::PromptResponse;
 use rig_core::agent::Agent;
 use rig_core::completion::Prompt;
+use rig_core::completion::Usage;
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use serde::{Deserialize, Serialize};
@@ -100,6 +104,14 @@ pub trait CacheBackend: Send + Sync {
         None
     }
 
+    /// Look up a cached agent response by its content-addressed key,
+    /// also returning the saved API usage data if available.
+    /// Returns `Some((response_text, Option<usage>))` on cache hit.
+    fn lookup_agent_by_key_with_usage(&self, _cache_key: &str) -> Option<(String, Option<Usage>)> {
+        // Default: just return response with no usage
+        self.lookup_agent_by_key(_cache_key).map(|resp| (resp, None))
+    }
+
     /// Look up a cached judge verdict by its content-addressed key.
     /// Returns `Some(JudgeVerdict)` on cache hit, `None` on miss.
     fn lookup_judge_by_key(&self, _cache_key: &str) -> Option<JudgeVerdict> {
@@ -108,6 +120,10 @@ pub trait CacheBackend: Send + Sync {
 
     /// Save an agent prompt+response pair with a content-addressed cache key.
     fn save_agent_with_key(&self, _cache_key: &str, _role: &str, _prompt: &str, _response: &str) {}
+
+    /// Save an agent prompt+response pair with a content-addressed cache key,
+    /// including the API usage data.
+    fn save_agent_with_key_and_usage(&self, _cache_key: &str, _role: &str, _prompt: &str, _response: &str, _usage: &Usage) {}
 
     /// Save a judge verdict with a content-addressed cache key.
     fn save_judge_with_key(&self, _cache_key: &str, _golden: &str, _finding: &str, _verdict_json: &str) {}
@@ -192,6 +208,16 @@ pub struct ConsensusReport {
     pub recall: f64,
     /// F1 = harmonic mean of precision and recall
     pub f1: f64,
+    /// Number of agent LLM calls that were cache misses (actual API calls made).
+    pub agent_api_calls: usize,
+    /// Number of judge LLM calls that were cache misses (actual API calls made).
+    pub judge_api_calls: usize,
+    /// Number of judge LLM calls that were cache hits (served from cache).
+    pub judge_cache_hits: usize,
+    /// Aggregate token usage from all agent API calls (real + cached).
+    pub agent_usage: Usage,
+    /// Aggregate token usage from all judge API calls (real + cached).
+    pub judge_usage: Usage,
 }
 
 // ── Agent construction ──────────────────────────────────────────────────────
@@ -239,8 +265,10 @@ pub async fn run_reviewers(
     prompt_hash: &str,
     rules_hash: &str,
     tool_preamble: Option<&str>,
-) -> Vec<(Role, Vec<Finding>)> {
+) -> (Vec<(Role, Vec<Finding>)>, usize, Usage) {
     let mut set = JoinSet::new();
+    let agent_api_calls = Arc::new(AtomicUsize::new(0));
+    let aggregate_usage = Arc::new(Mutex::new(Usage::new()));
 
     for config in configs {
         let client = client.clone();
@@ -255,6 +283,8 @@ pub async fn run_reviewers(
         let prompt_hash = prompt_hash.to_string();
         let rules_hash = rules_hash.to_string();
         let model_name = config.model.clone();
+        let agent_api_calls = agent_api_calls.clone();
+        let aggregate_usage = aggregate_usage.clone();
 
         set.spawn(async move {
             let cache_key = compute_agent_cache_key(
@@ -267,8 +297,20 @@ pub async fn run_reviewers(
 
             // Check cache first
             if let Some(ref cache) = cache {
-                if let Some(cached_response) = cache.lookup_agent_by_key(&cache_key) {
+                if let Some((cached_response, cached_usage_opt)) = cache.lookup_agent_by_key_with_usage(&cache_key) {
                     tracing::info!("CACHE HIT for role {:?} (key={})", role, &cache_key[..12]);
+                    // Record usage from cache if available
+                    if let Some(cached_usage) = cached_usage_opt {
+                        if let Ok(mut agg) = aggregate_usage.lock() {
+                            agg.input_tokens += cached_usage.input_tokens;
+                            agg.output_tokens += cached_usage.output_tokens;
+                            agg.total_tokens += cached_usage.total_tokens;
+                            agg.cached_input_tokens += cached_usage.cached_input_tokens;
+                            agg.cache_creation_input_tokens += cached_usage.cache_creation_input_tokens;
+                            agg.reasoning_tokens += cached_usage.reasoning_tokens;
+                            agg.tool_use_prompt_tokens += cached_usage.tool_use_prompt_tokens;
+                        }
+                    }
                     // Parse findings from cached response
                     let response = cached_response;
                     let preview_len = std::cmp::min(500, response.len());
@@ -312,13 +354,27 @@ pub async fn run_reviewers(
             }
 
             // Cache miss — make the API call
+            agent_api_calls.fetch_add(1, Ordering::SeqCst);
             tracing::info!("CACHE MISS for role {:?} (key={})", role, &cache_key[..12]);
             let outcome = tokio::time::timeout(Duration::from_secs(120), async {
-                let response = agent.prompt(&diff).await?;
+                let resp: PromptResponse = agent.prompt(&diff).extended_details().await?;
+                let response = resp.output;
+                let usage = resp.usage;
 
-                // Cache the response if cache is active
+                // Record usage in aggregate
+                if let Ok(mut agg) = aggregate_usage.lock() {
+                    agg.input_tokens += usage.input_tokens;
+                    agg.output_tokens += usage.output_tokens;
+                    agg.total_tokens += usage.total_tokens;
+                    agg.cached_input_tokens += usage.cached_input_tokens;
+                    agg.cache_creation_input_tokens += usage.cache_creation_input_tokens;
+                    agg.reasoning_tokens += usage.reasoning_tokens;
+                    agg.tool_use_prompt_tokens += usage.tool_use_prompt_tokens;
+                }
+
+                // Cache the response + usage if cache is active
                 if let Some(ref cache) = cache {
-                    cache.save_agent_with_key(&cache_key, role.as_str(), &diff, &response);
+                    cache.save_agent_with_key_and_usage(&cache_key, role.as_str(), &diff, &response, &usage);
                 }
 
                 // Log raw response for debugging
@@ -384,7 +440,11 @@ pub async fn run_reviewers(
             Err(e) => tracing::warn!("Agent join error: {e}"),
         }
     }
-    results
+    // Sort by role for deterministic ordering — JoinSet::join_next()
+    // returns tasks in completion order, which is non-deterministic.
+    results.sort_by_key(|(role, _)| role.as_str());
+    let aggregate_usage = aggregate_usage.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    (results, agent_api_calls.load(Ordering::SeqCst), aggregate_usage)
 }
 
 // ── Heuristic judge ─────────────────────────────────────────────────────────
@@ -464,21 +524,31 @@ pub async fn run_consensus(
     tool_preamble: Option<&str>,
 ) -> ConsensusReport {
     // Step 1: run all reviewers concurrently with content-addressed caching
-    let agents = run_reviewers(
+    let (agents, agent_api_calls, agent_usage) = run_reviewers(
         reviewer_configs, diff, diff_hash, client, rules_preamble,
         prompt_lib, template_vars, cache.clone(),
         prompt_hash, rules_hash, tool_preamble,
     ).await;
 
-    // Flatten all findings into a single mutable pool
+    // Track aggregate judge usage
+    let mut judge_usage = Usage::new();
+
+    // Flatten all findings into a single mutable pool, sorted for determinism
     let mut unmatched: Vec<Finding> = agents
         .iter()
         .flat_map(|(_, findings)| findings.iter())
         .cloned()
         .collect();
+    unmatched.sort_by(|a, b| {
+        a.file.cmp(&b.file)
+            .then_with(|| a.line.cmp(&b.line))
+            .then_with(|| a.message.cmp(&b.message))
+    });
 
     let mut true_positives: Vec<(GoldenComment, Finding)> = Vec::new();
     let mut false_negatives: Vec<GoldenComment> = Vec::new();
+    let mut judge_api_calls: usize = 0;
+    let mut judge_cache_hits: usize = 0;
 
     // Step 2 & 3: match each golden, with LLM fallback (using cache)
     for golden in &goldens {
@@ -514,6 +584,7 @@ pub async fn run_consensus(
                         if let Some(ref c) = cache {
                             if let Some(cached_verdict) = c.lookup_judge_by_key(&judge_key) {
                                 tracing::info!("CACHE HIT for judge (key={})", &judge_key[..12]);
+                                judge_cache_hits += 1;
                                 if cached_verdict.match_ {
                                     if let Some(ref c) = cache {
                                         let verdict_json = serde_json::to_string(&cached_verdict).unwrap_or_default();
@@ -528,20 +599,35 @@ pub async fn run_consensus(
                         }
 
                         // Cache miss — make API call
+                        judge_api_calls += 1;
                         tracing::info!("CACHE MISS for judge (key={})", &judge_key[..12]);
                         match run_judge(judge, &golden.message_regex, &unmatched[i].message).await
                         {
-                            Ok(verdict) if verdict.match_ => {
-                                // Cache the judge call if cache is active
-                                if let Some(ref c) = cache {
-                                    let verdict_json = serde_json::to_string(&verdict).unwrap_or_default();
-                                    c.save_judge_with_key(&judge_key, &golden.message_regex, &unmatched[i].message, &verdict_json);
+                            Ok((verdict, call_usage)) => {
+                                // Record judge usage
+                                judge_usage.input_tokens += call_usage.input_tokens;
+                                judge_usage.output_tokens += call_usage.output_tokens;
+                                judge_usage.total_tokens += call_usage.total_tokens;
+                                judge_usage.cached_input_tokens += call_usage.cached_input_tokens;
+                                judge_usage.cache_creation_input_tokens += call_usage.cache_creation_input_tokens;
+                                judge_usage.reasoning_tokens += call_usage.reasoning_tokens;
+                                judge_usage.tool_use_prompt_tokens += call_usage.tool_use_prompt_tokens;
+                                if verdict.match_ {
+                                    // Cache the judge call if cache is active
+                                    if let Some(ref c) = cache {
+                                        let verdict_json = serde_json::to_string(&verdict).unwrap_or_default();
+                                        c.save_judge_with_key(&judge_key, &golden.message_regex, &unmatched[i].message, &verdict_json);
+                                    }
+                                    let matched = unmatched.remove(i);
+                                    true_positives.push((golden.clone(), matched));
+                                    break 'llm true;
                                 }
-                                let matched = unmatched.remove(i);
-                                true_positives.push((golden.clone(), matched));
-                                break 'llm true;
+                                continue;
                             }
-                            _ => continue,
+                            Err(e) => {
+                                tracing::warn!("Judge call failed: {e}");
+                                continue;
+                            }
                         }
                     }
                     false
@@ -597,6 +683,11 @@ pub async fn run_consensus(
         precision,
         recall,
         f1,
+        agent_api_calls,
+        judge_api_calls,
+        judge_cache_hits,
+        agent_usage,
+        judge_usage,
     }
 }
 
@@ -633,7 +724,7 @@ pub async fn evaluate_pr_with_consensus(
     judge_prompt_hash: &str,
     judge_model: &str,
     tool_preamble: Option<&str>,
-) -> Result<PrResult> {
+) -> Result<(PrResult, Usage, Usage, usize, usize, usize)> {
     // Build one reviewer config per selected role.
     let reviewer_configs: Vec<ReviewerConfig> = roles
         .iter()
@@ -710,22 +801,29 @@ pub async fn evaluate_pr_with_consensus(
         .map(|(_, findings)| findings.len())
         .sum();
 
-    Ok(PrResult {
-        pr_title: pr.pr_title.clone(),
-        url: pr.url.clone(),
-        findings_count: total_findings,
-        golden_count: pr.comments.len(),
-        metrics: crb_judge::Metrics {
-            true_positives: report.true_positives.len(),
-            false_positives: report.false_positives.len(),
-            false_negatives: report.false_negatives.len(),
-            precision: report.precision,
-            recall: report.recall,
-            f1: report.f1,
+    Ok((
+        PrResult {
+            pr_title: pr.pr_title.clone(),
+            url: pr.url.clone(),
+            findings_count: total_findings,
+            golden_count: pr.comments.len(),
+            metrics: crb_judge::Metrics {
+                true_positives: report.true_positives.len(),
+                false_positives: report.false_positives.len(),
+                false_negatives: report.false_negatives.len(),
+                precision: report.precision,
+                recall: report.recall,
+                f1: report.f1,
+            },
+            verdicts,
+            cost: None,
         },
-        verdicts,
-        cost: None,
-    })
+        report.agent_usage,
+        report.judge_usage,
+        report.agent_api_calls,
+        report.judge_api_calls,
+        report.judge_cache_hits,
+    ))
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -883,6 +981,11 @@ mod tests {
             precision: 1.0,
             recall: 1.0,
             f1: 1.0,
+            agent_api_calls: 0,
+            judge_api_calls: 0,
+            judge_cache_hits: 0,
+            agent_usage: Usage::new(),
+            judge_usage: Usage::new(),
         };
         assert!((report.precision - 1.0).abs() < 1e-6);
         assert!((report.recall - 1.0).abs() < 1e-6);
@@ -919,6 +1022,11 @@ mod tests {
             precision: 1.0,
             recall: 1.0,
             f1: 1.0,
+            agent_api_calls: 0,
+            judge_api_calls: 0,
+            judge_cache_hits: 0,
+            agent_usage: Usage::new(),
+            judge_usage: Usage::new(),
         };
         assert_eq!(report.true_positives.len(), 1);
         assert_eq!(report.false_positives.len(), 0);
@@ -952,6 +1060,11 @@ mod tests {
             precision: 0.0,
             recall: 0.0,
             f1: 0.0,
+            agent_api_calls: 0,
+            judge_api_calls: 0,
+            judge_cache_hits: 0,
+            agent_usage: Usage::new(),
+            judge_usage: Usage::new(),
         };
         assert_eq!(report.true_positives.len(), 0);
         assert_eq!(report.false_positives.len(), 1);

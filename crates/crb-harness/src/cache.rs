@@ -33,6 +33,7 @@ use std::time::SystemTime;
 
 use crb_consensus::CacheBackend;
 use crb_judge::JudgeVerdict;
+use rig_core::completion::Usage;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -126,6 +127,11 @@ impl LlmCache {
         &self.dir
     }
 
+    /// Return the number of entries currently in the cache index.
+    pub fn entry_count(&self) -> usize {
+        self.index.lock().map(|ix| ix.entries.len()).unwrap_or(0)
+    }
+
     // ── SHA256 helpers ───────────────────────────────────────────────────
 
     /// Compute a SHA256 hex digest of the input string.
@@ -171,7 +177,32 @@ impl LlmCache {
         std::fs::read_to_string(&response_path).ok()
     }
 
+    /// Look up a cached agent response by cache key, also returning usage if available.
+    /// Returns `Some((response_text, Option<usage>))` on hit.
+    pub fn lookup_agent_with_usage(&self, cache_key: &str) -> Option<(String, Option<Usage>)> {
+        let index = self.index.lock().ok()?;
+        let entry = index.entries.get(cache_key)?;
+        let response_path = self.dir.join(&entry.file_path);
+        let response = std::fs::read_to_string(&response_path).ok()?;
+
+        // Try to read usage from the corresponding usage JSON file
+        // Usage files follow the pattern: agents/{cache_key}.agent_{role}_usage.json
+        // We extract the role from the entry file_path: "agents/{key}.agent_{role}_response.txt"
+        let usage = entry.file_path.rsplit_once('.').and_then(|(stem, _ext)| {
+            // stem looks like "agents/{key}.agent_{role}_response"
+            // We need to replace "_response" with "_usage.json"
+            let usage_stem = stem.strip_suffix("_response")?;
+            let usage_path = self.dir.join(format!("{usage_stem}_usage.json"));
+            std::fs::read_to_string(usage_path)
+                .ok()
+                .and_then(|content| serde_json::from_str::<Usage>(&content).ok())
+        });
+
+        Some((response, usage))
+    }
+
     /// Save an agent prompt+response with its cache key and update the index.
+    /// Also saves usage data as a separate JSON file if provided.
     pub fn save_agent_cached(
         &self,
         cache_key: &str,
@@ -179,12 +210,32 @@ impl LlmCache {
         prompt: &str,
         response: &str,
     ) -> Result<()> {
+        self.save_agent_cached_with_usage(cache_key, role, prompt, response, None)
+    }
+
+    /// Save an agent prompt+response with its cache key, including API usage.
+    pub fn save_agent_cached_with_usage(
+        &self,
+        cache_key: &str,
+        role: &str,
+        prompt: &str,
+        response: &str,
+        usage: Option<&Usage>,
+    ) -> Result<()> {
         // Write prompt and response files
         let prompt_path = self.dir.join("agents").join(format!("{cache_key}.agent_{role}_prompt.txt"));
         let response_path = self.dir.join("agents").join(format!("{cache_key}.agent_{role}_response.txt"));
 
         std::fs::write(&prompt_path, prompt)?;
         std::fs::write(&response_path, response)?;
+
+        // Write usage data as JSON if provided
+        if let Some(usage) = usage {
+            let usage_path = self.dir.join("agents").join(format!("{cache_key}.agent_{role}_usage.json"));
+            if let Err(e) = std::fs::write(&usage_path, serde_json::to_string(usage).unwrap_or_default()) {
+                tracing::warn!("Failed to write agent usage cache: {e}");
+            }
+        }
 
         // Update index
         let mut index = self.index.lock().map_err(|e| format!("cache index lock: {e}"))?;
@@ -379,6 +430,14 @@ impl CacheBackend for LlmCache {
         result
     }
 
+    fn lookup_agent_by_key_with_usage(&self, cache_key: &str) -> Option<(String, Option<Usage>)> {
+        let result = self.lookup_agent_with_usage(cache_key);
+        if result.is_some() {
+            tracing::debug!("Cache HIT for agent key={} (with usage)", &cache_key[..12]);
+        }
+        result
+    }
+
     fn lookup_judge_by_key(&self, cache_key: &str) -> Option<JudgeVerdict> {
         let result = self.lookup_judge(cache_key);
         if result.is_some() {
@@ -390,6 +449,12 @@ impl CacheBackend for LlmCache {
     fn save_agent_with_key(&self, cache_key: &str, role: &str, prompt: &str, response: &str) {
         if let Err(e) = self.save_agent_cached(cache_key, role, prompt, response) {
             tracing::warn!("Cache save_agent_cached failed: {e}");
+        }
+    }
+
+    fn save_agent_with_key_and_usage(&self, cache_key: &str, role: &str, prompt: &str, response: &str, usage: &Usage) {
+        if let Err(e) = self.save_agent_cached_with_usage(cache_key, role, prompt, response, Some(usage)) {
+            tracing::warn!("Cache save_agent_with_key_and_usage failed: {e}");
         }
     }
 

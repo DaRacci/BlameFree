@@ -18,9 +18,11 @@ use crb_judge::{compute_metrics, run_judge};
 use crb_reporting::{GoldenCommentEntry, PrResult};
 use crb_rules::RuleSet;
 use regex::Regex;
+use rig_core::agent::PromptResponse;
 use rig_core::agent::Agent;
 use rig_core::client::ProviderClient;
 use rig_core::completion::Prompt;
+use rig_core::completion::Usage;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use rig_core::tool::Tool;
 use tokio::sync::broadcast;
@@ -86,9 +88,11 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
         // Build agent with built-in prompts (no prompt lib, no rules)
         let agent = build_agent(&client, &params.model, role, None, None, None, None);
 
-        // Call agent with the diff
-        match agent.prompt(&diff).await {
-            Ok(response) => {
+        // Call agent with the diff — get real token usage via extended_details
+        match agent.prompt(&diff).extended_details().await {
+            Ok(resp) => {
+                let response = resp.output;
+                let _usage = resp.usage;
                 match parse_agent_findings(&response) {
                     Ok(mut findings) => {
                         if findings.len() > params.max_findings {
@@ -421,19 +425,17 @@ pub async fn evaluate_pr_single_agent(
                 &rules_hash,
             );
 
-            // Estimate tokens for this call
-            let tokens_in = crate::cost::estimate_tokens(&diff);
-
             // Check cache first
             if let Some(ref c) = cache_arc {
-                if let Some(cached_response) = c.lookup_agent_by_key(&agent_cache_key) {
+                if let Some((cached_response, cached_usage)) = c.lookup_agent_by_key_with_usage(&agent_cache_key) {
                     tracing::info!(
                         "CACHE HIT for agent role={} (key={})",
                         role,
                         &agent_cache_key[..12]
                     );
-                    let tokens_out = crate::cost::estimate_tokens(&cached_response);
-                    ct.record_agent(tokens_in, tokens_out, true);
+                    // Record usage from cache if available, otherwise empty usage
+                    let usage = cached_usage.unwrap_or_default();
+                    ct.record_agent(&usage, true);
                     // Send chunk + finished for cached response
                     if let Some(ref tx) = tx {
                         let _ = tx.send(DashboardEvent::AgentChunk {
@@ -475,13 +477,15 @@ pub async fn evaluate_pr_single_agent(
             );
             let result: Result<Vec<Finding>, String> = with_retry(
                 || async {
-                    let response = agent
+                    let resp: PromptResponse = agent
                         .prompt(&diff)
+                        .extended_details()
                         .await
                         .map_err(|e| e.to_string())?;
+                    let response = resp.output;
+                    let usage = resp.usage;
 
-                    let tokens_out = crate::cost::estimate_tokens(&response);
-                    ct.record_agent(tokens_in, tokens_out, false);
+                    ct.record_agent(&usage, false);
 
                     // Send chunk for live response
                     if let Some(ref tx) = tx {
@@ -491,9 +495,9 @@ pub async fn evaluate_pr_single_agent(
                         });
                     }
 
-                    // Cache the prompt+response with content-addressed key
+                    // Cache the prompt+response with content-addressed key, including usage
                     if let Some(ref c) = cache_arc {
-                        c.save_agent_with_key(&agent_cache_key, &role, &diff, &response);
+                        c.save_agent_with_key_and_usage(&agent_cache_key, &role, &diff, &response, &usage);
                     }
 
                     let findings = parse_agent_findings(&response);
@@ -578,23 +582,11 @@ pub async fn evaluate_pr_single_agent(
                 judge_model,
             );
 
-            // Estimate tokens for judge call
-            let judge_prompt = format!(
-                "{}\n\nFinding: {}\nGolden: {}",
-                crb_judge::JUDGE_PROMPT,
-                finding.message,
-                gc.comment
-            );
-            let tokens_in = crate::cost::estimate_tokens(&judge_prompt);
-
             // Check judge cache first
             if let Some(ref c) = cache {
                 if let Some(cached_verdict) = c.lookup_judge_by_key(&judge_key) {
                     tracing::info!("CACHE HIT for judge (key={})", &judge_key[..12]);
-                    let tokens_out = crate::cost::estimate_tokens(
-                        &serde_json::to_string(&cached_verdict).unwrap_or_default(),
-                    );
-                    cost_tracker.record_judge(tokens_in, tokens_out, true);
+                    cost_tracker.record_judge_empty(true);
                     verdicts.push(cached_verdict);
                     continue;
                 }
@@ -609,11 +601,8 @@ pub async fn evaluate_pr_single_agent(
             )
             .await
             {
-                Ok(verdict) => {
-                    let tokens_out = crate::cost::estimate_tokens(
-                        &serde_json::to_string(&verdict).unwrap_or_default(),
-                    );
-                    cost_tracker.record_judge(tokens_in, tokens_out, false);
+                Ok((verdict, usage)) => {
+                    cost_tracker.record_judge(&usage, false);
 
                     // Cache the judge call if cache is active
                     if let Some(ref c) = cache {
@@ -649,7 +638,7 @@ pub async fn evaluate_pr_consensus(
     roles: &str,
     max_findings: usize,
     cache: Option<Arc<crate::cache::LlmCache>>,
-    _cost_tracker: Arc<crate::cost::CostTracker>,
+    cost_tracker: Arc<crate::cost::CostTracker>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // Parse comma-separated roles
     let parsed_roles: Vec<&str> = roles
@@ -670,7 +659,7 @@ pub async fn evaluate_pr_consensus(
     let default_budget = crb_tools::budget::ToolCallBudget::default();
     let tool_preamble = crb_tools::tool_prompt_section(first_role, &default_budget, &[]);
 
-    let result = evaluate_pr_with_consensus(
+    let (result, agent_usage, judge_usage, agent_api_calls, judge_api_calls, judge_cache_hits) = evaluate_pr_with_consensus(
         pr,
         diff,
         client,
@@ -691,6 +680,51 @@ pub async fn evaluate_pr_consensus(
     )
     .await?;
 
+    // ── Record real token usage from consensus pipeline ────────────────
+    // Agent usage: distribute aggregate usage across role-count calls
+    let role_count = parsed_roles.len();
+    if role_count > 0 {
+        let per_agent = Usage {
+            input_tokens: agent_usage.input_tokens / role_count as u64,
+            output_tokens: agent_usage.output_tokens / role_count as u64,
+            total_tokens: agent_usage.total_tokens / role_count as u64,
+            cached_input_tokens: agent_usage.cached_input_tokens / role_count as u64,
+            cache_creation_input_tokens: agent_usage.cache_creation_input_tokens / role_count as u64,
+            reasoning_tokens: agent_usage.reasoning_tokens / role_count as u64,
+            tool_use_prompt_tokens: agent_usage.tool_use_prompt_tokens / role_count as u64,
+        };
+        // First agent_api_calls are cache misses, the rest are cache hits
+        for i in 0..role_count {
+            let cache_hit = i >= agent_api_calls;
+            cost_tracker.record_agent(&per_agent, cache_hit);
+        }
+    }
+
+    // Judge usage: only cache misses have real usage data
+    let judge_total = judge_api_calls + judge_cache_hits;
+    if judge_total > 0 {
+        let per_judge = if judge_api_calls > 0 {
+            Usage {
+                input_tokens: judge_usage.input_tokens / judge_api_calls as u64,
+                output_tokens: judge_usage.output_tokens / judge_api_calls as u64,
+                total_tokens: judge_usage.total_tokens / judge_api_calls as u64,
+                cached_input_tokens: judge_usage.cached_input_tokens / judge_api_calls as u64,
+                cache_creation_input_tokens: judge_usage.cache_creation_input_tokens / judge_api_calls as u64,
+                reasoning_tokens: judge_usage.reasoning_tokens / judge_api_calls as u64,
+                tool_use_prompt_tokens: judge_usage.tool_use_prompt_tokens / judge_api_calls as u64,
+            }
+        } else {
+            Usage::new()
+        };
+        for _ in 0..judge_api_calls {
+            cost_tracker.record_judge(&per_judge, false);
+        }
+        // Cache hits have zero usage (no stored data)
+        for _ in 0..judge_cache_hits {
+            cost_tracker.record_judge_empty(true);
+        }
+    }
+
     info!(
         "Consensus pipeline: {} agent findings, {} linter findings, {} goldens",
         result.findings_count,
@@ -698,7 +732,11 @@ pub async fn evaluate_pr_consensus(
         result.golden_count
     );
 
-    let all_findings: Vec<Finding> = linter_findings;
+    // The consensus crate's PrResult contains the actual findings count.
+    // We still need to return `all_findings` for post-processing compat,
+    // but note that all_findings is empty when linters are skipped —
+    // the findings_count will be derived from verdicts in the caller.
+    let all_findings: Vec<Finding> = Vec::new();
     Ok((all_findings, result.verdicts))
 }
 
@@ -937,7 +975,7 @@ pub async fn evaluate_pr_with_postprocessing(
             cost: cost_usd,
             total_tokens,
             agent_calls: total_agent_calls,
-            findings_count: processed_findings.len(),
+            findings_count: final_verdicts.len(),
         });
     }
 
@@ -948,7 +986,7 @@ pub async fn evaluate_pr_with_postprocessing(
         "model": model,
         "skip_consensus": skip_consensus,
         "timestamp": format!("{:?}", std::time::SystemTime::now()),
-        "findings_count": processed_findings.len(),
+        "findings_count": final_verdicts.len(),
         "golden_count": pr.comments.len(),
         "metrics": {
             "true_positives": metrics.true_positives,
@@ -966,7 +1004,7 @@ pub async fn evaluate_pr_with_postprocessing(
     Ok(PrResult {
         pr_title: pr.pr_title.clone(),
         url: pr.url.clone(),
-        findings_count: processed_findings.len(),
+        findings_count: final_verdicts.len(),
         golden_count: pr.comments.len(),
         metrics,
         verdicts: final_verdicts,
