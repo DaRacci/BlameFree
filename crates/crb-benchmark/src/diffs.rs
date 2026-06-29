@@ -174,11 +174,20 @@ fn extract_diff_for_pr(
             repo_name
         );
 
+        // Canonicalize worktree path to absolute — git worktree add resolves
+        // relative paths relative to the repo, not CWD.
+        let abs_worktree = if worktree_path.is_absolute() {
+            worktree_path.clone()
+        } else {
+            std::env::current_dir()?.join(&worktree_path)
+        };
+        std::fs::create_dir_all(abs_worktree.parent().unwrap_or(&abs_worktree))?;
+
         let status = Command::new("git")
             .args([
                 "worktree",
                 "add",
-                &worktree_path.to_string_lossy(),
+                &abs_worktree.to_string_lossy(),
                 &ref_name,
             ])
             .current_dir(repo_path)

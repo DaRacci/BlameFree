@@ -12,7 +12,13 @@ name = "crb_benchmark"
 path = "src/lib.rs"
 
 [dependencies]
+crb-harness = { path = "../crb-harness" }
 crb-reporting = { path = "../crb-reporting" }
+crb-judge = { path = "../crb-judge" }
+crb-tools = { path = "../crb-tools" }
+crb-rules = { path = "../crb-rules" }
+crb-dashboard = { path = "../crb-dashboard" }
+crb-agents = { path = "../crb-agents" }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -20,4 +26,9 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 regex = { workspace = true }
-crb-judge = { path = "../crb-judge" }
+rig-core = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
+dotenvy = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

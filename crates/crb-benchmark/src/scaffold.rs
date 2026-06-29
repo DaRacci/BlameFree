@@ -100,7 +100,7 @@ pub fn run(dataset_dir: &Path, benchmark_dir: &Path) -> Result<()> {
                         owner,
                         repo_name
                     );
-                    let _ = Command::new("git")
+                    let head_status = Command::new("git")
                         .args([
                             "fetch",
                             "origin",
@@ -108,6 +108,58 @@ pub fn run(dataset_dir: &Path, benchmark_dir: &Path) -> Result<()> {
                         ])
                         .current_dir(&repo_path)
                         .status();
+
+                    match head_status {
+                        Ok(status) if status.success() => {
+                            info!(
+                                "Fetched PR #{} head ref for {}/{}",
+                                pr_num, owner, repo_name
+                            );
+                            total_fetched += 1;
+                        }
+                        Ok(_) => {
+                            // Last resort: try GitHub API via `gh pr view` to get merge commit SHA
+                            tracing::warn!(
+                                "PR #{} head ref also unavailable for {}/{}, trying GitHub API for commit SHA",
+                                pr_num, owner, repo_name
+                            );
+                            let pr_url = format!("https://github.com/{owner}/{repo_name}/pull/{pr_num}");
+                            let gh_output = Command::new("gh")
+                                .args(["pr", "view", &pr_url, "--json", "mergeCommit", "--jq", ".mergeCommit.oid"])
+                                .output();
+                            match gh_output {
+                                Ok(output) if output.status.success() => {
+                                    let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                                    if !sha.is_empty() {
+                                        info!(
+                                            "Got merge commit SHA {} for PR #{} via GitHub API",
+                                            &sha[..8.min(sha.len())], pr_num
+                                        );
+                                        let fetch_sha = Command::new("git")
+                                            .args(["fetch", "origin", &sha])
+                                            .current_dir(&repo_path)
+                                            .status();
+                                        if let Ok(s) = fetch_sha {
+                                            if s.success() {
+                                                info!("Fetched commit {} for PR #{}", &sha[..8], pr_num);
+                                                total_fetched += 1;
+                                            } else {
+                                                tracing::warn!("Failed to fetch commit {} for PR #{}", &sha[..8], pr_num);
+                                            }
+                                        }
+                                    } else {
+                                        tracing::warn!("No merge commit SHA for PR #{} (likely still open)", pr_num);
+                                    }
+                                }
+                                _ => {
+                                    tracing::warn!("GitHub API failed for PR #{} (gh not available or rate-limited)", pr_num);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Head ref fetch spawn failed for PR #{}: {}", pr_num, e);
+                        }
+                    }
                 }
                 Err(e) => {
                     tracing::warn!(

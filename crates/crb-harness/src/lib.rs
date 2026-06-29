@@ -19,6 +19,7 @@ use crb_reporting::{GoldenCommentEntry, PrResult};
 use crb_rules::RuleSet;
 use regex::Regex;
 use rig_core::agent::Agent;
+use rig_core::client::ProviderClient;
 use rig_core::completion::Prompt;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use rig_core::tool::Tool;
@@ -33,7 +34,6 @@ pub mod cost;
 pub mod validation;
 
 pub use cache::LlmCache;
-pub use config::BenchmarkArgs;
 pub use config::ReviewArgs;
 pub use cost::CostTracker;
 
@@ -53,7 +53,6 @@ pub enum ReviewMode {
 pub struct ReviewParams {
     pub diff: String,
     pub model: String,
-    pub judge_model: String,
     pub pr_title: String,
     pub roles: Vec<String>,
     pub max_findings: usize,
@@ -67,22 +66,58 @@ pub struct ReviewParams {
 
 /// Entry point for reviewing a PR given its diff as a string.
 ///
-/// This sets up the basic infrastructure (caching, cost tracking, agent
-/// orchestration) and returns the list of agent findings.  For the MVP
-/// it returns an empty vector; the full pipeline lives in the benchmark
-/// subcommand for now.
-pub fn review_pr(_params: ReviewParams) -> Result<Vec<Finding>> {
-    // MVP placeholder – full implementation will follow in a later iteration.
-    Ok(Vec::new())
+/// Builds agents for each role, runs them with the diff, and returns findings.
+pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
+    // Create OpenAI client from env
+    let client = rig_core::providers::openai::Client::from_env()
+        .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
+
+    // Parse roles
+    let roles: Vec<&str> = if params.roles.is_empty() {
+        AGENT_ROLES.to_vec()
+    } else {
+        params.roles.iter().map(|r| r.as_str()).collect()
+    };
+
+    let diff = params.diff;
+    let mut all_findings = Vec::new();
+
+    for &role in &roles {
+        // Build agent with built-in prompts (no prompt lib, no rules)
+        let agent = build_agent(&client, &params.model, role, None, None, None, None);
+
+        // Call agent with the diff
+        match agent.prompt(&diff).await {
+            Ok(response) => {
+                match parse_agent_findings(&response) {
+                    Ok(mut findings) => {
+                        if findings.len() > params.max_findings {
+                            findings.truncate(params.max_findings);
+                        }
+                        all_findings.append(&mut findings);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to parse agent response for role {}: {}", role, e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Agent call failed for role {}: {}", role, e);
+            }
+        }
+    }
+
+    Ok(all_findings)
 }
 
-/// Review a diff by running `git diff` in the given `path`.
+/// Review a diff by running `git diff` in the given `path`, then
+/// call `review_pr()` with the diff to get agent findings.
 ///
 /// - `ReviewMode::Commits { base, head }` → `git diff base..head`
 /// - `ReviewMode::Working`                → `git diff` (unstaged + staged)
 ///
 /// Returns a vector of agent findings parsed from the LLM response.
-pub fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>> {
+pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>> {
     let diff = match args.commits {
         Some(ref range) => {
             // Format: "base..head"
@@ -116,10 +151,23 @@ pub fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>> {
         args.path.display()
     );
 
-    // MVP: return diff info; real agent processing will come in a later
-    // iteration.  For now, callers can use the benchmark subcommand for
-    // full agent orchestration.
-    Ok(Vec::new())
+    // Build ReviewParams and call review_pr
+    let roles = vec![
+        "SA".to_string(),
+        "CL".to_string(),
+        "AR".to_string(),
+        "SEC".to_string(),
+    ];
+    let params = ReviewParams {
+        diff: diff.clone(),
+        model: args.model.clone(),
+        pr_title: "review".to_string(),
+        roles,
+        max_findings: 20,
+        replay_dir: None,
+        cache_dir: None,
+    };
+    review_pr(params).await
 }
 
 // =========================================================================
@@ -941,7 +989,8 @@ pub async fn evaluate_pr_with_postprocessing(
 #[doc(hidden)]
 pub fn write_summary(
     cache_dir: &PathBuf,
-    args: &crate::config::BenchmarkArgs,
+    model: &str,
+    judge_model: &str,
     results: &[PrResult],
     duration: Duration,
 ) -> Result<()> {
@@ -1005,8 +1054,8 @@ pub fn write_summary(
             .ok()
             .and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string()))
             .unwrap_or_default(),
-        "model": args.model,
-        "judge_model": args.judge_model,
+        "model": model,
+        "judge_model": judge_model,
         "total_prs": results.len(),
         "total_llm_calls": total_llm_calls,
         "total_judge_calls": total_judge_calls,

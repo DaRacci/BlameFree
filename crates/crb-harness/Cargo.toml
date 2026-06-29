@@ -17,7 +17,6 @@ crb-aggregator = { path = "../crb-aggregator" }
 crb-auditor = { path = "../crb-auditor" }
 crb-rules = { path = "../crb-rules" }
 crb-dashboard = { path = "../crb-dashboard" }
-crb-benchmark = { path = "../crb-benchmark" }
 rig-core = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }
