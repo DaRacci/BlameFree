@@ -743,29 +743,20 @@ pub async fn evaluate_pr_with_postprocessing(
     prompt_lib: &PromptLibrary,
     roles: &str,
     max_findings: usize,
-    cache_dir: Option<&PathBuf>,
+    cache_dir: &PathBuf,
     dashboard_tx: Option<&broadcast::Sender<DashboardEvent>>,
 ) -> Result<PrResult> {
-    // ── Setup cache if enabled ────────────────────────────────────────────
-    let cache: Option<Arc<crate::cache::LlmCache>> = if let Some(dir) = cache_dir {
-        let pr_key = utils::sanitize_filename(&pr.pr_title);
-        match crate::cache::LlmCache::new(dir, &pr_key) {
-            Ok(c) => {
-                info!(
-                    "LLM cache enabled for PR '{}' at {}",
-                    pr.pr_title,
-                    c.dir().display()
-                );
-                Some(Arc::new(c))
-            }
-            Err(e) => {
-                tracing::warn!("Failed to create LLM cache for PR '{}': {e}", pr.pr_title);
-                None
-            }
-        }
-    } else {
-        None
-    };
+    // ── Setup cache ─────────────────────────────────────────────────────────
+    let pr_key = utils::sanitize_filename(&pr.pr_title);
+    let cache: Arc<crate::cache::LlmCache> = Arc::new(
+        crate::cache::LlmCache::new(cache_dir, &pr_key)
+            .expect("Failed to create LLM cache directory"),
+    );
+    info!(
+        "LLM cache enabled for PR '{}' at {}",
+        pr.pr_title,
+        cache.dir().display()
+    );
 
     // ── Cost tracker ──────────────────────────────────────────────────────
     let cost_tracker = Arc::new(crate::cost::CostTracker::new());
@@ -881,7 +872,7 @@ pub async fn evaluate_pr_with_postprocessing(
             linter_findings,
             rules_preamble.as_deref(),
             prompt_lib,
-            cache.clone(),
+            Some(cache.clone()),
             cost_tracker.clone(),
             dashboard_tx,
         )
@@ -898,7 +889,7 @@ pub async fn evaluate_pr_with_postprocessing(
             prompt_lib,
             roles,
             max_findings,
-            cache.clone(),
+            Some(cache.clone()),
             cost_tracker.clone(),
         )
         .await?
@@ -951,27 +942,25 @@ pub async fn evaluate_pr_with_postprocessing(
     }
 
     // ── Write metadata.json ─────────────────────────────────────────────
-    if let Some(ref c) = cache {
-        let metadata = serde_json::json!({
-            "pr_title": pr.pr_title,
-            "url": pr.url,
-            "model": model,
-            "skip_consensus": skip_consensus,
-            "timestamp": format!("{:?}", std::time::SystemTime::now()),
-            "findings_count": processed_findings.len(),
-            "golden_count": pr.comments.len(),
-            "metrics": {
-                "true_positives": metrics.true_positives,
-                "false_positives": metrics.false_positives,
-                "false_negatives": metrics.false_negatives,
-                "precision": metrics.precision,
-                "recall": metrics.recall,
-                "f1": metrics.f1,
-            },
-        });
-        if let Err(e) = c.save_metadata(&metadata) {
-            tracing::warn!("Failed to write cache metadata: {e}");
-        }
+    let metadata = serde_json::json!({
+        "pr_title": pr.pr_title,
+        "url": pr.url,
+        "model": model,
+        "skip_consensus": skip_consensus,
+        "timestamp": format!("{:?}", std::time::SystemTime::now()),
+        "findings_count": processed_findings.len(),
+        "golden_count": pr.comments.len(),
+        "metrics": {
+            "true_positives": metrics.true_positives,
+            "false_positives": metrics.false_positives,
+            "false_negatives": metrics.false_negatives,
+            "precision": metrics.precision,
+            "recall": metrics.recall,
+            "f1": metrics.f1,
+        },
+    });
+    if let Err(e) = cache.save_metadata(&metadata) {
+        tracing::warn!("Failed to write cache metadata: {e}");
     }
 
     Ok(PrResult {

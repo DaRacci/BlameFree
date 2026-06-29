@@ -125,8 +125,8 @@ enum Commands {
         #[arg(long)]
         pr_filter: Option<String>,
         /// Cache directory.
-        #[arg(long, env = "CACHE_DIR")]
-        cache_dir: Option<PathBuf>,
+        #[arg(long, env = "CACHE_DIR", default_value = "cache")]
+        cache_dir: PathBuf,
         /// Dashboard mode (TUI).
         #[arg(long, default_value_t = false)]
         dashboard: bool,
@@ -137,6 +137,22 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
+    // Load .env from CWD (and parent directories)
+    match dotenvy::dotenv() {
+        Ok(path) => eprintln!("[dotenv] Loaded .env from: {}", path.display()),
+        Err(e) => eprintln!("[dotenv] No .env file loaded: {e}"),
+    }
+
+    // Fallback: if OPENAI_API_KEY is not set but OPENROUTER_API_KEY is, use that
+    if std::env::var("OPENAI_API_KEY").is_err() {
+        if let Ok(key) = std::env::var("OPENROUTER_API_KEY") {
+            std::env::set_var("OPENAI_API_KEY", key);
+            eprintln!(
+                "[dotenv] OPENAI_API_KEY not found — falling back to OPENROUTER_API_KEY"
+            );
+        }
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
@@ -313,7 +329,7 @@ async fn run_benchmark(
     roles: String,
     max_findings: usize,
     pr_filter: Option<String>,
-    cache_dir: Option<PathBuf>,
+    cache_dir: PathBuf,
     dashboard: bool,
     dashboard_events: bool,
 ) -> Result<()> {
@@ -354,10 +370,15 @@ async fn run_benchmark(
                     // Parse pattern as "repo/N" where N is a PR number
                     if let Some((repo_part, pr_num_str)) = pattern.split_once('/') {
                         if let Ok(pr_num) = pr_num_str.parse::<u32>() {
-                            // Exact PR number match: find `/pull/N` in the URL
-                            let target = format!("/pull/{}", pr_num);
-                            if url_lower.contains(&target) && url_lower.contains(repo_part) {
-                                return true;
+                            // Exact PR number match: `/pull/N` must NOT be followed by a digit
+                            let pr_tag = format!("/pull/{}", pr_num);
+                            if let Some(pos) = url_lower.find(&pr_tag) {
+                                let after = &url_lower[pos + pr_tag.len()..];
+                                if after.is_empty() || !after.chars().next().unwrap().is_ascii_digit() {
+                                    if url_lower.contains(repo_part) {
+                                        return true;
+                                    }
+                                }
                             }
                         }
                     }
@@ -395,9 +416,7 @@ async fn run_benchmark(
         println!("  Skip consensus:     {}", skip_consensus);
         println!("  Skip linters:       {}", skip_linters);
         println!("  Linters only:       {}", linters_only);
-        if let Some(ref cache_dir) = cache_dir {
-            println!("  Cache dir:          {}", cache_dir.display());
-        }
+        println!("  Cache dir:          {}", cache_dir.display());
         return Ok(());
     }
 
@@ -593,7 +612,7 @@ async fn run_benchmark(
                 prompt_lib.as_ref(),
                 &roles,
                 max_findings,
-                cache_dir.as_ref(),
+                &cache_dir,
                 dashboard_tx.as_ref(),
             )
             .await
@@ -683,15 +702,13 @@ async fn run_benchmark(
     crb_harness::print_terminal_summary(&results);
 
     // ── Write _summary.json ──────────────────────────────────────────────
-    if let Some(ref cache_dir_path) = cache_dir {
-        crb_harness::write_summary(
-            cache_dir_path,
-            &model,
-            &judge_model,
-            &results,
-            start_time.elapsed(),
-        )?;
-    }
+    crb_harness::write_summary(
+        &cache_dir,
+        &model,
+        &judge_model,
+        &results,
+        start_time.elapsed(),
+    )?;
 
     // ── --ci flag: validate and exit with proper code ─────────────────────
     if ci {
