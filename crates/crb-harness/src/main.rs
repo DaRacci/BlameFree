@@ -1113,9 +1113,36 @@ async fn evaluate_pr_single_agent(
     }
 
     // Judge evaluation: compare each finding against golden comments
+    // Uses hybrid approach: Jaccard heuristic first, LLM judge fallback
     let mut verdicts = Vec::new();
+    let jaccard_threshold = 0.12; // Matches Python step3_judge_comments threshold
     for finding in &all_findings {
         for gc in &pr.comments {
+            // Step 1: Try Jaccard heuristic (no API call)
+            if let Some(score) = crb_judge::jaccard_match(&finding.message, &gc.comment, jaccard_threshold) {
+                tracing::info!(
+                    "Jaccard match: finding='{}' golden='{}' score={:.2}",
+                    &finding.message[..std::cmp::min(60, finding.message.len())],
+                    &gc.comment[..std::cmp::min(60, gc.comment.len())],
+                    score
+                );
+                verdicts.push(crb_judge::JudgeVerdict {
+                    reasoning: format!("Matched by {:.0}% word overlap (Jaccard heuristic)", score * 100.0),
+                    match_: true,
+                    confidence: score,
+                });
+                continue;
+            }
+
+            // Step 2: File/line pre-filter (if available)
+            if let Some(golden_file) = &gc.file {
+                if let Some(finding_file) = &finding.file {
+                    if golden_file != finding_file {
+                        continue; // file mismatch — skip
+                    }
+                }
+            }
+
             // Compute judge cache key
             let judge_key = LlmCache::compute_judge_key(
                 &judge_prompt_hash,

@@ -22,10 +22,21 @@ pub struct GoldenCommentEntry {
 }
 
 /// A single golden (expected) comment for a PR.
+///
+/// The `file` and `line` fields are populated from the dataset JSON when available.
+/// Not all datasets include this metadata — both fields are `Option` to handle
+/// datasets that only have `comment` and `severity`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoldenComment {
     pub comment: String,
     pub severity: String,
+    /// Source file path, if the dataset includes it (e.g. from `path` field
+    /// in benchmark_data.json or `golden_comments` entries).
+    #[serde(default)]
+    pub file: Option<String>,
+    /// Line number in the source file, if the dataset includes it.
+    #[serde(default)]
+    pub line: Option<u32>,
 }
 
 /// Summary of cost data for a single PR, suitable for JSON serialization.
