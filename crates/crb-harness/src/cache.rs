@@ -60,7 +60,7 @@ pub struct RunHistoryEntry {
 struct CacheEntry {
     /// Relative path from the PR cache directory to the cached file.
     file_path: String,
-    /// ISO-8601 timestamp of when the entry was created.
+    /// Unix epoch timestamp with nanosecond precision (seconds.nanoseconds).
     timestamp: String,
     /// Model name used for this interaction.
     model: String,
@@ -166,25 +166,23 @@ pub struct ScrubResult {
 
 // ── Helper functions ───────────────────────────────────────────────────
 
-/// Parse a debug-format timestamp (as produced by [`LlmCache::now()`]) into
-/// a [`SystemTime`].  The format is:
-/// `SystemTime { tv_sec: 1234567890, tv_nsec: 123456789 }`.
+/// Parse a `seconds.nanoseconds` timestamp (as produced by [`LlmCache::now()`])
+/// into a [`SystemTime`].  The format is:
+/// `1782796789.721282172`
 pub fn parse_timestamp(ts: &str) -> Option<SystemTime> {
     let ts = ts.trim();
-    // Format produced by LlmCache::now():
-    //   "SystemTime { tv_sec: 1234567890, tv_nsec: 123456789 }"
-    let ts = ts.strip_prefix("SystemTime { ")?;
-    let secs_str = ts.split("tv_sec: ").nth(1)?;
-    let secs = secs_str.split(',').next()?.trim().parse::<u64>().ok()?;
-    let nsecs = ts
-        .split("tv_nsec: ")
-        .nth(1)
-        .and_then(|s| s.trim_end_matches(" }").trim().parse::<u32>().ok())
-        .unwrap_or(0);
+    let (secs_str, nanos_str) = ts.split_once('.')?;
+    let secs: u64 = secs_str.parse().ok()?;
+    let nanos: u32 = nanos_str
+        .chars()
+        .take(9)
+        .collect::<String>()
+        .parse()
+        .ok()?;
     Some(
         std::time::UNIX_EPOCH
             + Duration::from_secs(secs)
-            + Duration::from_nanos(nsecs as u64),
+            + Duration::from_nanos(nanos as u64),
     )
 }
 
@@ -267,7 +265,25 @@ impl LlmCache {
 
     /// Generate a timestamp string for the current time.
     fn now() -> String {
-        format!("{:?}", SystemTime::now())
+        let dur = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        format!("{}.{:09}", dur.as_secs(), dur.subsec_nanos())
+    }
+
+        // ── Agent reasoning cache ────────────────────────────────────────────
+
+    /// Save agent reasoning/thinking text to cache.
+    pub fn save_agent_reasoning(
+        &self,
+        cache_key: &str,
+        role: &str,
+        reasoning: &str,
+    ) -> Result<()> {
+        let reasoning_path = self.dir.join("agents")
+            .join(format!("{cache_key}.agent_{role}_reasoning.txt"));
+        std::fs::write(&reasoning_path, reasoning)?;
+        Ok(())
     }
 
     // ── Agent cache ───────────────────────────────────────────────────────
@@ -499,8 +515,14 @@ impl LlmCache {
             .create(true)
             .append(true)
             .open(&path)?;
+        let timestamp = {
+            let dur = SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default();
+            format!("{}.{:09}", dur.as_secs(), dur.subsec_nanos())
+        };
         let entry = serde_json::json!({
-            "timestamp": format!("{:?}", SystemTime::now()),
+            "timestamp": timestamp,
             "golden_comment": golden,
             "finding_message": finding,
             "verdict": serde_json::from_str::<serde_json::Value>(verdict_json)
@@ -1207,6 +1229,12 @@ impl CacheBackend for LlmCache {
         }
     }
 
+    fn save_agent_reasoning_with_key(&self, cache_key: &str, role: &str, reasoning: &str) {
+        if let Err(e) = self.save_agent_reasoning(cache_key, role, reasoning) {
+            tracing::warn!("Cache save_agent_reasoning_with_key failed: {e}");
+        }
+    }
+
     fn save_judge_with_key(&self, cache_key: &str, golden: &str, finding: &str, verdict_json: &str) {
         if let Err(e) = self.save_judge_cached(cache_key, golden, finding, verdict_json) {
             tracing::warn!("Cache save_judge_cached failed: {e}");
@@ -1412,12 +1440,20 @@ mod tests {
     #[test]
     fn test_parse_timestamp() {
         // Format produced by LlmCache::now()
-        let ts = format!("{:?}", std::time::SystemTime::now());
-        assert!(parse_timestamp(&ts).is_some());
+        let ts = LlmCache::now();
+        let parsed = parse_timestamp(&ts);
+        assert!(parsed.is_some(), "should parse '{}'", ts);
+
+        // Verify the format is seconds.nanoseconds
+        assert!(ts.contains('.'), "timestamp should contain '.'");
+        let secs: u64 = ts.split('.').next().unwrap().parse().unwrap();
+        assert!(secs > 0, "seconds should be > 0 (epoch-based)");
 
         // Invalid format
         assert!(parse_timestamp("not-a-timestamp").is_none());
         assert!(parse_timestamp("").is_none());
+        assert!(parse_timestamp("no-dot").is_none());
+        assert!(parse_timestamp("123.bad").is_none());
     }
 
     #[test]
@@ -1527,7 +1563,10 @@ mod tests {
         if let Some(entry) = idx.entries.get_mut(&key1) {
             let old_time = std::time::SystemTime::now()
                 - std::time::Duration::from_secs(100 * 86400);
-            entry.timestamp = format!("{:?}", old_time);
+            entry.timestamp = {
+                let dur = old_time.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+                format!("{}.{:09}", dur.as_secs(), dur.subsec_nanos())
+            };
         }
         std::fs::write(&index_path, serde_json::to_string_pretty(&idx).unwrap()).unwrap();
 
