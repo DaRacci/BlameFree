@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 default = []
+exp14_submit_finding = ["crb-agents/exp14_submit_finding"]
 exp16_adaptive_agents = []
 
 [dependencies]

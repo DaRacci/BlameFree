@@ -4,7 +4,13 @@ use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use std::collections::HashMap;
 
+#[cfg(feature = "exp14_submit_finding")]
+use std::sync::{Arc, Mutex};
+
 pub mod prompts;
+
+#[cfg(feature = "exp14_submit_finding")]
+pub mod submit_finding;
 
 pub use crb_tools::Finding;
 
@@ -102,6 +108,8 @@ pub fn build_agent(
     template_vars: Option<&HashMap<&str, &str>>,
     extra_preamble: Option<&str>,
     workdir: Option<&str>,
+    #[cfg(feature = "exp14_submit_finding")]
+    collector: Option<Arc<Mutex<submit_finding::SubmitFindingCollector>>>,
 ) -> Agent<ResponsesCompletionModel> {
     let role_preamble = match prompt_lib {
         Some(lib) => {
@@ -130,33 +138,104 @@ pub fn build_agent(
         }
     }
 
-    // Register filesystem tools if a workdir is provided.
+    // Build agent with tools.
     // Note: AgentBuilder's ToolState generic changes when .tool() is called
-    // (NoToolConfig → WithBuilderTools), so we must use two separate build paths.
-    if let Some(wd) = workdir {
-        let wd = wd.to_string();
-        client
-            .agent(model)
-            .preamble(&full_preamble)
-            .tool(crb_tools::read_file::ReadFileTool {
-                repo_root: wd.clone(),
-                ..Default::default()
-            })
-            .tool(crb_tools::shell::ShellTool {
-                work_dir: wd.clone(),
-                ..Default::default()
-            })
-            .tool(crb_tools::grep::GrepTool { workdir: wd.clone() })
-            .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
-            .default_max_turns(6)
-            .temperature(0.3)
-            .build()
-    } else {
-        client
-            .agent(model)
-            .preamble(&full_preamble)
-            .temperature(0.3)
-            .build()
+    // (NoToolConfig → WithBuilderTools), so each tool combination needs its
+    // own builder chain.
+    #[cfg(feature = "exp14_submit_finding")]
+    {
+        let has_wd = workdir.is_some();
+        let has_collector = collector.is_some();
+
+        match (has_wd, has_collector) {
+            (true, true) => {
+                let wd = workdir.unwrap().to_string();
+                let submit_tool =
+                    submit_finding::SubmitFindingTool::new(collector.unwrap());
+                client
+                    .agent(model)
+                    .preamble(&full_preamble)
+                    .tool(crb_tools::read_file::ReadFileTool {
+                        repo_root: wd.clone(),
+                        ..Default::default()
+                    })
+                    .tool(crb_tools::shell::ShellTool {
+                        work_dir: wd.clone(),
+                        ..Default::default()
+                    })
+                    .tool(crb_tools::grep::GrepTool { workdir: wd.clone() })
+                    .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
+                    .tool(submit_tool)
+                    .default_max_turns(6)
+                    .temperature(0.3)
+                    .build()
+            }
+            (true, false) => {
+                let wd = workdir.unwrap().to_string();
+                client
+                    .agent(model)
+                    .preamble(&full_preamble)
+                    .tool(crb_tools::read_file::ReadFileTool {
+                        repo_root: wd.clone(),
+                        ..Default::default()
+                    })
+                    .tool(crb_tools::shell::ShellTool {
+                        work_dir: wd.clone(),
+                        ..Default::default()
+                    })
+                    .tool(crb_tools::grep::GrepTool { workdir: wd.clone() })
+                    .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
+                    .default_max_turns(6)
+                    .temperature(0.3)
+                    .build()
+            }
+            (false, true) => {
+                let submit_tool =
+                    submit_finding::SubmitFindingTool::new(collector.unwrap());
+                client
+                    .agent(model)
+                    .preamble(&full_preamble)
+                    .tool(submit_tool)
+                    .temperature(0.3)
+                    .build()
+            }
+            (false, false) => {
+                client
+                    .agent(model)
+                    .preamble(&full_preamble)
+                    .temperature(0.3)
+                    .build()
+            }
+        }
+    }
+
+    #[cfg(not(feature = "exp14_submit_finding"))]
+    {
+        if let Some(wd) = workdir {
+            let wd = wd.to_string();
+            client
+                .agent(model)
+                .preamble(&full_preamble)
+                .tool(crb_tools::read_file::ReadFileTool {
+                    repo_root: wd.clone(),
+                    ..Default::default()
+                })
+                .tool(crb_tools::shell::ShellTool {
+                    work_dir: wd.clone(),
+                    ..Default::default()
+                })
+                .tool(crb_tools::grep::GrepTool { workdir: wd.clone() })
+                .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
+                .default_max_turns(6)
+                .temperature(0.3)
+                .build()
+        } else {
+            client
+                .agent(model)
+                .preamble(&full_preamble)
+                .temperature(0.3)
+                .build()
+        }
     }
 }
 

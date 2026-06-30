@@ -348,8 +348,21 @@ pub fn build_reviewer_agent(
     template_vars: Option<&HashMap<&str, &str>>,
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
+    #[cfg(feature = "exp14_submit_finding")]
+    collector: Option<Arc<Mutex<crb_agents::submit_finding::SubmitFindingCollector>>>,
 ) -> Agent<ResponsesCompletionModel> {
-    build_agent(client, &config.model, config.role.as_str(), rules_preamble, prompt_lib, template_vars, tool_preamble, workdir)
+    build_agent(
+        client,
+        &config.model,
+        config.role.as_str(),
+        rules_preamble,
+        prompt_lib,
+        template_vars,
+        tool_preamble,
+        workdir,
+        #[cfg(feature = "exp14_submit_finding")]
+        collector,
+    )
 }
 
 // ── Concurrent execution ────────────────────────────────────────────────────
@@ -390,7 +403,17 @@ pub async fn run_reviewers(
         let max_findings = config.max_findings;
         let preamble = rules_preamble.map(String::from);
         let tool_preamble = tool_preamble.map(String::from);
-        let agent = build_reviewer_agent(&client, &config, preamble.as_deref(), prompt_lib, template_vars, tool_preamble.as_deref(), workdir);
+        let agent = build_reviewer_agent(
+            &client,
+            &config,
+            preamble.as_deref(),
+            prompt_lib,
+            template_vars,
+            tool_preamble.as_deref(),
+            workdir,
+            #[cfg(feature = "exp14_submit_finding")]
+            None,
+        );
         let cache = cache.clone();
         let prompt_hash = prompt_hash.to_string();
         let rules_hash = rules_hash.to_string();
