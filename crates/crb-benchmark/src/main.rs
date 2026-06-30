@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use anyhow::Context;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use crb_harness::cache::{GlobalCacheStats, PruneResult, ScrubResult};
 use crb_agents::prompts::PromptLibrary;
 use crb_dashboard::DashboardEvent;
 use crb_judge::build_judge;
@@ -55,7 +56,7 @@ enum Commands {
         #[arg(long, default_value = "datasets/golden_comments")]
         dataset_dir: PathBuf,
     },
-    /// Remove worktrees and optionally diffs from a benchmark directory.
+    /// Remove worktrees, outputs, and optionally diffs from a benchmark directory.
     Clean {
         /// Benchmark directory (contains base-repos/, diffs/, worktrees/).
         #[arg(long, default_value = "benchmark")]
@@ -64,6 +65,14 @@ enum Commands {
         /// Also remove diffs directory.
         #[arg(long, default_value_t = false)]
         all: bool,
+
+        /// Also remove output directories.
+        #[arg(long, default_value_t = false)]
+        outputs: bool,
+
+        /// Dry run: only print what would be removed.
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
     },
     /// Run the full benchmark evaluation pipeline over a dataset.
     Run {
@@ -133,6 +142,75 @@ enum Commands {
         /// Dashboard events JSON output.
         #[arg(long, default_value_t = false)]
         dashboard_events: bool,
+
+        /// Auto-backup cache before running.
+        #[arg(long, default_value_t = false)]
+        auto_backup: bool,
+    },
+    /// Show cache statistics.
+    CacheStats {
+        #[arg(long, env = "CACHE_DIR", default_value = "cache")]
+        cache_dir: PathBuf,
+
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Prune cache entries by age, size, or PR count.
+    CachePrune {
+        #[arg(long, env = "CACHE_DIR", default_value = "cache")]
+        cache_dir: PathBuf,
+
+        #[arg(long)]
+        max_age: Option<u64>,
+
+        #[arg(long)]
+        max_size: Option<u64>,
+
+        #[arg(long)]
+        max_prs: Option<usize>,
+
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Scrub cache for stale entries, orphans, and corrupted indices.
+    CacheScrub {
+        #[arg(long, env = "CACHE_DIR", default_value = "cache")]
+        cache_dir: PathBuf,
+
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
+        #[arg(long, default_value_t = false)]
+        repair: bool,
+
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Backup cache to a tar.gz archive.
+    CacheBackup {
+        #[arg(long, env = "CACHE_DIR", default_value = "cache")]
+        cache_dir: PathBuf,
+
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Restore cache from a tar.gz backup.
+    CacheRestore {
+        backup_file: PathBuf,
+
+        #[arg(long, env = "CACHE_DIR", default_value = "cache")]
+        cache_dir: PathBuf,
+    },
+    /// Rebuild cache indices from raw data.
+    CacheRebuild {
+        #[arg(long, env = "CACHE_DIR", default_value = "cache")]
+        cache_dir: PathBuf,
+
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
     },
 }
 
@@ -172,8 +250,26 @@ fn main() -> Result<()> {
         Commands::List { dataset_dir } => {
             run_list(&dataset_dir)?;
         }
-        Commands::Clean { benchmark_dir, all } => {
-            run_clean(&benchmark_dir, all)?;
+        Commands::Clean { benchmark_dir, all, outputs, dry_run } => {
+            run_clean(&benchmark_dir, all, outputs, dry_run)?;
+        }
+        Commands::CacheStats { cache_dir, json } => {
+            run_cache_stats(&cache_dir, json)?;
+        }
+        Commands::CachePrune { cache_dir, max_age, max_size, max_prs, dry_run, json } => {
+            run_cache_prune(&cache_dir, max_age, max_size, max_prs, dry_run, json)?;
+        }
+        Commands::CacheScrub { cache_dir, dry_run, repair, json } => {
+            run_cache_scrub(&cache_dir, dry_run, repair, json)?;
+        }
+        Commands::CacheBackup { cache_dir, output } => {
+            run_cache_backup(&cache_dir, output)?;
+        }
+        Commands::CacheRestore { backup_file, cache_dir } => {
+            run_cache_restore(&backup_file, &cache_dir)?;
+        }
+        Commands::CacheRebuild { cache_dir, dry_run } => {
+            run_cache_rebuild(&cache_dir, dry_run)?;
         }
         Commands::Run {
             benchmark_dir,
@@ -198,6 +294,7 @@ fn main() -> Result<()> {
             cache_dir,
             dashboard,
             dashboard_events,
+            auto_backup,
         } => {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(run_benchmark(
@@ -223,6 +320,7 @@ fn main() -> Result<()> {
                 cache_dir,
                 dashboard,
                 dashboard_events,
+                auto_backup,
             ))?;
         }
     }
@@ -257,39 +355,43 @@ fn run_list(dataset_dir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Remove worktrees and optionally diffs from a benchmark directory.
-fn run_clean(benchmark_dir: &PathBuf, all: bool) -> Result<()> {
+/// Remove worktrees, outputs, and optionally diffs from a benchmark directory.
+fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -> Result<()> {
     let worktrees_dir = benchmark_dir.join("worktrees");
 
     if worktrees_dir.exists() {
-        // Remove each worktree using `git worktree remove --force`
-        for entry in std::fs::read_dir(&worktrees_dir)? {
-            let entry = entry?;
-            let wt_path = entry.path();
-            if !wt_path.is_dir() {
-                continue;
-            }
-            if wt_path.join(".git").exists() {
-                let status = std::process::Command::new("git")
-                    .args(["worktree", "remove", "--force"])
-                    .arg(&wt_path)
-                    .status()?;
-                if status.success() {
-                    println!("Removed worktree: {}", wt_path.display());
-                } else {
-                    tracing::warn!("Failed to remove worktree at {}", wt_path.display());
+        if dry_run {
+            println!("[DRY RUN] Would remove worktrees from {}", worktrees_dir.display());
+        } else {
+            // Remove each worktree using `git worktree remove --force`
+            for entry in std::fs::read_dir(&worktrees_dir)? {
+                let entry = entry?;
+                let wt_path = entry.path();
+                if !wt_path.is_dir() {
+                    continue;
+                }
+                if wt_path.join(".git").exists() {
+                    let status = std::process::Command::new("git")
+                        .args(["worktree", "remove", "--force"])
+                        .arg(&wt_path)
+                        .status()?;
+                    if status.success() {
+                        println!("Removed worktree: {}", wt_path.display());
+                    } else {
+                        tracing::warn!("Failed to remove worktree at {}", wt_path.display());
+                    }
                 }
             }
+
+            // Prune orphaned worktree metadata
+            let _ = std::process::Command::new("git")
+                .args(["worktree", "prune"])
+                .status();
+
+            // Remove the worktrees directory itself
+            std::fs::remove_dir_all(&worktrees_dir)?;
+            println!("Removed worktrees directory: {}", worktrees_dir.display());
         }
-
-        // Prune orphaned worktree metadata
-        let _ = std::process::Command::new("git")
-            .args(["worktree", "prune"])
-            .status();
-
-        // Remove the worktrees directory itself
-        std::fs::remove_dir_all(&worktrees_dir)?;
-        println!("Removed worktrees directory: {}", worktrees_dir.display());
     } else {
         println!("No worktrees directory found at {}", worktrees_dir.display());
     }
@@ -297,13 +399,121 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool) -> Result<()> {
     if all {
         let diffs_dir = benchmark_dir.join("diffs");
         if diffs_dir.exists() {
-            std::fs::remove_dir_all(&diffs_dir)?;
-            println!("Removed diffs directory: {}", diffs_dir.display());
+            if dry_run {
+                println!("[DRY RUN] Would remove diffs directory: {}", diffs_dir.display());
+            } else {
+                std::fs::remove_dir_all(&diffs_dir)?;
+                println!("Removed diffs directory: {}", diffs_dir.display());
+            }
         } else {
             println!("No diffs directory found at {}", diffs_dir.display());
         }
     }
 
+    if outputs {
+        let outputs_dir = benchmark_dir.join("outputs");
+        if outputs_dir.exists() {
+            if dry_run {
+                println!("[DRY RUN] Would remove outputs directory: {}", outputs_dir.display());
+            } else {
+                std::fs::remove_dir_all(&outputs_dir)?;
+                println!("Removed outputs directory: {}", outputs_dir.display());
+            }
+        } else {
+            println!("No outputs directory found at {}", outputs_dir.display());
+        }
+
+        // Also check for top-level "output/" as used by the benchmark run command
+        let output_dir = benchmark_dir.join("output");
+        if output_dir.exists() && output_dir != outputs_dir {
+            if dry_run {
+                println!("[DRY RUN] Would remove output directory: {}", output_dir.display());
+            } else {
+                std::fs::remove_dir_all(&output_dir)?;
+                println!("Removed output directory: {}", output_dir.display());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Show cache statistics.
+fn run_cache_stats(cache_dir: &PathBuf, json: bool) -> Result<()> {
+    use crb_harness::cache::GlobalCacheStats;
+    let stats = crb_harness::LlmCache::stats(cache_dir)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&stats)?);
+    } else {
+        println!("Cache Statistics");
+        println!("  PR directories:   {}", stats.pr_count);
+        println!("  Total entries:    {}", stats.total_entries);
+        println!("  Total size:       {} bytes", stats.total_size_bytes);
+        println!();
+        for pr in &stats.per_pr {
+            println!("  {}: {} entries, {} bytes", pr.pr_key, pr.entry_count, pr.total_size_bytes);
+        }
+    }
+    Ok(())
+}
+
+/// Prune cache entries by age, size, or PR count.
+fn run_cache_prune(cache_dir: &PathBuf, max_age: Option<u64>, max_size: Option<u64>, max_prs: Option<usize>, dry_run: bool, json: bool) -> Result<()> {
+    let result = crb_harness::LlmCache::prune(cache_dir, max_age, max_size, max_prs, dry_run)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        if dry_run { print!("[DRY RUN] "); }
+        println!("Prune: {} entries removed from {} PRs, {} bytes freed ({} PRs kept)",
+            result.entries_removed, result.prs_removed, result.bytes_freed, result.prs_kept);
+    }
+    Ok(())
+}
+
+/// Scrub cache for stale entries, orphans, and corrupted indices.
+fn run_cache_scrub(cache_dir: &PathBuf, dry_run: bool, repair: bool, json: bool) -> Result<()> {
+    let result = crb_harness::LlmCache::scrub(cache_dir, dry_run, repair)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        if dry_run { print!("[DRY RUN] "); }
+        println!("Scrub: scanned {} PR dirs, {} stale entries, {} orphans, {} corrupted indices",
+            result.pr_dirs_scanned, result.stale_entries_found, result.orphan_files_found, result.corrupted_indices_found);
+        if repair {
+            println!("  Repaired: {} indices rebuilt, {} stale removed, {} orphans removed",
+                result.indices_rebuilt, result.stale_entries_removed, result.orphan_files_removed);
+        }
+    }
+    Ok(())
+}
+
+/// Backup cache to a tar.gz archive.
+fn run_cache_backup(cache_dir: &PathBuf, output: Option<PathBuf>) -> Result<()> {
+    use std::time::SystemTime;
+    use std::time::UNIX_EPOCH;
+    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let output_path = output.unwrap_or_else(|| {
+        let mut p = cache_dir.clone();
+        p.push(format!("cache_backup_{}.tar.gz", ts));
+        p
+    });
+    crb_harness::LlmCache::backup(cache_dir, &output_path)?;
+    println!("Backup created: {}", output_path.display());
+    Ok(())
+}
+
+/// Restore cache from a tar.gz backup.
+fn run_cache_restore(backup_file: &PathBuf, cache_dir: &PathBuf) -> Result<()> {
+    crb_harness::LlmCache::restore(cache_dir, backup_file)?;
+    println!("Restored from {} to {}", backup_file.display(), cache_dir.display());
+    Ok(())
+}
+
+/// Rebuild cache indices from raw data.
+fn run_cache_rebuild(cache_dir: &PathBuf, dry_run: bool) -> Result<()> {
+    crb_harness::LlmCache::rebuild(cache_dir, dry_run)?;
+    if dry_run { print!("[DRY RUN] "); }
+    println!("Cache rebuild completed");
     Ok(())
 }
 
@@ -332,11 +542,24 @@ async fn run_benchmark(
     cache_dir: PathBuf,
     dashboard: bool,
     dashboard_events: bool,
+    auto_backup: bool,
 ) -> Result<()> {
 
     let output_dir = PathBuf::from(&output_dir);
     let dataset_dir = PathBuf::from(&dataset_dir);
     let benchmark_dir = PathBuf::from(&benchmark_dir);
+
+    // ── Auto-backup cache ──────────────────────────────────────────────────
+    if auto_backup {
+        use std::time::SystemTime;
+        use std::time::UNIX_EPOCH;
+        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let backup_path = PathBuf::from(format!("cache_backup_{}.tar.gz", ts));
+        match crb_harness::LlmCache::backup(&cache_dir, &backup_path) {
+            Ok(()) => info!("Auto-backup created at {}", backup_path.display()),
+            Err(e) => tracing::warn!("Auto-backup failed: {e}"),
+        }
+    }
 
     // ── --validate flag ────────────────────────────────────────────────────
     let workspace_root = std::env::current_dir()
