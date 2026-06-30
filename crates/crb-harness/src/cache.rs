@@ -164,31 +164,6 @@ pub struct ScrubResult {
     pub orphan_files_removed: usize,
 }
 
-/// A single entry in the run history log.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RunHistoryEntry {
-    /// Unique run identifier.
-    pub run_id: String,
-    /// ISO-8601 timestamp of the run.
-    pub timestamp: String,
-    /// Primary model used for agents.
-    pub model: String,
-    /// Model used for judging.
-    pub judge_model: String,
-    /// Total number of PRs evaluated.
-    pub total_prs: usize,
-    /// Total duration in seconds.
-    pub duration_secs: f64,
-    /// Total cost in USD.
-    pub total_cost_usd: f64,
-    /// Total tokens consumed.
-    pub total_tokens: usize,
-    /// Agent cache hit rate (0.0 to 1.0).
-    pub agent_cache_hit_rate: f64,
-    /// Judge cache hit rate (0.0 to 1.0).
-    pub judge_cache_hit_rate: f64,
-}
-
 // ── Helper functions ───────────────────────────────────────────────────
 
 /// Parse a debug-format timestamp (as produced by [`LlmCache::now()`]) into
