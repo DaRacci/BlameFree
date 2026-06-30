@@ -117,7 +117,7 @@ Output your JSON findings directly."
 /// When [`PromptError::MaxTurnsError`] fires, the agent's accumulated
 /// conversation is available in `chat_history`.  This function walks it in
 /// reverse to find the most recent `Message::Assistant` whose content includes
-/// an `AssistantContent::Text` variant — that text is often a partial or
+/// an `AssistantContent::Text` variant - that text is often a partial or
 /// complete JSON findings array the model produced before being cut off.
 fn extract_last_assistant_text(history: &[Message]) -> Option<String> {
     for msg in history.iter().rev() {
@@ -356,7 +356,7 @@ pub fn build_reviewer_agent(
 ///
 /// Each agent is run with a 300-second timeout.  Findings are capped at
 /// `config.max_findings`.  Agents that time out or return errors yield an
-/// empty finding list with a warning — no hard failure.
+/// empty finding list with a warning - no hard failure.
 ///
 /// If `cache` is provided, uses content-addressed caching:
 /// - Computes cache key from prompt_hash, diff_hash, model, role, rules_hash
@@ -463,7 +463,7 @@ pub async fn run_reviewers(
                 }
             }
 
-            // Cache miss — make the API call
+            // Cache miss - make the API call
             agent_api_calls.fetch_add(1, Ordering::SeqCst);
             tracing::info!("CACHE MISS for role {:?} (key={})", role, &cache_key[..12]);
 
@@ -562,7 +562,7 @@ pub async fn run_reviewers(
             match outcome {
                 Ok(Ok(pair)) => pair,
                 Ok(Err(e)) => {
-                    // Check for MaxTurnsError — the model may have produced
+                    // Check for MaxTurnsError - the model may have produced
                     // text findings that were cut off by the turn limit.
                     if let Some(PromptError::MaxTurnsError { chat_history, .. }) =
                         e.downcast_ref::<PromptError>()
@@ -570,7 +570,7 @@ pub async fn run_reviewers(
                         if let Some(text) = extract_last_assistant_text(chat_history) {
                             tracing::info!(
                                 "Role {:?} hit MaxTurnsError but chat_history contains text \
-                                 — attempting to recover findings",
+                                 - attempting to recover findings",
                                 role,
                             );
                             let preview_len = std::cmp::min(500, text.len());
@@ -629,7 +629,7 @@ pub async fn run_reviewers(
             Err(e) => tracing::warn!("Agent join error: {e}"),
         }
     }
-    // Sort by role for deterministic ordering — JoinSet::join_next()
+    // Sort by role for deterministic ordering - JoinSet::join_next()
     // returns tasks in completion order, which is non-deterministic.
     results.sort_by_key(|(role, _)| role.as_str());
     let aggregate_usage = aggregate_usage.lock().unwrap_or_else(|e| e.into_inner()).clone();
@@ -788,7 +788,7 @@ pub async fn run_consensus(
                             }
                         }
 
-                        // Cache miss — make API call
+                        // Cache miss - make API call
                         judge_api_calls += 1;
                         tracing::info!("CACHE MISS for judge (key={})", &judge_key[..12]);
                         match run_judge(judge, &golden.message_regex, &unmatched[i].message).await

@@ -222,7 +222,7 @@ impl FilterCounts {
         }
         let detail = parts.join(", ");
         format!(
-            "[{} files filtered: {} — see raw diff for details]",
+            "[{} files filtered: {} - see raw diff for details]",
             self.total(),
             detail
         )
@@ -367,7 +367,7 @@ pub fn strip_diff_metadata(diff: &str) -> String {
                 output.push(line.to_string());
             }
         } else {
-            // No changed lines — keep hunk as-is
+            // No changed lines - keep hunk as-is
             output.push(header.to_string());
             for line in body {
                 output.push(line.to_string());
@@ -382,7 +382,7 @@ pub fn strip_diff_metadata(diff: &str) -> String {
         }
 
         if line.starts_with("@@ ") && line.contains(" @@") {
-            // Start of a new hunk — flush previous hunk if any
+            // Start of a new hunk - flush previous hunk if any
             if in_hunk && !current_hunk_lines.is_empty() {
                 flush_hunk(&current_hunk_lines, &mut result);
                 current_hunk_lines.clear();
@@ -446,7 +446,7 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
         // Build agent with built-in prompts (no prompt lib, no rules)
         let agent = build_agent(&client, &params.model, role, None, None, None, None, None);
 
-        // Call agent with the diff — get real token usage via extended_details
+        // Call agent with the diff - get real token usage via extended_details
         match agent.prompt(&diff).extended_details().await {
             Ok(resp) => {
                 let response = resp.output;
@@ -503,7 +503,7 @@ pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>
     };
 
     if diff.is_empty() {
-        info!("No diff found — returning empty findings");
+        info!("No diff found - returning empty findings");
         return Ok(Vec::new());
     }
 
@@ -536,7 +536,7 @@ pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>
 }
 
 // =========================================================================
-// Moved from main.rs – public helpers
+// Moved from main.rs - public helpers
 // =========================================================================
 
 /// Extract owner, repo name, and PR number from a GitHub PR URL.
@@ -686,7 +686,7 @@ pub fn parse_agent_findings(response: &str) -> Result<Vec<Finding>, String> {
         }
     }
 
-    // All strategies failed — warn and return empty
+    // All strategies failed - warn and return empty
     let truncated = if response.len() > 200 {
         format!("{}...", &response[..200])
     } else {
@@ -820,8 +820,8 @@ pub async fn evaluate_pr_single_agent(
                 role,
                 &agent_cache_key[..12]
             );
+            // Cache miss - make API call
 
-            // Cache miss — make API call
             let tool_preamble = crb_tools::tool_prompt_section(
                 &role,
                 &crb_tools::budget::ToolCallBudget::default(),
@@ -835,7 +835,7 @@ pub async fn evaluate_pr_single_agent(
                 Some(&p_lib),
                 None,
                 Some(&tool_preamble),
-                None, // workdir — not available in single-agent path
+                None, // workdir - not available in single-agent path
             );
             let result: Result<Vec<Finding>, String> = with_retry(
                 || async {
@@ -931,7 +931,7 @@ pub async fn evaluate_pr_single_agent(
             if let Some(golden_file) = &gc.file {
                 if let Some(finding_file) = &finding.file {
                     if golden_file != finding_file {
-                        continue; // file mismatch — skip
+                        continue; // file mismatch - skip
                     }
                 }
             }
@@ -954,7 +954,7 @@ pub async fn evaluate_pr_single_agent(
                 }
             }
 
-            // Cache miss — make API call
+            // Cache miss - make API call
             tracing::info!("CACHE MISS for judge (key={})", &judge_key[..12]);
             match with_retry(
                 || run_judge(judge, &gc.comment, &finding.message),
@@ -1011,7 +1011,7 @@ pub async fn evaluate_pr_consensus(
         .collect();
 
     if diff.is_empty() {
-        info!("No diff — returning empty result");
+        info!("No diff - returning empty result");
         return Ok((Vec::new(), Vec::new()));
     }
 
@@ -1110,7 +1110,7 @@ pub async fn evaluate_pr_consensus(
 
     // The consensus crate's PrResult contains the actual findings count.
     // We still need to return `all_findings` for post-processing compat,
-    // but note that all_findings is empty when linters are skipped —
+    // but note that all_findings is empty when linters are skipped -
     // the findings_count will be derived from verdicts in the caller.
     let all_findings: Vec<Finding> = Vec::new();
     Ok((all_findings, result.verdicts))
@@ -1658,11 +1658,11 @@ pub async fn run_validate(workspace_root: &std::path::Path, version: &str) -> Re
     );
 
     if val_result.in_threshold {
-        info!("Validation PASSED — all metrics within baseline thresholds");
+        info!("Validation PASSED - all metrics within baseline thresholds");
         Ok(())
     } else {
         Err(anyhow::anyhow!(
-            "Validation FAILED — metrics exceed baseline thresholds"
+            "Validation FAILED - metrics exceed baseline thresholds"
         ))
     }
 }

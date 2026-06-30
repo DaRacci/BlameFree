@@ -69,7 +69,7 @@ pub fn HomePage() -> impl IntoView {
                 <h1 class="page-header__title">"Dashboard"</h1>
                 <div class="page-header__actions">
                     <a href="/new" class="btn btn--primary">
-                        <span class="btn__icon">"🆕"</span>
+                        <span class="btn__icon">""</span>
                         <span class="btn__label">"New Benchmark"</span>
                     </a>
                 </div>
@@ -94,26 +94,26 @@ pub fn HomePage() -> impl IntoView {
                 } else if let Some(e) = error.get() {
                     view! {
                         <div class="error-state" role="alert">
-                            <div class="error-state__icon">"⚠️"</div>
+                            <div class="error-state__icon">"!"</div>
                             <h3 class="error-state__heading">"Failed to load runs"</h3>
                             <p class="error-state__message">{format!("Something went wrong while fetching benchmark runs: {}", e)}</p>
                             <div class="error-state__action">
                                 <button class="btn btn--primary" on:click=move |_| {
                                     set_loading.set(true);
                                     fetch(set_runs, set_loading, set_error, set_has_active);
-                                }>"🔄 Retry"</button>
+                                }>"Retry"</button>
                             </div>
                         </div>
                     }.into_view()
                 } else if runs.get().is_empty() {
                     view! {
                         <div class="empty-state">
-                            <div class="empty-state__icon">"📂"</div>
+                            <div class="empty-state__icon">""</div>
                             <h3 class="empty-state__heading">"No benchmark runs yet"</h3>
                             <p class="empty-state__message">"Run your first benchmark to see results here."</p>
                             <div class="empty-state__action">
                                 <a href="/new" class="btn btn--primary">
-                                    <span class="btn__icon">"🚀"</span>
+                                    <span class="btn__icon">""</span>
                                     <span class="btn__label">"Start Your First Run"</span>
                                 </a>
                             </div>
@@ -124,7 +124,7 @@ pub fn HomePage() -> impl IntoView {
                     let active_runs: Vec<RunSummary> = all_runs.clone().into_iter().filter(|r| r.status == "running").collect();
                     let completed_runs: Vec<RunSummary> = all_runs.into_iter().filter(|r| r.status != "running").collect();
 
-                    // Metrics — include both active and completed
+                    // Metrics - include both active and completed
                     let total_runs = completed_runs.len() + active_runs.len();
                     let avg_f1 = {
                         let vals: Vec<f64> = completed_runs.iter().filter_map(|r| r.avg_f1).collect();
@@ -186,11 +186,11 @@ pub fn HomePage() -> impl IntoView {
                                                         <span>{elapsed}</span>
                                                     </div>
                                                     <div class="home-page__active-actions">
-                                                        "🔴 View live..."
+                                                        "View live..."
                                                     </div>
                                                 </div>
                                                 <div class="card__footer">
-                                                    <a href=detail_path class="btn btn--ghost btn--sm">"Details →"</a>
+                                                    <a href=detail_path class="btn btn--ghost btn--sm">"Details >"</a>
                                                 </div>
                                             </a>
                                         }
@@ -210,9 +210,9 @@ pub fn HomePage() -> impl IntoView {
                                 <div class="content-grid content-grid--cards">
                                     {completed_runs.into_iter().map(|run| {
                                         let detail_path = format!("/runs/{}", run.id);
-                                        let f1_str = run.avg_f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "—".into());
-                                        let cost_str = run.total_cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "—".into());
-                                        let dur_str = run.duration_secs.map(|d| format!("{:.0}s", d)).unwrap_or_else(|| "—".into());
+                                        let f1_str = run.avg_f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into());
+                                        let cost_str = run.total_cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "-".into());
+                                        let dur_str = run.duration_secs.map(|d| format!("{:.0}s", d)).unwrap_or_else(|| "-".into());
 
                                         let badge_variant = match run.status.as_str() {
                                             "completed" | "done" => "badge--success",

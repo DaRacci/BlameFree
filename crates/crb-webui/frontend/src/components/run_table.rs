@@ -58,17 +58,17 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
 
     let _sort_indicator = move |col| {
         if sort_column.get() == col {
-            if sort_asc.get() { " ▲" } else { " ▼" }
+            if sort_asc.get() { " ^" } else { " v" }
         } else {
-            " ↕"
+            ""
         }
     };
 
     let sort_arrow = move |col| {
         if sort_column.get() == col {
-            if sort_asc.get() { "↑" } else { "↓" }
+            if sort_asc.get() { "^" } else { "v" }
         } else {
-            "↕"
+            ""
         }
     };
 
@@ -106,9 +106,9 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
                             "running" => "badge--warning",
                             _ => "badge--neutral",
                         };
-                        let f1_str = run.avg_f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "—".into());
-                        let cost_str = run.total_cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "—".into());
-                        let model_str = run.model.unwrap_or_else(|| "—".to_string());
+                        let f1_str = run.avg_f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into());
+                        let cost_str = run.total_cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "-".into());
+                        let model_str = run.model.unwrap_or_else(|| "-".to_string());
                         let detail_path = format!("/runs/{}", run.id);
                         let live_path = format!("/runs/{}/live", run.id);
 

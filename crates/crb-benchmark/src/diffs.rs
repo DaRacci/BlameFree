@@ -174,7 +174,7 @@ fn extract_diff_for_pr(
             repo_name
         );
 
-        // Canonicalize worktree path to absolute — git worktree add resolves
+        // Canonicalize worktree path to absolute - git worktree add resolves
         // relative paths relative to the repo, not CWD.
         let abs_worktree = if worktree_path.is_absolute() {
             worktree_path.clone()
@@ -222,7 +222,7 @@ fn extract_diff_for_pr(
         Ok(1)
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // HEAD^ may fail if not a merge commit — try diff with no parent (--root)
+        // HEAD^ may fail if not a merge commit - try diff with no parent (--root)
         if stderr.contains("ambiguous argument") || stderr.contains("unknown revision") {
             tracing::warn!(
                 "HEAD^ not available for {} PR #{}, trying --root diff",

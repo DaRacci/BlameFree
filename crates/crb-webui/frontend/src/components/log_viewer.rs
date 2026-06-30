@@ -44,7 +44,7 @@ pub fn LogViewer(
                 view! {
                     <details style="margin-bottom: 0.5rem;">
                         <summary style=style_pr_header>
-                            {format!("PR #{} — {}", pr_key, pr_title)}
+                            {format!("PR #{} - {}", pr_key, pr_title)}
                         </summary>
                         <div style=style_pr_body>
                             {agents.iter().map(move |agent_name| {
@@ -125,7 +125,7 @@ pub fn LogViewer(
                                                                 {log.reasoning.as_ref().filter(|r| !r.is_empty()).map(|r| {
                                                                     view! {
                                                                         <>
-                                                                            <span style=style_label>"🧠 Reasoning:"</span>
+                                                                            <span style=style_label>"Reasoning:"</span>
                                                                             <pre style=style_pre>{r.clone()}</pre>
                                                                         </>
                                                                     }.into_view()

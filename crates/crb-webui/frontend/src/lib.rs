@@ -59,6 +59,7 @@ pub struct RunDetail {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrResult {
     pub pr_number: u32,
+    pub pr_key: String,
     pub title: String,
     #[serde(default)]
     pub f1: Option<f64>,
@@ -70,6 +71,8 @@ pub struct PrResult {
     pub cost: Option<f64>,
     #[serde(default)]
     pub status: Option<String>,
+    #[serde(default)]
+    pub has_agents: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,8 +133,6 @@ pub struct DatasetConfig {
 pub struct DatasetDefaults {
     #[serde(default)]
     pub model: Option<String>,
-    #[serde(default)]
-    pub pr_filter: Option<String>,
     #[serde(default)]
     pub concurrency: Option<usize>,
     #[serde(default)]
@@ -388,7 +389,7 @@ pub fn App() -> impl IntoView {
                             <Route path="/new" view=|| view! { <pages::new_run::NewRunPage /> } />
                             <Route path="/*" view=|| view! {
                                 <div class="state-container">
-                                    <h2>"404 — Page Not Found"</h2>
+                                    <h2>"404 - Page Not Found"</h2>
                                     <p>"The page you're looking for doesn't exist."</p>
                                     <div class="error-state__action">
                                         <a href="/" class="btn btn--primary">"Go Home"</a>
@@ -463,13 +464,13 @@ fn Sidebar() -> impl IntoView {
             <ul class="sidebar__nav">
                 <li>
                     <a href="/" class=move || format!("sidebar__item {}", active_class("/runs/"))>
-                        <span class="sidebar__icon">"🏠"</span>
+                        <span class="sidebar__icon">""</span>
                         <span class="sidebar__label">"Home"</span>
                     </a>
                 </li>
                 <li>
                     <a href="/new" class=move || format!("sidebar__item {}", active_class("/new"))>
-                        <span class="sidebar__icon">"🆕"</span>
+                        <span class="sidebar__icon">""</span>
                         <span class="sidebar__label">"New Run"</span>
                     </a>
                 </li>

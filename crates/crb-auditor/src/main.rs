@@ -1,4 +1,4 @@
-//! CLI entrypoint for the severity auditor — replicates original severity_auditor.py interface.
+//! CLI entrypoint for the severity auditor - replicates original severity_auditor.py interface.
 //!
 //! Reads findings from a JSON file, applies severity auditing, and optionally
 //! writes an audit report.

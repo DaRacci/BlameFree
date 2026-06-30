@@ -38,8 +38,6 @@ pub struct DatasetDefaults {
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
-    pub pr_filter: Option<String>,
-    #[serde(default)]
     pub concurrency: Option<usize>,
     #[serde(default)]
     pub max_findings: Option<usize>,

@@ -225,7 +225,7 @@ fn main() -> Result<()> {
         if let Ok(key) = std::env::var("OPENROUTER_API_KEY") {
             std::env::set_var("OPENAI_API_KEY", key);
             eprintln!(
-                "[dotenv] OPENAI_API_KEY not found — falling back to OPENROUTER_API_KEY"
+                "[dotenv] OPENAI_API_KEY not found - falling back to OPENROUTER_API_KEY"
             );
         }
     }
@@ -745,7 +745,7 @@ async fn run_benchmark(
             }
         } else if prompts_dir.to_string_lossy() != "prompts/builtin" {
             tracing::warn!(
-                "Custom prompts directory '{}' not found — using built-in defaults",
+                "Custom prompts directory '{}' not found - using built-in defaults",
                 prompts_dir.display()
             );
         }

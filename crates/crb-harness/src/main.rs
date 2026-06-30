@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
         if let Ok(key) = std::env::var("OPENROUTER_API_KEY") {
             std::env::set_var("OPENAI_API_KEY", key);
             eprintln!(
-                "[dotenv] OPENAI_API_KEY not found — falling back to OPENROUTER_API_KEY"
+                "[dotenv] OPENAI_API_KEY not found - falling back to OPENROUTER_API_KEY"
             );
         }
     }

@@ -1,4 +1,4 @@
-//! Port of `aggregate_findings.py` — report parsing, deduplication, and candidate formatting.
+//! Port of `aggregate_findings.py` - report parsing, deduplication, and candidate formatting.
 //!
 //! Provides the core aggregation logic for code-review findings, including
 //! multi-format report parsing, semantic deduplication, and candidate formatting.
@@ -112,7 +112,7 @@ static SEV_SECTION_RE: Lazy<Regex> = Lazy::new(|| {
         .unwrap()
 });
 
-/// Match finding heading: ### 🔴 C1 — Title
+/// Match finding heading: ### 🔴 C1 - Title
 static HEADING_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^###\s+\S\s+([CHML]\d+)\s*[-–—]\s*(.+)$")
         .unwrap()
@@ -503,7 +503,7 @@ fn _parse_table_format(report_text: &str, parse_warnings: &mut Vec<String>) -> V
             break;
         }
 
-        // Parse heading: ### 🔴 C1 — Title
+        // Parse heading: ### 🔴 C1 - Title
         if let Some(caps) = HEADING_RE.captures(line) {
             if let Some(ref cur) = current {
                 if cur.get("text").and_then(|v| v.as_str()).map_or(false, |t| !t.is_empty()) {
@@ -801,7 +801,7 @@ pub fn archive_raw_reports(pr_reports: &HashMap<String, String>, archive_dir: &s
 // Aggregate batch
 // ---------------------------------------------------------------------------
 
-/// Phase 4.6 aggregator — v5 flat pass-through (no hybrid gate).
+/// Phase 4.6 aggregator - v5 flat pass-through (no hybrid gate).
 ///
 /// All deduped findings go directly to the output. No severity-based routing,
 /// no secondary review queue, no auto-promotion.
@@ -855,7 +855,7 @@ pub fn aggregate_batch(
         stats.total_findings += findings.len();
         let deduped = semantic_dedup(findings);
 
-        // V5 flat pass-through — all deduped findings go to output
+        // V5 flat pass-through - all deduped findings go to output
         let mut candidates_for_pr: Vec<Map<String, Value>> = deduped;
 
         stats.passed_to_adjudication += candidates_for_pr.len();

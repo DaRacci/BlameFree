@@ -1,9 +1,9 @@
 //! Glob matching and language detection for rule files.
 //!
 //! Provides:
-//! - [`rule_matches_path`] — check if a rule's glob patterns match a file path.
-//! - [`detect_language`] — map a file extension to a language identifier.
-//! - [`detect_repo_languages`] — collect unique languages from many paths.
+//! - [`rule_matches_path`] - check if a rule's glob patterns match a file path.
+//! - [`detect_language`] - map a file extension to a language identifier.
+//! - [`detect_repo_languages`] - collect unique languages from many paths.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -15,7 +15,7 @@ use crate::Rule;
 /// Check whether any of `rule`'s glob patterns match `path`.
 ///
 /// Returns `false` immediately if `rule.globs` is empty (empty globs means
-/// "no file-path match" — always-apply rules are handled separately by
+/// "no file-path match" - always-apply rules are handled separately by
 /// [`RuleSet::matching`]).
 pub fn rule_matches_path(rule: &Rule, path: &Path) -> bool {
     if rule.globs.is_empty() {

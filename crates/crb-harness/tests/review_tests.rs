@@ -60,7 +60,7 @@ fn review_diff_no_changes() {
         model: "dummy-model".to_string(),
     };
 
-    // Should not panic — even without an API key, review_diff should
+    // Should not panic - even without an API key, review_diff should
     // return Ok(Vec::new()) when there's no diff.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -98,11 +98,11 @@ fn review_diff_with_unstaged_changes() {
     }));
 
     assert!(result.is_ok(), "review_diff should not panic with changes");
-    // With no API key, review_pr will return an error about the client —
+    // With no API key, review_pr will return an error about the client -
     // that's acceptable (graceful failure).
     let findings = result.unwrap();
     // Without an API key, client creation fails: "Failed to create OpenAI client: ..."
-    // This is fine — we just want to ensure no panic.
+    // This is fine - we just want to ensure no panic.
     if let Err(e) = &findings {
         let msg = e.to_string();
         assert!(

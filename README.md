@@ -3,7 +3,7 @@
 Rust-powered code review benchmark harness. Evaluates AI code review agents
 against golden comment datasets using LLM-as-judge.
 
-## Quick Start
+## Quick start
 
 ```bash
 # Set up your API key (OpenAI or OpenRouter)
@@ -15,7 +15,7 @@ export OPENAI_BASE_URL="https://openrouter.ai/api/v1"
 cargo run --release -- -p crb-harness -- --model deepseek/deepseek-v4-pro --judge-model deepseek/deepseek-v4-flash
 ```
 
-## CLI Options
+## CLI options
 
 | Flag            | Env           | Default                      | Description                         |
 | --------------- | ------------- | ---------------------------- | ----------------------------------- |
@@ -28,13 +28,13 @@ cargo run --release -- -p crb-harness -- --model deepseek/deepseek-v4-pro --judg
 | `--dry-run`     | —             | `false`                      | Load config and datasets, then exit |
 | `--resume`      | —             | `false`                      | Skip PRs with existing result files |
 
-## Dry Run
+## Dry run
 
 ```bash
 cargo run -- -p crb-harness -- --dry-run
 ```
 
-## Project Structure
+## Project structure
 
 ## Architecture
 

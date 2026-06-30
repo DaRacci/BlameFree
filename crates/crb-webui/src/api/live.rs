@@ -1,6 +1,6 @@
 //! SSE live streaming handler.
 //!
-//! Provides Server-Sent Events for real-time agent monitoring during
+//! Server-Sent Events for real-time agent monitoring during
 //! active benchmark runs.
 
 use axum::extract::Path as AxumPath;

@@ -134,11 +134,11 @@ pub fn PrDetailPage() -> impl IntoView {
         <div class="pr-detail-page">
             // ─── Breadcrumb ────────────────────────────────────────
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 14px; color: var(--text-secondary, #8b949e);">
-                <a href="/" style="color: var(--accent-blue, #58a6ff); text-decoration: none;">"Home"</a>
+                <A href=move || "/".to_string()>"Home"</A>
                 <span>"/"</span>
-                <a href={move || format!("/runs/{}", run_id())} style="color: var(--accent-blue, #58a6ff); text-decoration: none;">
+                <A href=move || format!("/runs/{}", run_id())>
                     {move || run_id()}
-                </a>
+                </A>
                 <span>"/"</span>
                 <span>{move || pr_key()}</span>
             </div>
@@ -157,12 +157,12 @@ pub fn PrDetailPage() -> impl IntoView {
                     </div>
                 </div>
                 <div class="page-header__actions">
-                    <a
-                        href={move || format!("/runs/{}", run_id())}
-                        class="btn btn--primary"
+                    <A
+                        href=move || format!("/runs/{}", run_id())
+                        attr:class="btn btn--primary"
                     >
-                        "← Back to Run"
-                    </a>
+                        "< Back to Run"
+                    </A>
                 </div>
             </div>
 
@@ -177,12 +177,12 @@ pub fn PrDetailPage() -> impl IntoView {
                 } else if let Some(ref e) = error.get() {
                     view! {
                         <div class="error-state" role="alert">
-                            <div class="error-state__icon">"⚠️"</div>
+                            <div class="error-state__icon">"!"</div>
                             <h3 class="error-state__heading">"Failed to load PR details"</h3>
                             <p class="error-state__message">{e}</p>
                             <div class="error-state__action">
                                 <button class="btn btn--primary" on:click=move |_| fetch_pr()>
-                                    "🔄 Retry"
+                                    "Retry"
                                 </button>
                             </div>
                         </div>
@@ -194,9 +194,12 @@ pub fn PrDetailPage() -> impl IntoView {
                             <div style="text-align: center; padding: 3rem; color: var(--text-secondary, #64748b);">
                                 <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">"No cached agent logs available for this PR."</p>
                                 <p style="font-size: 0.9rem;">"Agent logs are only available when the run was executed with caching enabled and the cache is still present."</p>
-                                <a href={move || format!("/runs/{}", run_id())} class="btn btn--primary" style="margin-top: 1rem; display: inline-block;">
-                                    "← Back to Run"
-                                </a>
+                                <A href=move || format!("/runs/{}", run_id())
+                                    attr:class="btn btn--primary"
+                                    attr:style="margin-top: 1rem; display: inline-block;"
+                                >
+                                    "< Back to Run"
+                                </A>
                             </div>
                         }.into_view()
                     } else {
@@ -281,7 +284,7 @@ pub fn PrDetailPage() -> impl IntoView {
                                                                 view! {
                                                                     <details style="margin-bottom: 8px;" open=true>
                                                                         <summary style="cursor: pointer; color: #94a3b8; font-size: 0.8rem; font-weight: 600; padding: 4px 0;">
-                                                                            "📝 Prompt"
+                                                                            "Prompt"
                                                                         </summary>
                                                                         <pre style="background: #0f172a; padding: 0.75rem; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.4; color: #cbd5e1; margin: 4px 0 0 0;">
                                                                             {prompt_content.unwrap_or_default()}
@@ -295,7 +298,7 @@ pub fn PrDetailPage() -> impl IntoView {
                                                                 view! {
                                                                     <details style="margin-bottom: 8px;" open=true>
                                                                         <summary style="cursor: pointer; color: #94a3b8; font-size: 0.8rem; font-weight: 600; padding: 4px 0;">
-                                                                            "💬 Response"
+                                                                            "Response"
                                                                         </summary>
                                                                         <pre style="background: #0f172a; padding: 0.75rem; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.4; color: #cbd5e1; margin: 4px 0 0 0;">
                                                                             {response_content.unwrap_or_default()}
@@ -309,7 +312,7 @@ pub fn PrDetailPage() -> impl IntoView {
                                                                 view! {
                                                                     <details style="margin-bottom: 0px;">
                                                                         <summary style="cursor: pointer; color: #94a3b8; font-size: 0.8rem; font-weight: 600; padding: 4px 0;">
-                                                                            "🧠 Reasoning"
+                                                                            "Reasoning"
                                                                         </summary>
                                                                         <pre style="background: #0f172a; padding: 0.75rem; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.4; color: #cbd5e1; margin: 4px 0 0 0;">
                                                                             {reasoning_content.unwrap_or_default()}

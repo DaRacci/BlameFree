@@ -232,7 +232,7 @@ pub fn ReplayOverlay(
                                     <ProgressBar
                                         value=progress_pct.get()
                                         max=100u32
-                                        label=format!("{} — {} / {} PRs completed",
+                                        label=format!("{} - {} / {} PRs completed",
                                             status_text.get(),
                                             completed_prs.get(),
                                             total_prs.get()
@@ -290,24 +290,24 @@ pub fn ReplayOverlay(
 
                                                 let rows: Vec<(&str, String, String)> = vec![
                                                     ("Avg F1",
-                                                        o_agg.map(|a| format!("{:.3}", a.avg_f1)).unwrap_or("—".into()),
-                                                        r_agg.map(|a| format!("{:.3}", a.avg_f1)).unwrap_or("—".into())
+                                                        o_agg.map(|a| format!("{:.3}", a.avg_f1)).unwrap_or("-".into()),
+                                                        r_agg.map(|a| format!("{:.3}", a.avg_f1)).unwrap_or("-".into())
                                                     ),
                                                     ("Avg Precision",
-                                                        o_agg.map(|a| format!("{:.3}", a.avg_precision)).unwrap_or("—".into()),
-                                                        r_agg.map(|a| format!("{:.3}", a.avg_precision)).unwrap_or("—".into())
+                                                        o_agg.map(|a| format!("{:.3}", a.avg_precision)).unwrap_or("-".into()),
+                                                        r_agg.map(|a| format!("{:.3}", a.avg_precision)).unwrap_or("-".into())
                                                     ),
                                                     ("Avg Recall",
-                                                        o_agg.map(|a| format!("{:.3}", a.avg_recall)).unwrap_or("—".into()),
-                                                        r_agg.map(|a| format!("{:.3}", a.avg_recall)).unwrap_or("—".into())
+                                                        o_agg.map(|a| format!("{:.3}", a.avg_recall)).unwrap_or("-".into()),
+                                                        r_agg.map(|a| format!("{:.3}", a.avg_recall)).unwrap_or("-".into())
                                                     ),
                                                     ("Total Cost",
-                                                        o_agg.map(|a| format!("${:.4}", a.total_cost)).unwrap_or("—".into()),
-                                                        r_agg.map(|a| format!("${:.4}", a.total_cost)).unwrap_or("—".into())
+                                                        o_agg.map(|a| format!("${:.4}", a.total_cost)).unwrap_or("-".into()),
+                                                        r_agg.map(|a| format!("${:.4}", a.total_cost)).unwrap_or("-".into())
                                                     ),
                                                     ("Duration",
-                                                        o_agg.map(|a| format!("{:.1}s", a.duration_secs)).unwrap_or("—".into()),
-                                                        r_agg.map(|a| format!("{:.1}s", a.duration_secs)).unwrap_or("—".into())
+                                                        o_agg.map(|a| format!("{:.1}s", a.duration_secs)).unwrap_or("-".into()),
+                                                        r_agg.map(|a| format!("{:.1}s", a.duration_secs)).unwrap_or("-".into())
                                                     ),
                                                     ("Total PRs",
                                                         format!("{}", orig_results_len),
@@ -349,10 +349,10 @@ pub fn ReplayOverlay(
                                                         .or_else(|| repl_pr.map(|p| format!("#{}", p.pr_number)))
                                                         .unwrap_or_else(|| format!("#{}", i));
 
-                                                    let orig_f1 = orig_pr.and_then(|p| p.f1).map(|v| format!("{:.3}", v)).unwrap_or("—".into());
-                                                    let repl_f1 = repl_pr.and_then(|p| p.f1).map(|v| format!("{:.3}", v)).unwrap_or("—".into());
-                                                    let orig_cost = orig_pr.and_then(|p| p.cost).map(|v| format!("${:.4}", v)).unwrap_or("—".into());
-                                                    let repl_cost = repl_pr.and_then(|p| p.cost).map(|v| format!("${:.4}", v)).unwrap_or("—".into());
+                                                    let orig_f1 = orig_pr.and_then(|p| p.f1).map(|v| format!("{:.3}", v)).unwrap_or("-".into());
+                                                    let repl_f1 = repl_pr.and_then(|p| p.f1).map(|v| format!("{:.3}", v)).unwrap_or("-".into());
+                                                    let orig_cost = orig_pr.and_then(|p| p.cost).map(|v| format!("${:.4}", v)).unwrap_or("-".into());
+                                                    let repl_cost = repl_pr.and_then(|p| p.cost).map(|v| format!("${:.4}", v)).unwrap_or("-".into());
 
                                                     view! {
                                                         <tr>

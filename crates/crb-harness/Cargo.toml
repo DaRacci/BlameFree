@@ -8,6 +8,7 @@ name = "crb-harness"
 path = "src/main.rs"
 
 [features]
+default = ["reduce-diff"]
 reduce-diff = []
 
 [dependencies]

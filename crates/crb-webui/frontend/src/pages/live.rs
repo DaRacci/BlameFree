@@ -27,7 +27,7 @@ impl PerAgentState {
     }
 }
 
-/// State for a single PR — holds one agent pane per role.
+/// State for a single PR - holds one agent pane per role.
 #[derive(Debug, Clone)]
 struct PrState {
     pr_key: String,
@@ -130,7 +130,7 @@ pub fn LivePage() -> impl IntoView {
 
     // ─── Derived signals ──────────────────────────────────────────────
 
-    // The currently selected PR — auto-select first on initial data
+    // The currently selected PR - auto-select first on initial data
     let _pr_list = move || {
         let order = pr_order.get();
         let states = pr_states.get();
@@ -174,15 +174,15 @@ pub fn LivePage() -> impl IntoView {
                             let s = status.get();
                             match s.as_str() {
                                 "connecting" => format!("Live: {}", run_id()),
-                                "running" => format!("🔴 Live: {}", run_id()),
-                                "complete" => format!("✅ {} (completed)", run_id()),
+                                "running" => format!("Live: {}", run_id()),
+                                "complete" => format!("{} (completed)", run_id()),
                                 s => format!("{}: {}", s, run_id()),
                             }
                         }}
                     </span>
                 </div>
                 <div class="page-header__actions">
-                    <a href={format!("/runs/{}", run_id())} class="btn btn--ghost">"⬅ Back"</a>
+                    <a href={format!("/runs/{}", run_id())} class="btn btn--ghost">"< Back"</a>
                 </div>
             </div>
 
@@ -207,11 +207,11 @@ pub fn LivePage() -> impl IntoView {
                 } else if s.starts_with("error") || s == "no_run_id" {
                     view! {
                         <div class="error-state" role="alert">
-                            <div class="error-state__icon">"⚠️"</div>
+                            <div class="error-state__icon">"!"</div>
                             <h3 class="error-state__heading">"Connection lost"</h3>
                             <p class="error-state__message">{format!("Status: {}", s)}</p>
                             <div class="error-state__action">
-                                <button class="btn btn--primary">"🔄 Reconnect"</button>
+                                <button class="btn btn--primary">"Reconnect"</button>
                             </div>
                         </div>
                     }.into_view()
@@ -269,7 +269,7 @@ pub fn LivePage() -> impl IntoView {
                                                 }
                                                 on:click=move |_| set_sel.set(Some(click_key.clone()))
                                             >
-                                                {if completed { "✅ " } else { "" }}
+                                                {if completed { "✓ " } else { "" }}
                                                 {key.clone()}
                                             </button>
                                         }

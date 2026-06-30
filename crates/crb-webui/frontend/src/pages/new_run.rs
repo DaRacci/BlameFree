@@ -425,7 +425,7 @@ pub fn NewRunPage() -> impl IntoView {
                                             <div class="checkbox-group" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border, #30363d); border-radius: 6px; padding: 8px;">
                                                 {prs.into_iter().map(|pr| {
                                                     let is_checked = sel.contains(&pr.key);
-                                                    let label = format!("{} — {}", pr.repo, pr.title);
+                                                    let label = format!("{} - {}", pr.repo, pr.title);
                                                     view! {
                                                         <label class="checkbox-label" style="padding: 4px 0;">
                                                             <input
@@ -502,7 +502,7 @@ pub fn NewRunPage() -> impl IntoView {
                             if submitting.get() {
                                 "Creating..."
                             } else {
-                                "🚀 Start Benchmark"
+                                "Start Benchmark"
                             }
                         }}
                     </button>

@@ -8,9 +8,9 @@ use tracing::info;
 /// Clone/fetch all repos referenced in the dataset into a unified benchmark directory.
 ///
 /// Layout:
-///   {benchmark_dir}/base-repos/{owner}_{repo}/    — shallow clones, never checked out directly
-///   {benchmark_dir}/diffs/                          — pre-extracted per-PR diffs
-///   {benchmark_dir}/worktrees/{owner}_{repo}_{pr}/  — persistent per-PR worktrees
+///   {benchmark_dir}/base-repos/{owner}_{repo}/    - shallow clones, never checked out directly
+///   {benchmark_dir}/diffs/                          - pre-extracted per-PR diffs
+///   {benchmark_dir}/worktrees/{owner}_{repo}_{pr}/  - persistent per-PR worktrees
 pub fn run(dataset_dir: &Path, benchmark_dir: &Path) -> Result<()> {
     let entries = crb_reporting::load_golden_datasets(dataset_dir)?;
 

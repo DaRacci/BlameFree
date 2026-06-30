@@ -94,12 +94,15 @@ pub struct PrResultJson {
 #[derive(Debug, Clone, Serialize)]
 pub struct PrResultResponse {
     pub pr_number: u32,
+    pub pr_key: String,
     pub title: String,
     pub f1: Option<f64>,
     pub precision: Option<f64>,
     pub recall: Option<f64>,
     pub cost: Option<f64>,
     pub status: Option<String>,
+    #[serde(default)]
+    pub has_agents: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -661,6 +664,9 @@ pub async fn get_run(
     let mut model = "unknown".to_string();
     let mut duration_secs = 0.0f64;
 
+    // Resolve cache dir once for agent checking
+    let cache_dir = resolve_cache_dir(&state.output_dir, &id);
+
     for entry in entries.flatten() {
         let file_path = entry.path();
         if file_path.extension().map_or(true, |e| e != "json") {
@@ -709,15 +715,27 @@ pub async fn get_run(
                         .next()
                         .and_then(|s| s.parse::<u32>().ok())
                         .unwrap_or(0);
+                    // pr_key is the output filename stem (sanitized PR title)
+                    let pr_key = file_path
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    let pr_key_for_agents = pr_key.clone();
 
                     results.push(PrResultResponse {
                         pr_number,
+                        pr_key,
                         title: pr.pr_title,
                         f1: Some(pr.metrics.f1),
                         precision: Some(pr.metrics.precision),
                         recall: Some(pr.metrics.recall),
                         cost: pr.cost.as_ref().map(|c| c.total_usd),
                         status: Some("done".to_string()),
+                        has_agents: cache_dir.as_ref().map_or(false, |cd| {
+                            let pr_dir = cd.join(&pr_key_for_agents);
+                            pr_dir.is_dir() && pr_dir.join("agents").is_dir()
+                        }),
                     });
                 }
                 Err(e) => {
@@ -806,7 +824,9 @@ pub async fn start_run(
 
     // Calculate total PRs before constructing ActiveRun so the frontend
     // can see it immediately when polling GET /api/runs/:id
-    let dataset_dir = PathBuf::from(&config.dataset_dir);
+    // Resolve dataset directory: the config stores just the dataset ID (e.g. "golden_comments"),
+    // but the actual path is relative to the server's base dataset_dir (e.g. "datasets/golden_comments").
+    let dataset_dir = state.dataset_dir.join(&config.dataset_dir);
     let total_prs = count_prs_in_dataset(&dataset_dir);
 
     let (tx, _rx) = tokio::sync::broadcast::channel::<crate::events::DashboardEvent>(1024);
@@ -833,6 +853,7 @@ pub async fn start_run(
     let active_runs = state.active_runs.clone();
     let config_clone = config.clone();
     let benchmark_dir = state.benchmark_dir.clone();
+    let dataset_dir_clone = dataset_dir.clone();
 
     tokio::spawn(async move {
         if let Err(e) = harness::run_harness(
@@ -842,6 +863,7 @@ pub async fn start_run(
             benchmark_dir.as_deref(),
             tx,
             active_runs,
+            &dataset_dir_clone,
         )
         .await
         {
@@ -965,11 +987,13 @@ fn read_agent_log_file(cache_dir: &Path, pr_key: &str, role: &str, suffix: &str)
 }
 
 /// Resolve the actual cache directory for a given run, trying multiple layouts:
-/// 1. `output_dir.parent()/cache/<run_id>/` (nested by run_id)
-/// 2. `output_dir.parent()/cache/` (flat, no run_id subdirectory)
+/// 1. `output_dir/<run_id>/cache/` (harness writes agents here)
+/// 2. `output_dir.parent()/cache/<run_id>/` (nested by run_id)
+/// 3. `output_dir.parent()/cache/` (flat, no run_id subdirectory)
 fn resolve_cache_dir(output_dir: &Path, run_id: &str) -> Option<PathBuf> {
     let base_dir = output_dir.parent().unwrap_or(Path::new("."));
     let candidates = [
+        output_dir.join(run_id).join("cache"),
         base_dir.join("cache").join(run_id),
         base_dir.join("cache"),
     ];
@@ -1269,17 +1293,18 @@ pub async fn start_replay(
     tracing::info!("POST /api/runs/{}/replay", id);
 
     let base_dir = state.output_dir.parent().unwrap_or(Path::new("."));
-    let cache_dir = base_dir.join("cache").join(&id);
+    let cache_dir = match resolve_cache_dir(&state.output_dir, &id) {
+        Some(d) => d,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("Cache not available for run: {}", id)})),
+            )
+                .into_response();
+        }
+    };
     let run_output_dir = state.output_dir.join(&id);
     let summary_path = run_output_dir.join("_summary.json");
-
-    if !cache_dir.exists() || !cache_dir.is_dir() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": format!("Cache not available for run: {}", id)})),
-        )
-            .into_response();
-    }
 
     if !summary_path.exists() {
         return (

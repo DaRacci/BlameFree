@@ -83,7 +83,7 @@ issues. Respond with a JSON array of findings.";
 /// (e.g. `{diff}`, `{role}`, `{file_list}`, `{language}`).
 ///
 /// If `workdir` is `Some`, four filesystem tools are registered on the agent:
-/// `read_file`, `grep`, `terminal`, and `list_dir` — all scoped to the given
+/// `read_file`, `grep`, `terminal`, and `list_dir` - all scoped to the given
 /// working directory (typically the PR worktree checkout).  If `workdir` is
 /// `None`, no tools are registered and the agent operates on the diff text alone.
 pub fn build_agent(

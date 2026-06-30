@@ -15,44 +15,6 @@ pub fn RunDetailPage() -> impl IntoView {
     let (loading, set_loading) = create_signal(true);
     let (error, set_error) = create_signal::<Option<String>>(None);
 
-    // ─── Log viewer state ─────────────────────────────────────
-    let (logs_list, set_logs_list) = create_signal::<Option<LogsListResponse>>(None);
-    let (logs_loading, set_logs_loading) = create_signal(false);
-    let (show_logs, set_show_logs) = create_signal(false);
-
-    let fetch_logs = move || {
-        if !show_logs.get() {
-            set_show_logs.set(true);
-        }
-        if logs_list.get().is_some() || logs_loading.get() {
-            return;
-        }
-        set_logs_loading.set(true);
-        let run_id = run_id();
-        let set_logs = set_logs_list.clone();
-        let set_loading = set_logs_loading.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            let url = api_url(&format!("/api/runs/{}/logs", run_id));
-            match gloo_net::http::Request::get(&url).send().await {
-                Ok(r) if r.ok() => match r.json::<LogsListResponse>().await {
-                    Ok(logs) => {
-                        set_logs.set(Some(logs));
-                    }
-                    Err(e) => {
-                        log::error!("Failed to parse logs list: {}", e);
-                    }
-                },
-                Ok(r) => {
-                    log::error!("Logs list fetch returned status: {}", r.status());
-                }
-                Err(e) => {
-                    log::error!("Logs list fetch error: {}", e);
-                }
-            }
-            set_loading.set(false);
-        });
-    };
-
     let _fetch = create_local_resource(
         move || run_id(),
         move |id| {
@@ -131,46 +93,70 @@ pub fn RunDetailPage() -> impl IntoView {
         });
     };
 
+    // ─── Replay state signals ──────────────────────────────
+    let (show_replay, set_show_replay) = create_signal(false);
+    let (replay_loading, set_replay_loading) = create_signal(false);
+
+    let run_replay = move |id: String| {
+        set_replay_loading.set(true);
+        let rl = set_replay_loading.clone();
+        let sr = set_show_replay.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = api_url(&format!("/api/runs/{}/replay", id));
+            match gloo_net::http::Request::post(&url).send().await {
+                Ok(r) if r.ok() => {
+                    sr.set(true);
+                }
+                Ok(r) => {
+                    log::error!("Replay start returned status: {}", r.status());
+                }
+                Err(e) => {
+                    log::error!("Replay start error: {}", e);
+                }
+            }
+            rl.set(false);
+        });
+    };
+
     view! {
         <div class="run-detail-page">
             // ─── Back Link ───────────────────────────────────────────
-            <a href="/" class="back-link" style="display: inline-flex; align-items: center; gap: 4px; font-size: 14px; color: var(--text-secondary, #8b949e); margin-bottom: 16px;">
-                "← Dashboard"
-            </a>
+            <A href=move || "/".to_string()>"< Dashboard"</A>
 
             {move || {
                 if loading.get() {
                     view! {
-                        <div class="content-grid content-grid--metrics">
+                        <><div class="content-grid content-grid--metrics">
                             <div class="skeleton skeleton--metric"></div>
                             <div class="skeleton skeleton--metric"></div>
                             <div class="skeleton skeleton--metric"></div>
                             <div class="skeleton skeleton--metric"></div>
                             <div class="skeleton skeleton--metric"></div>
-                        </div>
-                        <div style="margin-top: 24px;">
-                            <div class="skeleton skeleton--heading"></div>
-                            <div class="skeleton skeleton--table-row"></div>
-                            <div class="skeleton skeleton--table-row"></div>
-                            <div class="skeleton skeleton--table-row"></div>
-                        </div>
-                    }.into_view()
-                } else if let Some(e) = error.get() {
-                    view! {
-                        <div class="error-state" role="alert">
-                            <div class="error-state__icon">"⚠️"</div>
-                            <h3 class="error-state__heading">"Failed to load run details"</h3>
-                            <p class="error-state__message">{format!("Error: {e}")}</p>
-                            <div class="error-state__action">
-                                <button class="btn btn--primary" on:click=move |_| set_loading.set(true)>"🔄 Retry"</button>
-                            </div>
-                        </div>
-                    }.into_view()
+                        </div></>
+                    }
+                } else if loading.get() {
+                            view! {
+                                <><div style="text-align: center; padding: 2rem; color: var(--text-secondary, #64748b); font-style: italic;">
+                                    "Loading run details..."
+                                </div></>
+                            }
+                        } else if let Some(e) = error.get() {
+                            view! {
+                                <><div class="error-state" role="alert">
+                                    <div class="error-state__icon">"!"</div>
+                                    <h3 class="error-state__heading">"Failed to load run details"</h3>
+                                    <p class="error-state__message">{format!("Error: {e}")}</p>
+                                    <div class="error-state__action">
+                                        <button class="btn btn--primary" on:click=move |_| set_loading.set(true)>"Retry"</button>
+                                    </div>
+                                </div></>
+                            }
                 } else if let Some(detail) = run.get() {
                     let detail_clone = detail.clone();
                     let _detail_clone2 = detail.clone();
                     let detail_id = detail.id.clone();
-                    let detail_id_logs = detail.id.clone();
+                    let detail_id_replay = detail.id.clone();
+                    let detail4_id_replay = detail.id.clone();
                     let results_clone = detail.results.clone();
                     let results_clone2 = detail.results.clone();
 
@@ -206,7 +192,7 @@ pub fn RunDetailPage() -> impl IntoView {
                                     if is_running {
                                         view! {
                                             <a href=&live_url class="btn btn--success">
-                                                <span class="btn__icon">"🔴"</span>
+                                                <span class="btn__icon">""</span>
                                                 <span class="btn__label">"Live View"</span>
                                             </a>
                                         }.into_view()
@@ -214,12 +200,6 @@ pub fn RunDetailPage() -> impl IntoView {
                                         view! { <span></span> }.into_view()
                                     }
                                 }}
-                                <button
-                                    class="btn btn--primary"
-                                    on:click=move |_| fetch_logs()
-                                >
-                                    {move || if show_logs.get() { "📋 Logs" } else { "📋 View Logs" }}
-                                </button>
                             </div>
                         </div>
 
@@ -269,20 +249,20 @@ pub fn RunDetailPage() -> impl IntoView {
                                         </div>
                                     }.into_view()
                                 } else {
-                                    let cost_str = detail_clone.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "—".into());
-                                    let dur_str = detail_clone.duration_secs.map(|d| format!("{:.0}s", d)).unwrap_or_else(|| "—".into());
+                                    let cost_str = detail_clone.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into());
+                                    let dur_str = detail_clone.duration_secs.map(|d| format!("{:.0}s", d)).unwrap_or_else(|| "-".into());
                                     view! {
                                         <div class="metric-card">
                                             <p class="metric-card__label">"F1 Score"</p>
-                                            <p class="metric-card__value">"—"</p>
+                                            <p class="metric-card__value">"-"</p>
                                         </div>
                                         <div class="metric-card">
                                             <p class="metric-card__label">"Precision"</p>
-                                            <p class="metric-card__value">"—"</p>
+                                            <p class="metric-card__value">"-"</p>
                                         </div>
                                         <div class="metric-card">
                                             <p class="metric-card__label">"Recall"</p>
-                                            <p class="metric-card__value">"—"</p>
+                                            <p class="metric-card__value">"-"</p>
                                         </div>
                                         <div class="metric-card">
                                             <p class="metric-card__label">"Total Cost"</p>
@@ -306,12 +286,12 @@ pub fn RunDetailPage() -> impl IntoView {
                             <table class="table">
                                 <thead>
                                     <tr>
-                                        <th class="table__th table__th--sortable">"# " <span class="table__sort-icon">"↕"</span></th>
-                                        <th class="table__th table__th--sortable">"Title " <span class="table__sort-icon">"↕"</span></th>
-                                        <th class="table__th table__th--sortable">"F1 " <span class="table__sort-icon">"↕"</span></th>
-                                        <th class="table__th table__th--sortable">"Prec " <span class="table__sort-icon">"↕"</span></th>
-                                        <th class="table__th table__th--sortable">"Rec " <span class="table__sort-icon">"↕"</span></th>
-                                        <th class="table__th table__th--sortable">"Cost " <span class="table__sort-icon">"↕"</span></th>
+                                        <th class="table__th table__th--sortable">"# " <span class="table__sort-icon">""</span></th>
+                                        <th class="table__th table__th--sortable">"Title " <span class="table__sort-icon">""</span></th>
+                                        <th class="table__th table__th--sortable">"F1 " <span class="table__sort-icon">""</span></th>
+                                        <th class="table__th table__th--sortable">"Prec " <span class="table__sort-icon">""</span></th>
+                                        <th class="table__th table__th--sortable">"Rec " <span class="table__sort-icon">""</span></th>
+                                        <th class="table__th table__th--sortable">"Cost " <span class="table__sort-icon">""</span></th>
                                         <th class="table__th">"Status"</th>
                                         <th class="table__th">"Details"</th>
                                     </tr>
@@ -328,6 +308,8 @@ pub fn RunDetailPage() -> impl IntoView {
                                         let cost = pr.cost;
                                         let status = pr.status.clone();
                                         let run_id = detail_id.clone();
+                                        let has_agents = pr.has_agents;
+                                        let pr_key = pr.pr_key.clone();
 
                                         let pr_badge = match status.as_deref() {
                                             Some("done") => "badge--success",
@@ -340,10 +322,10 @@ pub fn RunDetailPage() -> impl IntoView {
                                             <tr class="table__row">
                                                 <td class="table__td" style="font-weight: var(--weight-semibold, 600);">{format!("#{}", pr_number)}</td>
                                                 <td class="table__td">{&pr_title}</td>
-                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "—".into())}</td>
-                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{precision.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "—".into())}</td>
-                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{recall.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "—".into())}</td>
-                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "—".into())}</td>
+                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into())}</td>
+                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{precision.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into())}</td>
+                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{recall.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into())}</td>
+                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "-".into())}</td>
                                                 <td class="table__td">
                                                     <span class=format!("badge {}", pr_badge)>
                                                         <span class="badge__dot"></span>
@@ -351,12 +333,27 @@ pub fn RunDetailPage() -> impl IntoView {
                                                     </span>
                                                 </td>
                                                 <td class="table__td">
-                                                    <a
-                                                        href={format!("/runs/{}/prs/{}", run_id, pr_number)}
-                                                        style="padding: 0.25rem 0.5rem; border: 1px solid #475569; border-radius: 4px; cursor: pointer; background: transparent; color: #94a3b8; font-size: 0.8rem; text-decoration: none; display: inline-block;"
-                                                    >
-                                                        "📋 Logs"
-                                                    </a>
+                                                    {if has_agents {
+                                                        view! {
+                                                            <span style="border: 1px solid #475569; border-radius: 4px; display: inline-block;">
+                                                                <A
+                                                                    href=move || format!("/runs/{}/prs/{}", run_id.clone(), pr_key.clone())
+                                                                    attr:style="padding: 0.25rem 0.5rem; border: 0; background: transparent; color: #94a3b8; font-size: 0.8rem; text-decoration: none; display: inline-block; cursor: pointer;"
+                                                                >
+                                                                    "Logs"
+                                                                </A>
+                                                            </span>
+                                                        }.into_view()
+                                                    } else {
+                                                        view! {
+                                                            <span
+                                                                style="padding: 0.25rem 0.5rem; border: 1px solid #334155; border-radius: 4px; cursor: not-allowed; background: transparent; color: #475569; font-size: 0.8rem; display: inline-block;"
+                                                                title="No cached logs available"
+                                                            >
+                                                                "Logs"
+                                                            </span>
+                                                        }.into_view()
+                                                    }}
                                                 </td>
                                             </tr>
                                         }
@@ -381,9 +378,9 @@ pub fn RunDetailPage() -> impl IntoView {
                                 }
                             >
                                 {move || if convert_loading.get() {
-                                    "⏳ Converting..."
+                                    "Converting..."
                                 } else {
-                                    "📐 Convert to candidates.json"
+                                    "Convert to candidates.json"
                                 }}
                             </button>
                             <button
@@ -396,75 +393,38 @@ pub fn RunDetailPage() -> impl IntoView {
                                 }
                             >
                                 {move || if judge_loading.get() {
-                                    "⏳ Judging..."
+                                    "Judging..."
                                 } else {
-                                    "🧪 Run Python Judge"
+                                    "Run Python Judge"
                                 }}
                             </button>
                         </div>
 
-                        // ─── Judge Results ───────────────────────────
+                        // ─── Judge Status ──────────────────────────────
                         {move || {
-                            if let Some(err) = judge_error.get() {
+                            if let Some(ref err) = judge_error.get() {
                                 view! {
-                                    <div class="card card--error" style="margin-bottom: 12px; border: 1px solid var(--color-danger, #f87171); background: rgba(248, 113, 113, 0.1); padding: 12px; border-radius: 6px;">
-                                        <p style="color: var(--color-danger, #f87171); font-weight: 600; margin: 0 0 4px 0;">"Error"</p>
-                                        <p style="color: var(--text-secondary, #94a3b8); margin: 0; font-size: 0.85rem;">{err}</p>
+                                    <div class="alert alert--danger" role="alert">
+                                        <span class="alert__icon">"✗"</span>
+                                        <span class="alert__message">{err.clone()}</span>
                                     </div>
                                 }.into_view()
-                            } else if let Some(convert) = convert_result.get() {
+                            } else if let Some(ref stats) = convert_result.get() {
                                 view! {
-                                    <div class="card" style="margin-bottom: 12px; padding: 12px; border-radius: 6px; background: var(--bg-card, #1e293b); border: 1px solid var(--border, #334155);">
-                                        <p style="font-weight: 600; margin: 0 0 8px 0; color: var(--accent-green, #4ade80);">
-                                            "✅ Conversion Complete"
-                                        </p>
-                                        <table style="font-size: 0.85rem; width: 100%;">
-                                            <tbody>
-                                                <tr><td style="padding: 4px 8px; color: var(--text-secondary, #94a3b8);">"PRs Converted"</td><td style="padding: 4px 8px;">{format!("{}", convert.pr_count)}</td></tr>
-                                                <tr><td style="padding: 4px 8px; color: var(--text-secondary, #94a3b8);">"Findings"</td><td style="padding: 4px 8px;">{format!("{}", convert.finding_count)}</td></tr>
-                                                <tr><td style="padding: 4px 8px; color: var(--text-secondary, #94a3b8);">"Output"</td><td style="padding: 4px 8px; font-family: monospace; font-size: 0.8rem;">{&convert.candidates_path}</td></tr>
-                                            </tbody>
-                                        </table>
+                                    <div class="alert alert--success" role="alert">
+                                        <span class="alert__icon">"✓"</span>
+                                        <span class="alert__message">
+                                            {format!("Converted {} PRs ({} findings)", stats.pr_count, stats.finding_count)}
+                                        </span>
                                     </div>
                                 }.into_view()
-                            } else {
-                                view! { <span></span> }.into_view()
-                            }
-                        }}
-
-                        {move || {
-                            if let Some(result) = judge_result.get() {
-                                let status_class = if result.success { "badge--success" } else { "badge--danger" };
+                            } else if let Some(ref result) = judge_result.get() {
                                 view! {
-                                    <div class="card" style="margin-bottom: 12px; padding: 12px; border-radius: 6px; background: var(--bg-card, #1e293b); border: 1px solid var(--border, #334155);">
-                                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                                            <span class=format!("badge {}", status_class)>
-                                                {if result.success { "✅ Judge Passed" } else { "❌ Judge Failed" }}
-                                            </span>
-                                        </div>
-                                        <p style="margin: 0 0 8px 0; color: var(--text-secondary, #94a3b8); font-size: 0.85rem;">
+                                    <div class="alert alert--success" role="alert">
+                                        <span class="alert__icon">"✓"</span>
+                                        <span class="alert__message">
                                             {&result.message}
-                                        </p>
-                                        {if !result.stdout.is_empty() {
-                                            view! {
-                                                <details style="margin-bottom: 4px;">
-                                                    <summary style="cursor: pointer; font-size: 0.85rem; color: var(--text-secondary, #94a3b8);">"stdout"</summary>
-                                                    <pre style="background: #0f172a; padding: 8px; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; max-height: 300px; overflow-y: auto; margin-top: 4px;">{&result.stdout}</pre>
-                                                </details>
-                                            }.into_view()
-                                        } else {
-                                            view! { <span></span> }.into_view()
-                                        }}
-                                        {if !result.stderr.is_empty() {
-                                            view! {
-                                                <details>
-                                                    <summary style="cursor: pointer; font-size: 0.85rem; color: var(--text-secondary, #94a3b8);">"stderr"</summary>
-                                                    <pre style="background: #0f172a; padding: 8px; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; max-height: 300px; overflow-y: auto; margin-top: 4px; color: #f87171;">{&result.stderr}</pre>
-                                                </details>
-                                            }.into_view()
-                                        } else {
-                                            view! { <span></span> }.into_view()
-                                        }}
+                                        </span>
                                     </div>
                                 }.into_view()
                             } else {
@@ -472,310 +432,57 @@ pub fn RunDetailPage() -> impl IntoView {
                             }
                         }}
 
-                    // ─── Agent Logs Section ─────────────────────────
-                    {move || {
-                        if show_logs.get() {
-                            let detail_id = detail_id_logs.clone();
-                            view! {
-                                <div style="margin-top: 1.5rem; border-top: 1px solid #334155; padding-top: 1rem;">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                        <h3 style="color: #e2e8f0; margin: 0;">Agent Logs</h3>
-                                        <button
-                                            style="padding: 0.25rem 0.75rem; border: 1px solid #475569; border-radius: 4px; cursor: pointer; background: transparent; color: #94a3b8; font-size: 0.8rem;"
-                                            on:click=move |_| set_show_logs.set(false)
-                                        >
-                                            "✕ Hide Logs"
-                                        </button>
-                                    </div>
-                                    {move || {
-                                        if logs_loading.get() {
-                                            view! {
-                                                <p style="color: #94a3b8; font-style: italic;">
-                                                    "Loading logs..."
-                                                </p>
-                                            }.into_view()
-                                        } else if let Some(ref logs) = logs_list.get() {
-                                            let run_id = detail_id.clone();
-                                            view! {
-                                                <LogViewer logs=logs.clone() run_id=run_id />
-                                            }.into_view()
-                                        } else {
-                                            view! {
-                                                <p style="color: #64748b; font-style: italic;">
-                                                    "No agent logs available for this run."
-                                                </p>
-                                            }.into_view()
-                                        }
-                                    }}
-                                </div>
-                            }.into_view()
-                        } else {
-                            view! { <span></span> }.into_view()
-                        }
-                    }}
-
-                    }.into_view()
-                } else {
-                    view! { <p>"No data."</p> }.into_view()
-                }
-            }}
-        </div>
-    }
-}
-
-#[component]
-fn RunDetailView(detail: RunDetail) -> impl IntoView {
-    let id_clone = detail.id.clone();
-    let live_url = format!("/runs/{}/live", detail.id);
-    let detail2 = detail.clone();
-    let detail3 = detail.clone();
-    let detail4 = detail.clone();
-    let detail4_id = detail4.id.clone();
-    let detail4_id_replay = detail4_id.clone();
-
-    // Tab state
-    let (active_tab, set_active_tab) = create_signal("results".to_string());
-    // Replay overlay visibility
-    let (show_replay, set_show_replay) = create_signal(false);
-
-    let status_badge_class = match detail.status.as_str() {
-        "completed" | "done" => "badge badge-done",
-        "failed" => "badge badge-failed",
-        "running" | "pending" => "badge badge-running",
-        _ => "badge badge-pending",
-    };
-
-    // Fetch logs list (for Logs tab)
-    let (logs_list, set_logs_list) = create_signal::<Option<LogsListResponse>>(None);
-    let (logs_loading, set_logs_loading) = create_signal(false);
-    let (logs_fetched, set_logs_fetched) = create_signal(false);
-
-    // Fetch logs only when Logs tab is activated
-    let fetch_logs = move || {
-        if !logs_fetched.get() && !logs_loading.get() {
-            set_logs_loading.set(true);
-            let run_id = id_clone.clone();
-            let set_logs = set_logs_list.clone();
-            let set_loading = set_logs_loading.clone();
-            let set_fetched = set_logs_fetched.clone();
-            wasm_bindgen_futures::spawn_local(async move {
-                let url = api_url(&format!("/api/runs/{}/logs", run_id));
-                match gloo_net::http::Request::get(&url).send().await {
-                    Ok(r) if r.ok() => match r.json::<LogsListResponse>().await {
-                        Ok(logs) => {
-                            set_logs.set(Some(logs));
-                        }
-                        Err(e) => {
-                            log::error!("Failed to parse logs list: {}", e);
-                        }
-                    },
-                    Ok(r) => {
-                        log::error!("Logs list fetch returned status: {}", r.status());
-                    }
-                    Err(e) => {
-                        log::error!("Logs list fetch error: {}", e);
-                    }
-                }
-                set_loading.set(false);
-                set_fetched.set(true);
-            });
-        }
-    };
-
-    let tab_style = |tab_name: &str| -> String {
-        let is_active = active_tab.with(|t| t == tab_name);
-        let base = "padding: 0.5rem 1.25rem; border: none; cursor: pointer; font-weight: 600; font-size: 0.9rem; border-radius: 6px 6px 0 0;";
-        if is_active {
-            format!("{} background: #334155; color: #e2e8f0;", base)
-        } else {
-            format!("{} background: transparent; color: #64748b;", base)
-        }
-    };
-
-    view! {
-        // ─── Page header ──────────────────────────────────────────────
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
-            <div>
-                <h1 style="margin: 0;">{&detail.name}</h1>
-                <p style="color: #64748b; margin: 0.25rem 0 0 0;">
-                    {format!("Model: ")}<span class="code">{&detail.model}</span>
-                    {format!(" — ")}
-                    <span class=status_badge_class>{&detail.status}</span>
-                </p>
-            </div>
-            <div style="display: flex; gap: 0.5rem;">
-                {move || {
-                    if detail.status == "running" || detail.status == "pending" {
-                        view! {
-                            <a href=&live_url class="btn btn-green" target="_blank">
-                                "Live View"
-                            </a>
-                        }.into_view()
-                    } else {
-                        view! { <span></span> }.into_view()
-                    }
-                }}
-                <button
-                    style="padding: 0.5rem 1.25rem; border: none; border-radius: 6px; cursor: pointer; background: #3b82f6; color: white; font-weight: 600; font-size: 0.9rem;"
-                    on:click=move |_| set_show_replay.set(true)
-                >
-                    "▶ Replay Run"
-                </button>
-            </div>
-        </div>
-
-        // ─── Status progress ─────────────────────────────────────────
-        {move || {
-            let total = detail.results.len() as u32;
-            let done = detail.results.iter().filter(|r| r.status.as_deref() == Some("done")).count() as u32;
-            if total > 0 {
-                let pct = if total > 0 { (done as f64 / total as f64 * 100.0) as u32 } else { 0 };
-                view! {
-                    <div class="card">
-                        <h3>"Progress"</h3>
-                        <ProgressBar value=done max=total label=format!("{} / {} PRs ({})", done, total, pct) />
-                    </div>
-                }.into_view()
-            } else {
-                view! { <span></span> }.into_view()
-            }
-        }}
-
-        // ─── Metrics ─────────────────────────────────────────────────
-        <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;">
-            {move || {
-                if let Some(ref agg) = detail2.aggregate {
-                    view! {
-                        <MetricsCard value={format!("{:.3}", agg.avg_f1)} label="Avg F1" />
-                        <MetricsCard value={format!("{:.3}", agg.avg_precision)} label="Avg Precision" />
-                        <MetricsCard value={format!("{:.3}", agg.avg_recall)} label="Avg Recall" />
-                        <MetricsCard value={format!("${:.4}", agg.total_cost)} label="Total Cost" />
-                        <MetricsCard value={format!("{:.1}s", agg.duration_secs)} label="Duration" />
-                        <MetricsCard value={format!("{}", agg.total_prs)} label="Total PRs" />
-                    }.into_view()
-                } else {
-                    let cost_str = detail2.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "—".into());
-                    let dur_str = detail2.duration_secs.map(|d| format!("{:.1}s", d)).unwrap_or_else(|| "—".into());
-                    view! {
-                        <MetricsCard value="—" label="Avg F1" />
-                        <MetricsCard value="—" label="Avg Precision" />
-                        <MetricsCard value="—" label="Avg Recall" />
-                        <MetricsCard value=cost_str label="Total Cost" />
-                        <MetricsCard value=dur_str label="Duration" />
-                        <MetricsCard value={format!("{}", detail2.results.len())} label="Total PRs" />
-                    }.into_view()
-                }
-            }}
-        </div>
-
-        // ─── Tab bar ──────────────────────────────────────────────────
-        <div style="display: flex; gap: 0; border-bottom: 2px solid #334155; margin-bottom: 0;">
-            <button
-                style=tab_style("results")
-                on:click=move |_| set_active_tab.set("results".to_string())
-            >
-                "Results"
-            </button>
-            <button
-                style=tab_style("logs")
-                on:click=move |_| {
-                    set_active_tab.set("logs".to_string());
-                    fetch_logs();
-                }
-            >
-                "Logs"
-            </button>
-        </div>
-
-        // ─── Tab content ──────────────────────────────────────────────
-        <div style="background: #1e2938; border-radius: 0 0 8px 8px; padding: 1rem; border: 1px solid #334155; border-top: none;">
-            {move || {
-                let tab = active_tab.get();
-                if tab == "results" {
-                    // ─── Results tab ──────────────────────────────────
-                    view! {
-                        <div class="card" style="background: transparent; border: none; padding: 0;">
-                            <h3>"PR Results"</h3>
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>"#"</th>
-                                        <th>"Title"</th>
-                                        <th>"F1"</th>
-                                        <th>"Precision"</th>
-                                        <th>"Recall"</th>
-                                        <th>"Cost"</th>
-                                        <th>"Status"</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {detail3.results.iter().map(|pr| {
-                                        let status_class = match pr.status.as_deref() {
-                                            Some("done") => "badge badge-done",
-                                            Some("failed") => "badge badge-failed",
-                                            Some("reviewing") => "badge badge-running",
-                                            _ => "badge badge-pending",
-                                        };
-                                        let status_text = pr.status.clone().unwrap_or_else(|| "pending".into());
-                                        view! {
-                                            <tr>
-                                                <td style="font-weight: 600;">{format!("#{}", pr.pr_number)}</td>
-                                                <td>{&pr.title}</td>
-                                                <td style="font-family: monospace;">{pr.f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "—".into())}</td>
-                                                <td style="font-family: monospace;">{pr.precision.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "—".into())}</td>
-                                                <td style="font-family: monospace;">{pr.recall.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "—".into())}</td>
-                                                <td style="font-family: monospace;">{pr.cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "—".into())}</td>
-                                                <td><span class=status_class>{status_text}</span></td>
-                                            </tr>
-                                        }
-                                    }).collect::<Vec<_>>()}
-                                </tbody>
-                            </table>
-                        </div>
-                    }.into_view()
-                } else {
-                    // ─── Logs tab ────────────────────────────────────
-                    let detail4_id = detail4_id.clone();
-                    view! {
-                        <div>
-                            <h3 style="color: #e2e8f0; margin: 0 0 1rem 0;">"Agent Logs"</h3>
-                            {move || {
-                                if logs_loading.get() {
+                        // ─── Replay Section ────────────────────────────
+                        {
+                            let replay_id = detail_id_replay.clone();
+                            move || {
+                                let run = run.get();
+                                let is_completed = run.as_ref().map(|r| {
+                                    r.status == "completed" || r.status == "done"
+                                }).unwrap_or(false);
+                                if is_completed {
+                                    let replay_id = replay_id.clone();
                                     view! {
-                                        <p style="color: #94a3b8; font-style: italic;">
-                                            "Loading logs..."
-                                        </p>
-                                    }.into_view()
-                                } else if let Some(ref logs) = logs_list.get() {
-                                    let run_id = detail4_id.clone();
-                                    view! {
-                                        <LogViewer logs=logs.clone() run_id=run_id />
+                                        <div class="section-header" style="margin-top: 24px;">
+                                            <h2 class="section-header__title">"Replay"</h2>
+                                        </div>
+                                        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                                            <button
+                                                class="btn btn--primary"
+                                                disabled=move || replay_loading.get()
+                                                on:click=move |_| run_replay(replay_id.clone())
+                                            >
+                                                {move || if replay_loading.get() {
+                                                    "Starting replay..."
+                                                } else {
+                                                    "Replay from Cache"
+                                                }}
+                                            </button>
+                                        </div>
                                     }.into_view()
                                 } else {
-                                    view! {
-                                        <p style="color: #64748b; font-style: italic;">
-                                            "Click the Logs tab to load agent logs."
-                                        </p>
-                                    }.into_view()
+                                    view! { <span></span> }.into_view()
                                 }
-                            }}
-                        </div>
-                    }.into_view()
+                            }
+                        }
+
+                        // ─── Replay Overlay ───────────────────────────
+                        {move || {
+                            let run_id = detail4_id_replay.clone();
+                            view! {
+                                <ReplayOverlay
+                                    visible=show_replay.get()
+                                    on_close=move || set_show_replay.set(false)
+                                    run_id=run_id
+                                />
+                            }
+                        }}
+                    }
+                } else {
+                    view! { <><p>"No data."</p></> }
                 }
             }}
         </div>
-
-        // ─── Replay Overlay ───────────────────────────────────────────
-        {move || {
-            let run_id = detail4_id_replay.clone();
-            view! {
-                <ReplayOverlay
-                    visible=show_replay.get()
-                    on_close=move || set_show_replay.set(false)
-                    run_id=run_id
-                />
-            }
-        }}
     }
 }
 

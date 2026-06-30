@@ -22,10 +22,10 @@ pub fn AgentPane(
 
     let status_icon = move || -> &'static str {
         match status.get().as_str() {
-            "reviewing" | "running" => "🟡",
-            "done" | "completed" => "✅",
-            "failed" => "❌",
-            _ => "⏸",
+            "reviewing" | "running" => "●",
+            "done" | "completed" => "✓",
+            "failed" => "✗",
+            _ => "||",
         }
     };
 

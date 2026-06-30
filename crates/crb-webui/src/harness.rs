@@ -42,16 +42,15 @@ pub async fn run_harness(
     benchmark_dir: Option<&Path>,
     webui_tx: broadcast::Sender<DashboardEvent>,
     active_runs: Arc<RwLock<HashMap<String, ActiveRun>>>,
+    dataset_dir: &Path,
 ) -> anyhow::Result<()> {
     let output_subdir = output_dir.join(run_id);
-    let dataset_dir = Path::new(&config.dataset_dir);
     let cache_dir = output_subdir.join("cache");
 
     tracing::info!(
         run_id = %run_id,
         output_dir = %output_subdir.display(),
-        model = %config.model,
-        dataset = %config.dataset_dir,
+        dataset = %dataset_dir.display(),
         roles = %config.roles,
         concurrency = config.concurrency,
         "Starting harness run via library"

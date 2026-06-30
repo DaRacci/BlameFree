@@ -1,6 +1,6 @@
 # crb-harness
 
-Main CLI binary for the code review benchmark harness — orchestrates the end-to-end pipeline of loading datasets, running multi-agent LLM reviewers, judging findings against golden comments, and producing reports.
+Main CLI binary for the code review benchmark harness - orchestrates the end-to-end pipeline of loading datasets, running multi-agent LLM reviewers, judging findings against golden comments, and producing reports.
 
 - Loads golden comment datasets from JSON files and evaluates LLM reviewer agents against them
 - Supports concurrent evaluation of multiple PRs with configurable agents (SA, CL, AR, SEC roles)

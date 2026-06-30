@@ -1,7 +1,7 @@
-//! Port of `severity_auditor.py` — rule-based severity downgrade for inflated findings.
+//! Port of `severity_auditor.py` - rule-based severity downgrade for inflated findings.
 //!
 //! Detects and downgrades inflated severity labels in code-review findings.
-//! Only downgrades — never upgrades. Protects genuine security, data-integrity,
+//! Only downgrades - never upgrades. Protects genuine security, data-integrity,
 //! and correctness bugs via NEVER_DOWNGRADE_PATTERNS guard.
 //!
 //! Adds audit trail fields: `severity_audited` and `severity_audit_reason`.
@@ -305,7 +305,7 @@ pub fn downgrade_quantum(category: &str) -> Option<i32> {
 /// 1. Check NEVER_DOWNGRADE patterns first (if matched, skip downgrade)
 /// 2. Check multi-agent CRITICAL findings (skip if ≥2 agents)
 /// 3. Check against INFLATED_PATTERNS; if matched, apply downgrade
-/// 4. Only downgrade — never upgrade
+/// 4. Only downgrade - never upgrade
 /// 5. Add `severity_audited` and `severity_audit_reason` fields
 pub fn apply_severity_auditor(findings: Vec<Map<String, Value>>) -> Vec<Map<String, Value>> {
     let mut modified_findings = Vec::new();
@@ -378,7 +378,7 @@ pub fn apply_severity_auditor(findings: Vec<Map<String, Value>>) -> Vec<Map<Stri
             if let Some(quantum) = downgrade_quantum(match_category) {
                 let new_severity = compute_new_severity(&current_severity, quantum);
 
-                // Only downgrade — never upgrade
+                // Only downgrade - never upgrade
                 if severity_value(&new_severity) >= severity_value(&current_severity) {
                     modified.insert(
                         "severity".to_string(),

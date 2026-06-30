@@ -278,7 +278,7 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
 
 /// A [`rig_core::tool::Tool`] wrapper around an MCP transport + tool schema.
 ///
-/// Each instance represents a single discovered tool from a remote MCP server.
+/// Each instance wraps a single discovered tool from a remote MCP server.
 /// The call is delegated to the underlying transport, and results are cached
 /// by SHA256 of (tool_name, args_json) for the lifetime of the tool.
 pub struct RigCoreMcpTool {

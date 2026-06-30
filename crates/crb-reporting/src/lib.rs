@@ -24,7 +24,7 @@ pub struct GoldenCommentEntry {
 /// A single golden (expected) comment for a PR.
 ///
 /// The `file` and `line` fields are populated from the dataset JSON when available.
-/// Not all datasets include this metadata — both fields are `Option` to handle
+/// Not all datasets include this metadata - both fields are `Option` to handle
 /// datasets that only have `comment` and `severity`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoldenComment {
@@ -49,7 +49,7 @@ pub struct CostSummary {
     pub total_usd: f64,
     pub agent_cache_hit_rate: f64,
     pub judge_cache_hit_rate: f64,
-    // NEW FIELDS — marked #[serde(default)] for backward compat with old JSON
+    // NEW FIELDS - marked #[serde(default)] for backward compat with old JSON
     #[serde(default)]
     pub agent_cached_input_tokens: usize,
     #[serde(default)]

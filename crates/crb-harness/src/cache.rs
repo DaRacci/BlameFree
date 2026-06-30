@@ -901,7 +901,7 @@ impl LlmCache {
                         Ok(i) => i,
                         Err(_) => {
                             result.corrupted_indices_found += 1;
-                            // Corrupted — will rebuild
+                            // Corrupted - will rebuild
                             CacheIndex::new()
                         }
                     },
