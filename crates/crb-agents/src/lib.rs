@@ -58,6 +58,13 @@ injection flaws, authentication/authorization issues, data exposure, input \
 validation problems, and other security weaknesses. Focus on OWASP Top 10 \
 categories. Respond with a JSON array of findings.";
 
+const GEN_PREAMBLE: &str = "\
+IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
+
+You are a generalist code reviewer covering static analysis, code logic, \
+architecture, and security. Analyze the diff for all types of issues. \
+Respond with a JSON array of findings.";
+
 const DEFAULT_PREAMBLE: &str = "\
 IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
 
@@ -107,6 +114,7 @@ pub fn build_agent(
             "CL" => CL_PREAMBLE.to_string(),
             "AR" => AR_PREAMBLE.to_string(),
             "SEC" => SEC_PREAMBLE.to_string(),
+            "GEN" => GEN_PREAMBLE.to_string(),
             _ => DEFAULT_PREAMBLE.to_string(),
         },
     };
@@ -153,4 +161,4 @@ pub fn build_agent(
 }
 
 /// All supported agent role identifiers.
-pub const AGENT_ROLES: &[&str] = &["SA", "CL", "AR", "SEC"];
+pub const AGENT_ROLES: &[&str] = &["SA", "CL", "AR", "SEC", "GEN"];

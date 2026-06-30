@@ -254,6 +254,7 @@ pub enum Role {
     CL,
     AR,
     SEC,
+    GEN,
 }
 
 impl Role {
@@ -264,6 +265,7 @@ impl Role {
             Role::CL => "CL",
             Role::AR => "AR",
             Role::SEC => "SEC",
+            Role::GEN => "GEN",
         }
     }
 }
@@ -916,6 +918,21 @@ pub async fn evaluate_pr_with_consensus(
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
 ) -> Result<(PrResult, Usage, Usage, usize, usize, usize)> {
+    // ── Adaptive agent dispatch (EXP-016) ──────────────────────────────
+    #[cfg(feature = "exp16_adaptive_agents")]
+    let roles: Vec<&str> = {
+        if should_use_single_agent(diff, 3, 200) {
+            tracing::info!(
+                "EXP-016: adaptive dispatch — small PR detected, using single GEN agent"
+            );
+            vec!["GEN"]
+        } else {
+            roles.to_vec()
+        }
+    };
+    #[cfg(not(feature = "exp16_adaptive_agents"))]
+    let roles = roles;
+
     // Build one reviewer config per selected role.
     let reviewer_configs: Vec<ReviewerConfig> = roles
         .iter()
@@ -925,6 +942,7 @@ pub async fn evaluate_pr_with_consensus(
                 "CL" => Role::CL,
                 "AR" => Role::AR,
                 "SEC" => Role::SEC,
+                "GEN" => Role::GEN,
                 other => panic!("Unknown role string: {other}"),
             };
             ReviewerConfig {
@@ -1016,6 +1034,95 @@ pub async fn evaluate_pr_with_consensus(
         report.judge_api_calls,
         report.judge_cache_hits,
     ))
+}
+
+// ── Adaptive agent dispatch (EXP-016) ───────────────────────────────────────
+
+/// Languages that always trigger the full 4-agent panel regardless of PR size.
+const FULL_PANEL_LANGUAGES: &[&str] = &[
+    ".go", ".rs", ".java", ".cpp", ".cc", ".cxx", ".c", ".ts", ".tsx",
+];
+
+/// Determine whether the given diff touches any of the full-panel languages.
+///
+/// Scans each `diff --git` line for file paths ending with one of the
+/// [`FULL_PANEL_LANGUAGES`] extensions (Go, Rust, Java, C++, C, TypeScript).
+pub fn diff_touches_full_panel_languages(diff: &str) -> bool {
+    for line in diff.lines() {
+        if line.starts_with("diff --git ") {
+            // Format: diff --git a/path b/path
+            // We extract the "b/" path
+            if let Some(bpath) = line.rsplit(' ').next() {
+                let bpath = bpath.trim();
+                if let Some(ext_start) = bpath.rfind('.') {
+                    let ext = &bpath[ext_start..];
+                    if FULL_PANEL_LANGUAGES.contains(&ext) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Parse a unified diff to count the number of changed files.
+pub fn count_diff_files(diff: &str) -> usize {
+    diff.lines()
+        .filter(|line| line.starts_with("diff --git "))
+        .count()
+}
+
+/// Parse a unified diff to count the total number of changed lines (additions
+/// and deletions, excluding `---`/`+++` hunk headers and `diff --git` lines).
+pub fn count_diff_lines(diff: &str) -> usize {
+    diff.lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            // Count lines starting with + or - but not +++/---
+            (trimmed.starts_with('+') || trimmed.starts_with('-'))
+                && !trimmed.starts_with("+++")
+                && !trimmed.starts_with("---")
+        })
+        .count()
+}
+
+/// Decide whether a single GEN agent should be used for this diff.
+///
+/// Returns `true` (single GEN agent) when:
+/// - File count ≤ `max_files`
+/// - Total changed lines ≤ `max_lines`
+/// - The diff does NOT touch any full-panel languages
+///
+/// Returns `false` (full 4-agent panel) otherwise.
+pub fn should_use_single_agent(diff: &str, max_files: usize, max_lines: usize) -> bool {
+    let file_count = count_diff_files(diff);
+    let line_count = count_diff_lines(diff);
+
+    tracing::debug!(
+        "Adaptive dispatch: {} files, {} changed lines (threshold: {} files / {} lines)",
+        file_count,
+        line_count,
+        max_files,
+        max_lines,
+    );
+
+    // Safety override: full panel for complex languages
+    if diff_touches_full_panel_languages(diff) {
+        tracing::debug!(
+            "Adaptive dispatch: full panel forced (diff touches safety-override language)"
+        );
+        return false;
+    }
+
+    // Small PR: single GEN agent
+    if file_count <= max_files && line_count <= max_lines {
+        tracing::debug!("Adaptive dispatch: using single GEN agent (small PR)");
+        return true;
+    }
+
+    tracing::debug!("Adaptive dispatch: using full 4-agent panel (complex PR)");
+    false
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -1298,5 +1405,247 @@ mod tests {
         let deserialized: GoldenComment = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.file, "src/lib.rs");
         assert_eq!(deserialized.line, 100);
+    }
+
+    // ── Adaptive dispatch tests (EXP-016) ──────────────────────────
+
+    #[test]
+    fn test_count_diff_files_empty() {
+        assert_eq!(count_diff_files(""), 0);
+    }
+
+    #[test]
+    fn test_count_diff_files_single() {
+        let diff = "\
+diff --git a/src/main.rs b/src/main.rs
+index abc..def 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,3 +1,4 @@
+ fn main() {
+-    println!(\"hello\");
++    println!(\"hello world\");
+ }
+";
+        assert_eq!(count_diff_files(diff), 1);
+    }
+
+    #[test]
+    fn test_count_diff_files_multiple() {
+        let diff = "\
+diff --git a/src/main.rs b/src/main.rs
+index a..b
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1 +1 @@
+-foo
++bar
+diff --git a/src/lib.rs b/src/lib.rs
+index c..d
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1 +1 @@
+-baz
++qux
+diff --git a/Cargo.toml b/Cargo.toml
+index e..f
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1 +1 @@
+-old
++new
+";
+        assert_eq!(count_diff_files(diff), 3);
+    }
+
+    #[test]
+    fn test_count_diff_lines_empty() {
+        assert_eq!(count_diff_lines(""), 0);
+    }
+
+    #[test]
+    fn test_count_diff_lines_counts_additions_and_deletions() {
+        let diff = "\
+diff --git a/src/main.rs b/src/main.rs
+index abc..def 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,5 +1,6 @@
+ fn main() {
+-    let x = 1;
+-    let y = 2;
++    let x = 10;
++    let y = 20;
++    let z = 30;
+     println!(\"done\");
+ }
+";
+        // Changed lines: -    let x = 1;  -    let y = 2;  +    let x = 10;
+        //                +    let y = 20;  +    let z = 30;
+        assert_eq!(count_diff_lines(diff), 5);
+    }
+
+    #[test]
+    fn test_count_diff_lines_excludes_headers() {
+        let diff = "\
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1 +1 @@
+-foo
++bar
+";
+        // Lines starting with + or - but not +++ or ---: -foo, +bar
+        assert_eq!(count_diff_lines(diff), 2);
+    }
+
+    #[test]
+    fn test_diff_touches_full_panel_languages_no_match() {
+        let diff = "\
+diff --git a/src/main.py b/src/main.py
+diff --git a/README.md b/README.md
+";
+        assert!(!diff_touches_full_panel_languages(diff));
+    }
+
+    #[test]
+    fn test_diff_touches_full_panel_languages_rust() {
+        let diff = "\
+diff --git a/src/main.rs b/src/main.rs
+diff --git a/README.md b/README.md
+";
+        assert!(diff_touches_full_panel_languages(diff));
+    }
+
+    #[test]
+    fn test_diff_touches_full_panel_languages_typescript() {
+        let diff = "\
+diff --git a/src/foo.ts b/src/foo.ts
+";
+        assert!(diff_touches_full_panel_languages(diff));
+    }
+
+    #[test]
+    fn test_diff_touches_full_panel_languages_go() {
+        let diff = "\
+diff --git a/server.go b/server.go
+";
+        assert!(diff_touches_full_panel_languages(diff));
+    }
+
+    #[test]
+    fn test_diff_touches_full_panel_languages_java() {
+        let diff = "\
+diff --git a/Main.java b/Main.java
+";
+        assert!(diff_touches_full_panel_languages(diff));
+    }
+
+    #[test]
+    fn test_diff_touches_full_panel_languages_cpp() {
+        let diff = "\
+diff --git a/main.cpp b/main.cpp
+";
+        assert!(diff_touches_full_panel_languages(diff));
+    }
+
+    #[test]
+    fn test_should_use_single_agent_small_pr() {
+        // 1 file, 2 changed lines — well under threshold
+        let diff = "\
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -1 +1 @@
+-old
++new
+";
+        assert!(should_use_single_agent(diff, 3, 200));
+    }
+
+    #[test]
+    fn test_should_use_single_agent_too_many_files() {
+        let diff = "\
+diff --git a/a.txt b/a.txt
+--- a/a.txt
++++ b/a.txt
+@@ -1 +1 @@
+-old
++new
+diff --git a/b.txt b/b.txt
+--- a/b.txt
++++ b/b.txt
+@@ -1 +1 @@
+-old
++new
+diff --git a/c.txt b/c.txt
+--- a/c.txt
++++ b/c.txt
+@@ -1 +1 @@
+-old
++new
+diff --git a/d.txt b/d.txt
+--- a/d.txt
++++ b/d.txt
+@@ -1 +1 @@
+-old
++new
+";
+        // 4 files > 3 → full panel
+        assert!(!should_use_single_agent(diff, 3, 200));
+    }
+
+    #[test]
+    fn test_should_use_single_agent_too_many_lines() {
+        let diff = "\
+diff --git a/a.txt b/a.txt
+--- a/a.txt
++++ b/a.txt
+@@ -1,100 +1,300 @@
+".to_string() + &(0..250).map(|i| format!("+line_{}\n", i)).collect::<String>();
+        // > 200 lines → full panel
+        assert!(!should_use_single_agent(&diff, 3, 200));
+    }
+
+    #[test]
+    fn test_should_use_single_agent_safety_override_rust() {
+        // Small diff but Rust file → full panel
+        let diff = "\
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1 +1 @@
+-old
++new
+";
+        assert!(!should_use_single_agent(diff, 3, 200));
+    }
+
+    #[test]
+    fn test_should_use_single_agent_safety_override_go() {
+        let diff = "\
+diff --git a/server.go b/server.go
+--- a/server.go
++++ b/server.go
+@@ -1 +1 @@
+-old
++new
+";
+        assert!(!should_use_single_agent(diff, 3, 200));
+    }
+
+    #[test]
+    fn test_role_gen_variant() {
+        // Verify GEN is a valid Role variant
+        let role = Role::GEN;
+        assert_eq!(role.as_str(), "GEN");
+    }
+
+    #[test]
+    fn test_role_gen_serialization() {
+        let json = serde_json::to_string(&Role::GEN).unwrap();
+        assert_eq!(json, "\"GEN\"");
+        let deserialized: Role = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, Role::GEN);
     }
 }

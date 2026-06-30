@@ -10,6 +10,8 @@ path = "src/main.rs"
 [features]
 default = ["reduce-diff"]
 reduce-diff = []
+exp16_adaptive_agents = []
+exp16_max_findings_tuning = []
 
 [dependencies]
 crb-agents = { path = "../crb-agents" }

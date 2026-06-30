@@ -16,6 +16,8 @@
 //! tool-calling preamble for inclusion in the agent's system prompt.
 
 pub mod budget;
+#[cfg(feature = "exp14_template_vars")]
+pub mod language_detector;
 pub mod git;
 pub mod grep;
 pub mod list_dir;

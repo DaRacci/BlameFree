@@ -1010,6 +1010,17 @@ pub async fn evaluate_pr_consensus(
         .filter(|r| !r.is_empty())
         .collect();
 
+    // ── Adaptive agent dispatch (EXP-016) ──────────────────────────────
+    #[cfg(feature = "exp16_adaptive_agents")]
+    let parsed_roles: Vec<&str> = {
+        if crb_consensus::should_use_single_agent(diff, 3, 200) {
+            info!("EXP-016 adaptive dispatch: small PR, using single GEN agent");
+            vec!["GEN"]
+        } else {
+            parsed_roles
+        }
+    };
+
     if diff.is_empty() {
         info!("No diff - returning empty result");
         return Ok((Vec::new(), Vec::new()));

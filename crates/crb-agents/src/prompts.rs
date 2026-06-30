@@ -4,6 +4,8 @@
 //! falls back to built-in defaults when no file-based prompt is available.
 //! Supports simple `{variable}` template substitution.
 
+pub mod gen;
+
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -145,6 +147,10 @@ You are a code reviewer. Analyze the provided code diff and identify any \
 issues. Respond with a JSON array of findings."
             .to_string(),
     );
+    m.insert(
+        "GEN".to_string(),
+        gen::GEN_PROMPT.to_string(),
+    );
     m
 }
 
@@ -253,7 +259,8 @@ mod tests {
         assert!(defaults.contains_key("AR"));
         assert!(defaults.contains_key("SEC"));
         assert!(defaults.contains_key("DEFAULT"));
-        assert_eq!(defaults.len(), 5);
+        assert!(defaults.contains_key("GEN"));
+        assert_eq!(defaults.len(), 6);
     }
 
     #[test]

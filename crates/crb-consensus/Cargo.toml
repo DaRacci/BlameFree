@@ -3,6 +3,10 @@ name = "crb-consensus"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+exp16_adaptive_agents = []
+
 [dependencies]
 crb-agents = { path = "../crb-agents" }
 crb-judge = { path = "../crb-judge" }

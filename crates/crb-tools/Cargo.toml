@@ -3,6 +3,10 @@ name = "crb-tools"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = []
+exp14_template_vars = []
+
 [dependencies]
 rig-core = { workspace = true }
 anyhow = { workspace = true }
