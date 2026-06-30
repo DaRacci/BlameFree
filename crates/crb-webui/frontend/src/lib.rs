@@ -242,7 +242,26 @@ pub struct AgentLogResponse {
     pub role: String,
     pub prompt: Option<String>,
     pub response: Option<String>,
+    pub reasoning: Option<String>,
     pub available: bool,
+}
+
+/// Frontend type matching backend PrAgentsResponse
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrAgentsResponse {
+    pub run_id: String,
+    pub pr_key: String,
+    pub pr_title: String,
+    pub agents: Vec<PrAgentEntry>,
+    pub has_output: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrAgentEntry {
+    pub role: String,
+    pub has_prompt: bool,
+    pub has_response: bool,
+    pub has_reasoning: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -364,6 +383,7 @@ pub fn App() -> impl IntoView {
                         <Routes>
                             <Route path="/" view=|| view! { <pages::home::HomePage /> } />
                             <Route path="/runs/:id" view=|| view! { <pages::run_detail::RunDetailPage /> } />
+                            <Route path="/runs/:id/prs/:pr_key" view=|| view! { <pages::pr_detail::PrDetailPage /> } />
                             <Route path="/runs/:id/live" view=|| view! { <pages::live::LivePage /> } />
                             <Route path="/new" view=|| view! { <pages::new_run::NewRunPage /> } />
                             <Route path="/*" view=|| view! {

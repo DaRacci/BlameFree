@@ -91,6 +91,7 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         .route("/api/config/datasets", get(crate::api::list_datasets))
         .route("/api/runs/:id/logs", get(crate::api::list_logs))
         .route("/api/runs/:id/logs/:pr_key/:role", get(crate::api::get_agent_log))
+        .route("/api/runs/:id/prs/:pr_key", get(crate::api::get_pr_agents))
         .route("/api/runs/:id/replay", post(crate::api::start_replay))
         .route("/api/runs/:id/replay/status", get(crate::api::replay_status))
         .route("/api/runs/:id/convert", post(crate::api::convert_to_candidates))

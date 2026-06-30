@@ -266,7 +266,27 @@ pub struct AgentLogResponse {
     pub role: String,
     pub prompt: Option<String>,
     pub response: Option<String>,
+    pub reasoning: Option<String>,
     pub available: bool,
+}
+
+/// Response from GET /api/runs/:id/prs/:pr_key — lightweight PR detail for the tiled log page
+#[derive(Debug, Clone, Serialize)]
+pub struct PrAgentsResponse {
+    pub run_id: String,
+    pub pr_key: String,
+    pub pr_title: String,
+    pub agents: Vec<PrAgentEntry>,
+    pub has_output: bool,
+}
+
+/// Per-agent availability entry
+#[derive(Debug, Clone, Serialize)]
+pub struct PrAgentEntry {
+    pub role: String,
+    pub has_prompt: bool,
+    pub has_response: bool,
+    pub has_reasoning: bool,
 }
 
 /// Response from POST /api/runs/:id/replay
@@ -962,60 +982,117 @@ fn resolve_cache_dir(output_dir: &Path, run_id: &str) -> Option<PathBuf> {
 }
 
 /// GET /api/runs/:id/logs — list available log files for a run
+///
+/// Merges PRs from the output directory (canonical source) with cache entries.
+/// All PRs with output files are shown; cache entries add agent roles where available.
 pub async fn list_logs(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> impl IntoResponse {
     tracing::info!("GET /api/runs/{}/logs", id);
 
-    let cache_dir = match resolve_cache_dir(&state.output_dir, &id) {
-        Some(d) => d,
-        None => {
-            return Json(LogsListResponse {
-                run_id: id,
-                cache_available: false,
-                prs: vec![],
-            })
-            .into_response();
-        }
-    };
+    let run_path = state.output_dir.join(&id);
+    let cache_dir = resolve_cache_dir(&state.output_dir, &id);
 
-    let mut prs = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&cache_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            let pr_key = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
-            // Skip non-PR directories (like _summary)
-            if pr_key.starts_with('_') || pr_key.starts_with('.') {
-                continue;
-            }
-
-            // Try to find a PR title from the output directory
-            let pr_title = resolve_pr_title(&state.output_dir, &id, &pr_key);
-
-            let agents = scan_agent_roles(&path);
-
-            if !agents.is_empty() {
-                prs.push(PrLogsEntry {
-                    pr_key,
-                    pr_title,
-                    agents,
-                });
+    // 1. Collect PR keys from the output directory (canonical source)
+    let mut output_prs: Vec<(String, String)> = Vec::new(); // (pr_key, pr_title)
+    if run_path.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&run_path) {
+            for entry in entries.flatten() {
+                let file_path = entry.path();
+                if file_path.extension().map_or(true, |e| e != "json") {
+                    continue;
+                }
+                let fname = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                if fname == "_summary.json" || fname.starts_with("candidates") {
+                    continue;
+                }
+                // Filename stem is the pr_key
+                let stem = file_path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                if stem.is_empty() || stem.starts_with('_') || stem.starts_with('.') {
+                    continue;
+                }
+                // Try to get a more descriptive title from the JSON content
+                let title = if let Ok(content) = std::fs::read_to_string(&file_path) {
+                    if let Ok(pr) = serde_json::from_str::<PrResultJson>(&content) {
+                        if !pr.pr_title.is_empty() {
+                            pr.pr_title
+                        } else {
+                            stem.clone()
+                        }
+                    } else {
+                        stem.clone()
+                    }
+                } else {
+                    stem.clone()
+                };
+                output_prs.push((stem, title));
             }
         }
     }
 
+    // 2. Collect PR keys from the cache directory (supplementary)
+    let mut cached_prs: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    if let Some(ref cd) = cache_dir {
+        if let Ok(entries) = std::fs::read_dir(cd) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let pr_key = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                if pr_key.starts_with('_') || pr_key.starts_with('.') {
+                    continue;
+                }
+                cached_prs.insert(pr_key);
+            }
+        }
+    }
+
+    // 3. Merge: use output PRs as canonical list, supplement with cache-only PRs
+    let mut all_pr_keys: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for (key, _) in &output_prs {
+        all_pr_keys.insert(key.clone());
+    }
+    for key in &cached_prs {
+        all_pr_keys.insert(key.clone());
+    }
+
+    let mut prs: Vec<PrLogsEntry> = Vec::new();
+    for pr_key in &all_pr_keys {
+        // Resolve title: first from output PRs, then from cache (via resolve_pr_title)
+        let pr_title = output_prs
+            .iter()
+            .find(|(k, _)| k == pr_key)
+            .map(|(_, t)| t.clone())
+            .unwrap_or_else(|| resolve_pr_title(&state.output_dir, &id, pr_key));
+
+        // Scan agents from cache if available
+        let agents = if let Some(ref cd) = cache_dir {
+            let pr_dir = cd.join(pr_key);
+            if pr_dir.is_dir() {
+                scan_agent_roles(&pr_dir)
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        };
+
+        prs.push(PrLogsEntry {
+            pr_key: pr_key.clone(),
+            pr_title,
+            agents,
+        });
+    }
+
     Json(LogsListResponse {
         run_id: id,
-        cache_available: true,
+        cache_available: cache_dir.is_some(),
         prs,
     })
     .into_response()
@@ -1075,6 +1152,7 @@ pub async fn get_agent_log(
                 role,
                 prompt: None,
                 response: None,
+                reasoning: None,
                 available: false,
             })
             .into_response();
@@ -1089,6 +1167,7 @@ pub async fn get_agent_log(
             role,
             prompt: None,
             response: None,
+            reasoning: None,
             available: false,
         })
         .into_response();
@@ -1096,7 +1175,8 @@ pub async fn get_agent_log(
 
     let prompt = read_agent_log_file(&cache_dir, &pr_key, &role, "prompt");
     let response = read_agent_log_file(&cache_dir, &pr_key, &role, "response");
-    let available = prompt.is_some() || response.is_some();
+    let reasoning = read_agent_log_file(&cache_dir, &pr_key, &role, "reasoning");
+    let available = prompt.is_some() || response.is_some() || reasoning.is_some();
 
     Json(AgentLogResponse {
         run_id: id,
@@ -1104,7 +1184,79 @@ pub async fn get_agent_log(
         role,
         prompt,
         response,
+        reasoning,
         available,
+    })
+    .into_response()
+}
+
+/// GET /api/runs/:id/prs/:pr_key — get agent availability info for a single PR
+///
+/// Returns the PR title and which agents have cached log files.
+pub async fn get_pr_agents(
+    State(state): State<AppState>,
+    AxumPath((id, pr_key)): AxumPath<(String, String)>,
+) -> impl IntoResponse {
+    tracing::info!("GET /api/runs/{}/prs/{}", id, pr_key);
+
+    let cache_dir = resolve_cache_dir(&state.output_dir, &id);
+    let pr_title = resolve_pr_title(&state.output_dir, &id, &pr_key);
+
+    // Scan agents from cache
+    let agents = if let Some(ref cd) = cache_dir {
+        let pr_dir = cd.join(&pr_key);
+        if pr_dir.is_dir() {
+            let roles = scan_agent_roles(&pr_dir);
+            // For each role, check which log files exist
+            let mut entries: Vec<PrAgentEntry> = Vec::new();
+            for role in roles {
+                let has_prompt = read_agent_log_file(cd, &pr_key, &role, "prompt").is_some();
+                let has_response = read_agent_log_file(cd, &pr_key, &role, "response").is_some();
+                let has_reasoning = read_agent_log_file(cd, &pr_key, &role, "reasoning").is_some();
+                entries.push(PrAgentEntry { role, has_prompt, has_response, has_reasoning });
+            }
+            entries
+        } else {
+            vec![]
+        }
+    } else {
+        vec![]
+    };
+
+    // Check if output file exists for this PR
+    let has_output = {
+        let run_path = state.output_dir.join(&id);
+        if run_path.is_dir() {
+            let pr_key_lower = pr_key.to_lowercase();
+            let mut found = false;
+            if let Ok(entries) = std::fs::read_dir(&run_path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().map_or(true, |e| e != "json") {
+                        continue;
+                    }
+                    let fname = path.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+                    if fname == "_summary.json" || fname.starts_with("candidates") {
+                        continue;
+                    }
+                    if fname.contains(&pr_key_lower) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            found
+        } else {
+            false
+        }
+    };
+
+    Json(PrAgentsResponse {
+        run_id: id,
+        pr_key,
+        pr_title,
+        agents,
+        has_output,
     })
     .into_response()
 }

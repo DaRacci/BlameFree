@@ -2,7 +2,7 @@ use crate::components::log_viewer::LogViewer;
 use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crate::components::replay_overlay::ReplayOverlay;
-use crate::{api_url, ConvertStats, JudgeResult, LogsListResponse, PrDetailResponse, PrResult, RunDetail};
+use crate::{api_url, ConvertStats, JudgeResult, LogsListResponse, PrResult, RunDetail};
 use leptos::*;
 use leptos_router::*;
 
@@ -322,58 +322,12 @@ pub fn RunDetailPage() -> impl IntoView {
                                         results_clone2.iter().map(|pr: &PrResult| {
                                         let pr_number = pr.pr_number;
                                         let pr_title = pr.title.clone();
-                                        let pr_title_for_fetch = pr_title.clone();
                                         let f1 = pr.f1;
                                         let precision = pr.precision;
                                         let recall = pr.recall;
                                         let cost = pr.cost;
                                         let status = pr.status.clone();
                                         let run_id = detail_id.clone();
-
-                                        // Per-PR detail fetch state
-                                        let (pr_detail, set_pr_detail) = create_signal::<Option<PrDetailResponse>>(None);
-                                        let (detail_loading, set_detail_loading) = create_signal(false);
-                                        let (detail_open, set_detail_open) = create_signal(false);
-
-                                        let toggle_detail = move |_| {
-                                            let currently_open = detail_open.get();
-                                            set_detail_open.set(!currently_open);
-                                            if !currently_open && pr_detail.get().is_none() && !detail_loading.get() {
-                                                set_detail_loading.set(true);
-                                                let run_id = run_id.clone();
-                                                let fetch_title = pr_title_for_fetch.clone();
-                                                let set_detail = set_pr_detail.clone();
-                                                let set_loading = set_detail_loading.clone();
-                                                wasm_bindgen_futures::spawn_local(async move {
-                                                    // URL-encode the title to handle spaces, special chars
-                                                    let encoded_title = js_sys::encode_uri_component(&fetch_title)
-                                                        .as_string()
-                                                        .unwrap_or_else(|| fetch_title.clone());
-                                                    let url = api_url(&format!("/api/runs/{}/pr-detail/{}", run_id, encoded_title));
-                                                    match gloo_net::http::Request::get(&url).send().await {
-                                                        Ok(r) if r.ok() => {
-                                                            let text = r.text().await.unwrap_or_default();
-                                                            match serde_json::from_str::<PrDetailResponse>(&text) {
-                                                                Ok(detail) => {
-                                                                    set_detail.set(Some(detail));
-                                                                }
-                                                                Err(e) => {
-                                                                    let preview = if text.len() > 500 { format!("{}... (truncated)", &text[..500]) } else { text.clone() };
-                                                                    log::error!("PR detail parse error: {:?}. Body preview: {}", e, preview);
-                                                                }
-                                                            }
-                                                        }
-                                                        Ok(r) => {
-                                                            log::error!("PR detail fetch status: {} URL: {}", r.status(), url);
-                                                        }
-                                                        Err(e) => {
-                                                            log::error!("PR detail fetch/parse error: {:?}. URL: {}", e, url);
-                                                        }
-                                                    }
-                                                    set_loading.set(false);
-                                                });
-                                            }
-                                        };
 
                                         let pr_badge = match status.as_deref() {
                                             Some("done") => "badge--success",
@@ -397,132 +351,14 @@ pub fn RunDetailPage() -> impl IntoView {
                                                     </span>
                                                 </td>
                                                 <td class="table__td">
-                                                    <button
-                                                        style="padding: 0.25rem 0.5rem; border: 1px solid #475569; border-radius: 4px; cursor: pointer; background: transparent; color: #94a3b8; font-size: 0.8rem;"
-                                                        on:click=toggle_detail
+                                                    <a
+                                                        href={format!("/runs/{}/prs/{}", run_id, pr_number)}
+                                                        style="padding: 0.25rem 0.5rem; border: 1px solid #475569; border-radius: 4px; cursor: pointer; background: transparent; color: #94a3b8; font-size: 0.8rem; text-decoration: none; display: inline-block;"
                                                     >
-                                                        {move || if detail_open.get() { "▲ Hide" } else { "▼ Details" }}
-                                                    </button>
+                                                        "📋 Logs"
+                                                    </a>
                                                 </td>
                                             </tr>
-                                            {move || {
-                                                if detail_open.get() {
-                                                    if let Some(ref pd) = pr_detail.get() {
-                                                        let has_verdicts = !pd.verdicts.is_empty();
-                                                        let match_count = pd.verdicts.iter().filter(|v| v.match_).count();
-                                                        let total_verdicts = pd.verdicts.len();
-                                                        let cost_str = pd.cost.as_ref().map(|c| format!("${:.4}", c.total_usd)).unwrap_or_else(|| "N/A".into());
-                                                        let agent_tokens = pd.cost.as_ref().map(|c| format!("{} in / {} out", c.agent_tokens_in, c.agent_tokens_out)).unwrap_or_else(|| "N/A".into());
-                                                        let judge_tokens = pd.cost.as_ref().map(|c| format!("{} in / {} out", c.judge_tokens_in, c.judge_tokens_out)).unwrap_or_else(|| "N/A".into());
-                                                        view! {
-                                                            <tr class="table__row">
-                                                                <td colspan="8" style="padding: 0;">
-                                                                    <div style="background: #0f172a; padding: 1rem; margin: 0.25rem 0; border-radius: 6px;">
-                                                                        // Summary stats
-                                                                        <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem; font-size: 0.85rem;">
-                                                                            <span style="color: #64748b;">Findings: <strong style="color: #e2e8f0;">{pd.findings_count}</strong> / {pd.golden_count} golden</span>
-                                                                            <span style="color: #64748b;">Cost: <strong style="color: #e2e8f0;">{cost_str}</strong></span>
-                                                                            <span style="color: #64748b;">Verdicts: <strong style="color: #e2e8f0;">{match_count}/{total_verdicts}</strong> matched</span>
-                                                                            <span style="color: #64748b;">Agent tokens: <strong style="color: #e2e8f0;">{agent_tokens}</strong></span>
-                                                                            <span style="color: #64748b;">Judge tokens: <strong style="color: #e2e8f0;">{judge_tokens}</strong></span>
-                                                                        </div>
-                                                                        // Verdicts
-                                                                        {if has_verdicts {
-                                                                            view! {
-                                                                                <h4 style="color: #e2e8f0; margin: 0 0 0.5rem 0; font-size: 0.9rem;">"Judge Verdicts"</h4>
-                                                                                {pd.verdicts.iter().map(|v| {
-                                                                                    let badge_cls = if v.match_ { "✅ Matched" } else { "❌ Not Matched" };
-                                                                                    let confidence_pct = format!("{:.0}%", v.confidence * 100.0);
-                                                                                    let border_color = if v.match_ { "#22c55e" } else { "#ef4444" };
-                                                                                    let style_str = format!("background: #1e2938; padding: 0.75rem; margin-bottom: 0.5rem; border-radius: 4px; border-left: 3px solid {};", border_color);
-                                                                                    view! {
-                                                                                        <div style={style_str}>
-                                                                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
-                                                                                                <span style="font-weight: 600; font-size: 0.85rem;">{badge_cls}</span>
-                                                                                                <span style="color: #64748b; font-size: 0.8rem;">{confidence_pct}</span>
-                                                                                            </div>
-                                                                                            <pre style="margin: 0; font-size: 0.8rem; color: #cbd5e1; white-space: pre-wrap; word-break: break-word; line-height: 1.4;">{&v.reasoning}</pre>
-                                                                                        </div>
-                                                                                    }
-                                                                                }).collect::<Vec<_>>()}
-                                                                            }.into_view()
-                                                                        } else {
-                                                                            view! { <p style="color: #64748b; font-style: italic; font-size: 0.85rem;">"No verdict data available."</p> }.into_view()
-                                                                        }}
-                                                                        // Cost details
-                                                                        {pd.cost.as_ref().map(|c| {
-                                                                            view! {
-                                                                                <details style="margin-top: 0.75rem;">
-                                                                                    <summary style="cursor: pointer; font-size: 0.85rem; color: #64748b;">"Full Cost Breakdown"</summary>
-                                                                                    <div style="margin-top: 0.5rem; padding: 0.75rem; background: #1e2938; border-radius: 4px; font-size: 0.8rem; color: #94a3b8;">
-                                                                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
-                                                                                            <span>Agent calls: {c.agent_call_count}</span>
-                                                                                            <span>Judge calls: {c.judge_call_count}</span>
-                                                                                            <span>Agent tokens in: {c.agent_tokens_in}</span>
-                                                                                            <span>Agent tokens out: {c.agent_tokens_out}</span>
-                                                                                            <span>Judge tokens in: {c.judge_tokens_in}</span>
-                                                                                            <span>Judge tokens out: {c.judge_tokens_out}</span>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </details>
-                                                                            }.into_view()
-                                                                        })}
-                                                                        // Raw agent responses
-                                                                        {if !pd.agent_responses.is_empty() {
-                                                                            view! {
-                                                                                <details style="margin-top: 0.75rem;">
-                                                                                    <summary style="cursor: pointer; font-size: 0.85rem; color: #64748b;">"Raw Agent Responses (" {pd.agent_responses.len()} ")"</summary>
-                                                                                    <div style="margin-top: 0.5rem;">
-                                                                                        {pd.agent_responses.iter().enumerate().map(|(i, resp)| {
-                                                                                            view! {
-                                                                                                <div style="margin-bottom: 0.5rem;">
-                                                                                                    <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 0.25rem;">"Agent #" {i + 1}</div>
-                                                                                                    <pre style="background: #0f172a; padding: 0.75rem; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.4; color: #cbd5e1;">{resp}</pre>
-                                                                                                </div>
-                                                                                            }
-                                                                                        }).collect::<Vec<_>>()}
-                                                                                    </div>
-                                                                                </details>
-                                                                            }.into_view()
-                                                                        } else {
-                                                                            view! {}.into_view()
-                                                                        }}
-                                                                        // Raw findings JSON
-                                                                        {if !pd.findings.is_null() {
-                                                                            let findings_str = pd.findings.to_string();
-                                                                            if !findings_str.is_empty() && findings_str != "null" {
-                                                                                view! {
-                                                                                    <details style="margin-top: 0.75rem;">
-                                                                                        <summary style="cursor: pointer; font-size: 0.85rem; color: #64748b;">"Raw Findings"</summary>
-                                                                                        <pre style="background: #0f172a; padding: 0.75rem; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.4; color: #cbd5e1;">{findings_str}</pre>
-                                                                                    </details>
-                                                                                }.into_view()
-                                                                            } else {
-                                                                                view! {}.into_view()
-                                                                            }
-                                                                        } else {
-                                                                            view! {}.into_view()
-                                                                        }}                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        }.into_view()
-                                                    } else if detail_loading.get() {
-                                                        view! {
-                                                            <tr class="table__row">
-                                                                <td colspan="8" style="padding: 0.75rem; text-align: center; color: #64748b; font-style: italic; font-size: 0.85rem;">
-                                                                    "Loading PR details..."
-                                                                </td>
-                                                            </tr>
-                                                        }.into_view()
-                                                    } else {
-                                                        view! {
-                                                            <tr class="table__row" style="display: none;"></tr>
-                                                        }.into_view()
-                                                    }
-                                                } else {
-                                                    view! { <tr class="table__row" style="display: none;"></tr> }.into_view()
-                                                }
-                                            }}
                                         }
                                     }).collect::<Vec<_>>()}
                                     }

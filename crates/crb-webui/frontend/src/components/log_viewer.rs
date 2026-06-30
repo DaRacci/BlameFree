@@ -122,6 +122,14 @@ pub fn LogViewer(
                                                                 <pre style=style_pre>
                                                                     {log.response.clone().unwrap_or_else(|| "No response available".into())}
                                                                 </pre>
+                                                                {log.reasoning.as_ref().filter(|r| !r.is_empty()).map(|r| {
+                                                                    view! {
+                                                                        <>
+                                                                            <span style=style_label>"🧠 Reasoning:"</span>
+                                                                            <pre style=style_pre>{r.clone()}</pre>
+                                                                        </>
+                                                                    }.into_view()
+                                                                })}
                                                             </>
                                                         }.into_view()
                                                     } else {

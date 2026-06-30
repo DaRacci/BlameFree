@@ -230,6 +230,9 @@ pub trait CacheBackend: Send + Sync {
     /// including the API usage data.
     fn save_agent_with_key_and_usage(&self, _cache_key: &str, _role: &str, _prompt: &str, _response: &str, _usage: &Usage) {}
 
+    /// Save agent reasoning/thinking text with a content-addressed cache key.
+    fn save_agent_reasoning_with_key(&self, _cache_key: &str, _role: &str, _reasoning: &str) {}
+
     /// Save a judge verdict with a content-addressed cache key.
     fn save_judge_with_key(&self, _cache_key: &str, _golden: &str, _finding: &str, _verdict_json: &str) {}
 
@@ -491,6 +494,27 @@ pub async fn run_reviewers(
                 // Cache the response + usage if cache is active
                 if let Some(ref cache) = cache {
                     cache.save_agent_with_key_and_usage(&cache_key, role.as_str(), &diff, &response, &usage);
+                }
+
+                // Capture reasoning/thinking content from the response messages
+                let reasoning_text = resp.messages.as_ref().and_then(|msgs| {
+                    let mut reasoning = String::new();
+                    for msg in msgs {
+                        if let Message::Assistant { content, .. } = msg {
+                            for item in content.iter() {
+                                if let AssistantContent::Reasoning(r) = item {
+                                    use std::fmt::Write;
+                                    let _ = write!(reasoning, "{}", r.display_text());
+                                }
+                            }
+                        }
+                    }
+                    if reasoning.is_empty() { None } else { Some(reasoning) }
+                });
+
+                // Save reasoning to cache if available
+                if let (Some(ref cache), Some(ref reasoning)) = (cache, &reasoning_text) {
+                    cache.save_agent_reasoning_with_key(&cache_key, role.as_str(), reasoning);
                 }
 
                 // Log raw response for debugging
