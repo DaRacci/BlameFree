@@ -8,8 +8,9 @@ name = "crb-harness"
 path = "src/main.rs"
 
 [features]
-default = ["reduce-diff"]
+default = ["reduce-diff", "exp13_v6_pipeline"]
 reduce-diff = []
+exp13_v6_pipeline = []
 
 [dependencies]
 crb-agents = { path = "../crb-agents" }
@@ -33,3 +34,4 @@ dotenvy = { workspace = true }
 tempfile = "3"
 regex = { workspace = true }
 sha2 = { workspace = true }
+toml = "0.8"

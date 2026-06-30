@@ -729,24 +729,44 @@ async fn run_benchmark(
     };
 
     // ── Prompt library ───────────────────────────────────────────────────
+    // When exp13_v6_pipeline is active and prompts_dir is the built-in default,
+    // try to load the EXP-013 experiment prompts instead.
+    #[cfg(feature = "exp13_v6_pipeline")]
+    let effective_prompts_dir = {
+        let builtin_default = std::path::PathBuf::from("prompts/builtin");
+        if prompts_dir == builtin_default || !prompts_dir.exists() {
+            if let Some(exp13_dir) = crb_harness::exp13::exp13_prompts_dir() {
+                info!("EXP-013 v6 pipeline: using prompts from {}", exp13_dir.display());
+                exp13_dir
+            } else {
+                info!("EXP-013 v6 pipeline: prompts directory not found, using specified prompts dir");
+                prompts_dir.clone()
+            }
+        } else {
+            prompts_dir.clone()
+        }
+    };
+    #[cfg(not(feature = "exp13_v6_pipeline"))]
+    let effective_prompts_dir = prompts_dir.clone();
+
     let prompt_lib = std::sync::Arc::new({
         let mut lib = PromptLibrary::new();
-        if prompts_dir.exists() {
-            match lib.load_from_dir(&prompts_dir) {
+        if effective_prompts_dir.exists() {
+            match lib.load_from_dir(&effective_prompts_dir) {
                 Ok(()) => {
-                    info!("Loaded prompts from: {}", prompts_dir.display());
+                    info!("Loaded prompts from: {}", effective_prompts_dir.display());
                 }
                 Err(e) => {
                     tracing::warn!(
                         "Failed to load prompts from {}: {e}",
-                        prompts_dir.display()
+                        effective_prompts_dir.display()
                     );
                 }
             }
-        } else if prompts_dir.to_string_lossy() != "prompts/builtin" {
+        } else if effective_prompts_dir.to_string_lossy() != "prompts/builtin" {
             tracing::warn!(
                 "Custom prompts directory '{}' not found - using built-in defaults",
-                prompts_dir.display()
+                effective_prompts_dir.display()
             );
         }
         lib
