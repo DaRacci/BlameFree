@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use crb_consensus::CacheBackend;
 use crb_judge::JudgeVerdict;
@@ -39,6 +39,21 @@ use sha2::{Digest, Sha256};
 
 /// Result type alias for cache operations.
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+/// A single entry in the run history log (`_runs.json`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunHistoryEntry {
+    pub run_id: String,
+    pub timestamp: String,
+    pub model: String,
+    pub judge_model: String,
+    pub total_prs: usize,
+    pub duration_secs: f64,
+    pub total_cost_usd: f64,
+    pub total_tokens: usize,
+    pub agent_cache_hit_rate: f64,
+    pub judge_cache_hit_rate: f64,
+}
 
 /// A single entry in the cache index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +100,134 @@ impl CacheIndex {
             tracing::warn!("Failed to write cache index: {e}");
         }
     }
+}
+
+// ── Cache management structs ────────────────────────────────────────────
+
+/// Statistics for a single PR's cache usage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrCacheStats {
+    /// The PR key identifying this cache subdirectory.
+    pub pr_key: String,
+    /// Number of entries in the cache index.
+    pub entry_count: usize,
+    /// Total byte size of the PR cache directory on disk.
+    pub total_size_bytes: u64,
+    /// Timestamp of the oldest cached entry, if any.
+    pub oldest_entry: Option<String>,
+    /// Timestamp of the newest cached entry, if any.
+    pub newest_entry: Option<String>,
+}
+
+/// Aggregate statistics across all PRs in a cache directory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlobalCacheStats {
+    /// Number of PR directories found.
+    pub pr_count: usize,
+    /// Total entries across all PR indices.
+    pub total_entries: usize,
+    /// Total byte size across all PR cache directories.
+    pub total_size_bytes: u64,
+    /// Per-PR breakdown of cache stats.
+    pub per_pr: Vec<PrCacheStats>,
+}
+
+/// Result of a cache prune operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PruneResult {
+    /// Number of PR directories completely removed.
+    pub prs_removed: usize,
+    /// Total entries removed across all PRs.
+    pub entries_removed: usize,
+    /// Total bytes freed by removing entries/files.
+    pub bytes_freed: u64,
+    /// Number of PR directories kept after pruning.
+    pub prs_kept: usize,
+}
+
+/// Result of a cache scrub operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScrubResult {
+    /// Number of PR directories scanned.
+    pub pr_dirs_scanned: usize,
+    /// Stale entries found (files missing from disk).
+    pub stale_entries_found: usize,
+    /// Orphan files found (on disk but not in index).
+    pub orphan_files_found: usize,
+    /// Corrupted index files found.
+    pub corrupted_indices_found: usize,
+    /// Indices rebuilt from filesystem scan.
+    pub indices_rebuilt: usize,
+    /// Stale entries that were removed (if repair mode).
+    pub stale_entries_removed: usize,
+    /// Orphan files that were removed (if repair mode).
+    pub orphan_files_removed: usize,
+}
+
+/// A single entry in the run history log.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunHistoryEntry {
+    /// Unique run identifier.
+    pub run_id: String,
+    /// ISO-8601 timestamp of the run.
+    pub timestamp: String,
+    /// Primary model used for agents.
+    pub model: String,
+    /// Model used for judging.
+    pub judge_model: String,
+    /// Total number of PRs evaluated.
+    pub total_prs: usize,
+    /// Total duration in seconds.
+    pub duration_secs: f64,
+    /// Total cost in USD.
+    pub total_cost_usd: f64,
+    /// Total tokens consumed.
+    pub total_tokens: usize,
+    /// Agent cache hit rate (0.0 to 1.0).
+    pub agent_cache_hit_rate: f64,
+    /// Judge cache hit rate (0.0 to 1.0).
+    pub judge_cache_hit_rate: f64,
+}
+
+// ── Helper functions ───────────────────────────────────────────────────
+
+/// Parse a debug-format timestamp (as produced by [`LlmCache::now()`]) into
+/// a [`SystemTime`].  The format is:
+/// `SystemTime { tv_sec: 1234567890, tv_nsec: 123456789 }`.
+pub fn parse_timestamp(ts: &str) -> Option<SystemTime> {
+    let ts = ts.trim();
+    // Format produced by LlmCache::now():
+    //   "SystemTime { tv_sec: 1234567890, tv_nsec: 123456789 }"
+    let ts = ts.strip_prefix("SystemTime { ")?;
+    let secs_str = ts.split("tv_sec: ").nth(1)?;
+    let secs = secs_str.split(',').next()?.trim().parse::<u64>().ok()?;
+    let nsecs = ts
+        .split("tv_nsec: ")
+        .nth(1)
+        .and_then(|s| s.trim_end_matches(" }").trim().parse::<u32>().ok())
+        .unwrap_or(0);
+    Some(
+        std::time::UNIX_EPOCH
+            + Duration::from_secs(secs)
+            + Duration::from_nanos(nsecs as u64),
+    )
+}
+
+/// Recursively compute the total size in bytes of all files under `path`.
+pub fn dir_size(path: &Path) -> std::io::Result<u64> {
+    let mut total = 0u64;
+    if path.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let ty = entry.file_type()?;
+            if ty.is_dir() {
+                total += dir_size(&entry.path())?;
+            } else if ty.is_file() {
+                total += entry.metadata()?.len();
+            }
+        }
+    }
+    Ok(total)
 }
 
 /// Thread-safe content-addressed cache for LLM interactions.
@@ -406,6 +549,636 @@ impl LlmCache {
     pub fn is_active(&self) -> bool {
         true
     }
+
+    // ── Cache management methods ───────────────────────────────────────
+
+    /// Gather statistics across all PR directories under `base_dir`.
+    ///
+    /// Walks all subdirectories, reads each `index.json`, counts entries,
+    /// computes on-disk sizes, and tracks oldest/newest timestamps.
+    /// Directories or files whose name starts with `_` or `.` are skipped.
+    pub fn stats(base_dir: &Path) -> Result<GlobalCacheStats> {
+        let mut per_pr = Vec::new();
+        let mut total_entries = 0usize;
+        let mut total_size_bytes = 0u64;
+        let mut pr_count = 0usize;
+
+        let read_dir = std::fs::read_dir(base_dir)
+            .map_err(|e| format!("cannot read cache dir {}: {}", base_dir.display(), e))?;
+
+        for entry in read_dir {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with('_') || name_str.starts_with('.') {
+                continue;
+            }
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+
+            let pr_key = name_str.to_string();
+            let pr_dir = entry.path();
+            let index_path = pr_dir.join("index.json");
+
+            let (entry_count, oldest, newest) =
+                match std::fs::read_to_string(&index_path) {
+                    Ok(content) => {
+                        if let Ok(idx) =
+                            serde_json::from_str::<CacheIndex>(&content)
+                        {
+                            let count = idx.entries.len();
+                            let oldest = idx
+                                .entries
+                                .values()
+                                .map(|e| &e.timestamp)
+                                .min()
+                                .cloned();
+                            let newest = idx
+                                .entries
+                                .values()
+                                .map(|e| &e.timestamp)
+                                .max()
+                                .cloned();
+                            (count, oldest, newest)
+                        } else {
+                            (0, None, None)
+                        }
+                    }
+                    Err(_) => (0, None, None),
+                };
+
+            let size = dir_size(&pr_dir).unwrap_or(0);
+
+            total_entries += entry_count;
+            total_size_bytes += size;
+            pr_count += 1;
+
+            per_pr.push(PrCacheStats {
+                pr_key,
+                entry_count,
+                total_size_bytes: size,
+                oldest_entry: oldest,
+                newest_entry: newest,
+            });
+        }
+
+        Ok(GlobalCacheStats {
+            pr_count,
+            total_entries,
+            total_size_bytes,
+            per_pr,
+        })
+    }
+
+    /// Prune old cache entries under `base_dir` according to the given filters.
+    ///
+    /// Supported filters:
+    /// - `max_age_days`: remove entries whose timestamp is older than N days.
+    /// - `max_size_bytes`: evict the oldest entries until the PR directory
+    ///   is below this size.
+    /// - `max_prs`: keep only the N newest PR directories (by newest entry).
+    ///
+    /// When `dry_run` is true, only report what would happen without actually
+    /// removing anything.
+    #[allow(clippy::too_many_arguments)]
+    pub fn prune(
+        base_dir: &Path,
+        max_age_days: Option<u64>,
+        max_size_bytes: Option<u64>,
+        max_prs: Option<usize>,
+        dry_run: bool,
+    ) -> Result<PruneResult> {
+        let mut result = PruneResult {
+            prs_removed: 0,
+            entries_removed: 0,
+            bytes_freed: 0,
+            prs_kept: 0,
+        };
+
+        // Collect all PR directories
+        let mut pr_dirs: Vec<(String, PathBuf, Option<String>)> = Vec::new();
+        let read_dir = std::fs::read_dir(base_dir)
+            .map_err(|e| format!("cannot read cache dir {}: {}", base_dir.display(), e))?;
+
+        for entry in read_dir {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with('_') || name_str.starts_with('.') {
+                continue;
+            }
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let pr_dir = entry.path();
+            let index_path = pr_dir.join("index.json");
+
+            // Find the newest entry timestamp for this PR
+            let newest = std::fs::read_to_string(&index_path).ok().and_then(|content| {
+                serde_json::from_str::<CacheIndex>(&content)
+                    .ok()
+                    .and_then(|idx| idx.entries.values().map(|e| &e.timestamp).max().cloned())
+            });
+
+            pr_dirs.push((name_str.to_string(), pr_dir, newest));
+        }
+
+        // ── max-prs filter ──────────────────────────────────────────────
+        if let Some(max) = max_prs {
+            if pr_dirs.len() > max {
+                // Sort by newest entry (descending), keep first `max`
+                pr_dirs.sort_by(|a, b| {
+                    b.2.as_deref()
+                        .unwrap_or("")
+                        .cmp(&a.2.as_deref().unwrap_or(""))
+                });
+                let to_remove: Vec<_> = pr_dirs.drain(max..).collect();
+                for (_pr_key, pr_dir, _newest) in &to_remove {
+                    let size = dir_size(pr_dir).unwrap_or(0);
+                    result.prs_removed += 1;
+                    result.bytes_freed += size;
+                    if !dry_run {
+                        let _ = std::fs::remove_dir_all(pr_dir);
+                    }
+                }
+                result.prs_kept = pr_dirs.len();
+            } else {
+                result.prs_kept = pr_dirs.len();
+            }
+        } else {
+            result.prs_kept = pr_dirs.len();
+        }
+
+        // ── max-age filter ──────────────────────────────────────────────
+        if let Some(days) = max_age_days {
+            let cutoff = Duration::from_secs(days * 86400);
+            let now = SystemTime::now();
+
+            for (_pr_key, pr_dir, _newest) in &pr_dirs {
+                let index_path = pr_dir.join("index.json");
+                let content = match std::fs::read_to_string(&index_path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+                let mut idx: CacheIndex = match serde_json::from_str(&content) {
+                    Ok(i) => i,
+                    Err(_) => continue,
+                };
+
+                let before = idx.entries.len();
+                let mut removed_bytes = 0u64;
+
+                idx.entries.retain(|_key, entry| {
+                    let keep = match parse_timestamp(&entry.timestamp) {
+                        Some(t) => match now.duration_since(t) {
+                            Ok(age) => age <= cutoff,
+                            Err(_) => true,
+                        },
+                        None => true,
+                    };
+                    if !keep {
+                        // Track the file size
+                        let file_path = pr_dir.join(&entry.file_path);
+                        if let Ok(meta) = std::fs::metadata(&file_path) {
+                            removed_bytes += meta.len();
+                        }
+                    }
+                    keep
+                });
+
+                let after = idx.entries.len();
+                if before > after {
+                    let entry_count = before - after;
+                    result.entries_removed += entry_count;
+                    result.bytes_freed += removed_bytes;
+                    if !dry_run {
+                        idx.save(&index_path);
+                        // Remove files for pruned entries
+                        let current_keys: std::collections::HashSet<String> =
+                            idx.entries.keys().cloned().collect();
+                        // Only remove files for entries that were actually removed
+                        if let Ok(old_content) =
+                            serde_json::from_str::<CacheIndex>(&content)
+                        {
+                            for (old_key, old_entry) in &old_content.entries {
+                                if !current_keys.contains(old_key) {
+                                    let file_path = pr_dir.join(&old_entry.file_path);
+                                    let _ = std::fs::remove_file(&file_path);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── max-size filter ─────────────────────────────────────────────
+        if let Some(max_size) = max_size_bytes {
+            for (_pr_key, pr_dir, _newest) in &pr_dirs {
+                let current_size = dir_size(pr_dir).unwrap_or(0);
+                if current_size <= max_size {
+                    continue;
+                }
+                let index_path = pr_dir.join("index.json");
+                let content = match std::fs::read_to_string(&index_path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+                let mut idx: CacheIndex = match serde_json::from_str(&content) {
+                    Ok(i) => i,
+                    Err(_) => continue,
+                };
+
+                // Collect entries sorted by timestamp (oldest first)
+                let mut entries: Vec<(String, CacheEntry)> =
+                    idx.entries.drain().collect();
+                entries.sort_by(|a, b| a.1.timestamp.cmp(&b.1.timestamp));
+
+                let mut running_size = current_size;
+                let mut kept = Vec::new();
+                let mut removed_count = 0usize;
+                let mut removed_bytes = 0u64;
+
+                for (key, entry) in entries {
+                    if running_size > max_size {
+                        let file_path = pr_dir.join(&entry.file_path);
+                        if let Ok(meta) = std::fs::metadata(&file_path) {
+                            running_size = running_size.saturating_sub(meta.len());
+                            removed_bytes += meta.len();
+                        } else {
+                            // File already gone, just reduce conceptual size
+                            running_size = running_size.saturating_sub(1024);
+                        }
+                        removed_count += 1;
+                        if !dry_run {
+                            let file_path = pr_dir.join(&entry.file_path);
+                            let _ = std::fs::remove_file(&file_path);
+                        }
+                    } else {
+                        kept.push((key, entry));
+                    }
+                }
+
+                if removed_count > 0 {
+                    result.entries_removed += removed_count;
+                    result.bytes_freed += removed_bytes;
+                    if !dry_run {
+                        idx.entries = kept.into_iter().collect();
+                        idx.save(&index_path);
+                    }
+                }
+            }
+        }
+
+        // Remove empty PR directories after pruning
+        if !dry_run {
+            for (_pr_key, pr_dir, _newest) in &pr_dirs {
+                if pr_dir.exists() && pr_dir.is_dir() {
+                    let is_empty = std::fs::read_dir(pr_dir)
+                        .map(|mut r| r.next().is_none())
+                        .unwrap_or(false);
+                    if is_empty {
+                        let _ = std::fs::remove_dir(pr_dir);
+                        result.prs_removed += 1;
+                    }
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Scrub the cache for consistency issues.
+    ///
+    /// For each PR directory:
+    /// - Verifies every file referenced in `index.json` actually exists on disk
+    ///   (stale entries).
+    /// - Scans the `agents/`, `judge/`, `context/` subdirectories for files not
+    ///   referenced in the index (orphans).
+    /// - If `index.json` is missing or corrupt, scans the filesystem to rebuild it.
+    ///
+    /// When `repair` is true, removes stale entries, removes orphan files, and
+    /// writes corrected index files.
+    pub fn scrub(
+        base_dir: &Path,
+        dry_run: bool,
+        repair: bool,
+    ) -> Result<ScrubResult> {
+        let mut result = ScrubResult {
+            pr_dirs_scanned: 0,
+            stale_entries_found: 0,
+            orphan_files_found: 0,
+            corrupted_indices_found: 0,
+            indices_rebuilt: 0,
+            stale_entries_removed: 0,
+            orphan_files_removed: 0,
+        };
+
+        let read_dir = match std::fs::read_dir(base_dir) {
+            Ok(d) => d,
+            Err(e) => return Err(format!("cannot read cache dir {}: {}", base_dir.display(), e).into()),
+        };
+
+        for entry in read_dir {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with('_') || name_str.starts_with('.') {
+                continue;
+            }
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+
+            let pr_dir = entry.path();
+            result.pr_dirs_scanned += 1;
+
+            let index_path = pr_dir.join("index.json");
+            let index_exists = index_path.exists();
+
+            // Try to load the index
+            let mut idx: CacheIndex = if index_exists {
+                match std::fs::read_to_string(&index_path) {
+                    Ok(content) => match serde_json::from_str(&content) {
+                        Ok(i) => i,
+                        Err(_) => {
+                            result.corrupted_indices_found += 1;
+                            // Corrupted — will rebuild
+                            CacheIndex::new()
+                        }
+                    },
+                    Err(_) => CacheIndex::new(),
+                }
+            } else {
+                CacheIndex::new()
+            };
+
+            let mut needs_rebuild = false;
+            if !index_exists || result.corrupted_indices_found > 0 {
+                needs_rebuild = true;
+            }
+
+            // ── Check for stale entries (file referenced in index but missing on disk) ──
+            let mut stale_keys = Vec::new();
+            for (key, entry_meta) in &idx.entries {
+                let file_path = pr_dir.join(&entry_meta.file_path);
+                if !file_path.exists() {
+                    stale_keys.push(key.clone());
+                }
+            }
+
+            // Remove stale entries from index
+            for key in &stale_keys {
+                idx.entries.remove(key);
+                result.stale_entries_found += 1;
+                if repair && !dry_run {
+                    result.stale_entries_removed += 1;
+                }
+            }
+
+            // ── Check for orphan files (on disk but not in index) ──
+            let mut orphan_files = Vec::new();
+            let subdirs = ["agents", "judge", "context"];
+            for subdir_name in &subdirs {
+                let subdir = pr_dir.join(subdir_name);
+                if !subdir.exists() {
+                    continue;
+                }
+                if let Ok(read_subdir) = std::fs::read_dir(&subdir) {
+                    for file_entry in read_subdir {
+                        let file_entry = file_entry?;
+                        if !file_entry.file_type()?.is_file() {
+                            continue;
+                        }
+                        // Extract cache key from filename (everything before first '.')
+                        // Companion files (prompts, usage) share the same key prefix
+                        let fname = file_entry.file_name().to_string_lossy().to_string();
+                        let file_key = fname.split('.').next().unwrap_or(&fname).to_string();
+                        let rel_path = format!("{}/{}", subdir_name, fname);
+                        // Check if this file is referenced in any entry, or if its
+                        // cache key matches any indexed entry (companion file)
+                        let is_indexed = idx.entries.contains_key(&file_key)
+                            || idx.entries.values().any(|e| e.file_path == rel_path);
+                        if !is_indexed {
+                            orphan_files.push(rel_path);
+                        }
+                    }
+                }
+            }
+
+            result.orphan_files_found += orphan_files.len();
+
+            // Remove orphan files
+            if repair && !dry_run {
+                for rel_path in &orphan_files {
+                    let file_path = pr_dir.join(rel_path);
+                    if std::fs::remove_file(&file_path).is_ok() {
+                        result.orphan_files_removed += 1;
+                    }
+                }
+            }
+
+            // ── Rebuild index from filesystem if needed ──
+            if needs_rebuild && !dry_run {
+                let mut new_idx = CacheIndex::new();
+                let subdirs = ["agents", "judge", "context"];
+                for subdir_name in &subdirs {
+                    let subdir = pr_dir.join(subdir_name);
+                    if !subdir.exists() {
+                        continue;
+                    }
+                    if let Ok(read_subdir) = std::fs::read_dir(&subdir) {
+                        for file_entry in read_subdir {
+                            let file_entry = match file_entry {
+                                Ok(f) => f,
+                                Err(_) => continue,
+                            };
+                            if !file_entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                                continue;
+                            }
+                            let fname = file_entry.file_name().to_string_lossy().to_string();
+                            let rel_path = format!("{}/{}", subdir_name, fname);
+
+                            // Extract a cache key from the filename
+                            // Filenames look like: {cache_key}.agent_SA_response.txt
+                            // or {cache_key}.json, or {cache_key}.context_response.txt
+                            let cache_key = fname.split('.').next().unwrap_or(&fname).to_string();
+
+                            if !new_idx.entries.contains_key(&cache_key) {
+                                new_idx.entries.insert(
+                                    cache_key,
+                                    CacheEntry {
+                                        file_path: rel_path,
+                                        timestamp: LlmCache::now(),
+                                        model: String::new(),
+                                        tokens_used: None,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+                idx = new_idx;
+                result.indices_rebuilt += 1;
+            }
+
+            // Write the (potentially corrected) index
+            if repair && !dry_run {
+                idx.save(&index_path);
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Create a compressed tarball backup of the cache directory.
+    pub fn backup(base_dir: &Path, output_path: &Path) -> Result<()> {
+        let output_str = output_path
+            .to_str()
+            .ok_or_else(|| format!("non-UTF-8 output path: {}", output_path.display()))?;
+
+        let status = std::process::Command::new("tar")
+            .args(["-czf", output_str, "."])
+            .current_dir(base_dir)
+            .status()
+            .map_err(|e| format!("failed to execute tar: {e}"))?;
+
+        if !status.success() {
+            return Err(format!("tar backup failed with exit code: {:?}", status.code()).into());
+        }
+        Ok(())
+    }
+
+    /// Restore a cache directory from a backup tarball.
+    ///
+    /// Creates `base_dir` if it does not exist.
+    pub fn restore(base_dir: &Path, backup_file: &Path) -> Result<()> {
+        std::fs::create_dir_all(base_dir)?;
+
+        let backup_str = backup_file
+            .to_str()
+            .ok_or_else(|| format!("non-UTF-8 backup path: {}", backup_file.display()))?;
+
+        let status = std::process::Command::new("tar")
+            .args(["-xzf", backup_str])
+            .current_dir(base_dir)
+            .status()
+            .map_err(|e| format!("failed to execute tar: {e}"))?;
+
+        if !status.success() {
+            return Err(format!("tar restore failed with exit code: {:?}", status.code()).into());
+        }
+        Ok(())
+    }
+
+    /// Rebuild cache keys by re-computing the SHA256 hash of entry metadata.
+    ///
+    /// For each entry, re-hashes the file_path + model + tokens that were stored
+    /// in the index.  If the new key differs from the current key, the file is
+    /// renamed and the index updated (unless `dry_run`).
+    ///
+    /// This is experimental and primarily useful for testing or migrating
+    /// key schemas.
+    pub fn rebuild(base_dir: &Path, dry_run: bool) -> Result<()> {
+        let read_dir = std::fs::read_dir(base_dir)
+            .map_err(|e| format!("cannot read cache dir {}: {}", base_dir.display(), e))?;
+
+        for entry in read_dir {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with('_') || name_str.starts_with('.') {
+                continue;
+            }
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+
+            let pr_dir = entry.path();
+            let index_path = pr_dir.join("index.json");
+            let content = match std::fs::read_to_string(&index_path) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let mut idx: CacheIndex = match serde_json::from_str(&content) {
+                Ok(i) => i,
+                Err(_) => continue,
+            };
+
+            let mut new_entries = HashMap::new();
+            for (old_key, entry_meta) in &idx.entries {
+                // Re-hash the entry metadata to create a new key
+                let meta_str = format!(
+                    "{}:{}:{}:{:?}",
+                    entry_meta.file_path,
+                    entry_meta.timestamp,
+                    entry_meta.model,
+                    entry_meta.tokens_used,
+                );
+                let new_key = LlmCache::sha256(&meta_str);
+
+                if new_key != *old_key {
+                    tracing::info!(
+                        "rebuild: key changed for {}: {} -> {}",
+                        entry_meta.file_path,
+                        &old_key[..12],
+                        &new_key[..12],
+                    );
+
+                    if !dry_run {
+                        // Rename the file on disk to use the new key
+                        let old_path = pr_dir.join(&entry_meta.file_path);
+                        if old_path.exists() {
+                            // Build new file path by replacing the old key in the path
+                            let new_file_path =
+                                entry_meta.file_path.replace(old_key, &new_key);
+                            let new_path = pr_dir.join(&new_file_path);
+
+                            // Ensure parent directory exists
+                            if let Some(parent) = new_path.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+
+                            if let Err(e) = std::fs::rename(&old_path, &new_path) {
+                                tracing::warn!(
+                                    "rebuild: failed to rename {} -> {}: {e}",
+                                    old_path.display(),
+                                    new_path.display(),
+                                );
+                            }
+
+                            new_entries.insert(
+                                new_key,
+                                CacheEntry {
+                                    file_path: new_file_path,
+                                    timestamp: entry_meta.timestamp.clone(),
+                                    model: entry_meta.model.clone(),
+                                    tokens_used: entry_meta.tokens_used,
+                                },
+                            );
+                        } else {
+                            // File is missing, drop the entry
+                            tracing::warn!(
+                                "rebuild: file missing for key {}: {}",
+                                &old_key[..12],
+                                old_path.display(),
+                            );
+                        }
+                    }
+                } else {
+                    new_entries.insert(old_key.clone(), entry_meta.clone());
+                }
+            }
+
+            if !dry_run {
+                idx.entries = new_entries;
+                idx.save(&index_path);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl CacheBackend for LlmCache {
@@ -657,5 +1430,318 @@ mod tests {
     fn test_cache_key_hex_length() {
         let key = LlmCache::compute_agent_key("abc", "def", "model", "SA", "rules");
         assert_eq!(key.len(), 64); // SHA256 hex is 64 chars
+    }
+
+    // ── Cache management tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_parse_timestamp() {
+        // Format produced by LlmCache::now()
+        let ts = format!("{:?}", std::time::SystemTime::now());
+        assert!(parse_timestamp(&ts).is_some());
+
+        // Invalid format
+        assert!(parse_timestamp("not-a-timestamp").is_none());
+        assert!(parse_timestamp("").is_none());
+    }
+
+    #[test]
+    fn test_dir_size() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hello").unwrap();
+        std::fs::write(dir.path().join("b.txt"), "world").unwrap();
+        let size = dir_size(dir.path()).unwrap();
+        assert!(size >= 10); // at least 10 bytes for the two files
+
+        // Empty dir
+        let empty = tempfile::tempdir().unwrap();
+        assert_eq!(dir_size(empty.path()).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_cache_stats_basic() {
+        let base = tempfile::tempdir().unwrap();
+
+        // Create two PR caches with entries
+        {
+            let cache1 = LlmCache::new(base.path(), "pr-1").unwrap();
+            let key1 = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
+            cache1.save_agent_cached(&key1, "SA", "prompt", "resp").unwrap();
+            let key2 = LlmCache::compute_judge_key("jph", "f", "g", "jm");
+            cache1.save_judge_cached(&key2, "g", "f", r#"{"match":true}"#).unwrap();
+        }
+        {
+            let cache2 = LlmCache::new(base.path(), "pr-2").unwrap();
+            let key3 = LlmCache::compute_context_key("gph", "dh", "rh", "m");
+            cache2.save_context_cached(&key3, "ctx", "ctx resp").unwrap();
+        }
+
+        let stats = LlmCache::stats(base.path()).unwrap();
+        assert_eq!(stats.pr_count, 2);
+        assert_eq!(stats.total_entries, 3);
+
+        // Verify per-PR breakdown
+        assert_eq!(stats.per_pr.len(), 2);
+        let pr1 = stats.per_pr.iter().find(|p| p.pr_key == "pr-1").unwrap();
+        assert_eq!(pr1.entry_count, 2);
+        assert!(pr1.total_size_bytes > 0);
+        assert!(pr1.oldest_entry.is_some());
+        assert!(pr1.newest_entry.is_some());
+
+        let pr2 = stats.per_pr.iter().find(|p| p.pr_key == "pr-2").unwrap();
+        assert_eq!(pr2.entry_count, 1);
+    }
+
+    #[test]
+    fn test_cache_prune_dry_run() {
+        let base = tempfile::tempdir().unwrap();
+
+        // Create a PR with some entries
+        {
+            let cache = LlmCache::new(base.path(), "test-pr").unwrap();
+            let key1 = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
+            cache.save_agent_cached(&key1, "SA", "p", "r").unwrap();
+            let key2 = LlmCache::compute_agent_key("c", "d", "m", "SA", "r");
+            cache.save_agent_cached(&key2, "SA", "p", "r").unwrap();
+        }
+
+        // Dry run should report entries but not remove them
+        let result = LlmCache::prune(
+            base.path(),
+            Some(0),   // max_age_days = 0: cutoff at now
+            None,
+            None,
+            true,      // dry_run
+        )
+        .unwrap();
+
+        // max_age_days=0 means cutoff = 0 * 86400 = 0 seconds
+        // So entries created a few ms ago are older than 0 seconds
+        // They WILL be reported as removable
+        assert_eq!(result.entries_removed, 2);
+        assert!(result.bytes_freed > 0);
+
+        // But files should still exist because dry_run=true
+        let index_path = base.path().join("test-pr").join("index.json");
+        let content = std::fs::read_to_string(&index_path).unwrap();
+        let idx: CacheIndex = serde_json::from_str(&content).unwrap();
+        assert_eq!(idx.entries.len(), 2);
+    }
+
+    #[test]
+    fn test_cache_prune_max_age() {
+        let base = tempfile::tempdir().unwrap();
+
+        // Create entries
+        let key1;
+        let key2;
+        {
+            let cache = LlmCache::new(base.path(), "test-pr").unwrap();
+            key1 = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
+            cache.save_agent_cached(&key1, "SA", "p", "r").unwrap();
+            key2 = LlmCache::compute_agent_key("c", "d", "m", "SA", "r");
+            cache.save_agent_cached(&key2, "SA", "p", "r").unwrap();
+        }
+
+        // Manually set one entry's timestamp to be old
+        let index_path = base.path().join("test-pr").join("index.json");
+        let content = std::fs::read_to_string(&index_path).unwrap();
+        let mut idx: CacheIndex = serde_json::from_str(&content).unwrap();
+
+        // Set first entry timestamp to 100 days ago
+        if let Some(entry) = idx.entries.get_mut(&key1) {
+            let old_time = std::time::SystemTime::now()
+                - std::time::Duration::from_secs(100 * 86400);
+            entry.timestamp = format!("{:?}", old_time);
+        }
+        std::fs::write(&index_path, serde_json::to_string_pretty(&idx).unwrap()).unwrap();
+
+        // Now prune with max_age_days=30
+        let result = LlmCache::prune(
+            base.path(),
+            Some(30),
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(result.entries_removed, 1);
+        assert!(result.bytes_freed > 0);
+
+        // Verify only the recent entry remains
+        let content = std::fs::read_to_string(&index_path).unwrap();
+        let idx: CacheIndex = serde_json::from_str(&content).unwrap();
+        assert_eq!(idx.entries.len(), 1);
+        assert!(idx.entries.contains_key(&key2));
+    }
+
+    #[test]
+    fn test_cache_scrub_orphans() {
+        let base = tempfile::tempdir().unwrap();
+
+        // Create a PR with one entry
+        {
+            let cache = LlmCache::new(base.path(), "test-pr").unwrap();
+            let key = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
+            cache.save_agent_cached(&key, "SA", "p", "r").unwrap();
+        }
+
+        // Inject an orphan file
+        let orphan_path = base.path().join("test-pr").join("agents").join("orphan_file.txt");
+        std::fs::write(&orphan_path, "orphan data").unwrap();
+
+        // Dry-run scrub should detect the orphan
+        let result = LlmCache::scrub(base.path(), true, false).unwrap();
+        assert_eq!(result.pr_dirs_scanned, 1);
+        assert_eq!(result.orphan_files_found, 1);
+        assert_eq!(result.stale_entries_found, 0);
+
+        // Orphan should still exist (dry run)
+        assert!(orphan_path.exists());
+    }
+
+    #[test]
+    fn test_cache_scrub_repair() {
+        let base = tempfile::tempdir().unwrap();
+
+        // Create a PR with one entry
+        let key;
+        {
+            let cache = LlmCache::new(base.path(), "test-pr").unwrap();
+            key = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
+            cache.save_agent_cached(&key, "SA", "p", "r").unwrap();
+        }
+
+        // Inject an orphan file
+        let orphan_path = base.path().join("test-pr").join("agents").join("orphan.txt");
+        std::fs::write(&orphan_path, "orphan").unwrap();
+
+        // Repair scrub should remove the orphan
+        let result = LlmCache::scrub(base.path(), false, true).unwrap();
+        assert_eq!(result.orphan_files_found, 1);
+        assert_eq!(result.orphan_files_removed, 1);
+
+        // Orphan should be gone
+        assert!(!orphan_path.exists());
+
+        // Original entry should still be there
+        assert!(key.len() == 64);
+        let index_path = base.path().join("test-pr").join("index.json");
+        let content = std::fs::read_to_string(&index_path).unwrap();
+        let idx: CacheIndex = serde_json::from_str(&content).unwrap();
+        assert_eq!(idx.entries.len(), 1);
+    }
+
+    #[test]
+    fn test_cache_backup_restore_roundtrip() {
+        let base = tempfile::tempdir().unwrap();
+        let backup_dir = tempfile::tempdir().unwrap();
+        let restore_dir = tempfile::tempdir().unwrap();
+
+        // Create a PR with entries
+        {
+            let cache = LlmCache::new(base.path(), "test-pr").unwrap();
+            let key1 = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
+            cache.save_agent_cached(&key1, "SA", "prompt", "response").unwrap();
+            let key2 = LlmCache::compute_judge_key("jph", "f", "g", "jm");
+            cache.save_judge_cached(&key2, "g", "f", r#"{"match":true}"#).unwrap();
+        }
+
+        // Backup
+        let backup_path = backup_dir.path().join("cache-backup.tar.gz");
+        LlmCache::backup(base.path(), &backup_path).unwrap();
+        assert!(backup_path.exists());
+
+        // Restore to a different directory
+        LlmCache::restore(restore_dir.path(), &backup_path).unwrap();
+
+        // Verify entries are intact in restored directory
+        let stats = LlmCache::stats(restore_dir.path()).unwrap();
+        assert_eq!(stats.pr_count, 1);
+        assert_eq!(stats.total_entries, 2);
+
+        // Verify individual entries
+        let cache = LlmCache::new(restore_dir.path(), "test-pr").unwrap();
+        let key1 = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
+        assert_eq!(cache.lookup_agent(&key1).unwrap(), "response");
+    }
+
+    #[test]
+    fn test_cache_rebuild() {
+        let base = tempfile::tempdir().unwrap();
+
+        // Create entries
+        let key;
+        {
+            let cache = LlmCache::new(base.path(), "test-pr").unwrap();
+            key = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
+            cache.save_agent_cached(&key, "SA", "prompt", "response").unwrap();
+        }
+
+        // Dry-run rebuild should not change anything
+        LlmCache::rebuild(base.path(), true).unwrap();
+
+        // Verify entry is still accessible with old key after dry run
+        let cache = LlmCache::new(base.path(), "test-pr").unwrap();
+        assert_eq!(cache.lookup_agent(&key).unwrap(), "response");
+
+        // Non-dry-run rebuild will recompute keys (using entry metadata, which
+        // includes timestamp, so the key will differ from the original).
+        // After rebuild, the index should still have exactly 1 entry.
+        LlmCache::rebuild(base.path(), false).unwrap();
+
+        // Index should have 1 entry after rebuild
+        let index_path = base.path().join("test-pr").join("index.json");
+        let content = std::fs::read_to_string(&index_path).unwrap();
+        let idx: CacheIndex = serde_json::from_str(&content).unwrap();
+        assert_eq!(idx.entries.len(), 1);
+
+        // The response file should exist on disk
+        let cache = LlmCache::new(base.path(), "test-pr").unwrap();
+        assert!(cache.entry_count() > 0);
+
+        // The response file should be findable via the new key in the index
+        let new_key = idx.entries.keys().next().unwrap();
+        assert_eq!(cache.lookup_agent(new_key).unwrap(), "response");
+    }
+
+    #[test]
+    fn test_cache_prune_max_prs() {
+        let base = tempfile::tempdir().unwrap();
+
+        // Create three PR directories
+        {
+            let cache = LlmCache::new(base.path(), "pr-oldest").unwrap();
+            let key = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
+            cache.save_agent_cached(&key, "SA", "p", "r").unwrap();
+        }
+        {
+            let cache = LlmCache::new(base.path(), "pr-middle").unwrap();
+            let key = LlmCache::compute_agent_key("c", "d", "m", "SA", "r");
+            cache.save_agent_cached(&key, "SA", "p", "r").unwrap();
+        }
+        {
+            let cache = LlmCache::new(base.path(), "pr-newest").unwrap();
+            let key = LlmCache::compute_agent_key("e", "f", "m", "SA", "r");
+            cache.save_agent_cached(&key, "SA", "p", "r").unwrap();
+        }
+
+        // Prune to keep only 1 PR
+        let result = LlmCache::prune(
+            base.path(),
+            None,
+            None,
+            Some(1),
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(result.prs_removed, 2);
+        assert_eq!(result.prs_kept, 1);
+
+        // Only 1 PR should remain
+        let stats = LlmCache::stats(base.path()).unwrap();
+        assert_eq!(stats.pr_count, 1);
     }
 }
