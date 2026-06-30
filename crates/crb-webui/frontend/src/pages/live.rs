@@ -131,7 +131,7 @@ pub fn LivePage() -> impl IntoView {
     // ─── Derived signals ──────────────────────────────────────────────
 
     // The currently selected PR — auto-select first on initial data
-    let pr_list = move || {
+    let _pr_list = move || {
         let order = pr_order.get();
         let states = pr_states.get();
         order.iter().filter_map(|key| {
@@ -149,12 +149,12 @@ pub fn LivePage() -> impl IntoView {
         }
     };
 
-    let active_pr_key = move || selected_pr.get();
+    let _active_pr_key = move || selected_pr.get();
     let active_pr_state = move || {
         let key = selected_pr.get()?;
         pr_states.get().get(&key).cloned()
     };
-    let is_complete = move || status.get() == "complete";
+    let _is_complete = move || status.get() == "complete";
 
     let total = move || progress_total.get();
     let done = move || progress_done.get();

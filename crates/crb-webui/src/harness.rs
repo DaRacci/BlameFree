@@ -510,7 +510,7 @@ pub async fn run_replay_via_library(
         return Ok(());
     }
 
-    let total_prs = all_prs.len();
+    let _total_prs = all_prs.len();
 
     std::fs::create_dir_all(output_subdir)?;
 

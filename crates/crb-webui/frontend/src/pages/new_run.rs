@@ -24,7 +24,7 @@ pub fn NewRunPage() -> impl IntoView {
     let (max_findings, set_max_findings) = create_signal(String::new());
     let (submitting, set_submitting) = create_signal(false);
     let (submit_error, set_submit_error) = create_signal::<Option<String>>(None);
-    let (submit_result, set_submit_result) = create_signal::<Option<String>>(None);
+    let (_submit_result, set_submit_result) = create_signal::<Option<String>>(None);
 
     let navigator = use_navigate();
 

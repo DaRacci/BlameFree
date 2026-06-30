@@ -434,8 +434,9 @@ pub fn RunDetailPage() -> impl IntoView {
                                                                                     let badge_cls = if v.match_ { "✅ Matched" } else { "❌ Not Matched" };
                                                                                     let confidence_pct = format!("{:.0}%", v.confidence * 100.0);
                                                                                     let border_color = if v.match_ { "#22c55e" } else { "#ef4444" };
+                                                                                    let style_str = format!("background: #1e2938; padding: 0.75rem; margin-bottom: 0.5rem; border-radius: 4px; border-left: 3px solid {};", border_color);
                                                                                     view! {
-                                                                                        <div style="background: #1e2938; padding: 0.75rem; margin-bottom: 0.5rem; border-radius: 4px; border-left: 3px solid {border_color};">
+                                                                                        <div style={style_str}>
                                                                                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
                                                                                                 <span style="font-weight: 600; font-size: 0.85rem;">{badge_cls}</span>
                                                                                                 <span style="color: #64748b; font-size: 0.8rem;">{confidence_pct}</span>

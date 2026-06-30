@@ -42,7 +42,7 @@ pub fn HomePage() -> impl IntoView {
     create_effect(move |_| {
         if has_active.get() {
             let s_runs = set_runs_clone.clone();
-            let s_loading = set_loading_clone.clone();
+            let _s_loading = set_loading_clone.clone();
             let s_error = set_error_clone.clone();
             let s_active = set_has_active_clone.clone();
             set_interval(move || {
