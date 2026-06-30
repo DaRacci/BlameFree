@@ -3,6 +3,9 @@ name = "crb-consensus"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+exp14_submit_finding = ["crb-agents/exp14_submit_finding"]
+
 [dependencies]
 crb-agents = { path = "../crb-agents" }
 crb-judge = { path = "../crb-judge" }

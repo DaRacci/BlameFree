@@ -3,6 +3,7 @@
 //! Provides the public API for PR review (`review_pr`, `review_diff`) as well
 //! as the internal orchestration functions used by the `benchmark` subcommand.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,6 +39,9 @@ pub use cache::LlmCache;
 pub use cache::RunHistoryEntry;
 pub use config::ReviewArgs;
 pub use cost::CostTracker;
+
+#[cfg(feature = "exp13_v6_pipeline")]
+pub mod exp13;
 
 // =========================================================================
 // Public API types
@@ -472,6 +476,61 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
     Ok(all_findings)
 }
 
+/// Like `review_pr` but accepts a [`PromptLibrary`] for custom prompts.
+///
+/// Only available when the `exp13_v6_pipeline` feature is active.
+#[cfg(feature = "exp13_v6_pipeline")]
+pub async fn review_pr_with_prompt_lib(
+    params: ReviewParams,
+    prompt_lib: &crb_agents::prompts::PromptLibrary,
+) -> Result<Vec<Finding>> {
+    // Create OpenAI client from env
+    let client = rig_core::providers::openai::Client::from_env()
+        .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
+
+    // Parse roles
+    let roles: Vec<&str> = if params.roles.is_empty() {
+        AGENT_ROLES.to_vec()
+    } else {
+        params.roles.iter().map(|r| r.as_str()).collect()
+    };
+
+    let diff = params.diff;
+    let mut all_findings = Vec::new();
+
+    for &role in &roles {
+        // Build agent with loaded prompts
+        let agent = build_agent(&client, &params.model, role, None, Some(prompt_lib), None, None, None);
+
+        // Call agent with the diff
+        match agent.prompt(&diff).extended_details().await {
+            Ok(resp) => {
+                let response = resp.output;
+                let _usage = resp.usage;
+                match parse_agent_findings(&response) {
+                    Ok(mut findings) => {
+                        if findings.len() > params.max_findings {
+                            findings.truncate(params.max_findings);
+                        }
+                        all_findings.append(&mut findings);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to parse agent response for role {}: {}", role, e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Agent call failed for role {}: {}", role, e);
+            }
+        }
+    }
+
+    // ── Post-process with candidate cap + severity auditor ──────────────
+    all_findings = post_process_findings(&all_findings);
+
+    Ok(all_findings)
+}
+
 /// Review a diff by running `git diff` in the given `path`, then
 /// call `review_pr()` with the diff to get agent findings.
 ///
@@ -516,6 +575,12 @@ pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>
     // Preprocess: filter noise files and chunk oversized diffs
     let diff = crate::preprocess_diff(&diff);
 
+    // ── Load prompt library ───────────────────────────────────────────
+    #[cfg(feature = "exp13_v6_pipeline")]
+    let prompt_lib = crate::exp13::load_exp13_prompt_library();
+    #[cfg(not(feature = "exp13_v6_pipeline"))]
+    let prompt_lib = crb_agents::prompts::PromptLibrary::new();
+
     // Build ReviewParams and call review_pr
     let roles = vec![
         "SA".to_string(),
@@ -532,7 +597,15 @@ pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>
         replay_dir: None,
         cache_dir: None,
     };
-    review_pr(params).await
+    // When exp13_v6_pipeline is active, pass the loaded prompt library
+    #[cfg(feature = "exp13_v6_pipeline")]
+    {
+        review_pr_with_prompt_lib(params, &prompt_lib).await
+    }
+    #[cfg(not(feature = "exp13_v6_pipeline"))]
+    {
+        review_pr(params).await
+    }
 }
 
 // =========================================================================
@@ -1035,6 +1108,24 @@ pub async fn evaluate_pr_consensus(
         max_findings,
     );
 
+    // ── Build template variables from diff and PR context (EXP-014) ──
+    #[cfg(feature = "exp14_template_vars")]
+    let template_vars: Option<&'static HashMap<&'static str, &'static str>> = {
+        let language = crb_tools::language_detector::detect_primary_language(diff);
+        let repo_name = crb_tools::language_detector::extract_repo_name(&pr.url);
+        let lang_ref: &'static str = Box::leak(language.into_boxed_str());
+        let repo_ref: &'static str = Box::leak(repo_name.into_boxed_str());
+        let map: HashMap<&str, &str> = HashMap::from([
+            ("language", lang_ref),
+            ("repo", repo_ref),
+            ("role", ""),
+        ]);
+        Some(Box::leak(Box::new(map)))
+    };
+
+    #[cfg(not(feature = "exp14_template_vars"))]
+    let template_vars: Option<&'static HashMap<&'static str, &'static str>> = None;
+
     let (result, agent_usage, judge_usage, agent_api_calls, judge_api_calls, judge_cache_hits) = evaluate_pr_with_consensus(
         pr,
         diff,
@@ -1043,7 +1134,7 @@ pub async fn evaluate_pr_consensus(
         judge,
         rules_preamble,
         Some(prompt_lib),
-        None,
+        template_vars,
         &parsed_roles,
         max_findings,
         cache.clone().map(|c| c as Arc<dyn CacheBackend>),
@@ -1135,8 +1226,26 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
     // Step 2: severity auditor
     let audited = crb_auditor::apply_severity_auditor(deduped);
 
+    // Step 3: candidate cap (only when exp13_v6_pipeline is active)
+    #[cfg(feature = "exp13_v6_pipeline")]
+    let capped = {
+        let max = crate::exp13::max_candidates_per_pr();
+        if audited.len() > max {
+            tracing::info!(
+                "EXP-013 v6 pipeline: capping {} findings to {} candidates",
+                audited.len(),
+                max
+            );
+            audited.into_iter().take(max).collect()
+        } else {
+            audited
+        }
+    };
+    #[cfg(not(feature = "exp13_v6_pipeline"))]
+    let capped = audited;
+
     // Convert back to Finding using helper
-    audited
+    capped
         .iter()
         .filter_map(crb_agents::map_to_finding)
         .collect()

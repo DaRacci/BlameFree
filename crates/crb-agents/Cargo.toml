@@ -3,6 +3,9 @@ name = "crb-agents"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+exp14_submit_finding = []
+
 [dependencies]
 rig-core = { workspace = true }
 serde = { workspace = true }
@@ -10,3 +13,6 @@ serde_json = { workspace = true }
 schemars = { workspace = true }
 anyhow = { workspace = true }
 crb-tools = { path = "../crb-tools" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

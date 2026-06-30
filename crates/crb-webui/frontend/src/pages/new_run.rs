@@ -547,6 +547,7 @@ async fn get_config() -> Result<AppConfig, String> {
                 "SEC".into(),
             ],
             reduce_diff_enabled: false,
+            auth_enabled: false,
         });
     }
 

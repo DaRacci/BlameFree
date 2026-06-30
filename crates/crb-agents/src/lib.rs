@@ -6,6 +6,9 @@ use std::collections::HashMap;
 
 pub mod prompts;
 
+#[cfg(feature = "exp14_submit_finding")]
+pub mod submit_finding;
+
 pub use crb_tools::Finding;
 
 /// Convert Finding to serde_json::Map for backward compatibility
@@ -124,31 +127,68 @@ pub fn build_agent(
 
     // Register filesystem tools if a workdir is provided.
     // Note: AgentBuilder's ToolState generic changes when .tool() is called
-    // (NoToolConfig → WithBuilderTools), so we must use two separate build paths.
+    // (NoToolConfig → WithBuilderTools), so we must use separate build paths.
     if let Some(wd) = workdir {
         let wd = wd.to_string();
-        client
-            .agent(model)
-            .preamble(&full_preamble)
-            .tool(crb_tools::read_file::ReadFileTool {
-                repo_root: wd.clone(),
-                ..Default::default()
-            })
-            .tool(crb_tools::shell::ShellTool {
-                work_dir: wd.clone(),
-                ..Default::default()
-            })
-            .tool(crb_tools::grep::GrepTool { workdir: wd.clone() })
-            .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
-            .default_max_turns(6)
-            .temperature(0.3)
-            .build()
+        // Build with filesystem tools + optional submit_finding tool
+        #[cfg(feature = "exp14_submit_finding")]
+        {
+            client
+                .agent(model)
+                .preamble(&full_preamble)
+                .tool(crb_tools::read_file::ReadFileTool {
+                    repo_root: wd.clone(),
+                    ..Default::default()
+                })
+                .tool(crb_tools::shell::ShellTool {
+                    work_dir: wd.clone(),
+                    ..Default::default()
+                })
+                .tool(crb_tools::grep::GrepTool { workdir: wd.clone() })
+                .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
+                .tool(submit_finding::SubmitFindingTool::new())
+                .default_max_turns(6)
+                .temperature(0.3)
+                .build()
+        }
+        #[cfg(not(feature = "exp14_submit_finding"))]
+        {
+            client
+                .agent(model)
+                .preamble(&full_preamble)
+                .tool(crb_tools::read_file::ReadFileTool {
+                    repo_root: wd.clone(),
+                    ..Default::default()
+                })
+                .tool(crb_tools::shell::ShellTool {
+                    work_dir: wd.clone(),
+                    ..Default::default()
+                })
+                .tool(crb_tools::grep::GrepTool { workdir: wd.clone() })
+                .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
+                .default_max_turns(6)
+                .temperature(0.3)
+                .build()
+        }
     } else {
-        client
-            .agent(model)
-            .preamble(&full_preamble)
-            .temperature(0.3)
-            .build()
+        // Build without filesystem tools, with optional submit_finding tool
+        #[cfg(feature = "exp14_submit_finding")]
+        {
+            client
+                .agent(model)
+                .preamble(&full_preamble)
+                .temperature(0.3)
+                .tool(submit_finding::SubmitFindingTool::new())
+                .build()
+        }
+        #[cfg(not(feature = "exp14_submit_finding"))]
+        {
+            client
+                .agent(model)
+                .preamble(&full_preamble)
+                .temperature(0.3)
+                .build()
+        }
     }
 }
 

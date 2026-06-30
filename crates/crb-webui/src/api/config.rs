@@ -16,6 +16,9 @@ pub struct ConfigResponse {
     pub roles: Vec<String>,
     /// Whether reduce-diff mode is enabled (compile-time feature flag).
     pub reduce_diff_enabled: bool,
+    /// Whether OAuth authentication is configured.
+    #[serde(default)]
+    pub auth_enabled: bool,
 }
 
 /// Information about an available model.
@@ -82,6 +85,7 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
         datasets,
         roles,
         reduce_diff_enabled: cfg!(feature = "reduce-diff"),
+        auth_enabled: state.config.oauth.is_some(),
     })
 }
 

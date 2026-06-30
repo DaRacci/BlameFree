@@ -15,6 +15,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 mod api;
+mod auth;
+mod config;
 mod converter;
 mod events;
 mod harness;
@@ -54,6 +56,10 @@ pub struct CliArgs {
     /// Write logs to this file in addition to stderr.
     #[arg(long, env = "LOG_FILE")]
     pub log_file: Option<PathBuf>,
+
+    /// Path to web UI config file (overrides env/search path).
+    #[arg(long)]
+    pub config: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -112,12 +118,35 @@ async fn main() -> anyhow::Result<()> {
         args.dataset_dir.display()
     );
 
+    // Load web UI config using Linux standard search path
+    let webui_config = config::load_config(args.config.as_deref());
+    if webui_config.oauth.is_some() {
+        tracing::info!(
+            "OAuth is configured (provider={})",
+            webui_config.oauth.as_ref().unwrap().provider
+        );
+    }
+
+    // GitHub API token for ad-hoc PR fetching (read-only)
+    let github_token = std::env::var("GITHUB_TOKEN").ok();
+    if github_token.is_some() {
+        tracing::info!("GITHUB_TOKEN found — will use for GitHub API requests");
+    } else {
+        tracing::warn!("GITHUB_TOKEN not set — GitHub API rate limits will be low (60 req/hr)");
+    }
+
+    // Create session store for OAuth (used regardless of whether OAuth is enabled)
+    let session_store = crate::auth::new_session_store();
+
     let app_state = server::AppState::new(
         args.output_dir,
         args.dataset_dir,
         args.static_dir,
         args.models,
         args.benchmark_dir,
+        webui_config,
+        github_token,
+        session_store,
     );
 
     server::start(app_state, args.port).await
