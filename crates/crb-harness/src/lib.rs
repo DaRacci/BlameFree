@@ -35,6 +35,7 @@ pub mod cost;
 pub mod validation;
 
 pub use cache::LlmCache;
+pub use cache::RunHistoryEntry;
 pub use config::ReviewArgs;
 pub use cost::CostTracker;
 
@@ -1391,6 +1392,22 @@ pub async fn evaluate_pr_with_postprocessing(
     })
 }
 
+/// Append a run history entry to the `_runs.json` file in the cache directory.
+#[doc(hidden)]
+fn append_run_history(cache_dir: &Path, entry: &RunHistoryEntry) -> Result<()> {
+    let path = cache_dir.join("_runs.json");
+    let mut runs: Vec<RunHistoryEntry> = if path.exists() {
+        let content = std::fs::read_to_string(&path).unwrap_or_else(|_| "[]".to_string());
+        serde_json::from_str(&content).unwrap_or_else(|_| Vec::new())
+    } else {
+        Vec::new()
+    };
+    runs.push(entry.clone());
+    std::fs::write(&path, serde_json::to_string_pretty(&runs)?)?;
+    tracing::info!("Appended run history to: {}", path.display());
+    Ok(())
+}
+
 /// Write the `_summary.json` aggregate statistics file to the cache directory.
 #[doc(hidden)]
 pub fn write_summary(
@@ -1476,6 +1493,22 @@ pub fn write_summary(
     let summary_path = cache_dir.join("_summary.json");
     std::fs::write(&summary_path, serde_json::to_string_pretty(&summary)?)?;
     info!("Cache summary written to: {}", summary_path.display());
+
+    // Append a run history entry to _runs.json
+    let run_entry = RunHistoryEntry {
+        run_id: summary["run_id"].as_str().unwrap_or("").to_string(),
+        timestamp: format!("{:?}", std::time::SystemTime::now()),
+        model: model.to_string(),
+        judge_model: judge_model.to_string(),
+        total_prs: results.len(),
+        duration_secs: duration.as_secs_f64(),
+        total_cost_usd,
+        total_tokens,
+        agent_cache_hit_rate: avg_agent_cache_hit_rate,
+        judge_cache_hit_rate: avg_judge_cache_hit_rate,
+    };
+    append_run_history(cache_dir, &run_entry)?;
+
     Ok(())
 }
 

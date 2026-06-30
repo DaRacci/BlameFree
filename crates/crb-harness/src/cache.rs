@@ -40,6 +40,21 @@ use sha2::{Digest, Sha256};
 /// Result type alias for cache operations.
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
+/// A single entry in the run history log (`_runs.json`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunHistoryEntry {
+    pub run_id: String,
+    pub timestamp: String,
+    pub model: String,
+    pub judge_model: String,
+    pub total_prs: usize,
+    pub duration_secs: f64,
+    pub total_cost_usd: f64,
+    pub total_tokens: usize,
+    pub agent_cache_hit_rate: f64,
+    pub judge_cache_hit_rate: f64,
+}
+
 /// A single entry in the cache index.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CacheEntry {
