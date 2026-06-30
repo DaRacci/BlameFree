@@ -206,16 +206,14 @@ pub async fn run_harness(
     let dashboard_tx: Option<broadcast::Sender<HarnessEvent>> = Some(harness_tx);
 
     // ── Benchmark directory ──────────────────────────────────────────────────
-    // If no explicit benchmark_dir was passed, fall back to the dataset dir's
-    // parent — the convention is that datasets live under a benchmark root.
+    // If no explicit benchmark_dir was passed, default to the `benchmark/`
+    // subdirectory, which is the standard project convention (contains
+    // base-repos/, diffs/, worktrees/).
     let bench_dir = benchmark_dir.unwrap_or_else(|| {
-        // Use the output dir's parent as a reasonable fallback
-        let parent = output_dir.parent().unwrap_or(Path::new("."));
         tracing::warn!(
-            "No --benchmark-dir set; using parent of output dir: {}",
-            parent.display()
+            "No --benchmark-dir set; defaulting to 'benchmark/' directory"
         );
-        parent
+        Path::new("benchmark")
     });
 
     // ── Concurrency ───────────────────────────────────────────────────────────
