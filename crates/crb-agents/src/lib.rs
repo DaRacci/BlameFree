@@ -8,9 +8,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 pub mod prompts;
+pub mod templates;
 
 #[cfg(feature = "exp14_submit_finding")]
 pub mod submit_finding;
+
+use crate::templates::TemplateEngine;
 
 pub use crb_tools::Finding;
 
@@ -105,19 +108,81 @@ pub fn build_agent(
     role: &str,
     rules_preamble: Option<&str>,
     prompt_lib: Option<&PromptLibrary>,
-    template_vars: Option<&HashMap<&str, &str>>,
+    template_engine: Option<&TemplateEngine>,
+    template_vars: Option<&HashMap<String, serde_json::Value>>,
     extra_preamble: Option<&str>,
     workdir: Option<&str>,
     #[cfg(feature = "exp14_submit_finding")]
     collector: Option<Arc<Mutex<submit_finding::SubmitFindingCollector>>>,
 ) -> Agent<ResponsesCompletionModel> {
-    let role_preamble = match prompt_lib {
-        Some(lib) => {
-            let empty_map = HashMap::new();
-            let vars = template_vars.unwrap_or(&empty_map);
-            lib.render(role, vars)
+    let role_preamble = match (template_engine, prompt_lib) {
+        // Primary path: Handlebars template engine
+        (Some(engine), _) => {
+            let role_lower = role.to_lowercase();
+            // Map role to template name (SA -> sa, CL -> cl, etc.)
+            let template_name = match role {
+                "SA" | "CL" | "AR" | "SEC" | "GEN" => role_lower.as_str(),
+                _ => "default",
+            };
+
+            if engine.has_template(template_name) {
+                // Convert HashMap<String, Value> to Value for template rendering
+                let vars: serde_json::Value = template_vars
+                    .map(|m| {
+                        serde_json::Value::Object(
+                            m.iter()
+                                .map(|(k, v)| (k.clone(), v.clone()))
+                                .collect(),
+                        )
+                    })
+                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                match engine.render(template_name, &vars) {
+                    Ok(rendered) => rendered,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to render template '{}': {}. Falling back.",
+                            template_name, e
+                        );
+                        // Fall back to hardcoded preamble
+                        match role {
+                            "SA" => SA_PREAMBLE.to_string(),
+                            "CL" => CL_PREAMBLE.to_string(),
+                            "AR" => AR_PREAMBLE.to_string(),
+                            "SEC" => SEC_PREAMBLE.to_string(),
+                            "GEN" => GEN_PREAMBLE.to_string(),
+                            _ => DEFAULT_PREAMBLE.to_string(),
+                        }
+                    }
+                }
+            } else {
+                // Template not registered, fall back
+                match role {
+                    "SA" => SA_PREAMBLE.to_string(),
+                    "CL" => CL_PREAMBLE.to_string(),
+                    "AR" => AR_PREAMBLE.to_string(),
+                    "SEC" => SEC_PREAMBLE.to_string(),
+                    "GEN" => GEN_PREAMBLE.to_string(),
+                    _ => DEFAULT_PREAMBLE.to_string(),
+                }
+            }
         }
-        None => match role {
+        // Legacy path: PromptLibrary with simple string substitution
+        (None, Some(lib)) => {
+            let empty_map = HashMap::new();
+            // Convert template_vars from HashMap<String, Value> to HashMap<&str, &str>
+            let vars: HashMap<&str, &str> = template_vars
+                .map(|v| {
+                    v.iter()
+                        .filter_map(|(k, val)| {
+                            val.as_str().map(|s| (k.as_str(), s))
+                        })
+                        .collect()
+                })
+                .unwrap_or(empty_map);
+            lib.render(role, &vars)
+        }
+        // No engine, no library: use hardcoded const strings
+        (None, None) => match role {
             "SA" => SA_PREAMBLE.to_string(),
             "CL" => CL_PREAMBLE.to_string(),
             "AR" => AR_PREAMBLE.to_string(),

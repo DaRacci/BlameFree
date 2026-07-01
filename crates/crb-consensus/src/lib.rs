@@ -15,9 +15,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use regex::Regex;
-use rig_core::agent::{
-    Agent, HookAction, PromptHook, PromptResponse, ToolCallHookAction,
-};
+use rig_core::agent::{Agent, HookAction, PromptHook, PromptResponse, ToolCallHookAction};
 use rig_core::completion::{
     AssistantContent, CompletionResponse, Message, Prompt, PromptError, Usage,
 };
@@ -28,6 +26,7 @@ use sha2::{Digest, Sha256};
 use tokio::task::JoinSet;
 
 use crb_agents::prompts::PromptLibrary;
+use crb_agents::templates::TemplateEngine;
 use crb_agents::{build_agent, Finding};
 use crb_judge::{run_judge, JudgeVerdict};
 use crb_reporting::{GoldenCommentEntry, PrResult};
@@ -214,7 +213,8 @@ pub trait CacheBackend: Send + Sync {
     /// Returns `Some((response_text, Option<usage>))` on cache hit.
     fn lookup_agent_by_key_with_usage(&self, _cache_key: &str) -> Option<(String, Option<Usage>)> {
         // Default: just return response with no usage
-        self.lookup_agent_by_key(_cache_key).map(|resp| (resp, None))
+        self.lookup_agent_by_key(_cache_key)
+            .map(|resp| (resp, None))
     }
 
     /// Look up a cached judge verdict by its content-addressed key.
@@ -228,13 +228,28 @@ pub trait CacheBackend: Send + Sync {
 
     /// Save an agent prompt+response pair with a content-addressed cache key,
     /// including the API usage data.
-    fn save_agent_with_key_and_usage(&self, _cache_key: &str, _role: &str, _prompt: &str, _response: &str, _usage: &Usage) {}
+    fn save_agent_with_key_and_usage(
+        &self,
+        _cache_key: &str,
+        _role: &str,
+        _prompt: &str,
+        _response: &str,
+        _usage: &Usage,
+    ) {
+    }
 
     /// Save agent reasoning/thinking text with a content-addressed cache key.
     fn save_agent_reasoning_with_key(&self, _cache_key: &str, _role: &str, _reasoning: &str) {}
 
     /// Save a judge verdict with a content-addressed cache key.
-    fn save_judge_with_key(&self, _cache_key: &str, _golden: &str, _finding: &str, _verdict_json: &str) {}
+    fn save_judge_with_key(
+        &self,
+        _cache_key: &str,
+        _golden: &str,
+        _finding: &str,
+        _verdict_json: &str,
+    ) {
+    }
 
     /// Look up a cached context gatherer response by its content-addressed key.
     fn lookup_context_by_key(&self, _cache_key: &str) -> Option<String> {
@@ -345,11 +360,13 @@ pub fn build_reviewer_agent(
     config: &ReviewerConfig,
     rules_preamble: Option<&str>,
     prompt_lib: Option<&PromptLibrary>,
-    template_vars: Option<&HashMap<&str, &str>>,
+    template_engine: Option<&TemplateEngine>,
+    template_vars: Option<&HashMap<String, serde_json::Value>>,
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
-    #[cfg(feature = "exp14_submit_finding")]
-    collector: Option<Arc<Mutex<crb_agents::submit_finding::SubmitFindingCollector>>>,
+    #[cfg(feature = "exp14_submit_finding")] collector: Option<
+        Arc<Mutex<crb_agents::submit_finding::SubmitFindingCollector>>,
+    >,
 ) -> Agent<ResponsesCompletionModel> {
     build_agent(
         client,
@@ -357,6 +374,7 @@ pub fn build_reviewer_agent(
         config.role.as_str(),
         rules_preamble,
         prompt_lib,
+        template_engine,
         template_vars,
         tool_preamble,
         workdir,
@@ -384,7 +402,8 @@ pub async fn run_reviewers(
     client: &openai::Client,
     rules_preamble: Option<&str>,
     prompt_lib: Option<&PromptLibrary>,
-    template_vars: Option<&HashMap<&str, &str>>,
+    template_engine: Option<&TemplateEngine>,
+    template_vars: Option<&HashMap<String, serde_json::Value>>,
     cache: Option<Arc<dyn CacheBackend>>,
     prompt_hash: &str,
     rules_hash: &str,
@@ -408,6 +427,7 @@ pub async fn run_reviewers(
             &config,
             preamble.as_deref(),
             prompt_lib,
+            None, // template_engine (not used in run_reviewers yet)
             template_vars,
             tool_preamble.as_deref(),
             workdir,
@@ -657,8 +677,15 @@ pub async fn run_reviewers(
     // Sort by role for deterministic ordering - JoinSet::join_next()
     // returns tasks in completion order, which is non-deterministic.
     results.sort_by_key(|(role, _)| role.as_str());
-    let aggregate_usage = aggregate_usage.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    (results, agent_api_calls.load(Ordering::SeqCst), aggregate_usage)
+    let aggregate_usage = aggregate_usage
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    (
+        results,
+        agent_api_calls.load(Ordering::SeqCst),
+        aggregate_usage,
+    )
 }
 
 // ── Heuristic judge ─────────────────────────────────────────────────────────
@@ -671,10 +698,7 @@ pub async fn run_reviewers(
 ///    `golden.message_regex` (regex match).
 /// 3. Returns [`MatchResult::TruePositive`] if a match was found,
 ///    [`MatchResult::FalseNegative`] otherwise.
-pub async fn judge_comment(
-    golden: &GoldenComment,
-    candidates: &[Finding],
-) -> MatchResult {
+pub async fn judge_comment(golden: &GoldenComment, candidates: &[Finding]) -> MatchResult {
     // Step 1: filter candidates by file + line
     let file_matches: Vec<&Finding> = candidates
         .iter()
@@ -728,7 +752,8 @@ pub async fn run_consensus(
     judge: &Agent<ResponsesCompletionModel>,
     rules_preamble: Option<&str>,
     prompt_lib: Option<&PromptLibrary>,
-    template_vars: Option<&HashMap<&str, &str>>,
+    template_engine: Option<&TemplateEngine>,
+    template_vars: Option<&HashMap<String, serde_json::Value>>,
     cache: Option<Arc<dyn CacheBackend>>,
     diff_hash: &str,
     prompt_hash: &str,
@@ -740,10 +765,21 @@ pub async fn run_consensus(
 ) -> ConsensusReport {
     // Step 1: run all reviewers concurrently with content-addressed caching
     let (agents, agent_api_calls, agent_usage) = run_reviewers(
-        reviewer_configs, diff, diff_hash, client, rules_preamble,
-        prompt_lib, template_vars, cache.clone(),
-        prompt_hash, rules_hash, tool_preamble, workdir,
-    ).await;
+        reviewer_configs,
+        diff,
+        diff_hash,
+        client,
+        rules_preamble,
+        prompt_lib,
+        template_engine,
+        template_vars,
+        cache.clone(),
+        prompt_hash,
+        rules_hash,
+        tool_preamble,
+        workdir,
+    )
+    .await;
 
     // Track aggregate judge usage
     let mut judge_usage = Usage::new();
@@ -755,7 +791,8 @@ pub async fn run_consensus(
         .cloned()
         .collect();
     unmatched.sort_by(|a, b| {
-        a.file.cmp(&b.file)
+        a.file
+            .cmp(&b.file)
             .then_with(|| a.line.cmp(&b.line))
             .then_with(|| a.message.cmp(&b.message))
     });
@@ -802,8 +839,14 @@ pub async fn run_consensus(
                                 judge_cache_hits += 1;
                                 if cached_verdict.match_ {
                                     if let Some(ref c) = cache {
-                                        let verdict_json = serde_json::to_string(&cached_verdict).unwrap_or_default();
-                                        c.save_judge_with_key(&judge_key, &golden.message_regex, &unmatched[i].message, &verdict_json);
+                                        let verdict_json = serde_json::to_string(&cached_verdict)
+                                            .unwrap_or_default();
+                                        c.save_judge_with_key(
+                                            &judge_key,
+                                            &golden.message_regex,
+                                            &unmatched[i].message,
+                                            &verdict_json,
+                                        );
                                     }
                                     let matched = unmatched.remove(i);
                                     true_positives.push((golden.clone(), matched));
@@ -816,22 +859,29 @@ pub async fn run_consensus(
                         // Cache miss - make API call
                         judge_api_calls += 1;
                         tracing::info!("CACHE MISS for judge (key={})", &judge_key[..12]);
-                        match run_judge(judge, &golden.message_regex, &unmatched[i].message).await
-                        {
+                        match run_judge(judge, &golden.message_regex, &unmatched[i].message).await {
                             Ok((verdict, call_usage)) => {
                                 // Record judge usage
                                 judge_usage.input_tokens += call_usage.input_tokens;
                                 judge_usage.output_tokens += call_usage.output_tokens;
                                 judge_usage.total_tokens += call_usage.total_tokens;
                                 judge_usage.cached_input_tokens += call_usage.cached_input_tokens;
-                                judge_usage.cache_creation_input_tokens += call_usage.cache_creation_input_tokens;
+                                judge_usage.cache_creation_input_tokens +=
+                                    call_usage.cache_creation_input_tokens;
                                 judge_usage.reasoning_tokens += call_usage.reasoning_tokens;
-                                judge_usage.tool_use_prompt_tokens += call_usage.tool_use_prompt_tokens;
+                                judge_usage.tool_use_prompt_tokens +=
+                                    call_usage.tool_use_prompt_tokens;
                                 if verdict.match_ {
                                     // Cache the judge call if cache is active
                                     if let Some(ref c) = cache {
-                                        let verdict_json = serde_json::to_string(&verdict).unwrap_or_default();
-                                        c.save_judge_with_key(&judge_key, &golden.message_regex, &unmatched[i].message, &verdict_json);
+                                        let verdict_json =
+                                            serde_json::to_string(&verdict).unwrap_or_default();
+                                        c.save_judge_with_key(
+                                            &judge_key,
+                                            &golden.message_regex,
+                                            &unmatched[i].message,
+                                            &verdict_json,
+                                        );
                                     }
                                     let matched = unmatched.remove(i);
                                     true_positives.push((golden.clone(), matched));
@@ -928,7 +978,8 @@ pub async fn evaluate_pr_with_consensus(
     judge: &Agent<ResponsesCompletionModel>,
     rules_preamble: Option<&str>,
     prompt_lib: Option<&PromptLibrary>,
-    template_vars: Option<&HashMap<&str, &str>>,
+    template_engine: Option<&TemplateEngine>,
+    template_vars: Option<&HashMap<String, serde_json::Value>>,
     roles: &[&str],
     max_findings: usize,
     cache: Option<Arc<dyn CacheBackend>>,
@@ -1000,6 +1051,7 @@ pub async fn evaluate_pr_with_consensus(
         judge,
         rules_preamble,
         prompt_lib,
+        template_engine,
         template_vars,
         cache,
         diff_hash,
@@ -1224,8 +1276,9 @@ mod tests {
             severity_audited: false,
             severity_audit_reason: None,
         }];
-        let result =
-            tokio::runtime::Runtime::new().unwrap().block_on(judge_comment(&golden, &candidates));
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(judge_comment(&golden, &candidates));
         assert_eq!(result, MatchResult::TruePositive);
     }
 
@@ -1247,8 +1300,9 @@ mod tests {
             severity_audited: false,
             severity_audit_reason: None,
         }];
-        let result =
-            tokio::runtime::Runtime::new().unwrap().block_on(judge_comment(&golden, &candidates));
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(judge_comment(&golden, &candidates));
         assert_eq!(result, MatchResult::FalseNegative);
     }
 
@@ -1270,8 +1324,9 @@ mod tests {
             severity_audited: false,
             severity_audit_reason: None,
         }];
-        let result =
-            tokio::runtime::Runtime::new().unwrap().block_on(judge_comment(&golden, &candidates));
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(judge_comment(&golden, &candidates));
         assert_eq!(result, MatchResult::FalseNegative);
     }
 
@@ -1319,26 +1374,24 @@ mod tests {
         // All findings match all goldens
         let report = ConsensusReport {
             agents: vec![],
-            true_positives: vec![
-                (
-                    GoldenComment {
-                        file: "a.rs".into(),
-                        line: 1,
-                        message_regex: "foo".into(),
-                        severity: "error".into(),
-                        source: "any".into(),
-                    },
-                    Finding {
-                        file: Some("a.rs".into()),
-                        line: Some(1),
-                        message: "foo".into(),
-                        severity: "error".into(),
-                        rule_code: None,
-                        severity_audited: false,
-                        severity_audit_reason: None,
-                    },
-                ),
-            ],
+            true_positives: vec![(
+                GoldenComment {
+                    file: "a.rs".into(),
+                    line: 1,
+                    message_regex: "foo".into(),
+                    severity: "error".into(),
+                    source: "any".into(),
+                },
+                Finding {
+                    file: Some("a.rs".into()),
+                    line: Some(1),
+                    message: "foo".into(),
+                    severity: "error".into(),
+                    rule_code: None,
+                    severity_audited: false,
+                    severity_audit_reason: None,
+                },
+            )],
             false_positives: vec![],
             false_negatives: vec![],
             precision: 1.0,
@@ -1625,7 +1678,11 @@ diff --git a/a.txt b/a.txt
 --- a/a.txt
 +++ b/a.txt
 @@ -1,100 +1,300 @@
-".to_string() + &(0..250).map(|i| format!("+line_{}\n", i)).collect::<String>();
+"
+        .to_string()
+            + &(0..250)
+                .map(|i| format!("+line_{}\n", i))
+                .collect::<String>();
         // > 200 lines → full panel
         assert!(!should_use_single_agent(&diff, 3, 200));
     }

@@ -96,7 +96,8 @@ impl CacheIndex {
 
     /// Save the index to a JSON file.
     fn save(&self, path: &Path) {
-        if let Err(e) = std::fs::write(path, serde_json::to_string_pretty(self).unwrap_or_default()) {
+        if let Err(e) = std::fs::write(path, serde_json::to_string_pretty(self).unwrap_or_default())
+        {
             tracing::warn!("Failed to write cache index: {e}");
         }
     }
@@ -173,17 +174,8 @@ pub fn parse_timestamp(ts: &str) -> Option<SystemTime> {
     let ts = ts.trim();
     let (secs_str, nanos_str) = ts.split_once('.')?;
     let secs: u64 = secs_str.parse().ok()?;
-    let nanos: u32 = nanos_str
-        .chars()
-        .take(9)
-        .collect::<String>()
-        .parse()
-        .ok()?;
-    Some(
-        std::time::UNIX_EPOCH
-            + Duration::from_secs(secs)
-            + Duration::from_nanos(nanos as u64),
-    )
+    let nanos: u32 = nanos_str.chars().take(9).collect::<String>().parse().ok()?;
+    Some(std::time::UNIX_EPOCH + Duration::from_secs(secs) + Duration::from_nanos(nanos as u64))
 }
 
 /// Recursively compute the total size in bytes of all files under `path`.
@@ -271,16 +263,13 @@ impl LlmCache {
         format!("{}.{:09}", dur.as_secs(), dur.subsec_nanos())
     }
 
-        // ── Agent reasoning cache ────────────────────────────────────────────
+    // ── Agent reasoning cache ────────────────────────────────────────────
 
     /// Save agent reasoning/thinking text to cache.
-    pub fn save_agent_reasoning(
-        &self,
-        cache_key: &str,
-        role: &str,
-        reasoning: &str,
-    ) -> Result<()> {
-        let reasoning_path = self.dir.join("agents")
+    pub fn save_agent_reasoning(&self, cache_key: &str, role: &str, reasoning: &str) -> Result<()> {
+        let reasoning_path = self
+            .dir
+            .join("agents")
             .join(format!("{cache_key}.agent_{role}_reasoning.txt"));
         std::fs::write(&reasoning_path, reasoning)?;
         Ok(())
@@ -357,22 +346,37 @@ impl LlmCache {
         usage: Option<&Usage>,
     ) -> Result<()> {
         // Write prompt and response files
-        let prompt_path = self.dir.join("agents").join(format!("{cache_key}.agent_{role}_prompt.txt"));
-        let response_path = self.dir.join("agents").join(format!("{cache_key}.agent_{role}_response.txt"));
+        let prompt_path = self
+            .dir
+            .join("agents")
+            .join(format!("{cache_key}.agent_{role}_prompt.txt"));
+        let response_path = self
+            .dir
+            .join("agents")
+            .join(format!("{cache_key}.agent_{role}_response.txt"));
 
         std::fs::write(&prompt_path, prompt)?;
         std::fs::write(&response_path, response)?;
 
         // Write usage data as JSON if provided
         if let Some(usage) = usage {
-            let usage_path = self.dir.join("agents").join(format!("{cache_key}.agent_{role}_usage.json"));
-            if let Err(e) = std::fs::write(&usage_path, serde_json::to_string(usage).unwrap_or_default()) {
+            let usage_path = self
+                .dir
+                .join("agents")
+                .join(format!("{cache_key}.agent_{role}_usage.json"));
+            if let Err(e) = std::fs::write(
+                &usage_path,
+                serde_json::to_string(usage).unwrap_or_default(),
+            ) {
                 tracing::warn!("Failed to write agent usage cache: {e}");
             }
         }
 
         // Update index
-        let mut index = self.index.lock().map_err(|e| format!("cache index lock: {e}"))?;
+        let mut index = self
+            .index
+            .lock()
+            .map_err(|e| format!("cache index lock: {e}"))?;
         index.entries.insert(
             cache_key.to_string(),
             CacheEntry {
@@ -424,7 +428,10 @@ impl LlmCache {
         std::fs::write(&verdict_path, verdict_json)?;
 
         // Update index
-        let mut index = self.index.lock().map_err(|e| format!("cache index lock: {e}"))?;
+        let mut index = self
+            .index
+            .lock()
+            .map_err(|e| format!("cache index lock: {e}"))?;
         index.entries.insert(
             cache_key.to_string(),
             CacheEntry {
@@ -462,19 +469,23 @@ impl LlmCache {
     }
 
     /// Save a context gatherer prompt+response with its cache key.
-    pub fn save_context_cached(
-        &self,
-        cache_key: &str,
-        prompt: &str,
-        response: &str,
-    ) -> Result<()> {
-        let prompt_path = self.dir.join("context").join(format!("{cache_key}.context_prompt.txt"));
-        let response_path = self.dir.join("context").join(format!("{cache_key}.context_response.txt"));
+    pub fn save_context_cached(&self, cache_key: &str, prompt: &str, response: &str) -> Result<()> {
+        let prompt_path = self
+            .dir
+            .join("context")
+            .join(format!("{cache_key}.context_prompt.txt"));
+        let response_path = self
+            .dir
+            .join("context")
+            .join(format!("{cache_key}.context_response.txt"));
 
         std::fs::write(&prompt_path, prompt)?;
         std::fs::write(&response_path, response)?;
 
-        let mut index = self.index.lock().map_err(|e| format!("cache index lock: {e}"))?;
+        let mut index = self
+            .index
+            .lock()
+            .map_err(|e| format!("cache index lock: {e}"))?;
         index.entries.insert(
             cache_key.to_string(),
             CacheEntry {
@@ -504,12 +515,7 @@ impl LlmCache {
     }
 
     /// Append a judge call to the JSONL file (legacy).
-    pub fn save_judge(
-        &self,
-        golden: &str,
-        finding: &str,
-        verdict_json: &str,
-    ) -> Result<()> {
+    pub fn save_judge(&self, golden: &str, finding: &str, verdict_json: &str) -> Result<()> {
         let path = self.dir.join("judge_calls.jsonl");
         let mut f = std::fs::OpenOptions::new()
             .create(true)
@@ -578,32 +584,19 @@ impl LlmCache {
             let pr_dir = entry.path();
             let index_path = pr_dir.join("index.json");
 
-            let (entry_count, oldest, newest) =
-                match std::fs::read_to_string(&index_path) {
-                    Ok(content) => {
-                        if let Ok(idx) =
-                            serde_json::from_str::<CacheIndex>(&content)
-                        {
-                            let count = idx.entries.len();
-                            let oldest = idx
-                                .entries
-                                .values()
-                                .map(|e| &e.timestamp)
-                                .min()
-                                .cloned();
-                            let newest = idx
-                                .entries
-                                .values()
-                                .map(|e| &e.timestamp)
-                                .max()
-                                .cloned();
-                            (count, oldest, newest)
-                        } else {
-                            (0, None, None)
-                        }
+            let (entry_count, oldest, newest) = match std::fs::read_to_string(&index_path) {
+                Ok(content) => {
+                    if let Ok(idx) = serde_json::from_str::<CacheIndex>(&content) {
+                        let count = idx.entries.len();
+                        let oldest = idx.entries.values().map(|e| &e.timestamp).min().cloned();
+                        let newest = idx.entries.values().map(|e| &e.timestamp).max().cloned();
+                        (count, oldest, newest)
+                    } else {
+                        (0, None, None)
                     }
-                    Err(_) => (0, None, None),
-                };
+                }
+                Err(_) => (0, None, None),
+            };
 
             let size = dir_size(&pr_dir).unwrap_or(0);
 
@@ -672,11 +665,13 @@ impl LlmCache {
             let index_path = pr_dir.join("index.json");
 
             // Find the newest entry timestamp for this PR
-            let newest = std::fs::read_to_string(&index_path).ok().and_then(|content| {
-                serde_json::from_str::<CacheIndex>(&content)
-                    .ok()
-                    .and_then(|idx| idx.entries.values().map(|e| &e.timestamp).max().cloned())
-            });
+            let newest = std::fs::read_to_string(&index_path)
+                .ok()
+                .and_then(|content| {
+                    serde_json::from_str::<CacheIndex>(&content)
+                        .ok()
+                        .and_then(|idx| idx.entries.values().map(|e| &e.timestamp).max().cloned())
+                });
 
             pr_dirs.push((name_str.to_string(), pr_dir, newest));
         }
@@ -755,9 +750,7 @@ impl LlmCache {
                         let current_keys: std::collections::HashSet<String> =
                             idx.entries.keys().cloned().collect();
                         // Only remove files for entries that were actually removed
-                        if let Ok(old_content) =
-                            serde_json::from_str::<CacheIndex>(&content)
-                        {
+                        if let Ok(old_content) = serde_json::from_str::<CacheIndex>(&content) {
                             for (old_key, old_entry) in &old_content.entries {
                                 if !current_keys.contains(old_key) {
                                     let file_path = pr_dir.join(&old_entry.file_path);
@@ -788,8 +781,7 @@ impl LlmCache {
                 };
 
                 // Collect entries sorted by timestamp (oldest first)
-                let mut entries: Vec<(String, CacheEntry)> =
-                    idx.entries.drain().collect();
+                let mut entries: Vec<(String, CacheEntry)> = idx.entries.drain().collect();
                 entries.sort_by(|a, b| a.1.timestamp.cmp(&b.1.timestamp));
 
                 let mut running_size = current_size;
@@ -857,11 +849,7 @@ impl LlmCache {
     ///
     /// When `repair` is true, removes stale entries, removes orphan files, and
     /// writes corrected index files.
-    pub fn scrub(
-        base_dir: &Path,
-        dry_run: bool,
-        repair: bool,
-    ) -> Result<ScrubResult> {
+    pub fn scrub(base_dir: &Path, dry_run: bool, repair: bool) -> Result<ScrubResult> {
         let mut result = ScrubResult {
             pr_dirs_scanned: 0,
             stale_entries_found: 0,
@@ -874,7 +862,9 @@ impl LlmCache {
 
         let read_dir = match std::fs::read_dir(base_dir) {
             Ok(d) => d,
-            Err(e) => return Err(format!("cannot read cache dir {}: {}", base_dir.display(), e).into()),
+            Err(e) => {
+                return Err(format!("cannot read cache dir {}: {}", base_dir.display(), e).into())
+            }
         };
 
         for entry in read_dir {
@@ -1128,8 +1118,7 @@ impl LlmCache {
                         let old_path = pr_dir.join(&entry_meta.file_path);
                         if old_path.exists() {
                             // Build new file path by replacing the old key in the path
-                            let new_file_path =
-                                entry_meta.file_path.replace(old_key, &new_key);
+                            let new_file_path = entry_meta.file_path.replace(old_key, &new_key);
                             let new_path = pr_dir.join(&new_file_path);
 
                             // Ensure parent directory exists
@@ -1223,8 +1212,17 @@ impl CacheBackend for LlmCache {
         }
     }
 
-    fn save_agent_with_key_and_usage(&self, cache_key: &str, role: &str, prompt: &str, response: &str, usage: &Usage) {
-        if let Err(e) = self.save_agent_cached_with_usage(cache_key, role, prompt, response, Some(usage)) {
+    fn save_agent_with_key_and_usage(
+        &self,
+        cache_key: &str,
+        role: &str,
+        prompt: &str,
+        response: &str,
+        usage: &Usage,
+    ) {
+        if let Err(e) =
+            self.save_agent_cached_with_usage(cache_key, role, prompt, response, Some(usage))
+        {
             tracing::warn!("Cache save_agent_with_key_and_usage failed: {e}");
         }
     }
@@ -1235,7 +1233,13 @@ impl CacheBackend for LlmCache {
         }
     }
 
-    fn save_judge_with_key(&self, cache_key: &str, golden: &str, finding: &str, verdict_json: &str) {
+    fn save_judge_with_key(
+        &self,
+        cache_key: &str,
+        golden: &str,
+        finding: &str,
+        verdict_json: &str,
+    ) {
         if let Err(e) = self.save_judge_cached(cache_key, golden, finding, verdict_json) {
             tracing::warn!("Cache save_judge_cached failed: {e}");
         }
@@ -1377,7 +1381,9 @@ mod tests {
         assert!(cache.lookup_agent(&key).is_none());
 
         // Save and re-check
-        cache.save_agent_cached(&key, "SA", "prompt", "response").unwrap();
+        cache
+            .save_agent_cached(&key, "SA", "prompt", "response")
+            .unwrap();
         assert_eq!(cache.lookup_agent(&key).unwrap(), "response");
     }
 
@@ -1390,7 +1396,9 @@ mod tests {
         assert!(cache.lookup_judge(&key).is_none());
 
         let verdict = r#"{"reasoning":"test","match":true,"confidence":0.95}"#;
-        cache.save_judge_cached(&key, "golden", "finding", verdict).unwrap();
+        cache
+            .save_judge_cached(&key, "golden", "finding", verdict)
+            .unwrap();
 
         let cached: JudgeVerdict = cache.lookup_judge(&key).unwrap();
         assert!(cached.match_);
@@ -1405,7 +1413,9 @@ mod tests {
         let key = LlmCache::compute_context_key("gph", "dh", "rh", "gpt-4o");
         assert!(cache.lookup_context(&key).is_none());
 
-        cache.save_context_cached(&key, "context prompt", "context response").unwrap();
+        cache
+            .save_context_cached(&key, "context prompt", "context response")
+            .unwrap();
         assert_eq!(cache.lookup_context(&key).unwrap(), "context response");
     }
 
@@ -1418,7 +1428,9 @@ mod tests {
         {
             let cache = LlmCache::new(&path, "test-pr").unwrap();
             let key = LlmCache::compute_agent_key("ph", "dh", "gpt-4o", "SA", "rh");
-            cache.save_agent_cached(&key, "SA", "prompt", "response").unwrap();
+            cache
+                .save_agent_cached(&key, "SA", "prompt", "response")
+                .unwrap();
         }
 
         // Re-load and verify index persists
@@ -1477,14 +1489,20 @@ mod tests {
         {
             let cache1 = LlmCache::new(base.path(), "pr-1").unwrap();
             let key1 = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
-            cache1.save_agent_cached(&key1, "SA", "prompt", "resp").unwrap();
+            cache1
+                .save_agent_cached(&key1, "SA", "prompt", "resp")
+                .unwrap();
             let key2 = LlmCache::compute_judge_key("jph", "f", "g", "jm");
-            cache1.save_judge_cached(&key2, "g", "f", r#"{"match":true}"#).unwrap();
+            cache1
+                .save_judge_cached(&key2, "g", "f", r#"{"match":true}"#)
+                .unwrap();
         }
         {
             let cache2 = LlmCache::new(base.path(), "pr-2").unwrap();
             let key3 = LlmCache::compute_context_key("gph", "dh", "rh", "m");
-            cache2.save_context_cached(&key3, "ctx", "ctx resp").unwrap();
+            cache2
+                .save_context_cached(&key3, "ctx", "ctx resp")
+                .unwrap();
         }
 
         let stats = LlmCache::stats(base.path()).unwrap();
@@ -1519,10 +1537,10 @@ mod tests {
         // Dry run should report entries but not remove them
         let result = LlmCache::prune(
             base.path(),
-            Some(0),   // max_age_days = 0: cutoff at now
+            Some(0), // max_age_days = 0: cutoff at now
             None,
             None,
-            true,      // dry_run
+            true, // dry_run
         )
         .unwrap();
 
@@ -1561,24 +1579,19 @@ mod tests {
 
         // Set first entry timestamp to 100 days ago
         if let Some(entry) = idx.entries.get_mut(&key1) {
-            let old_time = std::time::SystemTime::now()
-                - std::time::Duration::from_secs(100 * 86400);
+            let old_time =
+                std::time::SystemTime::now() - std::time::Duration::from_secs(100 * 86400);
             entry.timestamp = {
-                let dur = old_time.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+                let dur = old_time
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default();
                 format!("{}.{:09}", dur.as_secs(), dur.subsec_nanos())
             };
         }
         std::fs::write(&index_path, serde_json::to_string_pretty(&idx).unwrap()).unwrap();
 
         // Now prune with max_age_days=30
-        let result = LlmCache::prune(
-            base.path(),
-            Some(30),
-            None,
-            None,
-            false,
-        )
-        .unwrap();
+        let result = LlmCache::prune(base.path(), Some(30), None, None, false).unwrap();
 
         assert_eq!(result.entries_removed, 1);
         assert!(result.bytes_freed > 0);
@@ -1602,7 +1615,11 @@ mod tests {
         }
 
         // Inject an orphan file
-        let orphan_path = base.path().join("test-pr").join("agents").join("orphan_file.txt");
+        let orphan_path = base
+            .path()
+            .join("test-pr")
+            .join("agents")
+            .join("orphan_file.txt");
         std::fs::write(&orphan_path, "orphan data").unwrap();
 
         // Dry-run scrub should detect the orphan
@@ -1628,7 +1645,11 @@ mod tests {
         }
 
         // Inject an orphan file
-        let orphan_path = base.path().join("test-pr").join("agents").join("orphan.txt");
+        let orphan_path = base
+            .path()
+            .join("test-pr")
+            .join("agents")
+            .join("orphan.txt");
         std::fs::write(&orphan_path, "orphan").unwrap();
 
         // Repair scrub should remove the orphan
@@ -1657,9 +1678,13 @@ mod tests {
         {
             let cache = LlmCache::new(base.path(), "test-pr").unwrap();
             let key1 = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
-            cache.save_agent_cached(&key1, "SA", "prompt", "response").unwrap();
+            cache
+                .save_agent_cached(&key1, "SA", "prompt", "response")
+                .unwrap();
             let key2 = LlmCache::compute_judge_key("jph", "f", "g", "jm");
-            cache.save_judge_cached(&key2, "g", "f", r#"{"match":true}"#).unwrap();
+            cache
+                .save_judge_cached(&key2, "g", "f", r#"{"match":true}"#)
+                .unwrap();
         }
 
         // Backup
@@ -1690,7 +1715,9 @@ mod tests {
         {
             let cache = LlmCache::new(base.path(), "test-pr").unwrap();
             key = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
-            cache.save_agent_cached(&key, "SA", "prompt", "response").unwrap();
+            cache
+                .save_agent_cached(&key, "SA", "prompt", "response")
+                .unwrap();
         }
 
         // Dry-run rebuild should not change anything
@@ -1742,14 +1769,7 @@ mod tests {
         }
 
         // Prune to keep only 1 PR
-        let result = LlmCache::prune(
-            base.path(),
-            None,
-            None,
-            Some(1),
-            false,
-        )
-        .unwrap();
+        let result = LlmCache::prune(base.path(), None, None, Some(1), false).unwrap();
 
         assert_eq!(result.prs_removed, 2);
         assert_eq!(result.prs_kept, 1);

@@ -447,8 +447,8 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
     let mut all_findings = Vec::new();
 
     for &role in &roles {
-        // Build agent with built-in prompts (no prompt lib, no rules)
-        let agent = build_agent(&client, &params.model, role, None, None, None, None, None);
+        // Build agent with built-in prompts (no prompt lib, no rules, no template engine)
+        let agent = build_agent(&client, &params.model, role, None, None, None, None, None, None);
 
         // Call agent with the diff - get real token usage via extended_details
         match agent.prompt(&diff).extended_details().await {
@@ -499,8 +499,8 @@ pub async fn review_pr_with_prompt_lib(
     let mut all_findings = Vec::new();
 
     for &role in &roles {
-        // Build agent with loaded prompts
-        let agent = build_agent(&client, &params.model, role, None, Some(prompt_lib), None, None, None);
+        // Build agent with loaded prompts (no template engine)
+        let agent = build_agent(&client, &params.model, role, None, Some(prompt_lib), None, None, None, None);
 
         // Call agent with the diff
         match agent.prompt(&diff).extended_details().await {
@@ -906,7 +906,8 @@ pub async fn evaluate_pr_single_agent(
                 &role,
                 preamble.as_deref(),
                 Some(&p_lib),
-                None,
+                None, // template_engine
+                None, // template_vars
                 Some(&tool_preamble),
                 None, // workdir - not available in single-agent path
             );
@@ -1121,7 +1122,7 @@ pub async fn evaluate_pr_consensus(
 
     // ── Build template variables from diff and PR context (EXP-014) ──
     #[cfg(feature = "exp14_template_vars")]
-    let template_vars: Option<&'static HashMap<&'static str, &'static str>> = {
+    let _template_vars: Option<&'static HashMap<&'static str, &'static str>> = {
         let language = crb_tools::language_detector::detect_primary_language(diff);
         let repo_name = crb_tools::language_detector::extract_repo_name(&pr.url);
         let lang_ref: &'static str = Box::leak(language.into_boxed_str());
@@ -1135,7 +1136,7 @@ pub async fn evaluate_pr_consensus(
     };
 
     #[cfg(not(feature = "exp14_template_vars"))]
-    let template_vars: Option<&'static HashMap<&'static str, &'static str>> = None;
+    let _template_vars: Option<&'static HashMap<&'static str, &'static str>> = None;
 
     let (result, agent_usage, judge_usage, agent_api_calls, judge_api_calls, judge_cache_hits) = evaluate_pr_with_consensus(
         pr,
@@ -1145,7 +1146,8 @@ pub async fn evaluate_pr_consensus(
         judge,
         rules_preamble,
         Some(prompt_lib),
-        template_vars,
+        None,
+        None,
         &parsed_roles,
         max_findings,
         cache.clone().map(|c| c as Arc<dyn CacheBackend>),
