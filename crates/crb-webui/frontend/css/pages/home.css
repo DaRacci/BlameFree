@@ -103,19 +103,76 @@
   color: var(--accent-blue);
 }
 
-/* Respect reduced motion preferences */
-@media (prefers-reduced-motion: reduce) {
-  .active-runs-indicator,
-  .badge__dot--pulse {
-    animation: none;
-  }
+/* ─── Quick Actions Section ───────────────────────────────── */
+
+.quick-actions {
+  display: flex;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
 }
 
-/* Search filter section */
+.quick-actions__btn {
+  flex: 1;
+  padding: var(--spacing-xl) var(--spacing-2xl);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  justify-content: center;
+}
+
+/* ─── Recent Runs Feed ────────────────────────────────────── */
+
+.home-page__recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.home-page__recent-row {
+  border-left: 3px solid transparent;
+  transition: border-color var(--transition-fast);
+}
+
+.home-page__recent-row:hover {
+  border-left-color: var(--accent-blue);
+}
+
+.home-page__recent-row .card__header {
+  padding-bottom: 0;
+}
+
+/* ─── Empty State Overrides ────────────────────────────────── */
+
+.home-page .empty-state {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+}
+
+/* ─── Ad-hoc badge in recent runs ──────────────────────────── */
+
+.badge--info .badge__dot {
+  background: var(--accent-blue);
+}
+
+.badge--info {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+/* ─── Search filter section ──────────────────────────────── */
+
 .home-page__filters {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-xl);
   flex-wrap: wrap;
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .active-runs-indicator,
+  .badge__dot--pulse {
+    animation: none;
+  }
 }

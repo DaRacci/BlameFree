@@ -36,6 +36,8 @@ pub struct RunSummary {
     #[serde(default)]
     pub model: Option<String>,
     pub status: String,
+    #[serde(default)]
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -561,13 +563,19 @@ fn Sidebar() -> impl IntoView {
                 <li>
                     <a href="/" class=move || format!("sidebar__item {}", active_class("/runs/"))>
                         <span class="sidebar__icon">""</span>
-                        <span class="sidebar__label">"Home"</span>
+                        <span class="sidebar__label">"Dashboard"</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="/" class=move || format!("sidebar__item {}", active_class("/runs/"))>
+                        <span class="sidebar__icon">""</span>
+                        <span class="sidebar__label">"Benchmarks"</span>
                     </a>
                 </li>
                 <li>
                     <a href="/adhoc" class=move || format!("sidebar__item {}", active_class("/adhoc"))>
                         <span class="sidebar__icon">""</span>
-                        <span class="sidebar__label">"Ad-hoc"</span>
+                        <span class="sidebar__label">"Ad-hoc Review"</span>
                     </a>
                 </li>
             </ul>
