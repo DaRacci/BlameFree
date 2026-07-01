@@ -39,8 +39,8 @@ pub struct AppState {
     pub config: WebUiConfig,
     /// Session store for OAuth-authenticated users.
     pub session_store: SessionStore,
-    /// GitHub API token for fetching PR diffs (read-only, from GITHUB_TOKEN env var).
-    pub github_token: Option<String>,
+    /// Octocrab GitHub API client (authenticated via GITHUB_TOKEN env var).
+    pub octocrab: octocrab::Octocrab,
 }
 
 /// State for an actively running benchmark.
@@ -77,7 +77,7 @@ impl AppState {
         models: String,
         benchmark_dir: Option<PathBuf>,
         config: WebUiConfig,
-        github_token: Option<String>,
+        octocrab: octocrab::Octocrab,
         session_store: SessionStore,
     ) -> Self {
         Self {
@@ -90,7 +90,7 @@ impl AppState {
             replays: Arc::new(RwLock::new(HashMap::new())),
             config,
             session_store,
-            github_token,
+            octocrab,
         }
     }
 }

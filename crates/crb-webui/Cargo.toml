@@ -8,7 +8,9 @@ name = "crb-webui"
 path = "src/main.rs"
 
 [features]
+default = ["reduce-diff", "oauth2"]
 reduce-diff = ["crb-harness/reduce-diff"]
+oauth2 = ["dep:oauth2", "dep:reqwest"]
 
 [dependencies]
 axum = "0.7"
@@ -29,11 +31,14 @@ regex = "1"
 dotenvy = "0.15"
 
 # OAuth and session management
-oauth2 = { version = "4", features = ["reqwest"] }
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+oauth2 = { version = "4", features = ["reqwest"], optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["json"], optional = true }
 rand = "0.8"
 hmac = "0.12"
 sha2 = "0.10"
+
+# GitHub API client (replaces direct reqwest calls to api.github.com)
+octocrab = "0.41"
 
 # Library dependencies (replaces subprocess spawning)
 crb-harness = { path = "../crb-harness" }

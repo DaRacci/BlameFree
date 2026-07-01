@@ -338,57 +338,32 @@ pub async fn list_repo_prs(
 ) -> impl IntoResponse {
     tracing::info!("GET /api/adhoc/prs/{}/{}", owner, repo);
 
-    let token = state.github_token.clone().unwrap_or_default();
-    let client = reqwest::Client::new();
-    let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls?state=open&per_page=100");
-
-    let mut req = client
-        .get(&url)
-        .header("User-Agent", "review-harness/1.0")
-        .header("Accept", "application/json");
-    if !token.is_empty() {
-        req = req.header("Authorization", format!("Bearer {}", token));
-    }
-
-    let resp = match req.send().await {
-        Ok(r) => r,
+    let page = match state
+        .octocrab
+        .pulls(&owner, &repo)
+        .list()
+        .state(octocrab::params::State::Open)
+        .per_page(100)
+        .send()
+        .await
+    {
+        Ok(page) => page,
         Err(e) => {
             return (
                 StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({ "error": format!("HTTP error: {e}") })),
+                Json(serde_json::json!({ "error": format!("GitHub API error: {e}") })),
             )
                 .into_response();
         }
     };
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return (
-            status,
-            Json(serde_json::json!({ "error": format!("GitHub API returned {status}: {body}") })),
-        )
-            .into_response();
-    }
-
-    let items: Vec<serde_json::Value> = match resp.json().await {
-        Ok(items) => items,
-        Err(e) => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({ "error": format!("Failed to parse response: {e}") })),
-            )
-                .into_response();
-        }
-    };
-
-    let prs: Vec<GithubPrListItem> = items
+    let prs: Vec<GithubPrListItem> = page
+        .items
         .into_iter()
-        .filter_map(|item| {
-            let number = item.get("number")?.as_u64()? as u32;
-            let title = item.get("title")?.as_str()?.to_string();
-            let html_url = item.get("html_url")?.as_str()?.to_string();
-            Some(GithubPrListItem { number, title, html_url })
+        .map(|pr| GithubPrListItem {
+            number: pr.number as u32,
+            title: pr.title.unwrap_or_default(),
+            html_url: pr.html_url.map(|u| u.to_string()).unwrap_or_default(),
         })
         .collect();
 
@@ -407,65 +382,44 @@ fn parse_github_url(url: &str) -> Option<(String, String, u32)> {
     Some((owner, repo, pr_number))
 }
 
-/// GitHub API response for a PR (metadata endpoint)
-#[derive(Debug, Deserialize)]
-struct GithubPrResponse {
-    title: String,
-    #[serde(default)]
-    body: Option<String>,
-}
-
-/// Fetch PR title and raw diff from the GitHub API.
+/// Fetch PR title and raw diff from the GitHub API via octocrab.
 async fn fetch_pr_diff(
     state: &AppState,
     owner: &str,
     repo: &str,
     pr_number: u32,
 ) -> Result<(String, String), String> {
-    let token = state.github_token.clone().unwrap_or_default();
-
-    let client = reqwest::Client::new();
-
-    // Fetch PR metadata
-    let pr_url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}");
-    let mut pr_req = client.get(&pr_url)
-        .header("User-Agent", "review-harness/1.0")
-        .header("Accept", "application/json");
-    if !token.is_empty() {
-        pr_req = pr_req.header("Authorization", format!("Bearer {}", token));
-    }
-
-    let pr_resp = pr_req.send().await.map_err(|e| format!("HTTP error: {e}"))?;
-    if !pr_resp.status().is_success() {
-        let status = pr_resp.status();
-        let body = pr_resp.text().await.unwrap_or_default();
-        return Err(format!("GitHub API returned {status}: {body}"));
-    }
-
-    let pr_data: GithubPrResponse = pr_resp
-        .json()
+    // Fetch PR metadata using octocrab's typed PullRequest API
+    let pr = state
+        .octocrab
+        .pulls(owner, repo)
+        .get(pr_number as u64)
         .await
-        .map_err(|e| format!("Failed to parse PR response: {e}"))?;
+        .map_err(|e| format!("Failed to fetch PR metadata: {e}"))?;
 
-    // Fetch PR diff (raw text, using application/vnd.github.v3.diff)
-    let diff_url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}");
-    let mut diff_req = client.get(&diff_url)
-        .header("User-Agent", "review-harness/1.0")
-        .header("Accept", "application/vnd.github.v3.diff");
-    if !token.is_empty() {
-        diff_req = diff_req.header("Authorization", format!("Bearer {}", token));
+    let title = pr.title.unwrap_or_default();
+
+    // Fetch PR diff (raw text, using application/vnd.github.v3.diff custom Accept header).
+    // octocrab's typed methods don't support raw text responses, so we use reqwest directly
+    // for this single endpoint. Auth is injected from GITHUB_TOKEN env var.
+    let diff_client = reqwest::Client::new();
+    let token = std::env::var("GITHUB_TOKEN").ok();
+    let mut diff_req = diff_client
+        .get(format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"))
+        .header("Accept", "application/vnd.github.v3.diff")
+        .header("User-Agent", "review-harness/1.0");
+    if let Some(ref t) = token {
+        diff_req = diff_req.header("Authorization", format!("Bearer {t}"));
     }
+    let diff = diff_req
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch PR diff: {e}"))?
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read diff text: {e}"))?;
 
-    let diff_resp = diff_req.send().await.map_err(|e| format!("HTTP error: {e}"))?;
-    if !diff_resp.status().is_success() {
-        let status = diff_resp.status();
-        let body = diff_resp.text().await.unwrap_or_default();
-        return Err(format!("GitHub API returned {status}: {body}"));
-    }
-
-    let diff = diff_resp.text().await.map_err(|e| format!("Failed to read diff: {e}"))?;
-
-    Ok((pr_data.title, diff))
+    Ok((title, diff))
 }
 
 /// Run the actual review pipeline for an ad-hoc PR.
@@ -718,7 +672,7 @@ fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<AdhocRunSummary> {
     let findings_count = data
         .get("aggregate_metrics")
         .and_then(|m| m.as_object())
-        .and_then(|m| {
+        .and_then(|_m| {
             // Count total findings from per-PR file
             None::<usize>
         })

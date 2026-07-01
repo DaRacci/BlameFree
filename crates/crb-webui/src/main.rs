@@ -127,13 +127,20 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
-    // GitHub API token for ad-hoc PR fetching (read-only)
-    let github_token = std::env::var("GITHUB_TOKEN").ok();
-    if github_token.is_some() {
-        tracing::info!("GITHUB_TOKEN found — will use for GitHub API requests");
-    } else {
-        tracing::warn!("GITHUB_TOKEN not set — GitHub API rate limits will be low (60 req/hr)");
-    }
+    // GitHub API client via octocrab (authenticated with GITHUB_TOKEN env var)
+    let octocrab = match std::env::var("GITHUB_TOKEN") {
+        Ok(token) => {
+            tracing::info!("GITHUB_TOKEN found — octocrab will use it for authenticated requests");
+            octocrab::Octocrab::builder()
+                .personal_token(token)
+                .build()
+                .map_err(|e| anyhow::anyhow!("Failed to build octocrab client: {e}"))?
+        }
+        Err(_) => {
+            tracing::warn!("GITHUB_TOKEN not set — GitHub API rate limits will be low (60 req/hr)");
+            octocrab::Octocrab::default()
+        }
+    };
 
     // Create session store for OAuth (used regardless of whether OAuth is enabled)
     let session_store = crate::auth::new_session_store();
@@ -145,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
         args.models,
         args.benchmark_dir,
         webui_config,
-        github_token,
+        octocrab,
         session_store,
     );
 
