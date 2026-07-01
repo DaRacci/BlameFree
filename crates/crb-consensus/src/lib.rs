@@ -1275,6 +1275,10 @@ mod tests {
             rule_code: Some("SA-001".into()),
             severity_audited: false,
             severity_audit_reason: None,
+            evidence: None,
+            path_trace: None,
+            confidence: None,
+            found_by: None,
         }];
         let result = tokio::runtime::Runtime::new()
             .unwrap()
@@ -1299,6 +1303,10 @@ mod tests {
             rule_code: Some("SA-001".into()),
             severity_audited: false,
             severity_audit_reason: None,
+            evidence: None,
+            path_trace: None,
+            confidence: None,
+            found_by: None,
         }];
         let result = tokio::runtime::Runtime::new()
             .unwrap()
@@ -1323,6 +1331,10 @@ mod tests {
             rule_code: Some("SA-001".into()),
             severity_audited: false,
             severity_audit_reason: None,
+            evidence: None,
+            path_trace: None,
+            confidence: None,
+            found_by: None,
         }];
         let result = tokio::runtime::Runtime::new()
             .unwrap()
@@ -1390,6 +1402,10 @@ mod tests {
                     rule_code: None,
                     severity_audited: false,
                     severity_audit_reason: None,
+                    evidence: None,
+                    path_trace: None,
+                    confidence: None,
+                    found_by: None,
                 },
             )],
             false_positives: vec![],
@@ -1424,6 +1440,10 @@ mod tests {
                 rule_code: None,
                 severity_audited: false,
                 severity_audit_reason: None,
+                evidence: None,
+                path_trace: None,
+                confidence: None,
+                found_by: None,
             }],
             false_negatives: vec![GoldenComment {
                 file: "a.rs".into(),

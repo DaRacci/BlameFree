@@ -254,14 +254,11 @@ impl SubmitFindingTool {
             rule_code: args.rule_code,
             severity_audited: false,
             severity_audit_reason: None,
+            evidence: None,
+            path_trace: None,
+            confidence: None,
+            found_by: None,
         };
-
-        // Add extra fields via serde_json merge is not possible directly
-        // because Finding is a struct. We store evidence/path_trace/confidence/found_by
-        // through the struct fields — they're already available on the Finding
-        // struct as of the crb-tools update. Actually, these fields were proposed
-        // additions but the current Finding struct doesn't have them.
-        // For now, we embed them in the message text if present.
 
         (Some(finding), errors, warnings)
     }
