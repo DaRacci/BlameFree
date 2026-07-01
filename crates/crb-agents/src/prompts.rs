@@ -60,12 +60,18 @@ impl PromptLibrary {
         let mut sections: HashMap<String, String> = HashMap::new();
         if let Some(sections_dir) = PROMPTS_DIR.get_dir("sections") {
             for entry in sections_dir.files() {
-                let name = entry.path().file_stem()
+                let name = entry
+                    .path()
+                    .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or_default();
                 let content = entry.contents_utf8().unwrap_or("").to_string();
                 // Map submit_findings → submit_finding for template compat
-                let key = if name == "submit_findings" { "submit_finding" } else { name };
+                let key = if name == "submit_findings" {
+                    "submit_finding"
+                } else {
+                    name
+                };
                 sections.insert(key.to_string(), content);
             }
         }
@@ -79,15 +85,17 @@ impl PromptLibrary {
                 }
                 let content = file.contents_utf8().unwrap_or("");
                 if let Some((yaml_str, body)) = split_frontmatter(content) {
-                    let config: AgentConfig = serde_yaml::from_str(yaml_str)
-                        .unwrap_or_default();
+                    let config: AgentConfig = serde_yaml::from_str(yaml_str).unwrap_or_default();
                     if config.role_abbreviation.is_empty() {
                         continue;
                     }
                     let clean_body = body.trim().to_string();
                     agents.insert(
                         config.role_abbreviation.to_uppercase(),
-                        AgentEntry { config, role_prompt: clean_body },
+                        AgentEntry {
+                            config,
+                            role_prompt: clean_body,
+                        },
                     );
                 }
             }
@@ -97,12 +105,18 @@ impl PromptLibrary {
             return Err("No agents found in embedded prompts".into());
         }
 
-        Ok(Self { agents, agent_template, sections })
+        Ok(Self {
+            agents,
+            agent_template,
+            sections,
+        })
     }
 
     /// Get the raw markdown body for a role (YAML stripped).
     pub fn get(&self, role: &str) -> Option<&str> {
-        self.agents.get(&role.to_uppercase()).map(|e| e.role_prompt.as_str())
+        self.agents
+            .get(&role.to_uppercase())
+            .map(|e| e.role_prompt.as_str())
     }
 
     /// Get the agent config for a role.
@@ -123,10 +137,22 @@ impl PromptLibrary {
 
         let mut ctx = serde_json::Map::new();
         ctx.insert("role_name".into(), entry.config.role_name.clone().into());
-        ctx.insert("role_abbreviation".into(), entry.config.role_abbreviation.clone().into());
-        ctx.insert("role_domain".into(), entry.config.role_domain.clone().into());
-        ctx.insert("role_anti_hallucination_rules".into(), entry.config.role_anti_hallucination_rules.clone().into());
-        ctx.insert("role_review_methodology".into(), entry.config.role_review_methodology.clone().into());
+        ctx.insert(
+            "role_abbreviation".into(),
+            entry.config.role_abbreviation.clone().into(),
+        );
+        ctx.insert(
+            "role_domain".into(),
+            entry.config.role_domain.clone().into(),
+        );
+        ctx.insert(
+            "role_anti_hallucination_rules".into(),
+            entry.config.role_anti_hallucination_rules.clone().into(),
+        );
+        ctx.insert(
+            "role_review_methodology".into(),
+            entry.config.role_review_methodology.clone().into(),
+        );
         ctx.insert("role_prompt".into(), entry.role_prompt.clone().into());
 
         // Merge user vars
@@ -189,7 +215,8 @@ fn simple_if_handler(template: &str, ctx: &serde_json::Map<String, serde_json::V
         if let Some(caps) = re.captures(&result) {
             let var = &caps[1];
             let body = &caps[2];
-            let is_truthy = ctx.get(var)
+            let is_truthy = ctx
+                .get(var)
                 .map(|v| match v {
                     serde_json::Value::String(s) => !s.is_empty(),
                     serde_json::Value::Null => false,
@@ -210,7 +237,8 @@ fn simple_if_handler(template: &str, ctx: &serde_json::Map<String, serde_json::V
             let var = &caps[1];
             let true_body = &caps[2];
             let false_body = &caps[3];
-            let is_truthy = ctx.get(var)
+            let is_truthy = ctx
+                .get(var)
                 .map(|v| match v {
                     serde_json::Value::String(s) => !s.is_empty(),
                     serde_json::Value::Null => false,

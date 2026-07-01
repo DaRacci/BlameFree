@@ -64,6 +64,12 @@ pub struct CliArgs {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Install rustls crypto provider BEFORE any TLS-using code runs.
+    // Required by octocrab (hyper-rustls) and reqwest (rustls-tls).
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install rustls ring crypto provider");
+
     let args = CliArgs::parse();
 
     // Load .env file before setting up tracing so env-based filter works
