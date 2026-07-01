@@ -134,7 +134,7 @@ pub async fn run_harness(
             .filter(|pr| {
                 let url_lower = pr.url.to_lowercase();
                 filter_patterns.iter().any(|pattern| {
-                    if let Some((repo_part, pr_num_str)) = pattern.split_once('/') {
+                    if let Some((repo_part, pr_num_str)) = pattern.split_once("/pull/") {
                         if let Ok(pr_num) = pr_num_str.parse::<u32>() {
                             let pr_tag = format!("/pull/{}", pr_num);
                             if let Some(pos) = url_lower.find(&pr_tag) {
