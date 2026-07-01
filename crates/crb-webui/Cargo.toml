@@ -8,9 +8,11 @@ name = "crb-webui"
 path = "src/main.rs"
 
 [features]
-default = ["reduce-diff", "oauth2"]
+default = ["reduce-diff", "oauth2", "exp16_adaptive_agents", "exp14_template_vars"]
 reduce-diff = ["crb-harness/reduce-diff"]
 oauth2 = ["dep:oauth2", "dep:reqwest"]
+exp14_template_vars = ["crb-harness/exp14-template-vars", "crb-tools/exp14_template_vars"]
+exp16_adaptive_agents = ["crb-harness/exp16-adaptive-agents", "crb-consensus/exp16-adaptive-agents"]
 
 [dependencies]
 axum = "0.7"

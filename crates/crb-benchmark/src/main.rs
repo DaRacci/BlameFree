@@ -729,26 +729,6 @@ async fn run_benchmark(
     };
 
     // ── Prompt library ───────────────────────────────────────────────────
-    // When exp13_v6_pipeline is active and prompts_dir is the built-in default,
-    // try to load the EXP-013 experiment prompts instead.
-    #[cfg(feature = "exp13_v6_pipeline")]
-    let effective_prompts_dir = {
-        let builtin_default = std::path::PathBuf::from("prompts/builtin");
-        if prompts_dir == builtin_default || !prompts_dir.exists() {
-            if let Some(exp13_dir) = crb_harness::exp13::exp13_prompts_dir() {
-                info!("EXP-013 v6 pipeline: using prompts from {}", exp13_dir.display());
-                exp13_dir
-            } else {
-                info!("EXP-013 v6 pipeline: prompts directory not found, using specified prompts dir");
-                prompts_dir.clone()
-            }
-        } else {
-            prompts_dir.clone()
-        }
-    };
-    #[cfg(not(feature = "exp13_v6_pipeline"))]
-    let effective_prompts_dir = prompts_dir.clone();
-
     let prompt_lib = std::sync::Arc::new(
         PromptLibrary::new().expect("Embedded prompts should be available"),
     );

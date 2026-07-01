@@ -40,9 +40,6 @@ pub use cache::RunHistoryEntry;
 pub use config::ReviewArgs;
 pub use cost::CostTracker;
 
-#[cfg(feature = "exp13_v6_pipeline")]
-pub mod exp13;
-
 // =========================================================================
 // Public API types
 // =========================================================================
@@ -510,9 +507,6 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
 }
 
 /// Like `review_pr` but accepts a [`PromptLibrary`] for custom prompts.
-///
-/// Only available when the `exp13_v6_pipeline` feature is active.
-#[cfg(feature = "exp13_v6_pipeline")]
 pub async fn review_pr_with_prompt_lib(
     params: ReviewParams,
     prompt_lib: &crb_agents::prompts::PromptLibrary,
@@ -620,9 +614,6 @@ pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>
     let diff = crate::preprocess_diff(&diff);
 
     // ── Load prompt library ───────────────────────────────────────────
-    #[cfg(feature = "exp13_v6_pipeline")]
-    let prompt_lib = crate::exp13::load_exp13_prompt_library();
-    #[cfg(not(feature = "exp13_v6_pipeline"))]
     let prompt_lib =
         crb_agents::prompts::PromptLibrary::new().expect("Embedded prompts should be available");
 
@@ -642,15 +633,7 @@ pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>
         replay_dir: None,
         cache_dir: None,
     };
-    // When exp13_v6_pipeline is active, pass the loaded prompt library
-    #[cfg(feature = "exp13_v6_pipeline")]
-    {
-        review_pr_with_prompt_lib(params, &prompt_lib).await
-    }
-    #[cfg(not(feature = "exp13_v6_pipeline"))]
-    {
-        review_pr(params).await
-    }
+    review_pr_with_prompt_lib(params, &prompt_lib).await
 }
 
 // =========================================================================
@@ -1190,7 +1173,7 @@ pub async fn evaluate_pr_consensus(
     };
 
     #[cfg(not(feature = "exp14_template_vars"))]
-    let template_vars: Option<&'static HashMap<&'static str, &'static str>> = None;
+    let template_vars = None;
 
     let (result, agent_usage, judge_usage, agent_api_calls, judge_api_calls, judge_cache_hits) =
         evaluate_pr_with_consensus(
@@ -1294,13 +1277,12 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
     // Step 2: severity auditor
     let audited = crb_auditor::apply_severity_auditor(deduped);
 
-    // Step 3: candidate cap (only when exp13_v6_pipeline is active)
-    #[cfg(feature = "exp13_v6_pipeline")]
+    // Step 3: candidate cap
     let capped = {
-        let max = crate::exp13::max_candidates_per_pr();
+        let max = 20;
         if audited.len() > max {
             tracing::info!(
-                "EXP-013 v6 pipeline: capping {} findings to {} candidates",
+                "capping {} findings to {} candidates",
                 audited.len(),
                 max
             );
@@ -1309,8 +1291,6 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
             audited
         }
     };
-    #[cfg(not(feature = "exp13_v6_pipeline"))]
-    let capped = audited;
 
     // Convert back to Finding using helper
     capped
