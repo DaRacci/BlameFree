@@ -678,28 +678,31 @@ pub async fn get_run(
             .to_string_lossy()
             .to_string();
 
-        if file_name == "_summary.json" {
-            if let Ok(content) = std::fs::read_to_string(&file_path) {
-                if let Ok(summary) =
-                    serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
-                {
-                    model = summary
-                        .get("model")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-                    duration_secs = summary
-                        .get("duration_secs")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0);
-                    total_cost = summary
-                        .get("total_cost_usd")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0);
-                    total_tokens = summary
-                        .get("total_tokens")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as usize;
+        // Skip metadata files (anything starting with _)
+        if file_name.starts_with('_') {
+            if file_name == "_summary.json" {
+                if let Ok(content) = std::fs::read_to_string(&file_path) {
+                    if let Ok(summary) =
+                        serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
+                    {
+                        model = summary
+                            .get("model")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown")
+                            .to_string();
+                        duration_secs = summary
+                            .get("duration_secs")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        total_cost = summary
+                            .get("total_cost_usd")
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(0.0);
+                        total_tokens = summary
+                            .get("total_tokens")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0) as usize;
+                    }
                 }
             }
             continue;
