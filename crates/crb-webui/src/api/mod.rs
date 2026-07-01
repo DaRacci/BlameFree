@@ -6,7 +6,7 @@ pub mod live;
 pub mod runs;
 
 pub use adhoc::{
-    start_adhoc_review, list_adhoc_runs, get_adhoc_run, AdhocReviewRequest, AdhocReviewResponse,
+    start_adhoc_review, list_adhoc_runs, get_adhoc_run, list_repo_prs, GithubPrListItem, AdhocReviewRequest, AdhocReviewResponse,
     AdhocRunSummary,
 };
 pub use config::{get_config, list_datasets, list_dataset_prs};

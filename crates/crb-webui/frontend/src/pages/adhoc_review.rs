@@ -1,14 +1,40 @@
-use crate::{api_url, AdhocReviewResponse, AGENT_ROLES};
+use crate::{api_url, AdhocReviewResponse, AGENT_ROLES, GithubPrListItem};
 use leptos::*;
 use leptos_router::*;
 
+/// Fetch open PRs for a given owner/repo via the backend proxy.
+async fn fetch_repo_prs(owner: &str, repo: &str) -> Result<Vec<GithubPrListItem>, String> {
+    let url = api_url(&format!("/api/adhoc/prs/{}/{}", owner, repo));
+    let resp = gloo_net::http::Request::get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+    if !resp.ok() {
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Server error ({}): {}", status, text));
+    }
+    resp.json::<Vec<GithubPrListItem>>()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
 #[component]
 pub fn AdhocReviewPage() -> impl IntoView {
-    let (url, set_url) = create_signal(String::new());
+    let (owner, set_owner) = create_signal(String::new());
+    let (repo, set_repo) = create_signal(String::new());
     let (model, set_model) = create_signal("deepseek/deepseek-v4-flash".to_string());
     let (selected_roles, set_selected_roles) = create_signal::<Vec<String>>(Vec::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal::<Option<String>>(None);
+
+    // PR selector state
+    let (prs_loading, set_prs_loading) = create_signal(false);
+    let (open_prs, set_open_prs) = create_signal::<Vec<GithubPrListItem>>(Vec::new());
+    let (pr_mode, set_pr_mode) = create_signal::<String>("open".to_string()); // "open" or "manual"
+    let (selected_pr_number, set_selected_pr_number) = create_signal::<Option<u32>>(None);
+    let (manual_pr_number, set_manual_pr_number) = create_signal(String::new());
+    let (prs_error, set_prs_error) = create_signal::<Option<String>>(None);
 
     let navigator = use_navigate();
 
@@ -27,16 +53,73 @@ pub fn AdhocReviewPage() -> impl IntoView {
         selected_roles.with(|roles| roles.contains(&role.to_string()))
     };
 
-    let submit = move |_| {
-        let navigator = navigator.clone();
-        let url_val = url.get();
-        let model_val = model.get();
-        let roles_val = selected_roles.get();
+    // Load open PRs from the backend proxy
+    let load_prs = move |_| {
+        let owner_val = owner.get_untracked();
+        let repo_val = repo.get_untracked();
 
-        if url_val.trim().is_empty() {
-            set_error.set(Some("Please enter a GitHub PR URL.".to_string()));
+        if owner_val.trim().is_empty() || repo_val.trim().is_empty() {
+            set_prs_error.set(Some("Please enter both owner and repo.".to_string()));
             return;
         }
+
+        set_prs_loading.set(true);
+        set_prs_error.set(None);
+        set_open_prs.set(Vec::new());
+        set_selected_pr_number.set(None);
+
+        spawn_local(async move {
+            match fetch_repo_prs(owner_val.trim(), repo_val.trim()).await {
+                Ok(prs) => {
+                    set_open_prs.set(prs);
+                    set_prs_loading.set(false);
+                }
+                Err(e) => {
+                    set_prs_error.set(Some(e));
+                    set_prs_loading.set(false);
+                }
+            }
+        });
+    };
+
+    let submit = move |_| {
+        let navigator = navigator.clone();
+        let owner_val = owner.get();
+        let repo_val = repo.get();
+        let model_val = model.get();
+        let roles_val = selected_roles.get();
+        let mode = pr_mode.get();
+
+        if owner_val.trim().is_empty() || repo_val.trim().is_empty() {
+            set_error.set(Some("Please enter both owner and repo.".to_string()));
+            return;
+        }
+
+        // Determine PR number
+        let pr_number = if mode == "open" {
+            match selected_pr_number.get() {
+                Some(n) => n,
+                None => {
+                    set_error.set(Some("Please select a PR from the list or switch to manual entry.".to_string()));
+                    return;
+                }
+            }
+        } else {
+            let manual = manual_pr_number.get();
+            if manual.trim().is_empty() {
+                set_error.set(Some("Please enter a PR number.".to_string()));
+                return;
+            }
+            match manual.trim().parse::<u32>() {
+                Ok(n) => n,
+                Err(_) => {
+                    set_error.set(Some("Invalid PR number. Please enter a numeric value.".to_string()));
+                    return;
+                }
+            }
+        };
+
+        let url_val = format!("https://github.com/{}/{}/pull/{}", owner_val.trim(), repo_val.trim(), pr_number);
 
         set_loading.set(true);
         set_error.set(None);
@@ -88,63 +171,217 @@ pub fn AdhocReviewPage() -> impl IntoView {
 
     view! {
         <div class="adhoc-review-page">
-            <h1>"Ad-hoc PR Review"</h1>
-            <p>"Submit a GitHub PR URL for a one-off review by the agent team."</p>
-
-            <div class="form-group">
-                <label for="pr-url">"GitHub PR URL"</label>
-                <input
-                    id="pr-url"
-                    type="text"
-                    placeholder="https://github.com/owner/repo/pull/123"
-                    prop:value=url
-                    on:input=move |ev| set_url.set(event_target_value(&ev))
-                    class="form-input"
-                />
-            </div>
-
-            <div class="form-group">
-                <label for="model">"Model"</label>
-                <input
-                    id="model"
-                    type="text"
-                    prop:value=model
-                    on:input=move |ev| set_model.set(event_target_value(&ev))
-                    class="form-input"
-                />
-            </div>
-
-            <div class="form-group">
-                <label>"Roles"</label>
-                <div class="checkbox-group">
-                    {AGENT_ROLES.iter().map(|role| {
-                        let role_str = *role;
-                        let checked = is_role_selected(role_str);
-                        view! {
-                            <label class="checkbox-label">
-                                <input
-                                    type="checkbox"
-                                    checked=checked
-                                    on:click=move |_| toggle_role(role_str)
-                                />
-                                <span>{role_str}</span>
-                            </label>
-                        }
-                    }).collect::<Vec<_>>()}
+            <div class="page-header">
+                <h1 class="page-header__title">"Ad-hoc PR Review"</h1>
+                <div class="page-header__actions">
+                    <a href="/adhoc" class="btn btn--ghost">"Back to Runs"</a>
                 </div>
             </div>
 
+            <p style="color: var(--text-secondary, #8b949e); margin-bottom: var(--spacing-xl, 24px);">
+                "Submit a GitHub PR for a one-off review by the agent team."
+            </p>
+
+            // ─── Repository Section ─────────────────────────────────
+            <section class="form-section">
+                <h2 class="form-section__title">"Repository"</h2>
+                <div class="form-section__fields">
+                    <div style="display: flex; gap: var(--spacing-md, 12px); align-items: flex-start;">
+                        <div class="form-field" style="flex: 1;">
+                            <label class="form-field__label" for="owner">"Owner"</label>
+                            <input
+                                id="owner"
+                                class="input"
+                                type="text"
+                                placeholder="facebook"
+                                prop:value=owner
+                                on:input=move |ev| set_owner.set(event_target_value(&ev))
+                            />
+                        </div>
+                        <div class="form-field" style="flex: 1;">
+                            <label class="form-field__label" for="repo">"Repo"</label>
+                            <input
+                                id="repo"
+                                class="input"
+                                type="text"
+                                placeholder="react"
+                                prop:value=repo
+                                on:input=move |ev| set_repo.set(event_target_value(&ev))
+                            />
+                        </div>
+                        <div class="form-field" style="padding-top: 24px;">
+                            <button
+                                class="btn btn--primary"
+                                on:click=load_prs
+                                disabled=move || prs_loading.get()
+                            >
+                                {move || if prs_loading.get() { "Loading..." } else { "Load PRs" }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            // ─── PR Selection Section ─────────────────────────────────
+            <section class="form-section">
+                <h2 class="form-section__title">"PR Selection"</h2>
+                <div class="form-section__fields">
+                    // PR mode toggle
+                    <div class="form-field">
+                        <label class="form-field__label">"PR Source"</label>
+                        <div style="display: flex; gap: var(--spacing-lg, 16px); margin-top: var(--spacing-xs, 4px);">
+                            <label class="checkbox-label" style="cursor: pointer;">
+                                <input
+                                    type="radio"
+                                    name="pr-mode"
+                                    checked=move || pr_mode.get() == "open"
+                                    on:click=move |_| set_pr_mode.set("open".to_string())
+                                />
+                                <span>"Open PRs"</span>
+                            </label>
+                            <label class="checkbox-label" style="cursor: pointer;">
+                                <input
+                                    type="radio"
+                                    name="pr-mode"
+                                    checked=move || pr_mode.get() == "manual"
+                                    on:click=move |_| set_pr_mode.set("manual".to_string())
+                                />
+                                <span>"Manual Entry"</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    // Open PRs dropdown
+                    {move || {
+                        if pr_mode.get() == "open" {
+                            let prs = open_prs.get();
+                            let loading_prs = prs_loading.get();
+                            let prs_err = prs_error.get();
+
+                            if loading_prs {
+                                view! {
+                                    <div class="form-field">
+                                        <p style="color: var(--text-secondary, #8b949e);">"Loading PRs..."</p>
+                                    </div>
+                                }.into_view()
+                            } else if let Some(err) = prs_err {
+                                view! {
+                                    <div class="form-field">
+                                        <p style="color: var(--accent-red, #f85149); font-size: var(--text-sm, 14px);">{err}</p>
+                                    </div>
+                                }.into_view()
+                            } else if prs.is_empty() {
+                                view! {
+                                    <div class="form-field">
+                                        <p style="color: var(--text-secondary, #8b949e); font-size: var(--text-sm, 14px);">
+                                            "Enter owner/repo and click \"Load PRs\" to see open pull requests."
+                                        </p>
+                                    </div>
+                                }.into_view()
+                            } else {
+                                let sel_num = selected_pr_number.get();
+                                view! {
+                                    <div class="form-field">
+                                        <label class="form-field__label" for="pr-select">"Select Open PR"</label>
+                                        <select
+                                            id="pr-select"
+                                            class="input select"
+                                            prop:value=move || sel_num.map(|n| n.to_string()).unwrap_or_default()
+                                            on:change=move |ev| {
+                                                let val = event_target_value(&ev);
+                                                if val.is_empty() {
+                                                    set_selected_pr_number.set(None);
+                                                } else if let Ok(n) = val.parse::<u32>() {
+                                                    set_selected_pr_number.set(Some(n));
+                                                }
+                                            }
+                                        >
+                                            <option value="">"-- Select a PR --"</option>
+                                            {prs.into_iter().map(|pr| {
+                                                let label = format!("#{} - {}", pr.number, pr.title);
+                                                let val = pr.number.to_string();
+                                                let is_selected = sel_num == Some(pr.number);
+                                                view! {
+                                                    <option value=&val selected=is_selected>{&label}</option>
+                                                }
+                                            }).collect::<Vec<_>>()}
+                                        </select>
+                                        <p class="form-field__helper">"Select an open PR from the dropdown above."</p>
+                                    </div>
+                                }.into_view()
+                            }
+                        } else {
+                            view! {
+                                <div class="form-field">
+                                    <label class="form-field__label" for="manual-pr">"PR Number"</label>
+                                    <input
+                                        id="manual-pr"
+                                        class="input"
+                                        type="text"
+                                        placeholder="123"
+                                        prop:value=manual_pr_number
+                                        on:input=move |ev| set_manual_pr_number.set(event_target_value(&ev))
+                                    />
+                                    <p class="form-field__helper">"Enter any PR number (open, closed, or merged)."</p>
+                                </div>
+                            }.into_view()
+                        }
+                    }}
+                </div>
+            </section>
+
+            // ─── Model Section ───────────────────────────────────
+            <section class="form-section">
+                <h2 class="form-section__title">"Configuration"</h2>
+                <div class="form-section__fields">
+                    <div class="form-field">
+                        <label class="form-field__label" for="model">"Model"</label>
+                        <input
+                            id="model"
+                            class="input"
+                            type="text"
+                            prop:value=model
+                            on:input=move |ev| set_model.set(event_target_value(&ev))
+                        />
+                        <p class="form-field__helper">"The model used for review agents."</p>
+                    </div>
+
+                    <div class="form-field">
+                        <label class="form-field__label">"Roles / Agents"</label>
+                        <div class="checkbox-group">
+                            {AGENT_ROLES.iter().map(|role| {
+                                let role_str = *role;
+                                let checked = is_role_selected(role_str);
+                                view! {
+                                    <label class="checkbox-label">
+                                        <input
+                                            type="checkbox"
+                                            checked=checked
+                                            on:click=move |_| toggle_role(role_str)
+                                        />
+                                        <span>{role_str}</span>
+                                    </label>
+                                }
+                            }).collect::<Vec<_>>()}
+                        </div>
+                        <p class="form-field__helper">"Select at least one role for this review."</p>
+                    </div>
+                </div>
+            </section>
+
             {move || error.get().map(|e| {
-                view! { <div class="error-message">{e}</div> }
+                view! { <div class="error-message" style="color: var(--accent-red, #f85149); margin-bottom: var(--spacing-lg, 16px);">{e}</div> }
             })}
 
-            <button
-                class="btn btn--primary"
-                on:click=submit
-                disabled=move || loading.get()
-            >
-                {move || if loading.get() { "Starting..." } else { "Start Review" }}
-            </button>
+            <div class="form-actions">
+                <button
+                    class="btn btn--primary btn--lg"
+                    on:click=submit
+                    disabled=move || loading.get()
+                >
+                    {move || if loading.get() { "Starting..." } else { "Start Review" }}
+                </button>
+            </div>
         </div>
     }
 }

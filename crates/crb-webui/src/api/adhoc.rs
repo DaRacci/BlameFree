@@ -322,6 +322,79 @@ pub async fn get_adhoc_run(
     Json(detail).into_response()
 }
 
+/// ── GET /api/adhoc/prs/:owner/:repo ──────────────────────────────────────────
+///
+/// List open PRs from a GitHub repo (proxied to avoid CORS).
+#[derive(Debug, Serialize)]
+pub struct GithubPrListItem {
+    pub number: u32,
+    pub title: String,
+    pub html_url: String,
+}
+
+pub async fn list_repo_prs(
+    State(state): State<AppState>,
+    AxumPath((owner, repo)): AxumPath<(String, String)>,
+) -> impl IntoResponse {
+    tracing::info!("GET /api/adhoc/prs/{}/{}", owner, repo);
+
+    let token = state.github_token.clone().unwrap_or_default();
+    let client = reqwest::Client::new();
+    let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls?state=open&per_page=100");
+
+    let mut req = client
+        .get(&url)
+        .header("User-Agent", "review-harness/1.0")
+        .header("Accept", "application/json");
+    if !token.is_empty() {
+        req = req.header("Authorization", format!("Bearer {}", token));
+    }
+
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "error": format!("HTTP error: {e}") })),
+            )
+                .into_response();
+        }
+    };
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return (
+            status,
+            Json(serde_json::json!({ "error": format!("GitHub API returned {status}: {body}") })),
+        )
+            .into_response();
+    }
+
+    let items: Vec<serde_json::Value> = match resp.json().await {
+        Ok(items) => items,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "error": format!("Failed to parse response: {e}") })),
+            )
+                .into_response();
+        }
+    };
+
+    let prs: Vec<GithubPrListItem> = items
+        .into_iter()
+        .filter_map(|item| {
+            let number = item.get("number")?.as_u64()? as u32;
+            let title = item.get("title")?.as_str()?.to_string();
+            let html_url = item.get("html_url")?.as_str()?.to_string();
+            Some(GithubPrListItem { number, title, html_url })
+        })
+        .collect();
+
+    Json(prs).into_response()
+}
+
 // ─── Internal helpers ─────────────────────────────────────────────────────
 
 /// Parse a GitHub PR URL into (owner, repo, pr_number)

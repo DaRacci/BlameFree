@@ -324,6 +324,14 @@ pub struct AdhocRunSummary {
     pub total_cost: f64,
 }
 
+/// A PR from the GitHub API (returned by GET /api/adhoc/prs/:owner/:repo)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GithubPrListItem {
+    pub number: u32,
+    pub title: String,
+    pub html_url: String,
+}
+
 /// Result from POST /api/runs/:id/judge
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JudgeResult {
@@ -554,12 +562,6 @@ fn Sidebar() -> impl IntoView {
                     <a href="/" class=move || format!("sidebar__item {}", active_class("/runs/"))>
                         <span class="sidebar__icon">""</span>
                         <span class="sidebar__label">"Home"</span>
-                    </a>
-                </li>
-                <li>
-                    <a href="/new" class=move || format!("sidebar__item {}", active_class("/new"))>
-                        <span class="sidebar__icon">""</span>
-                        <span class="sidebar__label">"New Run"</span>
                     </a>
                 </li>
                 <li>

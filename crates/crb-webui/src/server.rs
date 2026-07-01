@@ -115,7 +115,8 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         // Ad-hoc review endpoints
         .route("/api/adhoc/review", post(crate::api::start_adhoc_review))
         .route("/api/adhoc/runs", get(crate::api::list_adhoc_runs))
-        .route("/api/adhoc/runs/:id", get(crate::api::get_adhoc_run));
+        .route("/api/adhoc/runs/:id", get(crate::api::get_adhoc_run))
+        .route("/api/adhoc/prs/:owner/:repo", get(crate::api::list_repo_prs));
 
     // Build router: merge all routes first, then apply state and layers
     let mut app = Router::new().merge(api_router);
