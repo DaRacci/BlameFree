@@ -1,0 +1,28 @@
+## Output
+
+IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
+
+Return a JSON array of finding objects. Each finding MUST have these fields:
+
+- `file`: path to the file containing the issue (string)
+- `line`: line number where the issue occurs (number)
+- `message`: clear, evidence-backed description of the issue (string). Include the contract that changed, the caller that breaks, and why the caller fails.
+- `severity`: one of `"Critical"`, `"High"`, `"Medium"`, or `"Low"` (string)
+- `rule_code`: `"{{role_abbreviation}}"` for findings from this agent (string)
+
+Example:
+```json
+[
+  {
+    "file": "src/user.ts",
+    "line": 12,
+    "message": "Function `getUser` signature changed from `(id: number)` to `(id: string)` on line 12. Caller `src/admin.ts:57` invokes `getUser(123)` passing a number literal. This is a type error that will cause a build failure or runtime crash depending on the type system strictness. Either update the caller or accept both `number | string`.",
+    "severity": "Critical",
+    "rule_code": "{{role_abbreviation}}"
+  }
+]
+```
+
+Return ONLY the JSON array. No markdown wrapper, no explanation, no prose before or after.
+
+If you find no issues, return: `[]`

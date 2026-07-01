@@ -12,6 +12,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
 anyhow = { workspace = true }
+serde_yaml = "0.9"
 handlebars = "5"
 tracing = { workspace = true }
 crb-tools = { path = "../crb-tools" }

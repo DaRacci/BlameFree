@@ -7,13 +7,15 @@ use std::collections::HashMap;
 #[cfg(feature = "exp14_submit_finding")]
 use std::sync::{Arc, Mutex};
 
+pub mod manifest;
 pub mod prompts;
 pub mod templates;
 
 #[cfg(feature = "exp14_submit_finding")]
 pub mod submit_finding;
 
-use crate::templates::TemplateEngine;
+use crate::templates::{build_agent_context, TemplateEngine};
+pub use crate::manifest::AgentManifest;
 
 pub use crb_tools::Finding;
 
@@ -32,60 +34,17 @@ pub fn map_to_finding(m: &serde_json::Map<String, serde_json::Value>) -> Option<
 }
 
 use crate::prompts::PromptLibrary;
-
-// ── Role-specific preamble prompts ─────────────────────────────────────────
-
-const SA_PREAMBLE: &str = "\
-IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
-
-You are a static analysis specialist. Analyze the provided code diff for \
-potential bugs, code smells, and violations of best practices. Focus on \
-correctness, error handling, and code quality issues. Respond with a JSON \
-array of findings.";
-
-const CL_PREAMBLE: &str = "\
-IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
-
-You are a code logic expert. Examine the diff for logical errors, incorrect \
-assumptions, off-by-one errors, race conditions, and concurrency issues. \
-Focus on whether the code correctly implements its intended logic. Respond \
-with a JSON array of findings.";
-
-const AR_PREAMBLE: &str = "\
-IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
-
-You are an architecture reviewer. Evaluate the diff for architectural concerns: \
-coupling, cohesion, separation of concerns, design pattern violations, and \
-maintainability issues. Focus on the high-level structure and design decisions. \
-Respond with a JSON array of findings.";
-
-const SEC_PREAMBLE: &str = "\
-IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
-
-You are a security specialist. Review the diff for security vulnerabilities: \
-injection flaws, authentication/authorization issues, data exposure, input \
-validation problems, and other security weaknesses. Focus on OWASP Top 10 \
-categories. Respond with a JSON array of findings.";
-
-const GEN_PREAMBLE: &str = "\
-IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
-
-You are a generalist code reviewer covering static analysis, code logic, \
-architecture, and security. Analyze the diff for all types of issues. \
-Respond with a JSON array of findings.";
-
-const DEFAULT_PREAMBLE: &str = "\
-IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].
-
-You are a code reviewer. Analyze the provided code diff and identify any \
-issues. Respond with a JSON array of findings.";
+use std::path::Path;
 
 /// Build a rig agent for the given role with optional prompt library,
-/// template variables, extra preamble text, and filesystem tools.
+/// template variables, agent manifest, extra preamble text, and filesystem tools.
+///
+/// If `template_engine` and `agent_manifest` are both `Some`, the agent's
+/// preamble is rendered from `agent.hbs` using the manifest entry's data
+/// and section files from `prompts/sections/`.
 ///
 /// If `prompt_lib` is `Some`, the role preamble is resolved through the
 /// library (custom prompts from files, falling back to built-in defaults).
-/// If `prompt_lib` is `None`, the original hardcoded const strings are used.
 ///
 /// If `rules_preamble` is `Some` and non-empty, it is prepended before the
 /// role-specific preamble, separated by a blank line.  This allows project-
@@ -109,87 +68,88 @@ pub fn build_agent(
     rules_preamble: Option<&str>,
     prompt_lib: Option<&PromptLibrary>,
     template_engine: Option<&TemplateEngine>,
+    agent_manifest: Option<&AgentManifest>,
     template_vars: Option<&HashMap<String, serde_json::Value>>,
     extra_preamble: Option<&str>,
     workdir: Option<&str>,
     #[cfg(feature = "exp14_submit_finding")]
     collector: Option<Arc<Mutex<submit_finding::SubmitFindingCollector>>>,
 ) -> Agent<ResponsesCompletionModel> {
-    let role_preamble = match (template_engine, prompt_lib) {
-        // Primary path: Handlebars template engine
-        (Some(engine), _) => {
-            let role_lower = role.to_lowercase();
-            // Map role to template name (SA -> sa, CL -> cl, etc.)
-            let template_name = match role {
-                "SA" | "CL" | "AR" | "SEC" | "GEN" => role_lower.as_str(),
-                _ => "default",
-            };
-
-            if engine.has_template(template_name) {
-                // Convert HashMap<String, Value> to Value for template rendering
-                let vars: serde_json::Value = template_vars
-                    .map(|m| {
-                        serde_json::Value::Object(
-                            m.iter()
-                                .map(|(k, v)| (k.clone(), v.clone()))
-                                .collect(),
-                        )
-                    })
-                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-                match engine.render(template_name, &vars) {
-                    Ok(rendered) => rendered,
-                    Err(e) => {
-                        tracing::warn!(
-                            "Failed to render template '{}': {}. Falling back.",
-                            template_name, e
-                        );
-                        // Fall back to hardcoded preamble
-                        match role {
-                            "SA" => SA_PREAMBLE.to_string(),
-                            "CL" => CL_PREAMBLE.to_string(),
-                            "AR" => AR_PREAMBLE.to_string(),
-                            "SEC" => SEC_PREAMBLE.to_string(),
-                            "GEN" => GEN_PREAMBLE.to_string(),
-                            _ => DEFAULT_PREAMBLE.to_string(),
+    let role_preamble = match (template_engine, agent_manifest, prompt_lib) {
+        // Primary path: template engine + manifest → render agent.hbs
+        (Some(engine), Some(manifest), _) => {
+            if let Some(entry) = manifest.get(role) {
+                let sections_dir = Path::new("prompts/sections");
+                // Extract max_findings from template_vars if present
+                let max_findings = template_vars
+                    .and_then(|tv| tv.get("max_findings"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(20) as usize;
+                let extra = template_vars.map(|tv| {
+                    let mut map = tv.clone();
+                    map.remove("max_findings");
+                    map
+                });
+                match build_agent_context(engine, entry, sections_dir, max_findings, extra) {
+                    Ok(ctx) => match engine.render("agent", &ctx) {
+                        Ok(rendered) => rendered,
+                        Err(e) => {
+                            tracing::warn!("Failed to render agent template for '{}': {}. Using empty preamble.", role, e);
+                            String::new()
                         }
+                    },
+                    Err(e) => {
+                        tracing::warn!("Failed to build agent context for '{}': {}. Using empty preamble.", role, e);
+                        String::new()
                     }
                 }
             } else {
-                // Template not registered, fall back
-                match role {
-                    "SA" => SA_PREAMBLE.to_string(),
-                    "CL" => CL_PREAMBLE.to_string(),
-                    "AR" => AR_PREAMBLE.to_string(),
-                    "SEC" => SEC_PREAMBLE.to_string(),
-                    "GEN" => GEN_PREAMBLE.to_string(),
-                    _ => DEFAULT_PREAMBLE.to_string(),
-                }
+                tracing::warn!(
+                    "Unknown role '{}' not found in manifest. Using empty preamble.",
+                    role
+                );
+                String::new()
             }
         }
-        // Legacy path: PromptLibrary with simple string substitution
-        (None, Some(lib)) => {
+        // Legacy template engine path (no manifest)
+        (Some(engine), None, _) => {
+            let role_lower = role.to_lowercase();
+            let vars: serde_json::Value = template_vars
+                .map(|m| {
+                    serde_json::Value::Object(
+                        m.iter()
+                            .map(|(k, v)| (k.clone(), v.clone()))
+                            .collect(),
+                    )
+                })
+                .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+            if engine.has_template(&role_lower) {
+                engine.render(&role_lower, &vars).unwrap_or_default()
+            } else if engine.has_template("default") {
+                engine.render("default", &vars).unwrap_or_default()
+            } else {
+                String::new()
+            }
+        }
+        // Legacy prompt library path
+        (None, _, Some(lib)) => {
             let empty_map = HashMap::new();
-            // Convert template_vars from HashMap<String, Value> to HashMap<&str, &str>
             let vars: HashMap<&str, &str> = template_vars
                 .map(|v| {
                     v.iter()
-                        .filter_map(|(k, val)| {
-                            val.as_str().map(|s| (k.as_str(), s))
-                        })
+                        .filter_map(|(k, val)| val.as_str().map(|s| (k.as_str(), s)))
                         .collect()
                 })
                 .unwrap_or(empty_map);
             lib.render(role, &vars)
         }
-        // No engine, no library: use hardcoded const strings
-        (None, None) => match role {
-            "SA" => SA_PREAMBLE.to_string(),
-            "CL" => CL_PREAMBLE.to_string(),
-            "AR" => AR_PREAMBLE.to_string(),
-            "SEC" => SEC_PREAMBLE.to_string(),
-            "GEN" => GEN_PREAMBLE.to_string(),
-            _ => DEFAULT_PREAMBLE.to_string(),
-        },
+        // Manifest without engine — needs TemplateEngine to render
+        (None, Some(_), _) => {
+            tracing::warn!("Agent manifest provided without TemplateEngine — cannot render agent template");
+            String::new()
+        }
+        // No engine, no manifest, no library
+        (None, None, None) => String::new(),
     };
     let mut full_preamble = match rules_preamble {
         Some(rp) if !rp.is_empty() => format!("{rp}\n\n{role_preamble}"),
@@ -304,5 +264,7 @@ pub fn build_agent(
     }
 }
 
-/// All supported agent role identifiers.
+/// All supported agent role identifiers — loaded dynamically from the manifest.
+/// Use [`AgentManifest::all_abbreviations`] for the runtime list.
+#[deprecated(since = "0.2.0", note = "Use AgentManifest::all_abbreviations() instead")]
 pub const AGENT_ROLES: &[&str] = &["SA", "CL", "AR", "SEC", "GEN"];

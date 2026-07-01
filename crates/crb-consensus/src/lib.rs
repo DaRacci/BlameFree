@@ -263,25 +263,35 @@ pub trait CacheBackend: Send + Sync {
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /// The role of a reviewer agent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Role {
-    SA,
-    CL,
-    AR,
-    SEC,
-    GEN,
-}
+///
+/// This is a dynamic newtype around a string abbreviation (e.g. "SA", "CL",
+/// "AR", "SEC", "GEN").  Valid values are loaded at runtime from the agent
+/// manifest (`prompts/agents/*.md`).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, Serialize)]
+pub struct Role(pub String);
 
 impl Role {
     /// Convert to the string identifier used by `crb_agents::build_agent`.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Role::SA => "SA",
-            Role::CL => "CL",
-            Role::AR => "AR",
-            Role::SEC => "SEC",
-            Role::GEN => "GEN",
-        }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Role {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<&str> for Role {
+    fn from(s: &str) -> Self {
+        Role(s.to_uppercase())
+    }
+}
+
+impl From<String> for Role {
+    fn from(s: String) -> Self {
+        Role(s.to_uppercase())
     }
 }
 
@@ -361,6 +371,7 @@ pub fn build_reviewer_agent(
     rules_preamble: Option<&str>,
     prompt_lib: Option<&PromptLibrary>,
     template_engine: Option<&TemplateEngine>,
+    agent_manifest: Option<&crb_agents::AgentManifest>,
     template_vars: Option<&HashMap<String, serde_json::Value>>,
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
@@ -375,6 +386,7 @@ pub fn build_reviewer_agent(
         rules_preamble,
         prompt_lib,
         template_engine,
+        agent_manifest,
         template_vars,
         tool_preamble,
         workdir,
@@ -418,7 +430,7 @@ pub async fn run_reviewers(
         let client = client.clone();
         let diff = diff.to_string();
         let diff_hash = diff_hash.to_string();
-        let role = config.role;
+        let role = config.role.clone();
         let max_findings = config.max_findings;
         let preamble = rules_preamble.map(String::from);
         let tool_preamble = tool_preamble.map(String::from);
@@ -428,6 +440,7 @@ pub async fn run_reviewers(
             preamble.as_deref(),
             prompt_lib,
             None, // template_engine (not used in run_reviewers yet)
+            None, // agent_manifest
             template_vars,
             tool_preamble.as_deref(),
             workdir,
@@ -516,7 +529,10 @@ pub async fn run_reviewers(
             // exploring and produce JSON findings before max_turns is reached.
             let turn_budget_hook = TurnBudgetHook::new(agent.default_max_turns.unwrap_or(6));
 
+            // Clone role for async block capture (Role no longer Copy)
+            let role_async = role.clone();
             let outcome = tokio::time::timeout(Duration::from_secs(300), async {
+                let role = role_async;
                 let resp: PromptResponse = agent
                     .prompt(&diff)
                     .with_hook(turn_budget_hook)
@@ -676,7 +692,7 @@ pub async fn run_reviewers(
     }
     // Sort by role for deterministic ordering - JoinSet::join_next()
     // returns tasks in completion order, which is non-deterministic.
-    results.sort_by_key(|(role, _)| role.as_str());
+    results.sort_by(|a, b| a.0.cmp(&b.0));
     let aggregate_usage = aggregate_usage
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -1011,16 +1027,8 @@ pub async fn evaluate_pr_with_consensus(
     let reviewer_configs: Vec<ReviewerConfig> = roles
         .iter()
         .map(|role_str| {
-            let role = match *role_str {
-                "SA" => Role::SA,
-                "CL" => Role::CL,
-                "AR" => Role::AR,
-                "SEC" => Role::SEC,
-                "GEN" => Role::GEN,
-                other => panic!("Unknown role string: {other}"),
-            };
             ReviewerConfig {
-                role,
+                role: Role(role_str.to_string()),
                 model: model.to_string(),
                 max_findings,
             }
@@ -1208,17 +1216,17 @@ mod tests {
 
     #[test]
     fn test_role_as_str() {
-        assert_eq!(Role::SA.as_str(), "SA");
-        assert_eq!(Role::CL.as_str(), "CL");
-        assert_eq!(Role::AR.as_str(), "AR");
-        assert_eq!(Role::SEC.as_str(), "SEC");
+        assert_eq!(Role("SA".into()).as_str(), "SA");
+        assert_eq!(Role("CL".into()).as_str(), "CL");
+        assert_eq!(Role("AR".into()).as_str(), "AR");
+        assert_eq!(Role("SEC".into()).as_str(), "SEC");
     }
 
     #[test]
     fn test_role_variants_are_distinct() {
-        assert_ne!(Role::SA, Role::CL);
-        assert_ne!(Role::CL, Role::AR);
-        assert_ne!(Role::AR, Role::SEC);
+        assert_ne!(Role("SA".into()), Role("CL".into()));
+        assert_ne!(Role("CL".into()), Role("AR".into()));
+        assert_ne!(Role("AR".into()), Role("SEC".into()));
     }
 
     #[test]
@@ -1474,7 +1482,7 @@ mod tests {
     #[test]
     fn test_reviewer_config_serialization() {
         let config = ReviewerConfig {
-            role: Role::SEC,
+            role: Role("SEC".into()),
             model: "gpt-4o".into(),
             max_findings: 15,
         };
@@ -1483,7 +1491,7 @@ mod tests {
         assert!(json.contains("gpt-4o"));
         assert!(json.contains("15"));
         let deserialized: ReviewerConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.role, Role::SEC);
+        assert_eq!(deserialized.role, Role("SEC".into()));
         assert_eq!(deserialized.model, "gpt-4o");
         assert_eq!(deserialized.max_findings, 15);
     }
@@ -1736,16 +1744,16 @@ diff --git a/server.go b/server.go
 
     #[test]
     fn test_role_gen_variant() {
-        // Verify GEN is a valid Role variant
-        let role = Role::GEN;
+        // Verify GEN is a valid Role
+        let role = Role("GEN".into());
         assert_eq!(role.as_str(), "GEN");
     }
 
     #[test]
     fn test_role_gen_serialization() {
-        let json = serde_json::to_string(&Role::GEN).unwrap();
+        let json = serde_json::to_string(&Role("GEN".into())).unwrap();
         assert_eq!(json, "\"GEN\"");
         let deserialized: Role = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, Role::GEN);
+        assert_eq!(deserialized, Role("GEN".into()));
     }
 }

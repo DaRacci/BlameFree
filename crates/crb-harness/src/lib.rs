@@ -448,7 +448,7 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
 
     for &role in &roles {
         // Build agent with built-in prompts (no prompt lib, no rules, no template engine)
-        let agent = build_agent(&client, &params.model, role, None, None, None, None, None, None);
+        let agent = build_agent(&client, &params.model, role, None, None, None, None, None, None, None);
 
         // Call agent with the diff - get real token usage via extended_details
         match agent.prompt(&diff).extended_details().await {
@@ -500,7 +500,7 @@ pub async fn review_pr_with_prompt_lib(
 
     for &role in &roles {
         // Build agent with loaded prompts (no template engine)
-        let agent = build_agent(&client, &params.model, role, None, Some(prompt_lib), None, None, None, None);
+        let agent = build_agent(&client, &params.model, role, None, Some(prompt_lib), None, None, None, None, None);
 
         // Call agent with the diff
         match agent.prompt(&diff).extended_details().await {
@@ -907,6 +907,7 @@ pub async fn evaluate_pr_single_agent(
                 preamble.as_deref(),
                 Some(&p_lib),
                 None, // template_engine
+                None, // agent_manifest
                 None, // template_vars
                 Some(&tool_preamble),
                 None, // workdir - not available in single-agent path

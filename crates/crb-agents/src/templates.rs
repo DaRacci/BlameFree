@@ -26,6 +26,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::manifest::{AgentEntry, AgentManifest};
+
 /// Template engine that loads and renders Handlebars templates.
 ///
 /// Templates are registered by name (filename stem without `.hbs`).
@@ -263,6 +265,180 @@ pub fn try_load_template_engine() -> Option<TemplateEngine> {
             None
         }
     }
+}
+
+/// Load an [`AgentManifest`] and full template engine from the new agent layout.
+///
+/// 1. Loads `AgentManifest` from `agents_dir` (e.g. `prompts/agents/`).
+/// 2. Registers `agent.hbs` as the primary template (loaded from `builtin_dir`).
+/// 3. Registers all `.hbs` section files from `sections_dir` as templates
+///    that can be rendered individually (also used as context data).
+///
+/// Returns a tuple of `(TemplateEngine, AgentManifest)`.
+///
+/// # Errors
+///
+/// Returns an error if any directory is missing, files cannot be read, or
+/// the manifest validation fails.
+pub fn try_load_agent_engine(
+    agents_dir: &Path,
+    builtin_dir: &Path,
+    sections_dir: &Path,
+) -> anyhow::Result<(TemplateEngine, AgentManifest)> {
+    // 1. Load agent manifest
+    let manifest = AgentManifest::load_from_dir(agents_dir)?;
+    tracing::info!(
+        "Loaded {} agent manifests from {}",
+        manifest.all_abbreviations().len(),
+        agents_dir.display()
+    );
+
+    // 2. Create template engine
+    let mut engine = TemplateEngine::new();
+
+    // 3. Register agent.hbs as primary template
+    let agent_hbs_path = builtin_dir.join("agent.hbs");
+    if agent_hbs_path.exists() {
+        let content = std::fs::read_to_string(&agent_hbs_path)?;
+        engine.register_template("agent", &content)?;
+        tracing::info!("Registered primary template from {}", agent_hbs_path.display());
+    } else {
+        anyhow::bail!(
+            "Primary template 'agent.hbs' not found at {}",
+            agent_hbs_path.display()
+        );
+    }
+
+    // 4. Register section .hbs templates as partials/renderable templates
+    if sections_dir.exists() {
+        engine.load_dir(sections_dir)?;
+        tracing::info!("Loaded section templates from {}", sections_dir.display());
+    }
+
+    // 5. Register any additional .hbs templates from builtin_dir
+    let existing_templates: std::collections::HashSet<String> =
+        engine.template_names().into_iter().collect();
+    for entry in std::fs::read_dir(builtin_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().map_or(false, |ext| ext == "hbs") {
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default()
+                .to_string();
+            if !existing_templates.contains(&stem) && stem != "agent" {
+                let content = std::fs::read_to_string(&path)?;
+                engine.register_template(&stem, &content)?;
+            }
+        }
+    }
+
+    Ok((engine, manifest))
+}
+
+/// Build the rendering context for an agent from its manifest entry, sections,
+/// and optional extra variables.
+///
+/// This function:
+/// 1. Starts with the agent's frontmatter fields (`role_name`, `role_abbreviation`,
+///    `role_domain`, `role_anti_hallucination_rules`, `role_review_methodology`,
+///    `role_prompt`).
+/// 2. Renders each section template (`.hbs` and `.md` files from `sections_dir`)
+///    with the current context, then places the rendered output into the context
+///    under the section's filename stem.
+/// 3. Returns the complete JSON context for rendering `agent.hbs`.
+///
+/// # Arguments
+///
+/// * `engine` - The template engine (used to render section templates).
+/// * `entry` - The agent manifest entry.
+/// * `sections_dir` - Directory containing section templates/files.
+/// * `max_findings` - Maximum findings limit (passed to section templates).
+/// * `extra_vars` - Optional extra variables merged into the context.
+pub fn build_agent_context(
+    engine: &TemplateEngine,
+    entry: &AgentEntry,
+    sections_dir: &Path,
+    max_findings: usize,
+    extra_vars: Option<HashMap<String, Value>>,
+) -> anyhow::Result<Value> {
+    let mut ctx = serde_json::json!({
+        "role_name": entry.role_name,
+        "role_abbreviation": entry.role_abbreviation,
+        "role_domain": entry.role_domain,
+        "role_anti_hallucination_rules": entry.role_anti_hallucination_rules,
+        "role_review_methodology": entry.role_review_methodology,
+        "role_prompt": entry.role_prompt,
+    });
+
+    // Start building the section rendering context with basic agent info
+    let mut section_ctx = serde_json::json!({
+        "role_name": entry.role_name,
+        "role_abbreviation": entry.role_abbreviation,
+        "role_domain": entry.role_domain,
+        "role_anti_hallucination_rules": entry.role_anti_hallucination_rules,
+        "role_review_methodology": entry.role_review_methodology,
+        "role_prompt": entry.role_prompt,
+        "max_findings": max_findings,
+    });
+    if let Some(ref extra) = extra_vars {
+        if let Some(obj) = section_ctx.as_object_mut() {
+            for (k, v) in extra {
+                obj.insert(k.clone(), v.clone());
+            }
+        }
+    }
+
+    // Render and inject section files into context
+    if sections_dir.exists() {
+        let mut entries: Vec<std::path::PathBuf> = std::fs::read_dir(sections_dir)?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| {
+                p.extension()
+                    .map_or(false, |ext| ext == "hbs" || ext == "md")
+            })
+            .collect();
+        entries.sort();
+
+        for path in &entries {
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default()
+                .to_string();
+
+            // Map submit_findings → submit_finding for template compatibility
+            let context_key = if stem == "submit_findings" {
+                "submit_finding".to_string()
+            } else {
+                stem.clone()
+            };
+
+            let rendered = if engine.has_template(&stem) {
+                // .hbs sections: render via handlebars with section context
+                engine.render(&stem, &section_ctx)?
+            } else {
+                // .md sections: just read the raw content
+                std::fs::read_to_string(path)?
+            };
+
+            if let Some(obj) = ctx.as_object_mut() {
+                obj.insert(context_key, Value::String(rendered));
+            }
+        }
+    }
+
+    // Merge extra_vars into final context (overwrites any section keys)
+    if let Some(extra) = extra_vars {
+        if let Some(obj) = ctx.as_object_mut() {
+            for (k, v) in extra {
+                obj.insert(k, v);
+            }
+        }
+    }
+
+    Ok(ctx)
 }
 
 #[cfg(test)]
