@@ -54,6 +54,18 @@ pub struct Finding {
     /// Reason for the severity audit result (e.g., downgrade category, protection reason).
     #[serde(default)]
     pub severity_audit_reason: Option<String>,
+    /// Evidence supporting the finding (command output, code snippet, etc.).
+    #[serde(default)]
+    pub evidence: Option<String>,
+    /// Path trace / call chain showing how the issue was reached.
+    #[serde(default)]
+    pub path_trace: Option<String>,
+    /// Confidence level: CONFIRMED, LIKELY, or UNCERTAIN.
+    #[serde(default)]
+    pub confidence: Option<String>,
+    /// Agent tag that found this issue (SA, CL, AR, SEC, or custom).
+    #[serde(default)]
+    pub found_by: Option<String>,
 }
 
 // ── Deduplication ────────────────────────────────────────────────────────────
@@ -321,6 +333,10 @@ pub fn parse_ruff_output(stdout: &str) -> Result<Vec<Finding>, LinterError> {
             rule_code: Some(f.code),
             severity_audited: false,
             severity_audit_reason: None,
+            evidence: None,
+            path_trace: None,
+            confidence: None,
+            found_by: None,
         })
         .collect())
 }
@@ -375,6 +391,10 @@ pub fn parse_eslint_output(stdout: &str) -> Result<Vec<Finding>, LinterError> {
                 rule_code: msg.rule_id,
                 severity_audited: false,
                 severity_audit_reason: None,
+                evidence: None,
+                path_trace: None,
+                confidence: None,
+                found_by: None,
             });
         }
     }
@@ -428,6 +448,10 @@ pub fn parse_govet_output(stdout: &str) -> Result<Vec<Finding>, LinterError> {
             rule_code: None,
             severity_audited: false,
             severity_audit_reason: None,
+            evidence: None,
+            path_trace: None,
+            confidence: None,
+            found_by: None,
         });
     }
 

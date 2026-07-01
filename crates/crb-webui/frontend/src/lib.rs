@@ -119,6 +119,9 @@ pub struct AppConfig {
     /// Whether reduce-diff mode is enabled (compile-time feature flag).
     #[serde(default)]
     pub reduce_diff_enabled: bool,
+    /// Whether OAuth authentication is configured server-side.
+    #[serde(default)]
+    pub auth_enabled: bool,
 }
 
 /// Per-dataset config loaded from dataset.toml
@@ -126,6 +129,21 @@ pub struct AppConfig {
 pub struct DatasetConfig {
     #[serde(default)]
     pub defaults: DatasetDefaults,
+}
+
+/// OAuth user info returned by GET /auth/me
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AuthUser {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub login: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub avatar_url: Option<String>,
 }
 
 /// Default values that auto-fill the New Run form when a dataset is selected.
@@ -284,6 +302,28 @@ pub struct ConvertStats {
     pub candidates_path: String,
 }
 
+/// Response from POST /api/adhoc/review
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdhocReviewResponse {
+    pub run_id: String,
+    pub pr_title: String,
+    pub status: String,
+}
+
+/// Summary of an ad-hoc review run
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdhocRunSummary {
+    pub id: String,
+    pub pr_url: String,
+    pub pr_title: String,
+    pub status: String,
+    pub created_at: String,
+    pub model: String,
+    pub roles: Vec<String>,
+    pub findings_count: usize,
+    pub total_cost: f64,
+}
+
 /// Result from POST /api/runs/:id/judge
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JudgeResult {
@@ -370,9 +410,46 @@ pub fn api_url(path: &str) -> String {
 
 // ─── App Root ────────────────────────────────────────────────────────────────
 
+/// Context value shared across components.
+#[derive(Clone)]
+pub struct AuthContext {
+    pub user: RwSignal<Option<AuthUser>>,
+    pub auth_enabled: RwSignal<bool>,
+}
+
 #[component]
 pub fn App() -> impl IntoView {
     provide_meta_context();
+
+    // Provide auth context
+    let auth_ctx = AuthContext {
+        user: create_rw_signal(None),
+        auth_enabled: create_rw_signal(false),
+    };
+    provide_context(auth_ctx.clone());
+
+    // Fetch config on mount to check if auth is enabled
+    spawn_local(async move {
+        let resp = gloo_net::http::Request::get("/api/config").send().await;
+        if let Ok(resp) = resp {
+            if let Ok(config) = resp.json::<AppConfig>().await {
+                auth_ctx.auth_enabled.set(config.auth_enabled);
+                if config.auth_enabled {
+                    // Try to fetch current user
+                    let user_resp = gloo_net::http::Request::get("/auth/me")
+                        .send()
+                        .await;
+                    if let Ok(user_resp) = user_resp {
+                        if user_resp.ok() {
+                            if let Ok(user) = user_resp.json::<AuthUser>().await {
+                                auth_ctx.user.set(Some(user));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
 
     view! {
         <Html attr:lang="en" attr:dir="ltr" />
@@ -387,6 +464,9 @@ pub fn App() -> impl IntoView {
                             <Route path="/runs/:id/prs/:pr_key" view=|| view! { <pages::pr_detail::PrDetailPage /> } />
                             <Route path="/runs/:id/live" view=|| view! { <pages::live::LivePage /> } />
                             <Route path="/new" view=|| view! { <pages::new_run::NewRunPage /> } />
+                            <Route path="/adhoc" view=|| view! { <pages::adhoc_runs::AdhocRunsPage /> } />
+                            <Route path="/adhoc/new" view=|| view! { <pages::adhoc_review::AdhocReviewPage /> } />
+                            <Route path="/adhoc/runs/:id" view=|| view! { <pages::run_detail::RunDetailPage /> } />
                             <Route path="/*" view=|| view! {
                                 <div class="state-container">
                                     <h2>"404 - Page Not Found"</h2>
@@ -431,6 +511,14 @@ fn Sidebar() -> impl IntoView {
         cls
     };
 
+    // Auth state
+    let auth_ctx = use_context::<AuthContext>();
+    let auth_ctx2 = auth_ctx.clone();
+    let auth_enabled = move || auth_ctx.as_ref().map(|ctx| ctx.auth_enabled.get()).unwrap_or(false);
+    let user = move || auth_ctx2.as_ref().and_then(|ctx| ctx.user.get());
+    // display_name and avatar_url are inlined in the template to avoid
+    // multiple captures of the `user` closure.
+
     view! {
         // Mobile hamburger button (visible on small screens)
         <button
@@ -474,7 +562,53 @@ fn Sidebar() -> impl IntoView {
                         <span class="sidebar__label">"New Run"</span>
                     </a>
                 </li>
+                <li>
+                    <a href="/adhoc" class=move || format!("sidebar__item {}", active_class("/adhoc"))>
+                        <span class="sidebar__icon">""</span>
+                        <span class="sidebar__label">"Ad-hoc"</span>
+                    </a>
+                </li>
             </ul>
+
+            // Auth section
+            {move || {
+                if !auth_enabled() {
+                    return view! { <span></span> }.into_view();
+                }
+                if let Some(u) = user() {
+                    // Logged in — show user info and logout button
+                    let username = u.name.clone().unwrap_or_else(|| u.login.clone());
+                    let avatar = u.avatar_url.clone().map(|url| {
+                        view! {
+                            <img
+                                src=url
+                                alt="Avatar"
+                                class="sidebar__avatar"
+                            />
+                        }
+                    });
+                    view! {
+                        <div class="sidebar__auth">
+                            <div class="sidebar__user">
+                                {avatar}
+                                <span class="sidebar__username">{username}</span>
+                            </div>
+                            <a href="/auth/logout" class="btn btn--ghost sidebar__logout">
+                                "Log out"
+                            </a>
+                        </div>
+                    }.into_view()
+                } else {
+                    // Not logged in — show login button
+                    view! {
+                        <div class="sidebar__auth">
+                            <a href="/auth/login" class="btn btn--primary sidebar__login">
+                                "Log in"
+                            </a>
+                        </div>
+                    }.into_view()
+                }
+            }}
 
             <div class="sidebar__footer">
                 <span class="sidebar__version">"v0.1.0"</span>

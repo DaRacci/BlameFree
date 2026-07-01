@@ -3,6 +3,7 @@
 //! Provides the public API for PR review (`review_pr`, `review_diff`) as well
 //! as the internal orchestration functions used by the `benchmark` subcommand.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -1118,6 +1119,24 @@ pub async fn evaluate_pr_consensus(
         max_findings,
     );
 
+    // ── Build template variables from diff and PR context (EXP-014) ──
+    #[cfg(feature = "exp14_template_vars")]
+    let template_vars: Option<&'static HashMap<&'static str, &'static str>> = {
+        let language = crb_tools::language_detector::detect_primary_language(diff);
+        let repo_name = crb_tools::language_detector::extract_repo_name(&pr.url);
+        let lang_ref: &'static str = Box::leak(language.into_boxed_str());
+        let repo_ref: &'static str = Box::leak(repo_name.into_boxed_str());
+        let map: HashMap<&str, &str> = HashMap::from([
+            ("language", lang_ref),
+            ("repo", repo_ref),
+            ("role", ""),
+        ]);
+        Some(Box::leak(Box::new(map)))
+    };
+
+    #[cfg(not(feature = "exp14_template_vars"))]
+    let template_vars: Option<&'static HashMap<&'static str, &'static str>> = None;
+
     let (result, agent_usage, judge_usage, agent_api_calls, judge_api_calls, judge_cache_hits) = evaluate_pr_with_consensus(
         pr,
         diff,
@@ -1126,7 +1145,7 @@ pub async fn evaluate_pr_consensus(
         judge,
         rules_preamble,
         Some(prompt_lib),
-        None,
+        template_vars,
         &parsed_roles,
         max_findings,
         cache.clone().map(|c| c as Arc<dyn CacheBackend>),

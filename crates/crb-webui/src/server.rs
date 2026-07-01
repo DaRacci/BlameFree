@@ -14,6 +14,8 @@ use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
+use crate::auth::SessionStore;
+use crate::config::WebUiConfig;
 use crate::events::DashboardEvent;
 
 /// Shared application state.
@@ -33,6 +35,12 @@ pub struct AppState {
     pub active_runs: Arc<RwLock<HashMap<String, ActiveRun>>>,
     /// Active replay operations.
     pub replays: Arc<RwLock<HashMap<String, ReplayState>>>,
+    /// Web UI configuration (includes optional OAuth).
+    pub config: WebUiConfig,
+    /// Session store for OAuth-authenticated users.
+    pub session_store: SessionStore,
+    /// GitHub API token for fetching PR diffs (read-only, from GITHUB_TOKEN env var).
+    pub github_token: Option<String>,
 }
 
 /// State for an actively running benchmark.
@@ -68,6 +76,9 @@ impl AppState {
         static_dir: PathBuf,
         models: String,
         benchmark_dir: Option<PathBuf>,
+        config: WebUiConfig,
+        github_token: Option<String>,
+        session_store: SessionStore,
     ) -> Self {
         Self {
             output_dir,
@@ -77,6 +88,9 @@ impl AppState {
             benchmark_dir,
             active_runs: Arc::new(RwLock::new(HashMap::new())),
             replays: Arc::new(RwLock::new(HashMap::new())),
+            config,
+            session_store,
+            github_token,
         }
     }
 }
@@ -97,11 +111,24 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         .route("/api/runs/:id/convert", post(crate::api::convert_to_candidates))
         .route("/api/runs/:id/judge", post(crate::api::run_judge))
         .route("/api/runs/:id/pr-detail/:pr_key", get(crate::api::get_pr_detail))
-        .route("/api/datasets/:id/prs", get(crate::api::list_dataset_prs));
+        .route("/api/datasets/:id/prs", get(crate::api::list_dataset_prs))
+        // Ad-hoc review endpoints
+        .route("/api/adhoc/review", post(crate::api::start_adhoc_review))
+        .route("/api/adhoc/runs", get(crate::api::list_adhoc_runs))
+        .route("/api/adhoc/runs/:id", get(crate::api::get_adhoc_run));
 
-    // Build the full router with SPA fallback
-    let app = Router::new()
-        .merge(api_router)
+    // Build router: merge all routes first, then apply state and layers
+    let mut app = Router::new().merge(api_router);
+
+    // If OAuth is configured, add authentication routes
+    if state.config.oauth.is_some() {
+        tracing::info!("OAuth is enabled — adding authentication routes");
+        app = app.merge(crate::auth::router());
+    } else {
+        tracing::info!("OAuth is disabled — skipping authentication routes");
+    }
+
+    let app = app
         .fallback(static_or_index)
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())

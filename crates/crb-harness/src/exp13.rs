@@ -4,7 +4,7 @@
 //! active (default ON). It provides the experiment-specific defaults and
 //! config loading as the standard pipeline baseline.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use crb_agents::prompts::PromptLibrary;

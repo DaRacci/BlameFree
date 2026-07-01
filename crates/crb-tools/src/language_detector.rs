@@ -453,3 +453,4 @@ diff --git a/client.ts b/client.ts
         assert_eq!(detect_primary_language(diff), "Rust"); // 3 Rust files > 2 TypeScript files
     }
 }
+

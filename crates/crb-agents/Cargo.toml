@@ -15,4 +15,4 @@ anyhow = { workspace = true }
 crb-tools = { path = "../crb-tools" }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["rt"] }
+tokio = { workspace = true, features = ["rt", "macros"] }
