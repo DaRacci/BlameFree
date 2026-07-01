@@ -253,7 +253,4 @@ pub fn build_agent(
     }
 }
 
-/// All supported agent role identifiers — loaded dynamically from the manifest.
-/// Use [`AgentManifest::all_abbreviations`] for the runtime list.
-#[deprecated(since = "0.2.0", note = "Use AgentManifest::all_abbreviations() instead")]
-pub const AGENT_ROLES: &[&str] = &["SA", "CL", "AR", "SEC", "GEN"];
+

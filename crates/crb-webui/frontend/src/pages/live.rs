@@ -1,7 +1,7 @@
 use leptos::*;
 use leptos_router::*;
 use std::collections::HashMap;
-use crate::{DashboardEvent, api_url, role_display_name, AGENT_ROLES};
+use crate::{api_url, AppConfig, DashboardEvent};
 use crate::components::agent_pane::AgentPane;
 use crate::components::progress_bar::ProgressBar;
 
@@ -36,10 +36,10 @@ struct PrState {
 }
 
 impl PrState {
-    fn new(pr_key: &str) -> Self {
+    fn new(pr_key: &str, roles: &[String]) -> Self {
         let mut agents = HashMap::new();
-        for role in AGENT_ROLES {
-            agents.insert(role.to_string(), PerAgentState::new(role));
+        for role in roles {
+            agents.insert(role.clone(), PerAgentState::new(role));
         }
         Self {
             pr_key: pr_key.to_string(),
@@ -67,11 +67,24 @@ pub fn LivePage() -> impl IntoView {
     // Track which PR each role is currently working on (for AgentChunk/AgentFinished which lack pr_key)
     let (role_current_pr, set_role_current_pr) = create_signal::<HashMap<String, String>>(HashMap::new());
 
+    // Available roles fetched from the server
+    let (available_roles, set_available_roles) = create_signal::<Vec<String>>(Vec::new());
+
     // ─── Overall progress ─────────────────────────────────────────────
     let (progress_done, set_progress_done) = create_signal(0usize);
     let (progress_total, set_progress_total) = create_signal(0usize);
     let (status, set_status) = create_signal::<String>("connecting".into());
     let (_connected, set_connected) = create_signal(false);
+
+    // Fetch available roles on mount
+    spawn_local(async move {
+        let url = api_url("/api/config");
+        if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
+            if let Ok(config) = resp.json::<AppConfig>().await {
+                set_available_roles.set(config.roles);
+            }
+        }
+    });
 
     // ─── SSE connection ───────────────────────────────────────────────
     let _connect = {
@@ -86,6 +99,7 @@ pub fn LivePage() -> impl IntoView {
         let set_conn = set_connected.clone();
         // Read signals needed for handle_event
         let role_pr = role_current_pr.clone();
+        let roles = available_roles.clone();
 
         spawn_local(async move {
             if id.is_empty() {
@@ -102,6 +116,7 @@ pub fn LivePage() -> impl IntoView {
                     while let Ok(event) = rx.recv().await {
                         match serde_json::from_str::<DashboardEvent>(&event) {
                             Ok(ev) => {
+                                let current_roles = roles.get_untracked();
                                 handle_event(
                                     ev,
                                     &set_states,
@@ -112,6 +127,7 @@ pub fn LivePage() -> impl IntoView {
                                     &set_done,
                                     &set_total,
                                     &set_stat,
+                                    &current_roles,
                                 );
                             }
                             Err(e) => {
@@ -283,19 +299,20 @@ pub fn LivePage() -> impl IntoView {
                             {move || {
                                 let pr_state = active_pr_state();
                                 let sel_key = selected_pr.get().unwrap_or_default();
+                                let roles = available_roles.get();
                                 if let Some(state) = pr_state {
-                                    AGENT_ROLES.iter().map(|role| {
-                                        let agent_ref = state.agents.get(*role);
-                                        let name: &'static str = role_display_name(role);
+                                    roles.iter().map(|role| {
+                                        let agent_ref = state.agents.get(role);
                                         // Clone values so closures don't borrow from temporary state
                                         let status_val = agent_ref.map(|a| a.status.clone()).unwrap_or_else(|| "pending".into());
                                         let resp_val = agent_ref.and_then(|a| {
                                             if a.response.is_empty() { None } else { Some(a.response.clone()) }
                                         });
                                         let pr_key = sel_key.clone();
+                                        let role_name = role.clone();
                                         view! {
                                             <AgentPane
-                                                name=name
+                                                name=role_name
                                                 status=move || status_val.clone()
                                                 response=move || resp_val.clone()
                                                 current_pr=move || Some(pr_key.clone())
@@ -344,13 +361,14 @@ fn handle_event(
     set_done: &WriteSignal<usize>,
     set_total: &WriteSignal<usize>,
     set_stat: &WriteSignal<String>,
+    roles: &[String],
 ) {
     match ev {
         DashboardEvent::AgentStarted { pr_key, role } => {
             // Ensure PR state exists
             set_states.update(|states| {
                 if !states.contains_key(&pr_key) {
-                    states.insert(pr_key.clone(), PrState::new(&pr_key));
+                    states.insert(pr_key.clone(), PrState::new(&pr_key, roles));
                 }
                 if let Some(pr) = states.get_mut(&pr_key) {
                     if let Some(agent) = pr.agents.get_mut(&role) {
@@ -415,7 +433,7 @@ fn handle_event(
                 // Ensure this PR is tracked
                 set_states.update(|states| {
                     if !states.contains_key(&pr_key) {
-                        states.insert(pr_key.clone(), PrState::new(&pr_key));
+                        states.insert(pr_key.clone(), PrState::new(&pr_key, roles));
                     }
                 });
                 set_order.update(|order| {

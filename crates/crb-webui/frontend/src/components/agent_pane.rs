@@ -2,7 +2,7 @@ use leptos::*;
 
 #[component]
 pub fn AgentPane(
-    name: &'static str,
+    name: String,
     status: impl Fn() -> String + 'static,
     response: impl Fn() -> Option<String> + 'static,
     current_pr: impl Fn() -> Option<String> + 'static,
@@ -39,8 +39,9 @@ pub fn AgentPane(
     };
 
     // Generate a short code from name
-    let short_name = move || {
-        name.chars().take(2).collect::<String>().to_uppercase()
+    let short_name = {
+        let name = name.clone();
+        move || name.chars().take(2).collect::<String>().to_uppercase()
     };
     let _short = short_name();
 

@@ -1,4 +1,4 @@
-use crate::{api_url, AdhocReviewResponse, AGENT_ROLES, GithubPrListItem};
+use crate::{api_url, AdhocReviewResponse, AppConfig, GithubPrListItem};
 use leptos::*;
 use leptos_router::*;
 
@@ -25,6 +25,7 @@ pub fn AdhocReviewPage() -> impl IntoView {
     let (repo, set_repo) = create_signal(String::new());
     let (model, set_model) = create_signal("deepseek/deepseek-v4-flash".to_string());
     let (selected_roles, set_selected_roles) = create_signal::<Vec<String>>(Vec::new());
+    let (available_roles, set_available_roles) = create_signal::<Vec<String>>(Vec::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal::<Option<String>>(None);
 
@@ -37,6 +38,16 @@ pub fn AdhocReviewPage() -> impl IntoView {
     let (prs_error, set_prs_error) = create_signal::<Option<String>>(None);
 
     let navigator = use_navigate();
+
+    // Fetch available roles from the server on mount
+    spawn_local(async move {
+        let url = api_url("/api/config");
+        if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
+            if let Ok(config) = resp.json::<AppConfig>().await {
+                set_available_roles.set(config.roles);
+            }
+        }
+    });
 
     let toggle_role = move |role: &str| {
         let role = role.to_string();
@@ -349,17 +360,18 @@ pub fn AdhocReviewPage() -> impl IntoView {
                     <div class="form-field">
                         <label class="form-field__label">"Roles / Agents"</label>
                         <div class="checkbox-group">
-                            {AGENT_ROLES.iter().map(|role| {
-                                let role_str = *role;
-                                let checked = is_role_selected(role_str);
+                            {move || available_roles.get().iter().map(|role| {
+                                let role_clone = role.clone();
+                                let checked = is_role_selected(role);
+                                let display_role = role.clone();
                                 view! {
                                     <label class="checkbox-label">
                                         <input
                                             type="checkbox"
                                             checked=checked
-                                            on:click=move |_| toggle_role(role_str)
+                                            on:click=move |_| toggle_role(&role_clone)
                                         />
-                                        <span>{role_str}</span>
+                                        <span>{display_role}</span>
                                     </label>
                                 }
                             }).collect::<Vec<_>>()}

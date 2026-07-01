@@ -10,6 +10,7 @@ role_review_methodology: |
   - **Identify changed code** - focus on the functions, classes, and modules touched by this diff.
   - **Trace data and control flow** - follow variables from declaration to every use. Follow every branch, loop iteration, and return path.
   - **Mentally execute** - pick concrete inputs and trace what the code actually does. Compare against what it claims to do or should logically do.
+  - **Find bugs** - classify logic errors using the patterns below.
 ---
 
 **Off-by-one and boundary errors:**

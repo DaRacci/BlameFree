@@ -181,23 +181,7 @@ pub struct PrEntry {
     pub pr_number: u32,
 }
 
-// ─── Role display utilities ──────────────────────────────────────────
-
-/// Map a role abbreviation (SA/CL/AR/SEC) to a human-readable display name.
-pub fn role_display_name(role: &str) -> &'static str {
-    match role {
-        "SA" => "Security Auditor",
-        "CL" => "Code Logician",
-        "AR" => "Architecture Reviewer",
-        "SEC" => "Security Evaluator",
-        _ => "Unknown",
-    }
-}
-
-/// The canonical agent role identifiers, matching crb-agents::AGENT_ROLES.
-pub const AGENT_ROLES: &[&str] = &["SA", "CL", "AR", "SEC"];
-
-/// A DashboardEvent as serialized by the backend SSE endpoint.
+// ─── DashboardEvent typed SSE event ───────────────────────────────────────
 /// Uses the same tagged-enum format (`event`/`data`) as the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event", content = "data")]

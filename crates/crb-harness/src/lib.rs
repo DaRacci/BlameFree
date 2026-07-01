@@ -11,7 +11,7 @@ use std::time::Duration;
 use anyhow::Context;
 use anyhow::Result;
 use crb_agents::prompts::PromptLibrary;
-use crb_agents::{build_agent, Finding, AGENT_ROLES};
+use crb_agents::{build_agent, Finding};
 use crb_consensus::{evaluate_pr_with_consensus, CacheBackend};
 use crb_dashboard::DashboardEvent;
 use crb_judge::{compute_metrics, run_judge};
@@ -437,16 +437,17 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
         .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
 
     // Parse roles
+    let prompt_lib = crb_agents::prompts::PromptLibrary::new()
+        .expect("Embedded prompts should be available");
+
     let roles: Vec<&str> = if params.roles.is_empty() {
-        AGENT_ROLES.to_vec()
+        prompt_lib.roles()
     } else {
         params.roles.iter().map(|r| r.as_str()).collect()
     };
 
     let diff = params.diff;
     let mut all_findings = Vec::new();
-    let prompt_lib = crb_agents::prompts::PromptLibrary::new()
-        .expect("Embedded prompts should be available");
 
     for &role in &roles {
         // Build agent with embedded prompt library
@@ -492,7 +493,7 @@ pub async fn review_pr_with_prompt_lib(
 
     // Parse roles
     let roles: Vec<&str> = if params.roles.is_empty() {
-        AGENT_ROLES.to_vec()
+        prompt_lib.roles()
     } else {
         params.roles.iter().map(|r| r.as_str()).collect()
     };
@@ -834,7 +835,7 @@ pub async fn evaluate_pr_single_agent(
 
     let mut agent_set = tokio::task::JoinSet::new();
     let prompt_lib = prompt_lib.clone();
-    for &role in AGENT_ROLES {
+    for role in prompt_lib.roles() {
         let client = client.clone();
         let model = model.to_string();
         let role = role.to_string();

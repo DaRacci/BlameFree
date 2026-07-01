@@ -73,12 +73,9 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
         .map(|d| d.id)
         .collect();
 
-    let roles = vec![
-        "SA".to_string(),
-        "CL".to_string(),
-        "AR".to_string(),
-        "SEC".to_string(),
-    ];
+    let roles: Vec<String> = crb_agents::prompts::PromptLibrary::new()
+        .map(|lib| lib.roles().into_iter().map(|s| s.to_string()).collect())
+        .unwrap_or_else(|_| vec!["SA".to_string(), "CL".to_string(), "AR".to_string(), "SEC".to_string()]);
 
     Json(ConfigResponse {
         models,
