@@ -3,6 +3,7 @@
 //! Agent `.md` files have YAML frontmatter that is parsed and stripped.
 //! All rendering goes through `agent.hbs`, never raw markdown.
 
+use handlebars::Handlebars;
 use include_dir::{include_dir, Dir};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -36,19 +37,17 @@ pub struct AgentEntry {
     pub role_prompt: String,
 }
 
-/// Embedded prompt library — no disk I/O, no hardcoded fallbacks.
+/// Embedded prompt library
 #[derive(Clone)]
 pub struct PromptLibrary {
     agents: HashMap<String, AgentEntry>,
-    agent_template: String,
-    sections: HashMap<String, String>,
+    handlebars: Handlebars<'static>,
 }
 
 impl PromptLibrary {
     /// Initialise from embedded data. Returns error if agent.hbs is missing
     /// or no agents are found.
     pub fn new() -> Result<Self, String> {
-        // Load agent.hbs template
         let agent_template = PROMPTS_DIR
             .get_file("builtin/handlebars/agent.hbs")
             .ok_or("agent.hbs not found in embedded prompts")?
@@ -56,7 +55,6 @@ impl PromptLibrary {
             .ok_or("agent.hbs is not valid UTF-8")?
             .to_string();
 
-        // Load section files
         let mut sections: HashMap<String, String> = HashMap::new();
         if let Some(sections_dir) = PROMPTS_DIR.get_dir("sections") {
             for entry in sections_dir.files() {
@@ -76,7 +74,6 @@ impl PromptLibrary {
             }
         }
 
-        // Load agent .md files
         let mut agents: HashMap<String, AgentEntry> = HashMap::new();
         if let Some(agents_dir) = PROMPTS_DIR.get_dir("agents") {
             for file in agents_dir.files() {
@@ -105,14 +102,24 @@ impl PromptLibrary {
             return Err("No agents found in embedded prompts".into());
         }
 
+        let mut hb = Handlebars::new();
+        hb.set_strict_mode(false);
+        // Register agent.hbs as "agent"
+        hb.register_template_string("agent", &agent_template)
+            .map_err(|e| format!("Failed to register agent template: {e}"))?;
+        // Register each section as a partial
+        for (name, content) in &sections {
+            hb.register_partial(name, content)
+                .map_err(|e| format!("Failed to register partial '{name}': {e}"))?;
+        }
+
         Ok(Self {
             agents,
-            agent_template,
-            sections,
+            handlebars: hb,
         })
     }
 
-    /// Get the raw markdown body for a role (YAML stripped).
+    /// Get the raw markdown body for a role with the YAML stripped.
     pub fn get(&self, role: &str) -> Option<&str> {
         self.agents
             .get(&role.to_uppercase())
@@ -155,19 +162,17 @@ impl PromptLibrary {
         );
         ctx.insert("role_prompt".into(), entry.role_prompt.clone().into());
 
-        // Merge user vars
         for (k, v) in vars {
             ctx.insert(k.clone(), v.clone());
         }
 
-        // Merge sections (pre-rendered with role context)
-        for (key, template) in &self.sections {
-            let rendered = simple_substitute(template, &entry.config);
-            ctx.insert(key.clone(), rendered.into());
-        }
-
-        // Simple {{variable}} substitution (since we can't add handlebars dep easily)
-        simple_hbs_render(&self.agent_template, &ctx)
+        let ctx_value = serde_json::Value::Object(ctx);
+        self.handlebars
+            .render("agent", &ctx_value)
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to render agent template for '{}': {e}", role);
+                format!("Error rendering prompt for {role}: {e}")
+            })
     }
 
     /// List all known agent abbreviations.
@@ -189,76 +194,6 @@ fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
     let yaml = rest[..end].trim();
     let body = rest[end + 4..].trim();
     Some((yaml, body))
-}
-
-/// Very simple {{variable}} substitution for handlebars-like templates.
-fn simple_hbs_render(template: &str, ctx: &serde_json::Map<String, serde_json::Value>) -> String {
-    let mut result = template.to_string();
-    for (key, value) in ctx {
-        let placeholder = format!("{{{{{}}}}}", key);
-        let replacement = match value {
-            serde_json::Value::String(s) => s.clone(),
-            other => other.to_string(),
-        };
-        result = result.replace(&placeholder, &replacement);
-    }
-    // Simple {{#if var}}...{{/if}} handling (non-nested)
-    result = simple_if_handler(&result, ctx);
-    result
-}
-
-fn simple_if_handler(template: &str, ctx: &serde_json::Map<String, serde_json::Value>) -> String {
-    // Handle {{#if var}}...{{/if}} blocks — only supports non-empty string truthy
-    let re = regex::Regex::new(r"\{\{#if (\w+)\}\}(.*?)\{\{/if\}\}").unwrap();
-    let mut result = template.to_string();
-    loop {
-        if let Some(caps) = re.captures(&result) {
-            let var = &caps[1];
-            let body = &caps[2];
-            let is_truthy = ctx
-                .get(var)
-                .map(|v| match v {
-                    serde_json::Value::String(s) => !s.is_empty(),
-                    serde_json::Value::Null => false,
-                    _ => true,
-                })
-                .unwrap_or(false);
-            let replacement = if is_truthy { body } else { "" };
-            let full = caps.get(0).unwrap().as_str();
-            result = result.replace(full, replacement);
-        } else {
-            break;
-        }
-    }
-    // Handle {{#if var}}...{{else}}...{{/if}}
-    let re_else = regex::Regex::new(r"\{\{#if (\w+)\}\}(.*?)\{\{else\}\}(.*?)\{\{/if\}\}").unwrap();
-    loop {
-        if let Some(caps) = re_else.captures(&result) {
-            let var = &caps[1];
-            let true_body = &caps[2];
-            let false_body = &caps[3];
-            let is_truthy = ctx
-                .get(var)
-                .map(|v| match v {
-                    serde_json::Value::String(s) => !s.is_empty(),
-                    serde_json::Value::Null => false,
-                    _ => true,
-                })
-                .unwrap_or(false);
-            let replacement = if is_truthy { true_body } else { false_body };
-            let full = caps.get(0).unwrap().as_str();
-            result = result.replace(full, replacement);
-        } else {
-            break;
-        }
-    }
-    result
-}
-
-fn simple_substitute(template: &str, config: &AgentConfig) -> String {
-    template
-        .replace("{{role_abbreviation}}", &config.role_abbreviation)
-        .replace("{{role_name}}", &config.role_name)
 }
 
 #[cfg(test)]

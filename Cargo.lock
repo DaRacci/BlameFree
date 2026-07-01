@@ -612,7 +612,6 @@ dependencies = [
  "crb-tools",
  "handlebars",
  "include_dir",
- "regex",
  "rig-core",
  "schemars 0.8.22",
  "serde",

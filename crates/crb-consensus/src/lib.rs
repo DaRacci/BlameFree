@@ -1,6 +1,6 @@
 //! Multi-agent consensus orchestration for code review evaluation.
 //!
-//! Orchestrates multiple LLM reviewer agents (SA, CL, AR, SEC) concurrently,
+//! Orchestrates multiple LLM reviewer agents concurrently,
 //! then aggregates their structured findings via heuristic matching and LLM
 //! judge fallback against golden (expected) comments.
 //!
@@ -17,7 +17,7 @@ use anyhow::Result;
 use regex::Regex;
 use rig_core::agent::{Agent, HookAction, PromptHook, PromptResponse, ToolCallHookAction};
 use rig_core::completion::{
-    AssistantContent, CompletionResponse, Message, Prompt, PromptError, Usage,
+    AssistantContent, CompletionModel, CompletionResponse, Message, Prompt, PromptError, Usage,
 };
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
@@ -60,7 +60,7 @@ impl TurnBudgetHook {
     }
 }
 
-impl<M: rig_core::completion::CompletionModel> PromptHook<M> for TurnBudgetHook {
+impl<M: CompletionModel> PromptHook<M> for TurnBudgetHook {
     /// Increment the completion call counter after each model response.
     async fn on_completion_response(
         &self,
@@ -531,7 +531,7 @@ pub async fn run_reviewers(
 
             // Clone role for async block capture (Role no longer Copy)
             let role_async = role.clone();
-            let outcome = tokio::time::timeout(Duration::from_secs(300), async {
+            let outcome = tokio::time::timeout(Duration::from_secs(900), async {
                 let role = role_async;
                 let resp: PromptResponse = agent
                     .prompt(&diff)
@@ -1026,12 +1026,10 @@ pub async fn evaluate_pr_with_consensus(
     // Build one reviewer config per selected role.
     let reviewer_configs: Vec<ReviewerConfig> = roles
         .iter()
-        .map(|role_str| {
-            ReviewerConfig {
-                role: Role(role_str.to_string()),
-                model: model.to_string(),
-                max_findings,
-            }
+        .map(|role_str| ReviewerConfig {
+            role: Role(role_str.to_string()),
+            model: model.to_string(),
+            max_findings,
         })
         .collect();
 
@@ -1050,7 +1048,6 @@ pub async fn evaluate_pr_with_consensus(
         })
         .collect();
 
-    // Run the pipeline with the PR diff.
     let report = run_consensus(
         diff,
         consensus_goldens,
@@ -1584,8 +1581,6 @@ index abc..def 100644
      println!(\"done\");
  }
 ";
-        // Changed lines: -    let x = 1;  -    let y = 2;  +    let x = 10;
-        //                +    let y = 20;  +    let z = 30;
         assert_eq!(count_diff_lines(diff), 5);
     }
 
@@ -1599,7 +1594,6 @@ diff --git a/src/main.rs b/src/main.rs
 -foo
 +bar
 ";
-        // Lines starting with + or - but not +++ or ---: -foo, +bar
         assert_eq!(count_diff_lines(diff), 2);
     }
 
@@ -1655,7 +1649,6 @@ diff --git a/main.cpp b/main.cpp
 
     #[test]
     fn test_should_use_single_agent_small_pr() {
-        // 1 file, 2 changed lines — well under threshold
         let diff = "\
 diff --git a/README.md b/README.md
 --- a/README.md
@@ -1695,7 +1688,6 @@ diff --git a/d.txt b/d.txt
 -old
 +new
 ";
-        // 4 files > 3 → full panel
         assert!(!should_use_single_agent(diff, 3, 200));
     }
 
@@ -1711,13 +1703,11 @@ diff --git a/a.txt b/a.txt
             + &(0..250)
                 .map(|i| format!("+line_{}\n", i))
                 .collect::<String>();
-        // > 200 lines → full panel
         assert!(!should_use_single_agent(&diff, 3, 200));
     }
 
     #[test]
     fn test_should_use_single_agent_safety_override_rust() {
-        // Small diff but Rust file → full panel
         let diff = "\
 diff --git a/src/main.rs b/src/main.rs
 --- a/src/main.rs
@@ -1744,7 +1734,6 @@ diff --git a/server.go b/server.go
 
     #[test]
     fn test_role_gen_variant() {
-        // Verify GEN is a valid Role
         let role = Role("GEN".into());
         assert_eq!(role.as_str(), "GEN");
     }

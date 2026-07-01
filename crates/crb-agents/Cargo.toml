@@ -17,7 +17,6 @@ handlebars = "5"
 tracing = { workspace = true }
 crb-tools = { path = "../crb-tools" }
 include_dir = "0.7"
-regex = "1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }

@@ -18,8 +18,8 @@ use crb_judge::{compute_metrics, run_judge};
 use crb_reporting::{GoldenCommentEntry, PrResult};
 use crb_rules::RuleSet;
 use regex::Regex;
-use rig_core::agent::PromptResponse;
 use rig_core::agent::Agent;
+use rig_core::agent::PromptResponse;
 use rig_core::client::ProviderClient;
 use rig_core::completion::Prompt;
 use rig_core::completion::Usage;
@@ -108,23 +108,20 @@ const FILTERED_FILE_PATTERNS: &[&str] = &[
 /// Check whether `path` (from a `diff --git a/path b/path` header) matches
 /// any of the filtered patterns.
 fn is_filtered_path(path: &str) -> bool {
-    FILTERED_FILE_PATTERNS
-        .iter()
-        .any(|pat| {
-            // Direct match: path contains the pattern or ends with it
-            if path.contains(pat) || path.ends_with(pat) {
+    FILTERED_FILE_PATTERNS.iter().any(|pat| {
+        // Direct match: path contains the pattern or ends with it
+        if path.contains(pat) || path.ends_with(pat) {
+            return true;
+        }
+        // For patterns starting with '/', also check without the leading slash
+        // (git diff paths are relative, e.g. "node_modules/pkg/index.js")
+        if let Some(stripped) = pat.strip_prefix('/') {
+            if path.contains(stripped) || path.starts_with(stripped) || path.ends_with(stripped) {
                 return true;
             }
-            // For patterns starting with '/', also check without the leading slash
-            // (git diff paths are relative, e.g. "node_modules/pkg/index.js")
-            if let Some(stripped) = pat.strip_prefix('/') {
-                if path.contains(stripped) || path.starts_with(stripped) || path.ends_with(stripped)
-                {
-                    return true;
-                }
-            }
-            false
-        })
+        }
+        false
+    })
 }
 
 /// Count the categories of filtered files (for the summary note).
@@ -142,28 +139,36 @@ struct FilterCounts {
 
 impl FilterCounts {
     fn total(&self) -> usize {
-        self.lock + self.vendor + self.build + self.minified + self.map + self.coverage
-            + self.snapshot + self.other
+        self.lock
+            + self.vendor
+            + self.build
+            + self.minified
+            + self.map
+            + self.coverage
+            + self.snapshot
+            + self.other
     }
 
     fn classify(path: &str) -> &'static str {
         let patterns: &[(&[&str], &str)] = &[
             (
                 &[
-                    "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "Cargo.lock",
-                    "Gemfile.lock", "composer.lock", "Pipfile.lock", "poetry.lock",
-                    "bun.lockb", "deno.lock", "flake.lock",
+                    "pnpm-lock.yaml",
+                    "package-lock.json",
+                    "yarn.lock",
+                    "Cargo.lock",
+                    "Gemfile.lock",
+                    "composer.lock",
+                    "Pipfile.lock",
+                    "poetry.lock",
+                    "bun.lockb",
+                    "deno.lock",
+                    "flake.lock",
                 ],
                 "lock",
             ),
-            (
-                &["/node_modules/", "/vendor/", "/Pods/"],
-                "vendor",
-            ),
-            (
-                &["/dist/", "/build/", "/.next/", "/.nuxt/"],
-                "build",
-            ),
+            (&["/node_modules/", "/vendor/", "/Pods/"], "vendor"),
+            (&["/dist/", "/build/", "/.next/", "/.nuxt/"], "build"),
             (&[".min.js", ".min.css"], "minified"),
             (&[".map"], "map"),
             (&["/coverage/", "/htmlcov/"], "coverage"),
@@ -176,7 +181,10 @@ impl FilterCounts {
                 }
                 // For patterns starting with '/', also check relative paths
                 if let Some(stripped) = p.strip_prefix('/') {
-                    if path.contains(stripped) || path.starts_with(stripped) || path.ends_with(stripped) {
+                    if path.contains(stripped)
+                        || path.starts_with(stripped)
+                        || path.ends_with(stripped)
+                    {
                         return label;
                     }
                 }
@@ -257,7 +265,10 @@ fn split_diff_sections(diff: &str) -> Vec<(String, String)> {
         if line.starts_with("diff --git ") {
             // Save previous section
             if !current_header.is_empty() || !current_body.is_empty() {
-                sections.push((std::mem::take(&mut current_header), std::mem::take(&mut current_body)));
+                sections.push((
+                    std::mem::take(&mut current_header),
+                    std::mem::take(&mut current_body),
+                ));
             }
             current_header = line.to_string();
         } else if !current_header.is_empty() {
@@ -353,14 +364,22 @@ pub fn strip_diff_metadata(diff: &str) -> String {
         let body = &hunk_lines[1..];
 
         // Find first and last changed lines (+ or -)
-        let first_changed = body.iter().position(|l| l.starts_with('+') || l.starts_with('-'));
-        let last_changed = body.iter().rposition(|l| l.starts_with('+') || l.starts_with('-'));
+        let first_changed = body
+            .iter()
+            .position(|l| l.starts_with('+') || l.starts_with('-'));
+        let last_changed = body
+            .iter()
+            .rposition(|l| l.starts_with('+') || l.starts_with('-'));
 
         if let (Some(first), Some(last)) = (first_changed, last_changed) {
             // Determine start: 1 context line before first changed, or 0 if not enough
             let start = if first > 0 { first - 1 } else { 0 };
             // Determine end: 1 context line after last changed
-            let end = if last + 2 < body.len() { last + 2 } else { body.len() };
+            let end = if last + 2 < body.len() {
+                last + 2
+            } else {
+                body.len()
+            };
 
             // Emit the @@ header (stripped of trailing context)
             let stripped_header = strip_hunk_header_text(header);
@@ -437,8 +456,8 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
         .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
 
     // Parse roles
-    let prompt_lib = crb_agents::prompts::PromptLibrary::new()
-        .expect("Embedded prompts should be available");
+    let prompt_lib =
+        crb_agents::prompts::PromptLibrary::new().expect("Embedded prompts should be available");
 
     let roles: Vec<&str> = if params.roles.is_empty() {
         prompt_lib.roles()
@@ -451,7 +470,18 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
 
     for &role in &roles {
         // Build agent with embedded prompt library
-        let agent = build_agent(&client, &params.model, role, None, &prompt_lib, None, None, None, None, None);
+        let agent = build_agent(
+            &client,
+            &params.model,
+            role,
+            None,
+            &prompt_lib,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Call agent with the diff - get real token usage via extended_details
         match agent.prompt(&diff).extended_details().await {
@@ -503,7 +533,18 @@ pub async fn review_pr_with_prompt_lib(
 
     for &role in &roles {
         // Build agent with loaded prompts (no template engine)
-        let agent = build_agent(&client, &params.model, role, None, prompt_lib, None, None, None, None, None);
+        let agent = build_agent(
+            &client,
+            &params.model,
+            role,
+            None,
+            prompt_lib,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
         // Call agent with the diff
         match agent.prompt(&diff).extended_details().await {
@@ -582,8 +623,8 @@ pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>
     #[cfg(feature = "exp13_v6_pipeline")]
     let prompt_lib = crate::exp13::load_exp13_prompt_library();
     #[cfg(not(feature = "exp13_v6_pipeline"))]
-    let prompt_lib = crb_agents::prompts::PromptLibrary::new()
-        .expect("Embedded prompts should be available");
+    let prompt_lib =
+        crb_agents::prompts::PromptLibrary::new().expect("Embedded prompts should be available");
 
     // Build ReviewParams and call review_pr
     let roles = vec![
@@ -758,7 +799,10 @@ pub fn parse_agent_findings(response: &str) -> Result<Vec<Finding>, String> {
     let array_re = Regex::new(r"\[[\s\S]*\]").unwrap();
     if let Some(m) = array_re.find(response) {
         if let Some(findings) = normalise_findings(m.as_str()) {
-            info!("Parsed {} finding(s) from embedded JSON array", findings.len());
+            info!(
+                "Parsed {} finding(s) from embedded JSON array",
+                findings.len()
+            );
             return Ok(findings);
         }
     }
@@ -865,7 +909,9 @@ pub async fn evaluate_pr_single_agent(
 
             // Check cache first
             if let Some(ref c) = cache_arc {
-                if let Some((cached_response, cached_usage)) = c.lookup_agent_by_key_with_usage(&agent_cache_key) {
+                if let Some((cached_response, cached_usage)) =
+                    c.lookup_agent_by_key_with_usage(&agent_cache_key)
+                {
                     tracing::info!(
                         "CACHE HIT for agent role={} (key={})",
                         role,
@@ -938,7 +984,13 @@ pub async fn evaluate_pr_single_agent(
 
                     // Cache the prompt+response with content-addressed key, including usage
                     if let Some(ref c) = cache_arc {
-                        c.save_agent_with_key_and_usage(&agent_cache_key, &role, &diff, &response, &usage);
+                        c.save_agent_with_key_and_usage(
+                            &agent_cache_key,
+                            &role,
+                            &diff,
+                            &response,
+                            &usage,
+                        );
                     }
 
                     let findings = parse_agent_findings(&response);
@@ -1127,44 +1179,42 @@ pub async fn evaluate_pr_consensus(
 
     // ── Build template variables from diff and PR context (EXP-014) ──
     #[cfg(feature = "exp14_template_vars")]
-    let _template_vars: Option<&'static HashMap<&'static str, &'static str>> = {
+    let template_vars: Option<&'static HashMap<&'static str, &'static str>> = {
         let language = crb_tools::language_detector::detect_primary_language(diff);
         let repo_name = crb_tools::language_detector::extract_repo_name(&pr.url);
         let lang_ref: &'static str = Box::leak(language.into_boxed_str());
         let repo_ref: &'static str = Box::leak(repo_name.into_boxed_str());
-        let map: HashMap<&str, &str> = HashMap::from([
-            ("language", lang_ref),
-            ("repo", repo_ref),
-            ("role", ""),
-        ]);
+        let map: HashMap<&str, &str> =
+            HashMap::from([("language", lang_ref), ("repo", repo_ref), ("role", "")]);
         Some(Box::leak(Box::new(map)))
     };
 
     #[cfg(not(feature = "exp14_template_vars"))]
-    let _template_vars: Option<&'static HashMap<&'static str, &'static str>> = None;
+    let template_vars: Option<&'static HashMap<&'static str, &'static str>> = None;
 
-    let (result, agent_usage, judge_usage, agent_api_calls, judge_api_calls, judge_cache_hits) = evaluate_pr_with_consensus(
-        pr,
-        diff,
-        client,
-        model,
-        judge,
-        rules_preamble,
-        prompt_lib,
-        None,
-        None,
-        &parsed_roles,
-        max_findings,
-        cache.clone().map(|c| c as Arc<dyn CacheBackend>),
-        &diff_hash,
-        &prompt_hash,
-        &rules_hash,
-        &judge_prompt_hash,
-        judge_model,
-        tool_preamble.as_deref(),
-        workdir,
-    )
-    .await?;
+    let (result, agent_usage, judge_usage, agent_api_calls, judge_api_calls, judge_cache_hits) =
+        evaluate_pr_with_consensus(
+            pr,
+            diff,
+            client,
+            model,
+            judge,
+            rules_preamble,
+            prompt_lib,
+            None,
+            template_vars,
+            &parsed_roles,
+            max_findings,
+            cache.clone().map(|c| c as Arc<dyn CacheBackend>),
+            &diff_hash,
+            &prompt_hash,
+            &rules_hash,
+            &judge_prompt_hash,
+            judge_model,
+            tool_preamble.as_deref(),
+            workdir,
+        )
+        .await?;
 
     // ── Record real token usage from consensus pipeline ────────────────
     let role_count = parsed_roles.len();
@@ -1174,7 +1224,8 @@ pub async fn evaluate_pr_consensus(
             output_tokens: agent_usage.output_tokens / role_count as u64,
             total_tokens: agent_usage.total_tokens / role_count as u64,
             cached_input_tokens: agent_usage.cached_input_tokens / role_count as u64,
-            cache_creation_input_tokens: agent_usage.cache_creation_input_tokens / role_count as u64,
+            cache_creation_input_tokens: agent_usage.cache_creation_input_tokens
+                / role_count as u64,
             reasoning_tokens: agent_usage.reasoning_tokens / role_count as u64,
             tool_use_prompt_tokens: agent_usage.tool_use_prompt_tokens / role_count as u64,
         };
@@ -1194,7 +1245,8 @@ pub async fn evaluate_pr_consensus(
                 output_tokens: judge_usage.output_tokens / judge_api_calls as u64,
                 total_tokens: judge_usage.total_tokens / judge_api_calls as u64,
                 cached_input_tokens: judge_usage.cached_input_tokens / judge_api_calls as u64,
-                cache_creation_input_tokens: judge_usage.cache_creation_input_tokens / judge_api_calls as u64,
+                cache_creation_input_tokens: judge_usage.cache_creation_input_tokens
+                    / judge_api_calls as u64,
                 reasoning_tokens: judge_usage.reasoning_tokens / judge_api_calls as u64,
                 tool_use_prompt_tokens: judge_usage.tool_use_prompt_tokens / judge_api_calls as u64,
             }
@@ -1233,10 +1285,8 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
     }
 
     // Convert Finding → serde_json::Map<String, Value> using helper
-    let maps: Vec<serde_json::Map<String, serde_json::Value>> = findings
-        .iter()
-        .map(crb_agents::finding_to_map)
-        .collect();
+    let maps: Vec<serde_json::Map<String, serde_json::Value>> =
+        findings.iter().map(crb_agents::finding_to_map).collect();
 
     // Step 1: semantic dedup
     let deduped = crb_aggregator::semantic_dedup(maps);
@@ -1305,36 +1355,33 @@ pub async fn evaluate_pr_with_postprocessing(
     // ── Diff loading ──────────────────────────────────────────────────────
     // Strategy: try persistent worktree first (gives full file context),
     // then fall back to cached diff only.
-    let (diff, pr_repo_dir): (String, Option<std::path::PathBuf>) =
-        match extract_pr_info(&pr.url) {
-            Some((owner, repo, pr_num)) => {
-                // Check for persistent per-PR worktree
-                let worktree_path = benchmark_dir
-                    .join("worktrees")
-                    .join(format!("{owner}_{repo}_{pr_num}"));
-                if worktree_path.join(".git").exists() {
-                    info!(
-                        "Using persistent worktree at {} for PR #{}",
-                        worktree_path.display(),
-                        pr_num
-                    );
-                    let d = load_cached_diff(benchmark_dir, &owner, &repo, pr_num)
-                        .unwrap_or_default();
-                    (d, Some(worktree_path))
-                } else {
-                    let d = load_cached_diff(benchmark_dir, &owner, &repo, pr_num)
-                        .unwrap_or_default();
-                    (d, None)
-                }
-            }
-            None => {
-                tracing::warn!(
-                    "Could not extract PR info from URL '{}'. Using empty diff.",
-                    pr.url
+    let (diff, pr_repo_dir): (String, Option<std::path::PathBuf>) = match extract_pr_info(&pr.url) {
+        Some((owner, repo, pr_num)) => {
+            // Check for persistent per-PR worktree
+            let worktree_path = benchmark_dir
+                .join("worktrees")
+                .join(format!("{owner}_{repo}_{pr_num}"));
+            if worktree_path.join(".git").exists() {
+                info!(
+                    "Using persistent worktree at {} for PR #{}",
+                    worktree_path.display(),
+                    pr_num
                 );
-                (String::new(), None)
+                let d = load_cached_diff(benchmark_dir, &owner, &repo, pr_num).unwrap_or_default();
+                (d, Some(worktree_path))
+            } else {
+                let d = load_cached_diff(benchmark_dir, &owner, &repo, pr_num).unwrap_or_default();
+                (d, None)
             }
-        };
+        }
+        None => {
+            tracing::warn!(
+                "Could not extract PR info from URL '{}'. Using empty diff.",
+                pr.url
+            );
+            (String::new(), None)
+        }
+    };
     if diff.is_empty() {
         tracing::warn!("Empty diff for PR: {} (url: {})", pr.pr_title, pr.url);
     } else {
@@ -1550,9 +1597,7 @@ pub fn write_summary(
     let total_tokens: usize = results
         .iter()
         .filter_map(|r| r.cost.as_ref())
-        .map(|c| {
-            c.agent_tokens_in + c.agent_tokens_out + c.judge_tokens_in + c.judge_tokens_out
-        })
+        .map(|c| c.agent_tokens_in + c.agent_tokens_out + c.judge_tokens_in + c.judge_tokens_out)
         .sum();
     let total_cost_usd: f64 = results
         .iter()
@@ -1587,8 +1632,7 @@ pub fn write_summary(
             results.iter().map(|r| r.metrics.precision).sum::<f64>() / results.len() as f64;
         let avg_recall =
             results.iter().map(|r| r.metrics.recall).sum::<f64>() / results.len() as f64;
-        let avg_f1 =
-            results.iter().map(|r| r.metrics.f1).sum::<f64>() / results.len() as f64;
+        let avg_f1 = results.iter().map(|r| r.metrics.f1).sum::<f64>() / results.len() as f64;
         serde_json::json!({
             "avg_precision": avg_precision,
             "avg_recall": avg_recall,
