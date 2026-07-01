@@ -45,7 +45,7 @@ pub async fn run_harness(
     dataset_dir: &Path,
 ) -> anyhow::Result<()> {
     let output_subdir = output_dir.join(run_id);
-    let cache_dir = output_subdir.join("cache");
+    let cache_dir = output_dir.join("_cache");
 
     tracing::info!(
         run_id = %run_id,
@@ -104,9 +104,6 @@ pub async fn run_harness(
     } else {
         None
     };
-
-    // ── Create cache directory ────────────────────────────────────────────────
-    std::fs::create_dir_all(&cache_dir)?;
 
     // ── Load dataset ─────────────────────────────────────────────────────────
     tracing::info!("Loading golden datasets from: {}", dataset_dir.display());
@@ -212,6 +209,15 @@ pub async fn run_harness(
     let mut set = tokio::task::JoinSet::new();
     let start_time = std::time::Instant::now();
 
+    // ── Conditional cache directory setup ─────────────────────────────────────
+    let cache_dir_opt: Option<PathBuf> = if config.use_cache {
+        let cd = cache_dir.clone();
+        std::fs::create_dir_all(&cd)?;
+        Some(cd)
+    } else {
+        None
+    };
+
     for pr in filtered_prs {
         let permit = sem.clone().acquire_owned().await.expect("semaphore closed");
         let client = client.clone();
@@ -224,7 +230,7 @@ pub async fn run_harness(
         let prompt_lib = prompt_lib.clone();
         let roles = config.roles.clone();
         let max_findings = config.max_findings;
-        let cache_dir = cache_dir.clone();
+        let cache_dir_opt = cache_dir_opt.clone();
         let dashboard_tx = dashboard_tx.clone();
 
         set.spawn(async move {
@@ -242,7 +248,7 @@ pub async fn run_harness(
                 prompt_lib.as_ref(),
                 &roles,
                 max_findings,
-                &cache_dir,
+                cache_dir_opt.as_ref(),
                 dashboard_tx.as_ref(),
             )
             .await
@@ -527,7 +533,7 @@ pub async fn run_replay_via_library(
             prompt_lib.as_ref(),
             roles,
             max_findings,
-            cache_dir,
+            Some(cache_dir),
             None, // No dashboard tx for replay
         )
         .await;

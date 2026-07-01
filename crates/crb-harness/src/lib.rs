@@ -1318,20 +1318,26 @@ pub async fn evaluate_pr_with_postprocessing(
     prompt_lib: &PromptLibrary,
     roles: &str,
     max_findings: usize,
-    cache_dir: &PathBuf,
+    cache_dir: Option<&PathBuf>,
     dashboard_tx: Option<&broadcast::Sender<DashboardEvent>>,
 ) -> Result<PrResult> {
-    // ── Setup cache ─────────────────────────────────────────────────────────
-    let pr_key = utils::sanitize_filename(&pr.pr_title);
-    let cache: Arc<crate::cache::LlmCache> = Arc::new(
-        crate::cache::LlmCache::new(cache_dir, &pr_key)
-            .expect("Failed to create LLM cache directory"),
-    );
-    info!(
-        "LLM cache enabled for PR '{}' at {}",
-        pr.pr_title,
-        cache.dir().display()
-    );
+    // ── Setup cache (optional) ────────────────────────────────────────────
+    let cache: Option<Arc<crate::cache::LlmCache>> = if let Some(cache_dir) = cache_dir {
+        let pr_key = utils::sanitize_filename(&pr.pr_title);
+        let c = Arc::new(
+            crate::cache::LlmCache::new(cache_dir, &pr_key)
+                .expect("Failed to create LLM cache directory"),
+        );
+        info!(
+            "LLM cache enabled for PR '{}' at {}",
+            pr.pr_title,
+            c.dir().display()
+        );
+        Some(c)
+    } else {
+        info!("LLM cache disabled for PR '{}'", pr.pr_title);
+        None
+    };
 
     // ── Cost tracker ──────────────────────────────────────────────────────
     let cost_tracker = Arc::new(crate::cost::CostTracker::new());
@@ -1447,7 +1453,7 @@ pub async fn evaluate_pr_with_postprocessing(
             linter_findings,
             rules_preamble.as_deref(),
             prompt_lib,
-            Some(cache.clone()),
+            cache.clone(),
             cost_tracker.clone(),
             dashboard_tx,
         )
@@ -1464,7 +1470,7 @@ pub async fn evaluate_pr_with_postprocessing(
             prompt_lib,
             roles,
             max_findings,
-            Some(cache.clone()),
+            cache.clone(),
             cost_tracker.clone(),
             None,
         )
@@ -1535,8 +1541,10 @@ pub async fn evaluate_pr_with_postprocessing(
             "f1": metrics.f1,
         },
     });
-    if let Err(e) = cache.save_metadata(&metadata) {
-        tracing::warn!("Failed to write cache metadata: {e}");
+    if let Some(ref cache) = cache {
+        if let Err(e) = cache.save_metadata(&metadata) {
+            tracing::warn!("Failed to write cache metadata: {e}");
+        }
     }
 
     Ok(PrResult {

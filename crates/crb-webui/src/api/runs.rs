@@ -188,7 +188,12 @@ pub struct BenchmarkConfig {
 
     #[serde(default)]
     pub pr_filter: Option<String>,
+
+    #[serde(default = "default_use_cache")]
+    pub use_cache: bool,
 }
+
+fn default_use_cache() -> bool { true }
 
 /// Deserialize `roles` from either a comma-separated string or a Vec<String>.
 fn deserialize_roles<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {

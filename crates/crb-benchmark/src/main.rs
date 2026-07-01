@@ -814,7 +814,7 @@ async fn run_benchmark(
                 prompt_lib.as_ref(),
                 &roles,
                 max_findings,
-                &cache_dir,
+                Some(&cache_dir),
                 dashboard_tx.as_ref(),
             )
             .await

@@ -101,7 +101,11 @@ pub struct NewRunRequest {
     pub roles: Vec<String>,
     #[serde(default)]
     pub pr_filter: Option<String>,
+    #[serde(default = "default_true")]
+    pub use_cache: bool,
 }
+
+fn default_true() -> bool { true }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewRunResponse {

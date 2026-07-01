@@ -22,6 +22,7 @@ pub fn NewRunPage() -> impl IntoView {
 
     let (concurrency, set_concurrency) = create_signal(String::new());
     let (max_findings, set_max_findings) = create_signal(String::new());
+    let (use_cache, set_use_cache) = create_signal(true);
     let (submitting, set_submitting) = create_signal(false);
     let (submit_error, set_submit_error) = create_signal::<Option<String>>(None);
     let (_submit_result, set_submit_result) = create_signal::<Option<String>>(None);
@@ -205,6 +206,7 @@ pub fn NewRunPage() -> impl IntoView {
             dataset: dataset.get(),
             roles: roles.get(),
             pr_filter,
+            use_cache: use_cache.get(),
         };
 
         let navigator = navigator.clone();
@@ -487,6 +489,17 @@ pub fn NewRunPage() -> impl IntoView {
                                 min="1"
                             />
                             <p class="form-field__helper">"Maximum number of findings per agent per PR"</p>
+                        </div>
+                        <div class="form-field">
+                            <label class="checkbox-label">
+                                <input
+                                    type="checkbox"
+                                    prop:checked=use_cache.get()
+                                    on:click=move |_| set_use_cache.update(|v| *v = !*v)
+                                />
+                                "Use cache (reuse LLM responses from previous runs)"
+                            </label>
+                            <p class="form-field__helper">"Check to cache LLM responses. Uncheck to force fresh API calls."</p>
                         </div>
                     </div>
                 </section>
