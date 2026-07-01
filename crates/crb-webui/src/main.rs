@@ -17,7 +17,6 @@ use tracing_subscriber::EnvFilter;
 mod api;
 mod auth;
 mod config;
-mod converter;
 mod events;
 mod harness;
 mod server;

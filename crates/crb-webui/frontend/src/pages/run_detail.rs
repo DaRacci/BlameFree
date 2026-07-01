@@ -2,7 +2,7 @@ use crate::components::log_viewer::LogViewer;
 use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crate::components::replay_overlay::ReplayOverlay;
-use crate::{api_url, ConvertStats, JudgeResult, LogsListResponse, PrResult, RunDetail};
+use crate::{api_url, LogsListResponse, PrResult, RunDetail};
 use leptos::*;
 use leptos_router::*;
 
@@ -37,61 +37,6 @@ pub fn RunDetailPage() -> impl IntoView {
             }
         },
     );
-
-    // ─── Judge state signals ─────────────────────────────────────
-    let (convert_result, set_convert_result) = create_signal::<Option<ConvertStats>>(None);
-    let (judge_result, set_judge_result) = create_signal::<Option<JudgeResult>>(None);
-    let (judge_loading, set_judge_loading) = create_signal(false);
-    let (convert_loading, set_convert_loading) = create_signal(false);
-    let (judge_error, set_judge_error) = create_signal::<Option<String>>(None);
-
-    // ─── Judge action handlers ───────────────────────────────────
-    let run_convert = move |id: String| {
-        set_convert_loading.set(true);
-        set_judge_error.set(None);
-        let c_result = set_convert_result.clone();
-        let c_loading = set_convert_loading.clone();
-        let c_error = set_judge_error.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            let url = api_url(&format!("/api/runs/{}/convert", id));
-            match gloo_net::http::Request::post(&url).send().await {
-                Ok(r) => {
-                    if r.ok() {
-                        match r.json::<ConvertStats>().await {
-                            Ok(stats) => c_result.set(Some(stats)),
-                            Err(e) => c_error.set(Some(format!("Parse error: {}", e))),
-                        }
-                    } else {
-                        let txt = r.text().await.unwrap_or_default();
-                        c_error.set(Some(format!("Convert failed ({}): {}", r.status(), txt)));
-                    }
-                }
-                Err(e) => c_error.set(Some(format!("Network error: {}", e))),
-            }
-            c_loading.set(false);
-        });
-    };
-
-    let run_judge = move |id: String| {
-        set_judge_loading.set(true);
-        set_judge_error.set(None);
-        let j_result = set_judge_result.clone();
-        let j_loading = set_judge_loading.clone();
-        let j_error = set_judge_error.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            let url = api_url(&format!("/api/runs/{}/judge", id));
-            match gloo_net::http::Request::post(&url).send().await {
-                Ok(r) => {
-                    match r.json::<JudgeResult>().await {
-                        Ok(result) => j_result.set(Some(result)),
-                        Err(e) => j_error.set(Some(format!("Parse error: {}", e))),
-                    }
-                }
-                Err(e) => j_error.set(Some(format!("Network error: {}", e))),
-            }
-            j_loading.set(false);
-        });
-    };
 
     // ─── Replay state signals ──────────────────────────────
     let (show_replay, set_show_replay) = create_signal(false);
@@ -362,75 +307,6 @@ pub fn RunDetailPage() -> impl IntoView {
                                 </tbody>
                             </table>
                         </div>
-
-                        // ─── Judge Section ────────────────────────────
-                        <div class="section-header" style="margin-top: 24px;">
-                            <h2 class="section-header__title">"Benchmark Judge"</h2>
-                        </div>
-                        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-                            <button
-                                class="btn btn--primary"
-                                disabled=move || convert_loading.get()
-                                on:click={
-                                    let id = detail.id.clone();
-                                    let run_convert = run_convert.clone();
-                                    move |_| run_convert(id.clone())
-                                }
-                            >
-                                {move || if convert_loading.get() {
-                                    "Converting..."
-                                } else {
-                                    "Convert to candidates.json"
-                                }}
-                            </button>
-                            <button
-                                class="btn btn--success"
-                                disabled=move || judge_loading.get()
-                                on:click={
-                                    let id = detail.id.clone();
-                                    let run_judge = run_judge.clone();
-                                    move |_| run_judge(id.clone())
-                                }
-                            >
-                                {move || if judge_loading.get() {
-                                    "Judging..."
-                                } else {
-                                    "Run Python Judge"
-                                }}
-                            </button>
-                        </div>
-
-                        // ─── Judge Status ──────────────────────────────
-                        {move || {
-                            if let Some(ref err) = judge_error.get() {
-                                view! {
-                                    <div class="alert alert--danger" role="alert">
-                                        <span class="alert__icon">"✗"</span>
-                                        <span class="alert__message">{err.clone()}</span>
-                                    </div>
-                                }.into_view()
-                            } else if let Some(ref stats) = convert_result.get() {
-                                view! {
-                                    <div class="alert alert--success" role="alert">
-                                        <span class="alert__icon">"✓"</span>
-                                        <span class="alert__message">
-                                            {format!("Converted {} PRs ({} findings)", stats.pr_count, stats.finding_count)}
-                                        </span>
-                                    </div>
-                                }.into_view()
-                            } else if let Some(ref result) = judge_result.get() {
-                                view! {
-                                    <div class="alert alert--success" role="alert">
-                                        <span class="alert__icon">"✓"</span>
-                                        <span class="alert__message">
-                                            {&result.message}
-                                        </span>
-                                    </div>
-                                }.into_view()
-                            } else {
-                                view! { <span></span> }.into_view()
-                            }
-                        }}
 
                         // ─── Replay Section ────────────────────────────
                         {

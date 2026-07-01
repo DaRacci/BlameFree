@@ -279,15 +279,6 @@ pub struct ReplayStatusResponse {
     pub message: String,
 }
 
-/// Response from POST /api/runs/:id/convert
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConvertStats {
-    pub run_id: String,
-    pub pr_count: usize,
-    pub finding_count: usize,
-    pub candidates_path: String,
-}
-
 /// Response from POST /api/adhoc/review
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdhocReviewResponse {
@@ -316,15 +307,6 @@ pub struct GithubPrListItem {
     pub number: u32,
     pub title: String,
     pub html_url: String,
-}
-
-/// Result from POST /api/runs/:id/judge
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JudgeResult {
-    pub success: bool,
-    pub message: String,
-    pub stdout: String,
-    pub stderr: String,
 }
 
 /// Per-PR detail response with verdicts and cost breakdown
