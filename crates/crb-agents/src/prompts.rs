@@ -1,264 +1,259 @@
-//! File-based prompt library with template support.
+//! Embedded prompt library — prompts compiled into the binary.
 //!
-//! Provides a [`PromptLibrary`] that loads prompts from markdown files and
-//! falls back to built-in defaults when no file-based prompt is available.
-//! Supports simple `{variable}` template substitution.
+//! Agent `.md` files have YAML frontmatter that is parsed and stripped.
+//! All rendering goes through `agent.hbs`, never raw markdown.
 
+use include_dir::{include_dir, Dir};
+use serde::Deserialize;
 use std::collections::HashMap;
-use std::path::Path;
 
-/// Manages prompt templates loaded from files or built-in defaults.
+/// Embedded prompts directory (compiled into binary).
+static PROMPTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../prompts");
+
+/// Parsed agent configuration from YAML frontmatter.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct AgentConfig {
+    #[serde(default)]
+    pub role_name: String,
+    #[serde(default)]
+    pub role_abbreviation: String,
+    #[serde(default)]
+    pub role_domain: String,
+    #[serde(default)]
+    pub role_anti_hallucination_rules: String,
+    #[serde(default)]
+    pub role_review_methodology: String,
+    #[serde(default)]
+    pub generalist_agent: bool,
+    #[serde(default)]
+    pub incompatible_with_roles: Vec<String>,
+}
+
+/// An agent entry: parsed config + the markdown body (role_prompt).
+#[derive(Debug, Clone)]
+pub struct AgentEntry {
+    pub config: AgentConfig,
+    pub role_prompt: String,
+}
+
+/// Embedded prompt library — no disk I/O, no hardcoded fallbacks.
 #[derive(Clone)]
 pub struct PromptLibrary {
-    /// Built-in defaults (fallback when no file-based prompt exists).
-    defaults: HashMap<String, String>,
-    /// Custom prompts loaded from a directory.
-    custom: HashMap<String, String>,
+    agents: HashMap<String, AgentEntry>,
+    agent_template: String,
+    sections: HashMap<String, String>,
 }
 
 impl PromptLibrary {
-    /// Create a new `PromptLibrary` with only built-in defaults.
-    pub fn new() -> Self {
-        Self {
-            defaults: builtin_defaults(),
-            custom: HashMap::new(),
-        }
-    }
+    /// Initialise from embedded data. Returns error if agent.hbs is missing
+    /// or no agents are found.
+    pub fn new() -> Result<Self, String> {
+        // Load agent.hbs template
+        let agent_template = PROMPTS_DIR
+            .get_file("builtin/handlebars/agent.hbs")
+            .ok_or("agent.hbs not found in embedded prompts")?
+            .contents_utf8()
+            .ok_or("agent.hbs is not valid UTF-8")?
+            .to_string();
 
-    /// Load custom prompts from a directory.
-    ///
-    /// Scans for files named `{role}.md` (e.g. `sa.md`, `cl.md`, `ar.md`, `sec.md`)
-    /// and reads their contents into the custom prompt map.  The role key is the
-    /// filename stem, uppercased (e.g. `sa.md` → `"SA"`).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the directory cannot be read or a file cannot be
-    /// opened.
-    pub fn load_from_dir(&mut self, dir: &Path) -> anyhow::Result<()> {
-        for entry in std::fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "md") {
-                let stem = path
-                    .file_stem()
+        // Load section files
+        let mut sections: HashMap<String, String> = HashMap::new();
+        if let Some(sections_dir) = PROMPTS_DIR.get_dir("sections") {
+            for entry in sections_dir.files() {
+                let name = entry.path().file_stem()
                     .and_then(|s| s.to_str())
-                    .map(|s| s.to_uppercase())
                     .unwrap_or_default();
-                let content = std::fs::read_to_string(&path)?;
-                let trimmed = content.trim().to_string();
-                self.custom.insert(stem, trimmed);
+                let content = entry.contents_utf8().unwrap_or("").to_string();
+                // Map submit_findings → submit_finding for template compat
+                let key = if name == "submit_findings" { "submit_finding" } else { name };
+                sections.insert(key.to_string(), content);
             }
         }
-        Ok(())
-    }
 
-    /// Get the prompt for a role. Returns a custom prompt if available,
-    /// otherwise falls back to the built-in default.
-    pub fn get(&self, role: &str) -> &str {
-        let role_upper = role.to_uppercase();
-        self.custom
-            .get(&role_upper)
-            .or_else(|| {
-                // Also check lowercase key in custom
-                self.custom.get(role)
-            })
-            .map(|s| s.as_str())
-            .unwrap_or_else(|| {
-                self.defaults
-                    .get(&role_upper)
-                    .map(|s| s.as_str())
-                    .unwrap_or_else(|| {
-                        self.defaults
-                            .get("DEFAULT")
-                            .map(|s| s.as_str())
-                            .unwrap_or("")
-                    })
-            })
-    }
-
-    /// Apply template variables to the prompt for a role.
-    ///
-    /// Replaces all occurrences of `{variable_name}` with the corresponding
-    /// value from `vars`.  Variables not found in `vars` are left as-is.
-    pub fn render(&self, role: &str, vars: &HashMap<&str, &str>) -> String {
-        let prompt = self.get(role);
-        let mut result = prompt.to_string();
-        for (key, value) in vars {
-            let placeholder = format!("{{{}}}", key);
-            result = result.replace(&placeholder, value);
+        // Load agent .md files
+        let mut agents: HashMap<String, AgentEntry> = HashMap::new();
+        if let Some(agents_dir) = PROMPTS_DIR.get_dir("agents") {
+            for file in agents_dir.files() {
+                if file.path().extension().map_or(true, |e| e != "md") {
+                    continue;
+                }
+                let content = file.contents_utf8().unwrap_or("");
+                if let Some((yaml_str, body)) = split_frontmatter(content) {
+                    let config: AgentConfig = serde_yaml::from_str(yaml_str)
+                        .unwrap_or_default();
+                    if config.role_abbreviation.is_empty() {
+                        continue;
+                    }
+                    let clean_body = body.trim().to_string();
+                    agents.insert(
+                        config.role_abbreviation.to_uppercase(),
+                        AgentEntry { config, role_prompt: clean_body },
+                    );
+                }
+            }
         }
-        result
+
+        if agents.is_empty() {
+            return Err("No agents found in embedded prompts".into());
+        }
+
+        Ok(Self { agents, agent_template, sections })
+    }
+
+    /// Get the raw markdown body for a role (YAML stripped).
+    pub fn get(&self, role: &str) -> Option<&str> {
+        self.agents.get(&role.to_uppercase()).map(|e| e.role_prompt.as_str())
+    }
+
+    /// Get the agent config for a role.
+    pub fn config(&self, role: &str) -> Option<&AgentConfig> {
+        self.agents.get(&role.to_uppercase()).map(|e| &e.config)
+    }
+
+    /// Render a role's prompt through agent.hbs.
+    ///
+    /// `vars` carries runtime variables like `diff`, `file_list`, `language`.
+    /// Agent context (role_name, role_abbreviation, etc.) comes from the
+    /// embedded YAML frontmatter.
+    pub fn render(&self, role: &str, vars: &HashMap<String, serde_json::Value>) -> String {
+        let entry = match self.agents.get(&role.to_uppercase()) {
+            Some(e) => e,
+            None => return format!("Unknown role: {}", role),
+        };
+
+        let mut ctx = serde_json::Map::new();
+        ctx.insert("role_name".into(), entry.config.role_name.clone().into());
+        ctx.insert("role_abbreviation".into(), entry.config.role_abbreviation.clone().into());
+        ctx.insert("role_domain".into(), entry.config.role_domain.clone().into());
+        ctx.insert("role_anti_hallucination_rules".into(), entry.config.role_anti_hallucination_rules.clone().into());
+        ctx.insert("role_review_methodology".into(), entry.config.role_review_methodology.clone().into());
+        ctx.insert("role_prompt".into(), entry.role_prompt.clone().into());
+
+        // Merge user vars
+        for (k, v) in vars {
+            ctx.insert(k.clone(), v.clone());
+        }
+
+        // Merge sections (pre-rendered with role context)
+        for (key, template) in &self.sections {
+            let rendered = simple_substitute(template, &entry.config);
+            ctx.insert(key.clone(), rendered.into());
+        }
+
+        // Simple {{variable}} substitution (since we can't add handlebars dep easily)
+        simple_hbs_render(&self.agent_template, &ctx)
+    }
+
+    /// List all known agent abbreviations.
+    pub fn roles(&self) -> Vec<&str> {
+        self.agents.keys().map(|s| s.as_str()).collect()
     }
 }
 
-impl Default for PromptLibrary {
-    fn default() -> Self {
-        Self::new()
+/// Split YAML frontmatter from a .md file.
+/// Returns Some((yaml_str, body)) if the file starts with ---,
+/// or None if no frontmatter found.
+fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
+    let content = content.trim();
+    if !content.starts_with("---") {
+        return None;
     }
+    let rest = &content[3..];
+    let end = rest.find("\n---")?;
+    let yaml = rest[..end].trim();
+    let body = rest[end + 4..].trim();
+    Some((yaml, body))
 }
 
-/// Create the built-in defaults map with the same content as the original
-/// `const &str` preambles in `lib.rs`.
-pub fn builtin_defaults() -> HashMap<String, String> {
-    let mut m = HashMap::new();
-    m.insert(
-        "SA".to_string(),
-        "IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].\n\n\
-You are a static analysis specialist. Analyze the provided code diff for \
-potential bugs, code smells, and violations of best practices. Focus on \
-correctness, error handling, and code quality issues. Respond with a JSON \
-array of findings."
-            .to_string(),
-    );
-    m.insert(
-        "CL".to_string(),
-        "IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].\n\n\
-You are a code logic expert. Examine the diff for logical errors, incorrect \
-assumptions, off-by-one errors, race conditions, and concurrency issues. \
-Focus on whether the code correctly implements its intended logic. Respond \
-with a JSON array of findings."
-            .to_string(),
-    );
-    m.insert(
-        "AR".to_string(),
-        "IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].\n\n\
-You are an architecture reviewer. Evaluate the diff for architectural concerns: \
-coupling, cohesion, separation of concerns, design pattern violations, and \
-maintainability issues. Focus on the high-level structure and design decisions. \
-Respond with a JSON array of findings."
-            .to_string(),
-    );
-    m.insert(
-        "SEC".to_string(),
-        "IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].\n\n\
-You are a security specialist. Review the diff for security vulnerabilities: \
-injection flaws, authentication/authorization issues, data exposure, input \
-validation problems, and other security weaknesses. Focus on OWASP Top 10 \
-categories. Respond with a JSON array of findings."
-            .to_string(),
-    );
-    m.insert(
-        "DEFAULT".to_string(),
-        "IMPORTANT: Your ENTIRE response must be a valid JSON array. No markdown, no explanation, no code fences. Start with [ and end with ].\n\n\
-You are a code reviewer. Analyze the provided code diff and identify any \
-issues. Respond with a JSON array of findings."
-            .to_string(),
-    );
-    m
+/// Very simple {{variable}} substitution for handlebars-like templates.
+fn simple_hbs_render(template: &str, ctx: &serde_json::Map<String, serde_json::Value>) -> String {
+    let mut result = template.to_string();
+    for (key, value) in ctx {
+        let placeholder = format!("{{{{{}}}}}", key);
+        let replacement = match value {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        result = result.replace(&placeholder, &replacement);
+    }
+    // Simple {{#if var}}...{{/if}} handling (non-nested)
+    result = simple_if_handler(&result, ctx);
+    result
+}
+
+fn simple_if_handler(template: &str, ctx: &serde_json::Map<String, serde_json::Value>) -> String {
+    // Handle {{#if var}}...{{/if}} blocks — only supports non-empty string truthy
+    let re = regex::Regex::new(r"\{\{#if (\w+)\}\}(.*?)\{\{/if\}\}").unwrap();
+    let mut result = template.to_string();
+    loop {
+        if let Some(caps) = re.captures(&result) {
+            let var = &caps[1];
+            let body = &caps[2];
+            let is_truthy = ctx.get(var)
+                .map(|v| match v {
+                    serde_json::Value::String(s) => !s.is_empty(),
+                    serde_json::Value::Null => false,
+                    _ => true,
+                })
+                .unwrap_or(false);
+            let replacement = if is_truthy { body } else { "" };
+            let full = caps.get(0).unwrap().as_str();
+            result = result.replace(full, replacement);
+        } else {
+            break;
+        }
+    }
+    // Handle {{#if var}}...{{else}}...{{/if}}
+    let re_else = regex::Regex::new(r"\{\{#if (\w+)\}\}(.*?)\{\{else\}\}(.*?)\{\{/if\}\}").unwrap();
+    loop {
+        if let Some(caps) = re_else.captures(&result) {
+            let var = &caps[1];
+            let true_body = &caps[2];
+            let false_body = &caps[3];
+            let is_truthy = ctx.get(var)
+                .map(|v| match v {
+                    serde_json::Value::String(s) => !s.is_empty(),
+                    serde_json::Value::Null => false,
+                    _ => true,
+                })
+                .unwrap_or(false);
+            let replacement = if is_truthy { true_body } else { false_body };
+            let full = caps.get(0).unwrap().as_str();
+            result = result.replace(full, replacement);
+        } else {
+            break;
+        }
+    }
+    result
+}
+
+fn simple_substitute(template: &str, config: &AgentConfig) -> String {
+    template
+        .replace("{{role_abbreviation}}", &config.role_abbreviation)
+        .replace("{{role_name}}", &config.role_name)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
-    fn test_prompt_library_defaults() {
-        let lib = PromptLibrary::new();
-        assert_eq!(lib.get("SA"), lib.defaults.get("SA").unwrap());
-        assert_eq!(lib.get("CL"), lib.defaults.get("CL").unwrap());
-        assert_eq!(lib.get("AR"), lib.defaults.get("AR").unwrap());
-        assert_eq!(lib.get("SEC"), lib.defaults.get("SEC").unwrap());
+    fn test_split_frontmatter() {
+        let content = "---\nkey: value\n---\n\nbody text";
+        let (yaml, body) = split_frontmatter(content).unwrap();
+        assert_eq!(yaml, "key: value");
+        assert_eq!(body, "body text");
     }
 
     #[test]
-    fn test_prompt_library_fallback_to_default() {
-        let lib = PromptLibrary::new();
-        // Unrecognized role falls back to DEFAULT
-        let default = lib.get("UNKNOWN");
-        assert_eq!(default, lib.defaults.get("DEFAULT").unwrap());
+    fn test_no_frontmatter() {
+        assert!(split_frontmatter("plain text").is_none());
     }
 
     #[test]
-    fn test_prompt_library_load_from_dir() -> anyhow::Result<()> {
-        // Create a temp dir with custom prompts
-        let dir = std::env::temp_dir().join("prompts_test").join("sa.md");
-        std::fs::create_dir_all(dir.parent().unwrap())?;
-        std::fs::write(&dir, "Custom SA prompt")?;
-
-        let mut lib = PromptLibrary::new();
-        lib.load_from_dir(dir.parent().unwrap())?;
-
-        assert_eq!(lib.get("SA"), "Custom SA prompt");
-
-        // Clean up
-        std::fs::remove_dir_all(dir.parent().unwrap())?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_prompt_library_custom_overrides_default() -> anyhow::Result<()> {
-        let dir = std::env::temp_dir().join("prompts_test_over").join("sa.md");
-        std::fs::create_dir_all(dir.parent().unwrap())?;
-        std::fs::write(&dir, "Custom override SA")?;
-
-        let mut lib = PromptLibrary::new();
-        lib.load_from_dir(dir.parent().unwrap())?;
-
-        // Custom should be returned instead of default
-        assert_eq!(lib.get("SA"), "Custom override SA");
-        assert_ne!(lib.get("SA"), lib.defaults.get("SA").unwrap());
-
-        std::fs::remove_dir_all(dir.parent().unwrap())?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_prompt_library_render_no_vars() {
-        let lib = PromptLibrary::new();
-        let vars = HashMap::new();
-        let rendered = lib.render("SA", &vars);
-        assert_eq!(rendered, lib.defaults.get("SA").unwrap().as_str());
-    }
-
-    #[test]
-    fn test_prompt_library_render_with_vars() {
-        let mut lib = PromptLibrary::new();
-        // Insert a custom prompt with a template variable
-        lib.custom.insert(
-            "SA".to_string(),
-            "Analyze {diff} for {role} role".to_string(),
-        );
-
-        let mut vars = HashMap::new();
-        vars.insert("diff", "the code");
-        vars.insert("role", "SA");
-
-        let rendered = lib.render("SA", &vars);
-        assert_eq!(rendered, "Analyze the code for SA role");
-    }
-
-    #[test]
-    fn test_prompt_library_render_missing_var_left_as_is() {
-        let mut lib = PromptLibrary::new();
-        lib.custom.insert(
-            "SA".to_string(),
-            "Analyze {diff} for {role}".to_string(),
-        );
-
-        let mut vars = HashMap::new();
-        vars.insert("diff", "the code");
-        // Note: {role} is NOT in vars — should be left as-is
-
-        let rendered = lib.render("SA", &vars);
-        assert_eq!(rendered, "Analyze the code for {role}");
-    }
-
-    #[test]
-    fn test_builtin_defaults_contains_all_roles() {
-        let defaults = builtin_defaults();
-        assert!(defaults.contains_key("SA"));
-        assert!(defaults.contains_key("CL"));
-        assert!(defaults.contains_key("AR"));
-        assert!(defaults.contains_key("SEC"));
-        assert!(defaults.contains_key("DEFAULT"));
-        assert_eq!(defaults.len(), 5);
-    }
-
-    #[test]
-    fn test_prompt_library_default_impl() {
-        let lib: PromptLibrary = Default::default();
-        assert_eq!(lib.get("SA"), lib.defaults.get("SA").unwrap());
+    fn test_prompt_library_loads() {
+        let lib = PromptLibrary::new().expect("Should load from embedded");
+        assert!(lib.roles().len() >= 1);
+        assert!(lib.get("SA").is_some() || lib.get("GEN").is_some());
     }
 }

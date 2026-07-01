@@ -445,10 +445,12 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
 
     let diff = params.diff;
     let mut all_findings = Vec::new();
+    let prompt_lib = crb_agents::prompts::PromptLibrary::new()
+        .expect("Embedded prompts should be available");
 
     for &role in &roles {
-        // Build agent with built-in prompts (no prompt lib, no rules, no template engine)
-        let agent = build_agent(&client, &params.model, role, None, None, None, None, None, None, None);
+        // Build agent with embedded prompt library
+        let agent = build_agent(&client, &params.model, role, None, &prompt_lib, None, None, None, None, None);
 
         // Call agent with the diff - get real token usage via extended_details
         match agent.prompt(&diff).extended_details().await {
@@ -500,7 +502,7 @@ pub async fn review_pr_with_prompt_lib(
 
     for &role in &roles {
         // Build agent with loaded prompts (no template engine)
-        let agent = build_agent(&client, &params.model, role, None, Some(prompt_lib), None, None, None, None, None);
+        let agent = build_agent(&client, &params.model, role, None, prompt_lib, None, None, None, None, None);
 
         // Call agent with the diff
         match agent.prompt(&diff).extended_details().await {
@@ -579,7 +581,8 @@ pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>
     #[cfg(feature = "exp13_v6_pipeline")]
     let prompt_lib = crate::exp13::load_exp13_prompt_library();
     #[cfg(not(feature = "exp13_v6_pipeline"))]
-    let prompt_lib = crb_agents::prompts::PromptLibrary::new();
+    let prompt_lib = crb_agents::prompts::PromptLibrary::new()
+        .expect("Embedded prompts should be available");
 
     // Build ReviewParams and call review_pr
     let roles = vec![
@@ -850,7 +853,7 @@ pub async fn evaluate_pr_single_agent(
             let _guard = span.enter();
 
             // Compute agent cache key
-            let prompt_hash = crate::cache::LlmCache::sha256(p_lib.get(&role));
+            let prompt_hash = crate::cache::LlmCache::sha256(p_lib.get(&role).unwrap_or(""));
             let agent_cache_key = crate::cache::LlmCache::compute_agent_key(
                 &prompt_hash,
                 &diff_hash,
@@ -905,7 +908,7 @@ pub async fn evaluate_pr_single_agent(
                 &model,
                 &role,
                 preamble.as_deref(),
-                Some(&p_lib),
+                &p_lib,
                 None, // template_engine
                 None, // agent_manifest
                 None, // template_vars
@@ -1103,7 +1106,7 @@ pub async fn evaluate_pr_consensus(
 
     // ── Pre-compute content-addressed cache key components ──────────────
     let first_role = parsed_roles.first().copied().unwrap_or("SA");
-    let prompt_hash = crate::cache::LlmCache::sha256(prompt_lib.get(first_role));
+    let prompt_hash = crate::cache::LlmCache::sha256(prompt_lib.get(first_role).unwrap_or(""));
     let rules_hash = crate::cache::LlmCache::sha256(rules_preamble.unwrap_or(""));
     let judge_prompt_hash = crate::cache::LlmCache::sha256(crb_judge::JUDGE_PROMPT);
     let diff_hash = crate::cache::LlmCache::sha256(diff);
@@ -1146,7 +1149,7 @@ pub async fn evaluate_pr_consensus(
         model,
         judge,
         rules_preamble,
-        Some(prompt_lib),
+        prompt_lib,
         None,
         None,
         &parsed_roles,

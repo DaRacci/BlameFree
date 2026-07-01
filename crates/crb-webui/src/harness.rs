@@ -63,20 +63,11 @@ pub async fn run_harness(
     // ── Judge agent ──────────────────────────────────────────────────────────
     let judge = build_judge(&client, &config.judge_model);
 
-    // ── Prompt library ───────────────────────────────────────────────────────
+    // ── Prompt library (embedded at compile time) ───────────────────────────────
     let prompts_dir = Path::new(&config.prompts_dir);
-    let prompt_lib = Arc::new({
-        let mut lib = PromptLibrary::new();
-        if prompts_dir.exists() {
-            match lib.load_from_dir(prompts_dir) {
-                Ok(()) => tracing::info!("Loaded prompts from: {}", prompts_dir.display()),
-                Err(e) => tracing::warn!("Failed to load prompts from {}: {e}", prompts_dir.display()),
-            }
-        } else if prompts_dir.to_string_lossy() != "prompts/builtin" {
-            tracing::warn!("Prompts directory '{}' not found — using built-in defaults", prompts_dir.display());
-        }
-        lib
-    });
+    let prompt_lib = Arc::new(
+        PromptLibrary::new().expect("Embedded prompts should be available"),
+    );
 
     // ── Rule loading ─────────────────────────────────────────────────────────
     let ruleset = {
@@ -484,7 +475,9 @@ pub async fn run_replay_via_library(
     let judge = build_judge(&client, model);
 
     // Use a default prompt library (built-in prompts)
-    let prompt_lib = Arc::new(PromptLibrary::new());
+    let prompt_lib = Arc::new(
+        PromptLibrary::new().expect("Embedded prompts should be available"),
+    );
 
     // No rules or linters for replay
     let ruleset: Option<RuleSet> = None;

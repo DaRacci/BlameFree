@@ -66,7 +66,7 @@ pub fn build_agent(
     model: &str,
     role: &str,
     rules_preamble: Option<&str>,
-    prompt_lib: Option<&PromptLibrary>,
+    prompt_lib: &PromptLibrary,
     template_engine: Option<&TemplateEngine>,
     agent_manifest: Option<&AgentManifest>,
     template_vars: Option<&HashMap<String, serde_json::Value>>,
@@ -75,11 +75,11 @@ pub fn build_agent(
     #[cfg(feature = "exp14_submit_finding")]
     collector: Option<Arc<Mutex<submit_finding::SubmitFindingCollector>>>,
 ) -> Agent<ResponsesCompletionModel> {
-    let role_preamble = match (template_engine, agent_manifest, prompt_lib) {
+    let role_preamble = match (template_engine, agent_manifest) {
         // Primary path: template engine + manifest → render agent.hbs
-        (Some(engine), Some(manifest), _) => {
+        (Some(engine), Some(manifest)) => {
             if let Some(entry) = manifest.get(role) {
-                let sections_dir = Path::new("prompts/sections");
+                let sections_dir = std::path::Path::new("prompts/sections");
                 // Extract max_findings from template_vars if present
                 let max_findings = template_vars
                     .and_then(|tv| tv.get("max_findings"))
@@ -112,7 +112,7 @@ pub fn build_agent(
             }
         }
         // Legacy template engine path (no manifest)
-        (Some(engine), None, _) => {
+        (Some(engine), None) => {
             let role_lower = role.to_lowercase();
             let vars: serde_json::Value = template_vars
                 .map(|m| {
@@ -131,25 +131,14 @@ pub fn build_agent(
                 String::new()
             }
         }
-        // Legacy prompt library path
-        (None, _, Some(lib)) => {
+        // Embedded prompt library path (new default, no engine/manifest)
+        (None, _) => {
             let empty_map = HashMap::new();
-            let vars: HashMap<&str, &str> = template_vars
-                .map(|v| {
-                    v.iter()
-                        .filter_map(|(k, val)| val.as_str().map(|s| (k.as_str(), s)))
-                        .collect()
-                })
+            let vars: HashMap<String, serde_json::Value> = template_vars
+                .map(|v| v.clone())
                 .unwrap_or(empty_map);
-            lib.render(role, &vars)
+            prompt_lib.render(role, &vars)
         }
-        // Manifest without engine — needs TemplateEngine to render
-        (None, Some(_), _) => {
-            tracing::warn!("Agent manifest provided without TemplateEngine — cannot render agent template");
-            String::new()
-        }
-        // No engine, no manifest, no library
-        (None, None, None) => String::new(),
     };
     let mut full_preamble = match rules_preamble {
         Some(rp) if !rp.is_empty() => format!("{rp}\n\n{role_preamble}"),

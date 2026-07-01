@@ -170,44 +170,11 @@ pub fn load_exp13_config() -> anyhow::Result<Exp13Config> {
     Ok(config)
 }
 
-/// Load the EXP-013 prompt library from `experiments/EXP-013/prompts/`.
+/// Load the EXP-013 prompt library embedded at compile time.
 ///
-/// Falls back to built-in defaults if the directory does not exist or loading
-/// fails (a warning is logged).
+/// Uses the embedded prompts directory — no runtime disk loading needed.
 pub fn load_exp13_prompt_library() -> PromptLibrary {
-    let mut lib = PromptLibrary::new();
-    match locate_project_root() {
-        Ok(root) => {
-            let prompts_dir = root.join(DEFAULT_PROMPTS_DIR);
-            if prompts_dir.exists() {
-                match lib.load_from_dir(&prompts_dir) {
-                    Ok(()) => {
-                        tracing::info!(
-                            "EXP-013 v6 pipeline: loaded prompts from {}",
-                            prompts_dir.display()
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "EXP-013 v6 pipeline: failed to load prompts from {}: {e} — using built-in defaults",
-                            prompts_dir.display()
-                        );
-                    }
-                }
-            } else {
-                tracing::info!(
-                    "EXP-013 v6 pipeline: prompts directory {} not found — using built-in defaults",
-                    prompts_dir.display()
-                );
-            }
-        }
-        Err(e) => {
-            tracing::warn!(
-                "EXP-013 v6 pipeline: could not locate project root: {e} — using built-in defaults"
-            );
-        }
-    }
-    lib
+    PromptLibrary::new().expect("Embedded prompts should be available")
 }
 
 /// Return the path to the EXP-013 prompts directory if it exists.

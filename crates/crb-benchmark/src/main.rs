@@ -749,28 +749,9 @@ async fn run_benchmark(
     #[cfg(not(feature = "exp13_v6_pipeline"))]
     let effective_prompts_dir = prompts_dir.clone();
 
-    let prompt_lib = std::sync::Arc::new({
-        let mut lib = PromptLibrary::new();
-        if effective_prompts_dir.exists() {
-            match lib.load_from_dir(&effective_prompts_dir) {
-                Ok(()) => {
-                    info!("Loaded prompts from: {}", effective_prompts_dir.display());
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to load prompts from {}: {e}",
-                        effective_prompts_dir.display()
-                    );
-                }
-            }
-        } else if effective_prompts_dir.to_string_lossy() != "prompts/builtin" {
-            tracing::warn!(
-                "Custom prompts directory '{}' not found - using built-in defaults",
-                effective_prompts_dir.display()
-            );
-        }
-        lib
-    });
+    let prompt_lib = std::sync::Arc::new(
+        PromptLibrary::new().expect("Embedded prompts should be available"),
+    );
 
     // ── Cache directory ───────────────────────────────────────────────────
     let start_time = std::time::Instant::now();

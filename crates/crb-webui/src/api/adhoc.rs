@@ -449,18 +449,10 @@ async fn run_adhoc_review_inner(
 
     let judge = crb_judge::build_judge(&client, model);
 
-    // ── Prompt library (built-in defaults) ────────────────────────────
-    let prompt_lib = Arc::new({
-        let mut lib = crb_agents::prompts::PromptLibrary::new();
-        let prompts_dir = Path::new("prompts/builtin");
-        if prompts_dir.exists() {
-            match lib.load_from_dir(prompts_dir) {
-                Ok(()) => tracing::info!("Loaded prompts from: {}", prompts_dir.display()),
-                Err(e) => tracing::warn!("Failed to load prompts from {}: {e}", prompts_dir.display()),
-            }
-        }
-        lib
-    });
+    // ── Prompt library (embedded at compile time) ────────────────────
+    let prompt_lib = Arc::new(
+        crb_agents::prompts::PromptLibrary::new().expect("Embedded prompts should be available"),
+    );
 
     // ── Create cache directory ────────────────────────────────────────
     std::fs::create_dir_all(&cache_dir)?;
