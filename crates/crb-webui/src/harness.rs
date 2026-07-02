@@ -144,7 +144,19 @@ pub async fn run_harness(
                             }
                         }
                     }
-                    url_lower.contains(pattern)
+                    // Exact match only — fall through to exact PR number or URL suffix matching.
+                    // This avoids substring bugs where "1" matches "/pull/10".
+                    if let Ok(num) = pattern.parse::<u32>() {
+                        // Bare number: match exactly against the PR number extracted from the URL.
+                        url_lower
+                            .rsplit('/')
+                            .next()
+                            .and_then(|s| s.parse::<u32>().ok())
+                            == Some(num)
+                    } else {
+                        // Non-numeric fallback: exact URL suffix match (e.g. "repo/pull/1").
+                        url_lower.ends_with(&format!("/{}", pattern))
+                    }
                 })
             })
             .collect();
