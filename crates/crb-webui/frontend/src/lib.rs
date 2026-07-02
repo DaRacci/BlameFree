@@ -447,6 +447,7 @@ pub fn App() -> impl IntoView {
                             <Route path="/adhoc" view=|| view! { <pages::adhoc_runs::AdhocRunsPage /> } />
                             <Route path="/adhoc/new" view=|| view! { <pages::adhoc_review::AdhocReviewPage /> } />
                             <Route path="/adhoc/runs/:id" view=|| view! { <pages::run_detail::RunDetailPage /> } />
+                            <Route path="/admin" view=|| view! { <pages::admin::AdminPage /> } />
                             <Route path="/*" view=|| view! {
                                 <div class="state-container">
                                     <h2>"404 - Page Not Found"</h2>
@@ -546,6 +547,12 @@ fn Sidebar() -> impl IntoView {
                     <a href="/adhoc" class=move || format!("sidebar__item {}", active_class("/adhoc"))>
                         <span class="sidebar__icon">""</span>
                         <span class="sidebar__label">"Ad-hoc Review"</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="/admin" class=move || format!("sidebar__item {}", active_class("/admin"))>
+                        <span class="sidebar__icon">""</span>
+                        <span class="sidebar__label">"Admin"</span>
                     </a>
                 </li>
             </ul>

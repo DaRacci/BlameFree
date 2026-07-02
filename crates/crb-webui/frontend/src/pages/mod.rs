@@ -1,5 +1,6 @@
 pub mod adhoc_review;
 pub mod adhoc_runs;
+pub mod admin;
 pub mod home;
 pub mod live;
 pub mod new_run;

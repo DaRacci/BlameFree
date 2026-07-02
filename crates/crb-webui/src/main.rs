@@ -159,6 +159,7 @@ async fn main() -> anyhow::Result<()> {
         webui_config,
         octocrab,
         session_store,
+        args.log_file,
     );
 
     server::start(app_state, args.port).await

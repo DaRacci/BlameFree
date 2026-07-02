@@ -41,6 +41,8 @@ pub struct AppState {
     pub session_store: SessionStore,
     /// Octocrab GitHub API client (authenticated via GITHUB_TOKEN env var).
     pub octocrab: octocrab::Octocrab,
+    /// Path to the server log file, if one was configured.
+    pub log_file: Option<PathBuf>,
 }
 
 /// State for an actively running benchmark.
@@ -79,6 +81,7 @@ impl AppState {
         config: WebUiConfig,
         octocrab: octocrab::Octocrab,
         session_store: SessionStore,
+        log_file: Option<PathBuf>,
     ) -> Self {
         Self {
             output_dir,
@@ -91,6 +94,7 @@ impl AppState {
             config,
             session_store,
             octocrab,
+            log_file,
         }
     }
 }
@@ -114,7 +118,9 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         .route("/api/adhoc/review", post(crate::api::start_adhoc_review))
         .route("/api/adhoc/runs", get(crate::api::list_adhoc_runs))
         .route("/api/adhoc/runs/:id", get(crate::api::get_adhoc_run))
-        .route("/api/adhoc/prs/:owner/:repo", get(crate::api::list_repo_prs));
+        .route("/api/adhoc/prs/:owner/:repo", get(crate::api::list_repo_prs))
+        // Admin endpoints
+        .route("/api/admin/logs", get(crate::api::get_logs));
 
     // Build router: merge all routes first, then apply state and layers
     let mut app = Router::new().merge(api_router);
