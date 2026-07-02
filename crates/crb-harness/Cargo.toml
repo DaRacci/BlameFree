@@ -11,8 +11,7 @@ path = "src/main.rs"
 default = ["reduce-diff"]
 reduce-diff = []
 exp14_template_vars = ["crb-tools/exp14_template_vars"]
-exp16_adaptive_agents = []
-exp16_max_findings_tuning = []
+exp16_adaptive_agents = ["crb-consensus/exp16_adaptive_agents"]
 
 [dependencies]
 crb-agents = { path = "../crb-agents" }

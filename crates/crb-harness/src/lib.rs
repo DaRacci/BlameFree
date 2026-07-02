@@ -1162,14 +1162,18 @@ pub async fn evaluate_pr_consensus(
 
     // ── Build template variables from diff and PR context (EXP-014) ──
     #[cfg(feature = "exp14_template_vars")]
-    let template_vars: Option<&'static HashMap<&'static str, &'static str>> = {
+    let template_vars: Option<&'static HashMap<String, serde_json::Value>> = {
         let language = crb_tools::language_detector::detect_primary_language(diff);
         let repo_name = crb_tools::language_detector::extract_repo_name(&pr.url);
         let lang_ref: &'static str = Box::leak(language.into_boxed_str());
         let repo_ref: &'static str = Box::leak(repo_name.into_boxed_str());
-        let map: HashMap<&str, &str> =
-            HashMap::from([("language", lang_ref), ("repo", repo_ref), ("role", "")]);
-        Some(Box::leak(Box::new(map)))
+        let map: HashMap<String, serde_json::Value> =
+            HashMap::from([
+                ("language".to_string(), serde_json::Value::String(lang_ref.to_string())),
+                ("repo".to_string(), serde_json::Value::String(repo_ref.to_string())),
+                ("role".to_string(), serde_json::Value::String(String::new())),
+            ]);
+        Some(&*Box::leak(Box::new(map)))
     };
 
     #[cfg(not(feature = "exp14_template_vars"))]
