@@ -2,16 +2,24 @@
 //!
 //! Currently provides:
 //! - `GET /api/admin/logs` — returns recent server console logs
+//! - `GET /api/admin/logs/stream` — SSE stream of live logs
 //!
 //! This module is designed for future expansion with additional admin
 //! features such as cache inspection, config management, etc.
 
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::convert::Infallible;
 use std::fs::File;
+use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::time::Duration;
 
 use axum::extract::State;
+use axum::http::StatusCode;
+use axum::response::sse::{Event, Sse};
+use axum::response::IntoResponse;
 use axum::Json;
 use serde::Serialize;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 
 use crate::server::AppState;
 
@@ -124,4 +132,105 @@ fn read_last_n_lines(path: &std::path::Path, n: usize) -> std::io::Result<Vec<St
     lines.reverse();
 
     Ok(lines)
+}
+
+/// GET /api/admin/logs/stream — SSE stream of server console logs.
+///
+/// On first connection, sends the last 500 lines as a batch.
+/// Then polls the log file every second for new lines and streams them.
+/// Uses Server-Sent Events (SSE) for real-time log delivery.
+pub async fn get_logs_stream(
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    tracing::info!("GET /api/admin/logs/stream (SSE)");
+
+    let log_path = match &state.log_file {
+        Some(ref path) => path.clone(),
+        None => {
+            return (StatusCode::NOT_FOUND, "No log file configured").into_response();
+        }
+    };
+
+    let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(100);
+
+    // Spawn a background task that reads the log file and feeds events
+    tokio::spawn(async move {
+        // ── Initial batch: send last 500 lines ──────────────────────
+        match read_last_n_lines(&log_path, 500) {
+            Ok(lines) => {
+                for line in &lines {
+                    if tx
+                        .send(Ok(Event::default().data(line.clone())))
+                        .await
+                        .is_err()
+                    {
+                        return; // client disconnected
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to read initial log lines: {e}");
+                // Continue anyway so polling can pick up future writes
+            }
+        }
+
+        // ── Polling: check for new lines every second ───────────────
+        let mut last_pos = match std::fs::metadata(&log_path) {
+            Ok(m) => m.len(),
+            Err(_) => 0,
+        };
+
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+        interval.reset(); // skip the immediate tick
+
+        loop {
+            interval.tick().await;
+
+            let current_len = match std::fs::metadata(&log_path) {
+                Ok(m) => m.len(),
+                Err(_) => continue,
+            };
+
+            if current_len <= last_pos {
+                continue; // no new data
+            }
+
+            // Read bytes from last known position to current end
+            let mut file = match std::fs::File::open(&log_path) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+
+            if file.seek(SeekFrom::Start(last_pos)).is_err() {
+                continue;
+            }
+
+            let mut buffer = Vec::new();
+            if file.read_to_end(&mut buffer).is_err() {
+                continue;
+            }
+
+            last_pos = current_len;
+
+            let content = String::from_utf8_lossy(&buffer);
+            for line in content.lines() {
+                if tx
+                    .send(Ok(Event::default().data(line.to_string())))
+                    .await
+                    .is_err()
+                {
+                    return; // client disconnected
+                }
+            }
+        }
+    });
+
+    let stream = ReceiverStream::new(rx);
+    Sse::new(stream)
+        .keep_alive(
+            axum::response::sse::KeepAlive::new()
+                .interval(Duration::from_secs(15))
+                .text("keep-alive"),
+        )
+        .into_response()
 }

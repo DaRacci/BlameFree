@@ -120,7 +120,8 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         .route("/api/adhoc/runs/:id", get(crate::api::get_adhoc_run))
         .route("/api/adhoc/prs/:owner/:repo", get(crate::api::list_repo_prs))
         // Admin endpoints
-        .route("/api/admin/logs", get(crate::api::get_logs));
+        .route("/api/admin/logs", get(crate::api::get_logs))
+        .route("/api/admin/logs/stream", get(crate::api::get_logs_stream));
 
     // Build router: merge all routes first, then apply state and layers
     let mut app = Router::new().merge(api_router);
