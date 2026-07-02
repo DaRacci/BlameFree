@@ -28,27 +28,13 @@ pub struct LogsResponse {
 
 /// GET /api/admin/logs — return recent server console logs.
 ///
-/// Reads the last 500 lines from the server's log file (if configured).
-/// If no log file was configured at startup, returns an informative message.
+/// Reads the last 500 lines from the server's log file.
 pub async fn get_logs(State(state): State<AppState>) -> Json<LogsResponse> {
     tracing::info!("GET /api/admin/logs");
 
-    let log_path = match &state.log_file {
-        Some(path) => path.clone(),
-        None => {
-            return Json(LogsResponse {
-                logs: String::new(),
-                available: false,
-                message: Some(
-                    "No log file configured. Start the server with --log-file <path> \
-                     to enable persistent log capture."
-                        .to_string(),
-                ),
-            });
-        }
-    };
+    let log_path = &state.log_file;
 
-    match read_last_n_lines(&log_path, 500) {
+    match read_last_n_lines(log_path, 500) {
         Ok(lines) => {
             let text = lines.join("\n");
             Json(LogsResponse {

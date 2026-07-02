@@ -33,6 +33,7 @@ use tracing::{info, info_span};
 pub mod cache;
 pub mod config;
 pub mod cost;
+pub mod paths;
 pub mod validation;
 
 pub use cache::LlmCache;
@@ -1561,7 +1562,7 @@ pub async fn evaluate_pr_with_postprocessing(
 /// Append a run history entry to the `_runs.json` file in the cache directory.
 #[doc(hidden)]
 fn append_run_history(cache_dir: &Path, entry: &RunHistoryEntry) -> Result<()> {
-    let path = cache_dir.join("_runs.json");
+    let path = cache_dir.join(crate::paths::RUNS_FILE);
     let mut runs: Vec<RunHistoryEntry> = if path.exists() {
         let content = std::fs::read_to_string(&path).unwrap_or_else(|_| "[]".to_string());
         serde_json::from_str(&content).unwrap_or_else(|_| Vec::new())
@@ -1653,7 +1654,7 @@ pub fn write_summary(
         "judge_cache_hit_rate": avg_judge_cache_hit_rate,
     });
 
-    let summary_path = cache_dir.join("_summary.json");
+    let summary_path = cache_dir.join(crate::paths::SUMMARY_FILE);
     std::fs::write(&summary_path, serde_json::to_string_pretty(&summary)?)?;
     info!("Cache summary written to: {}", summary_path.display());
 

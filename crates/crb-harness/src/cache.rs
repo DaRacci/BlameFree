@@ -215,12 +215,12 @@ impl LlmCache {
         let dir = base.join(&sanitized);
 
         // Create subdirectories
-        std::fs::create_dir_all(dir.join("agents"))?;
-        std::fs::create_dir_all(dir.join("judge"))?;
-        std::fs::create_dir_all(dir.join("context"))?;
+        std::fs::create_dir_all(dir.join(crate::paths::AGENTS_DIR))?;
+        std::fs::create_dir_all(dir.join(crate::paths::JUDGE_DIR))?;
+        std::fs::create_dir_all(dir.join(crate::paths::CONTEXT_DIR))?;
 
         // Load existing index if any
-        let index_path = dir.join("index.json");
+        let index_path = dir.join(crate::paths::INDEX_FILE);
         let index = CacheIndex::load(&index_path);
 
         Ok(Self {
@@ -252,7 +252,7 @@ impl LlmCache {
     // ── Index persistence ────────────────────────────────────────────────
 
     fn index_path(&self) -> PathBuf {
-        self.dir.join("index.json")
+        self.dir.join(crate::paths::INDEX_FILE)
     }
 
     /// Generate a timestamp string for the current time.
@@ -582,7 +582,7 @@ impl LlmCache {
 
             let pr_key = name_str.to_string();
             let pr_dir = entry.path();
-            let index_path = pr_dir.join("index.json");
+            let index_path = pr_dir.join(crate::paths::INDEX_FILE);
 
             let (entry_count, oldest, newest) = match std::fs::read_to_string(&index_path) {
                 Ok(content) => {
@@ -662,7 +662,7 @@ impl LlmCache {
                 continue;
             }
             let pr_dir = entry.path();
-            let index_path = pr_dir.join("index.json");
+            let index_path = pr_dir.join(crate::paths::INDEX_FILE);
 
             // Find the newest entry timestamp for this PR
             let newest = std::fs::read_to_string(&index_path)
@@ -708,7 +708,7 @@ impl LlmCache {
             let now = SystemTime::now();
 
             for (_pr_key, pr_dir, _newest) in &pr_dirs {
-                let index_path = pr_dir.join("index.json");
+                let index_path = pr_dir.join(crate::paths::INDEX_FILE);
                 let content = match std::fs::read_to_string(&index_path) {
                     Ok(c) => c,
                     Err(_) => continue,
@@ -770,7 +770,7 @@ impl LlmCache {
                 if current_size <= max_size {
                     continue;
                 }
-                let index_path = pr_dir.join("index.json");
+                let index_path = pr_dir.join(crate::paths::INDEX_FILE);
                 let content = match std::fs::read_to_string(&index_path) {
                     Ok(c) => c,
                     Err(_) => continue,
@@ -881,7 +881,7 @@ impl LlmCache {
             let pr_dir = entry.path();
             result.pr_dirs_scanned += 1;
 
-            let index_path = pr_dir.join("index.json");
+            let index_path = pr_dir.join(crate::paths::INDEX_FILE);
             let index_exists = index_path.exists();
 
             // Try to load the index
@@ -1083,7 +1083,7 @@ impl LlmCache {
             }
 
             let pr_dir = entry.path();
-            let index_path = pr_dir.join("index.json");
+            let index_path = pr_dir.join(crate::paths::INDEX_FILE);
             let content = match std::fs::read_to_string(&index_path) {
                 Ok(c) => c,
                 Err(_) => continue,

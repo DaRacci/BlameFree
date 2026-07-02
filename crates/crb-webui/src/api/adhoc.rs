@@ -199,7 +199,7 @@ pub async fn get_adhoc_run(
             .into_response();
     }
 
-    let summary_path = run_dir.join("_summary.json");
+    let summary_path = run_dir.join(crb_harness::paths::SUMMARY_FILE);
     let summary_data: Option<serde_json::Value> = std::fs::read_to_string(&summary_path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok());
@@ -262,7 +262,7 @@ pub async fn get_adhoc_run(
                 .to_string_lossy()
                 .to_string();
 
-            if file_name == "_summary.json" {
+            if file_name == crb_harness::paths::SUMMARY_FILE {
                 continue;
             }
 
@@ -433,7 +433,7 @@ async fn run_adhoc_review_inner(
     roles: &str,
 ) -> anyhow::Result<()> {
     let output_subdir = state.output_dir.join("adhoc").join(run_id);
-    let cache_dir = output_subdir.join("cache");
+    let cache_dir = output_subdir.join(crb_harness::paths::CACHE_DIR_NAME);
 
     tracing::info!(
         run_id = %run_id,
@@ -606,7 +606,7 @@ async fn run_adhoc_review_inner(
     });
 
     let summary_str = serde_json::to_string_pretty(&summary)?;
-    std::fs::write(output_subdir.join("_summary.json"), &summary_str)?;
+    std::fs::write(output_subdir.join(crb_harness::paths::SUMMARY_FILE), &summary_str)?;
 
     tracing::info!(
         run_id = %run_id,
@@ -622,7 +622,7 @@ async fn run_adhoc_review_inner(
 
 /// Scan an ad-hoc run directory and produce a summary.
 fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<AdhocRunSummary> {
-    let summary_path = path.join("_summary.json");
+    let summary_path = path.join(crb_harness::paths::SUMMARY_FILE);
     let content = std::fs::read_to_string(&summary_path).ok()?;
     let data: serde_json::Value = serde_json::from_str(&content).ok()?;
 
@@ -690,7 +690,7 @@ fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<AdhocRunSummary> {
             if fpath.extension().map_or(true, |e| e != "json") {
                 continue;
             }
-            if fpath.file_name().map_or(true, |n| n == "_summary.json") {
+            if fpath.file_name().map_or(true, |n| n == crb_harness::paths::SUMMARY_FILE) {
                 continue;
             }
             if let Ok(content) = std::fs::read_to_string(&fpath) {

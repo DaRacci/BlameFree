@@ -6,7 +6,8 @@
 //! - Benchmark launcher
 //! - Per-PR result viewer
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::fs;
 use std::fs::OpenOptions;
 
 use clap::Parser;
@@ -61,6 +62,38 @@ pub struct CliArgs {
     pub config: Option<PathBuf>,
 }
 
+/// Auto-detect a writable log file path when `--log-file` is not provided.
+///
+/// Tries candidates in order, silently skipping paths that can't be created.
+fn resolve_log_path(custom: Option<PathBuf>) -> PathBuf {
+    if let Some(path) = custom {
+        return path;
+    }
+
+    let candidates = [
+        Path::new("/var/log/crb/webui.log"),
+        Path::new("/tmp/crb-webui.log"),
+        Path::new("./output/server.log"),
+    ];
+
+    for candidate in &candidates {
+        if let Some(parent) = candidate.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(candidate)
+            .is_ok()
+        {
+            return candidate.to_path_buf();
+        }
+    }
+
+    // Absolute last resort (should always work since ./output/server.log is the last candidate)
+    Path::new("./output/server.log").to_path_buf()
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Install rustls crypto provider BEFORE any TLS-using code runs.
@@ -80,30 +113,28 @@ async fn main() -> anyhow::Result<()> {
 
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
 
-    if let Some(ref log_path) = args.log_file {
-        let log_path = log_path.clone();
-        let file_layer = tracing_subscriber::fmt::layer()
-            .with_writer(move || {
-                OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&log_path)
-                    .expect("failed to open log file")
-            })
-            .with_ansi(false);
-        let stderr_layer = tracing_subscriber::fmt::layer()
-            .with_writer(std::io::stderr);
+    // Resolve the log file path: use --log-file if provided, otherwise auto-detect
+    let log_path = resolve_log_path(args.log_file.clone());
 
-        tracing_subscriber::registry()
-            .with(env_filter)
-            .with(stderr_layer)
-            .with(file_layer)
-            .init();
-    } else {
-        tracing_subscriber::fmt()
-            .with_env_filter(env_filter)
-            .init();
-    }
+    // Always set up file + stderr tracing layers using the resolved path
+    let log_path_for_tracing = log_path.clone();
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(move || {
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path_for_tracing)
+                .expect("failed to open log file")
+        })
+        .with_ansi(false);
+    let stderr_layer = tracing_subscriber::fmt::layer()
+        .with_writer(std::io::stderr);
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(stderr_layer)
+        .with(file_layer)
+        .init();
 
     tracing::info!(
         "Loaded .env from: {}",
@@ -159,7 +190,7 @@ async fn main() -> anyhow::Result<()> {
         webui_config,
         octocrab,
         session_store,
-        args.log_file,
+        log_path,
     );
 
     server::start(app_state, args.port).await

@@ -449,7 +449,7 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
             .to_string_lossy()
             .to_string();
 
-        if file_name == "_summary.json" {
+        if file_name == crb_harness::paths::SUMMARY_FILE {
             if let Ok(content) = fs::read_to_string(&file_path) {
                 if let Ok(summary) =
                     serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
@@ -685,7 +685,7 @@ pub async fn get_run(
 
         // Skip metadata files (anything starting with _)
         if file_name.starts_with('_') {
-            if file_name == "_summary.json" {
+            if file_name == crb_harness::paths::SUMMARY_FILE {
                 if let Ok(content) = std::fs::read_to_string(&file_path) {
                     if let Ok(summary) =
                         serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
@@ -998,11 +998,14 @@ fn read_agent_log_file(cache_dir: &Path, pr_key: &str, role: &str, suffix: &str)
 /// 1. `output_dir/<run_id>/cache/` (harness writes agents here)
 /// 2. `output_dir.parent()/cache/<run_id>/` (nested by run_id)
 /// 3. `output_dir.parent()/cache/` (flat, no run_id subdirectory)
-fn resolve_cache_dir(output_dir: &Path, run_id: &str) -> Option<PathBuf> {
+fn resolve_cache_dir(output_dir: &Path, _run_id: &str) -> Option<PathBuf> {
     let base_dir = output_dir.parent().unwrap_or(Path::new("."));
     let candidates = [
-        output_dir.join(run_id).join("cache"),
-        base_dir.join("cache").join(run_id),
+        // New layout: output/_cache/ (flat, shared across runs)
+        output_dir.join(crb_harness::paths::CACHE_DIR_NAME),
+        // Legacy layouts (backward compat):
+        output_dir.join(_run_id).join("cache"),
+        base_dir.join("cache").join(_run_id),
         base_dir.join("cache"),
     ];
     for path in &candidates {
@@ -1036,7 +1039,7 @@ pub async fn list_logs(
                     continue;
                 }
                 let fname = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                if fname == "_summary.json" || fname.starts_with("candidates") {
+                if fname == crb_harness::paths::SUMMARY_FILE || fname.starts_with("candidates") {
                     continue;
                 }
                 // Filename stem is the pr_key
@@ -1144,7 +1147,7 @@ fn resolve_pr_title(output_dir: &Path, run_id: &str, pr_key: &str) -> String {
                 continue;
             }
             let fname = path.file_name().unwrap_or_default().to_string_lossy();
-            if fname == "_summary.json" {
+            if fname == crb_harness::paths::SUMMARY_FILE {
                 continue;
             }
             if let Ok(content) = std::fs::read_to_string(&path) {
@@ -1268,7 +1271,7 @@ pub async fn get_pr_agents(
                         continue;
                     }
                     let fname = path.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-                    if fname == "_summary.json" || fname.starts_with("candidates") {
+                    if fname == crb_harness::paths::SUMMARY_FILE || fname.starts_with("candidates") {
                         continue;
                     }
                     if fname.contains(&pr_key_lower) {
@@ -1312,7 +1315,7 @@ pub async fn start_replay(
         }
     };
     let run_output_dir = state.output_dir.join(&id);
-    let summary_path = run_output_dir.join("_summary.json");
+    let summary_path = run_output_dir.join(crb_harness::paths::SUMMARY_FILE);
 
     if !summary_path.exists() {
         return (
@@ -1499,7 +1502,7 @@ pub async fn get_pr_detail(
             continue;
         }
         let fname = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
-        if fname == "_summary.json" || fname.starts_with("candidates") {
+        if fname == crb_harness::paths::SUMMARY_FILE || fname.starts_with("candidates") {
             continue;
         }
 

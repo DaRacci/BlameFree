@@ -45,7 +45,7 @@ pub async fn run_harness(
     dataset_dir: &Path,
 ) -> anyhow::Result<()> {
     let output_subdir = output_dir.join(run_id);
-    let cache_dir = output_dir.join("_cache");
+    let cache_dir = output_dir.join(crb_harness::paths::CACHE_DIR_NAME);
 
     tracing::info!(
         run_id = %run_id,

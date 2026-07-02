@@ -41,8 +41,8 @@ pub struct AppState {
     pub session_store: SessionStore,
     /// Octocrab GitHub API client (authenticated via GITHUB_TOKEN env var).
     pub octocrab: octocrab::Octocrab,
-    /// Path to the server log file, if one was configured.
-    pub log_file: Option<PathBuf>,
+    /// Path to the server log file.
+    pub log_file: PathBuf,
 }
 
 /// State for an actively running benchmark.
@@ -81,7 +81,7 @@ impl AppState {
         config: WebUiConfig,
         octocrab: octocrab::Octocrab,
         session_store: SessionStore,
-        log_file: Option<PathBuf>,
+        log_file: PathBuf,
     ) -> Self {
         Self {
             output_dir,
