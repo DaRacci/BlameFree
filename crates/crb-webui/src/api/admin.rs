@@ -144,12 +144,7 @@ pub async fn get_logs_stream(
 ) -> impl IntoResponse {
     tracing::info!("GET /api/admin/logs/stream (SSE)");
 
-    let log_path = match &state.log_file {
-        Some(ref path) => path.clone(),
-        None => {
-            return (StatusCode::NOT_FOUND, "No log file configured").into_response();
-        }
-    };
+    let log_path = state.log_file.clone();
 
     let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(100);
 

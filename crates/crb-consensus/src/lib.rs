@@ -375,6 +375,7 @@ pub fn build_reviewer_agent(
     template_vars: Option<&HashMap<String, serde_json::Value>>,
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
+    additional_params: Option<serde_json::Value>,
     #[cfg(feature = "exp14_submit_finding")] collector: Option<
         Arc<Mutex<crb_agents::submit_finding::SubmitFindingCollector>>,
     >,
@@ -390,6 +391,7 @@ pub fn build_reviewer_agent(
         template_vars,
         tool_preamble,
         workdir,
+        additional_params,
         #[cfg(feature = "exp14_submit_finding")]
         collector,
     )
@@ -421,6 +423,7 @@ pub async fn run_reviewers(
     rules_hash: &str,
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
+    additional_params: Option<serde_json::Value>,
 ) -> (Vec<(Role, Vec<Finding>)>, usize, Usage) {
     let mut set = JoinSet::new();
     let agent_api_calls = Arc::new(AtomicUsize::new(0));
@@ -444,6 +447,7 @@ pub async fn run_reviewers(
             template_vars,
             tool_preamble.as_deref(),
             workdir,
+            additional_params.clone(),
             #[cfg(feature = "exp14_submit_finding")]
             None,
         );
@@ -778,6 +782,7 @@ pub async fn run_consensus(
     judge_model: &str,
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
+    additional_params: Option<serde_json::Value>,
 ) -> ConsensusReport {
     // Step 1: run all reviewers concurrently with content-addressed caching
     let (agents, agent_api_calls, agent_usage) = run_reviewers(
@@ -794,6 +799,7 @@ pub async fn run_consensus(
         rules_hash,
         tool_preamble,
         workdir,
+        additional_params,
     )
     .await;
 
@@ -1007,6 +1013,7 @@ pub async fn evaluate_pr_with_consensus(
     judge_model: &str,
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
+    additional_params: Option<serde_json::Value>,
 ) -> Result<(PrResult, Usage, Usage, usize, usize, usize)> {
     // ── Adaptive agent dispatch (EXP-016) ──────────────────────────────
     #[cfg(feature = "exp16_adaptive_agents")]
@@ -1066,6 +1073,7 @@ pub async fn evaluate_pr_with_consensus(
         judge_model,
         tool_preamble,
         workdir,
+        additional_params,
     )
     .await;
     // Build verdicts for compatibility with crb-reporting::PrResult.

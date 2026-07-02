@@ -21,6 +21,12 @@ pub struct ConfigResponse {
     pub auth_enabled: bool,
 }
 
+/// Response for GET /api/config/reasoning-efforts.
+#[derive(Debug, Clone, Serialize)]
+pub struct ReasoningEffortsResponse {
+    pub levels: Vec<String>,
+}
+
 /// Information about an available model.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelInfo {
@@ -151,6 +157,15 @@ fn load_dataset_config(dir: &Path) -> Option<DatasetConfig> {
             None
         }
     }
+}
+
+/// GET /api/config/reasoning-efforts — list available reasoning effort levels.
+pub async fn list_reasoning_efforts() -> Json<ReasoningEffortsResponse> {
+    let levels: Vec<String> = crb_harness::model_capabilities::REASONING_EFFORT_LEVELS
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    Json(ReasoningEffortsResponse { levels })
 }
 
 fn count_prs_in_dir(dir: &Path) -> usize {

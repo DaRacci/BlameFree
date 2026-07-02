@@ -103,6 +103,9 @@ pub struct NewRunRequest {
     pub pr_filter: Option<String>,
     #[serde(default = "default_true")]
     pub use_cache: bool,
+    /// Reasoning effort: None (disabled) or Some("low"/"medium"/"high").
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
 }
 
 fn default_true() -> bool { true }
@@ -135,6 +138,12 @@ pub struct AppConfig {
 pub struct DatasetConfig {
     #[serde(default)]
     pub defaults: DatasetDefaults,
+}
+
+/// Response from GET /api/config/reasoning-efforts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReasoningEffortsResponse {
+    pub levels: Vec<String>,
 }
 
 /// OAuth user info returned by GET /auth/me

@@ -11,7 +11,7 @@ pub use adhoc::{
     AdhocRunSummary,
 };
 pub use admin::{get_logs, get_logs_stream};
-pub use config::{get_config, list_datasets, list_dataset_prs};
+pub use config::{get_config, list_datasets, list_dataset_prs, list_reasoning_efforts};
 pub use runs::{
     get_run, list_runs, start_run, BenchmarkConfig,
     list_logs, get_agent_log, get_pr_agents, start_replay, replay_status,

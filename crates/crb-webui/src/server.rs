@@ -107,6 +107,7 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         .route("/api/runs/:id/live", get(crate::api::live_stream))
         .route("/api/config", get(crate::api::get_config))
         .route("/api/config/datasets", get(crate::api::list_datasets))
+        .route("/api/config/reasoning-efforts", get(crate::api::list_reasoning_efforts))
         .route("/api/runs/:id/logs", get(crate::api::list_logs))
         .route("/api/runs/:id/logs/:pr_key/:role", get(crate::api::get_agent_log))
         .route("/api/runs/:id/prs/:pr_key", get(crate::api::get_pr_agents))

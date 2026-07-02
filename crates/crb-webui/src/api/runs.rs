@@ -191,6 +191,10 @@ pub struct BenchmarkConfig {
 
     #[serde(default = "default_use_cache")]
     pub use_cache: bool,
+
+    /// Reasoning effort for supported models (None = disabled, Some = low/medium/high).
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
 }
 
 fn default_use_cache() -> bool { true }

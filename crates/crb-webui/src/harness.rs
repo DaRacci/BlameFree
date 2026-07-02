@@ -244,9 +244,15 @@ pub async fn run_harness(
         let max_findings = config.max_findings;
         let cache_dir_opt = cache_dir_opt.clone();
         let dashboard_tx = dashboard_tx.clone();
+        let reasoning_effort = config.reasoning_effort.clone().unwrap_or_default();
 
         set.spawn(async move {
             let _permit = permit;
+            let re = if reasoning_effort.is_empty() || reasoning_effort == "none" {
+                None
+            } else {
+                Some(reasoning_effort.as_str())
+            };
             crb_harness::evaluate_pr_with_postprocessing(
                 &pr,
                 &client,
@@ -262,6 +268,7 @@ pub async fn run_harness(
                 max_findings,
                 cache_dir_opt.as_ref(),
                 dashboard_tx.as_ref(),
+                re,
             )
             .await
         });
@@ -547,6 +554,7 @@ pub async fn run_replay_via_library(
             max_findings,
             Some(cache_dir),
             None, // No dashboard tx for replay
+            None, // reasoning_effort disabled for replay
         )
         .await;
 

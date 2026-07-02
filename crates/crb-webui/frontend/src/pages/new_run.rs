@@ -1,4 +1,4 @@
-use crate::{api_url, AppConfig, DatasetInfo, NewRunRequest, NewRunResponse, PrEntry};
+use crate::{api_url, AppConfig, DatasetInfo, NewRunRequest, NewRunResponse, PrEntry, ReasoningEffortsResponse};
 use leptos::*;
 use leptos_router::*;
 
@@ -23,9 +23,14 @@ pub fn NewRunPage() -> impl IntoView {
     let (concurrency, set_concurrency) = create_signal(String::new());
     let (max_findings, set_max_findings) = create_signal(String::new());
     let (use_cache, set_use_cache) = create_signal(true);
+    let (reasoning_effort, set_reasoning_effort) = create_signal::<Option<String>>(Some("medium".to_string()));
     let (submitting, set_submitting) = create_signal(false);
     let (submit_error, set_submit_error) = create_signal::<Option<String>>(None);
     let (_submit_result, set_submit_result) = create_signal::<Option<String>>(None);
+
+    // Dynamically loaded reasoning effort levels
+    let (effort_levels, set_effort_levels) = create_signal::<Vec<String>>(Vec::new());
+    let (effort_loading, set_effort_loading) = create_signal(true);
 
     let navigator = use_navigate();
 
@@ -169,6 +174,27 @@ pub fn NewRunPage() -> impl IntoView {
                 if !initial_ds.is_empty() {
                     fetch_prs(initial_ds);
                 }
+
+                // Fetch reasoning effort levels
+                match get_reasoning_efforts().await {
+                    Ok(levels) => {
+                        let has_medium = levels.contains(&"medium".to_string());
+                        set_effort_levels.set(levels);
+                        // Default to "medium" if available, or first entry
+                        let current = reasoning_effort.get();
+                        if current == Some("medium".to_string()) && !has_medium {
+                            let first_level = effort_levels.get().first().cloned();
+                            if let Some(l) = first_level {
+                                set_reasoning_effort.set(Some(l));
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // Fallback: use hardcoded defaults on error
+                        set_effort_levels.set(vec!["low".into(), "medium".into(), "high".into(), "max".into()]);
+                    }
+                }
+                set_effort_loading.set(false);
             }
         },
     );
@@ -207,6 +233,7 @@ pub fn NewRunPage() -> impl IntoView {
             roles: roles.get(),
             pr_filter,
             use_cache: use_cache.get(),
+            reasoning_effort: reasoning_effort.get(),
         };
 
         let navigator = navigator.clone();
@@ -501,6 +528,45 @@ pub fn NewRunPage() -> impl IntoView {
                             </label>
                             <p class="form-field__helper">"Check to cache LLM responses. Uncheck to force fresh API calls."</p>
                         </div>
+                        <div class="form-field">
+                            <label class="form-field__label" for="reasoning_effort">"Reasoning Effort"</label>
+                            <select
+                                id="reasoning_effort"
+                                class="input select"
+                                on:change=move |ev| {
+                                    let val = event_target_value(&ev);
+                                    if val == "none" {
+                                        set_reasoning_effort.set(None);
+                                    } else {
+                                        set_reasoning_effort.set(Some(val));
+                                    }
+                                }
+                            >
+                                {move || {
+                                    let current = reasoning_effort.get();
+                                    let levels = effort_levels.get();
+                                    let loading = effort_loading.get();
+                                    let mut options: Vec<_> = Vec::new();
+                                    options.push(view! { <option value="none">"None (disable reasoning)"</option> });
+                                    if loading {
+                                        options.push(view! { <option value="loading" disabled>"Loading..."</option> });
+                                    } else {
+                                        for level in &levels {
+                                            let val = level.clone();
+                                            let label = level[..1].to_uppercase() + &level[1..];
+                                            let is_selected = match &current {
+                                                Some(ref s) if s == &val => true,
+                                                None if val == "medium" => true,
+                                                _ => false,
+                                            };
+                                            options.push(view! { <option value=val selected=is_selected>{label}</option> });
+                                        }
+                                    }
+                                    options
+                                }}
+                            </select>
+                            <p class="form-field__helper">"Set reasoning/thinking effort for compatible models (DeepSeek, OpenAI o-series, etc.)"</p>
+                        </div>
                     </div>
                 </section>
 
@@ -633,4 +699,23 @@ async fn get_dataset_prs(id: &str) -> Result<Vec<PrEntry>, String> {
         .map_err(|e| format!("Parse error: {e}"))?;
 
     Ok(data)
+}
+
+async fn get_reasoning_efforts() -> Result<Vec<String>, String> {
+    let url = api_url("/api/config/reasoning-efforts");
+    let response = gloo_net::http::Request::get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {e}"))?;
+
+    if !response.ok() {
+        return Err(format!("Server returned {}", response.status()));
+    }
+
+    let data: ReasoningEffortsResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Parse error: {e}"))?;
+
+    Ok(data.levels)
 }

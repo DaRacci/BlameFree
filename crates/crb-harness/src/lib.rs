@@ -33,6 +33,7 @@ use tracing::{info, info_span};
 pub mod cache;
 pub mod config;
 pub mod cost;
+pub mod model_capabilities;
 pub mod paths;
 pub mod validation;
 
@@ -479,6 +480,7 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
             None,
             None,
             None,
+            None,
         );
 
         // Call agent with the diff - get real token usage via extended_details
@@ -534,6 +536,7 @@ pub async fn review_pr_with_prompt_lib(
             role,
             None,
             prompt_lib,
+            None,
             None,
             None,
             None,
@@ -854,6 +857,7 @@ pub async fn evaluate_pr_single_agent(
     cache: Option<Arc<crate::cache::LlmCache>>,
     cost_tracker: Arc<crate::cost::CostTracker>,
     dashboard_tx: Option<&broadcast::Sender<DashboardEvent>>,
+    additional_params: Option<serde_json::Value>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // ── Pre-compute content-addressed cache key components ──────────────
     let diff_hash = crate::cache::LlmCache::sha256(diff);
@@ -876,6 +880,7 @@ pub async fn evaluate_pr_single_agent(
             cache.clone().map(|c| c as Arc<dyn CacheBackend>);
         let ct = cost_tracker.clone();
         let tx = dashboard_tx.map(|t| t.clone());
+        let additional_params = additional_params.clone();
 
         agent_set.spawn(async move {
             let span = info_span!("agent", role = %role);
@@ -945,6 +950,7 @@ pub async fn evaluate_pr_single_agent(
                 None, // template_vars
                 Some(&tool_preamble),
                 None, // workdir - not available in single-agent path
+                additional_params.clone(),
             );
             let result: Result<Vec<Finding>, String> = with_retry(
                 || async {
@@ -1117,6 +1123,7 @@ pub async fn evaluate_pr_consensus(
     cache: Option<Arc<crate::cache::LlmCache>>,
     cost_tracker: Arc<crate::cost::CostTracker>,
     workdir: Option<&str>,
+    reasoning_effort: Option<&str>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // Parse comma-separated roles
     let parsed_roles: Vec<&str> = roles
@@ -1161,6 +1168,18 @@ pub async fn evaluate_pr_consensus(
         max_findings,
     );
 
+    // ── Convert reasoning_effort to additional_params ──────────────────
+    let additional_params = model_capabilities::reasoning_to_additional_params(
+        model,
+        reasoning_effort,
+    );
+    if additional_params.is_some() {
+        info!(
+            "Reasoning effort enabled: {:?}",
+            reasoning_effort.unwrap_or("medium")
+        );
+    }
+
     // ── Build template variables from diff and PR context (EXP-014) ──
     #[cfg(feature = "exp14_template_vars")]
     let template_vars: Option<&'static HashMap<String, serde_json::Value>> = {
@@ -1201,6 +1220,7 @@ pub async fn evaluate_pr_consensus(
             judge_model,
             tool_preamble.as_deref(),
             workdir,
+            additional_params,
         )
         .await?;
 
@@ -1321,6 +1341,7 @@ pub async fn evaluate_pr_with_postprocessing(
     max_findings: usize,
     cache_dir: Option<&PathBuf>,
     dashboard_tx: Option<&broadcast::Sender<DashboardEvent>>,
+    reasoning_effort: Option<&str>,
 ) -> Result<PrResult> {
     // ── Setup cache (optional) ────────────────────────────────────────────
     let cache: Option<Arc<crate::cache::LlmCache>> = if let Some(cache_dir) = cache_dir {
@@ -1457,6 +1478,7 @@ pub async fn evaluate_pr_with_postprocessing(
             cache.clone(),
             cost_tracker.clone(),
             dashboard_tx,
+            None, // additional_params not wired for single-agent path
         )
         .await?
     } else {
@@ -1474,6 +1496,7 @@ pub async fn evaluate_pr_with_postprocessing(
             cache.clone(),
             cost_tracker.clone(),
             None,
+            reasoning_effort,
         )
         .await?
     };

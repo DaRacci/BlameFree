@@ -72,6 +72,7 @@ pub fn build_agent(
     template_vars: Option<&HashMap<String, serde_json::Value>>,
     extra_preamble: Option<&str>,
     workdir: Option<&str>,
+    additional_params: Option<serde_json::Value>,
     #[cfg(feature = "exp14_submit_finding")]
     collector: Option<Arc<Mutex<submit_finding::SubmitFindingCollector>>>,
 ) -> Agent<ResponsesCompletionModel> {
@@ -166,7 +167,7 @@ pub fn build_agent(
                 let wd = workdir.unwrap().to_string();
                 let submit_tool =
                     submit_finding::SubmitFindingTool::new(collector.unwrap());
-                client
+                let mut builder = client
                     .agent(model)
                     .preamble(&full_preamble)
                     .tool(crb_tools::read_file::ReadFileTool {
@@ -181,12 +182,15 @@ pub fn build_agent(
                     .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
                     .tool(submit_tool)
                     .default_max_turns(6)
-                    .temperature(0.3)
-                    .build()
+                    .temperature(0.3);
+                if let Some(ref params) = additional_params {
+                    builder = builder.additional_params(params.clone());
+                }
+                builder.build()
             }
             (true, false) => {
                 let wd = workdir.unwrap().to_string();
-                client
+                let mut builder = client
                     .agent(model)
                     .preamble(&full_preamble)
                     .tool(crb_tools::read_file::ReadFileTool {
@@ -200,25 +204,34 @@ pub fn build_agent(
                     .tool(crb_tools::grep::GrepTool { workdir: wd.clone() })
                     .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
                     .default_max_turns(6)
-                    .temperature(0.3)
-                    .build()
+                    .temperature(0.3);
+                if let Some(ref params) = additional_params {
+                    builder = builder.additional_params(params.clone());
+                }
+                builder.build()
             }
             (false, true) => {
                 let submit_tool =
                     submit_finding::SubmitFindingTool::new(collector.unwrap());
-                client
+                let mut builder = client
                     .agent(model)
                     .preamble(&full_preamble)
                     .tool(submit_tool)
-                    .temperature(0.3)
-                    .build()
+                    .temperature(0.3);
+                if let Some(ref params) = additional_params {
+                    builder = builder.additional_params(params.clone());
+                }
+                builder.build()
             }
             (false, false) => {
-                client
+                let mut builder = client
                     .agent(model)
                     .preamble(&full_preamble)
-                    .temperature(0.3)
-                    .build()
+                    .temperature(0.3);
+                if let Some(ref params) = additional_params {
+                    builder = builder.additional_params(params.clone());
+                }
+                builder.build()
             }
         }
     }
@@ -227,7 +240,7 @@ pub fn build_agent(
     {
         if let Some(wd) = workdir {
             let wd = wd.to_string();
-            client
+            let mut builder = client
                 .agent(model)
                 .preamble(&full_preamble)
                 .tool(crb_tools::read_file::ReadFileTool {
@@ -241,14 +254,20 @@ pub fn build_agent(
                 .tool(crb_tools::grep::GrepTool { workdir: wd.clone() })
                 .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
                 .default_max_turns(6)
-                .temperature(0.3)
-                .build()
+                .temperature(0.3);
+            if let Some(ref params) = additional_params {
+                builder = builder.additional_params(params.clone());
+            }
+            builder.build()
         } else {
-            client
+            let mut builder = client
                 .agent(model)
                 .preamble(&full_preamble)
-                .temperature(0.3)
-                .build()
+                .temperature(0.3);
+            if let Some(ref params) = additional_params {
+                builder = builder.additional_params(params.clone());
+            }
+            builder.build()
         }
     }
 }

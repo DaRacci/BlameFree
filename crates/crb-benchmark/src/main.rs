@@ -145,6 +145,9 @@ enum Commands {
         /// Auto-backup cache before running.
         #[arg(long, default_value_t = false)]
         auto_backup: bool,
+        /// Reasoning effort level [possible values: low, medium, high, max].
+        #[arg(long, default_value = "medium")]
+        reasoning_effort: String,
     },
     /// Show cache statistics.
     CacheStats {
@@ -294,6 +297,7 @@ fn main() -> Result<()> {
             dashboard,
             dashboard_events,
             auto_backup,
+            reasoning_effort,
         } => {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(run_benchmark(
@@ -320,6 +324,7 @@ fn main() -> Result<()> {
                 dashboard,
                 dashboard_events,
                 auto_backup,
+                reasoning_effort,
             ))?;
         }
     }
@@ -541,6 +546,7 @@ async fn run_benchmark(
     dashboard: bool,
     dashboard_events: bool,
     auto_backup: bool,
+    reasoning_effort: String,
 ) -> Result<()> {
 
     let output_dir = PathBuf::from(&output_dir);
@@ -798,9 +804,15 @@ async fn run_benchmark(
         let max_findings = max_findings;
         let cache_dir = cache_dir.clone();
         let dashboard_tx = dashboard_tx.clone();
+        let reasoning_effort = reasoning_effort.clone();
 
         set.spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
+            let reasoning = if reasoning_effort.is_empty() || reasoning_effort == "none" {
+                None
+            } else {
+                Some(reasoning_effort.as_str())
+            };
             crb_harness::evaluate_pr_with_postprocessing(
                 &pr,
                 &client,
@@ -816,6 +828,7 @@ async fn run_benchmark(
                 max_findings,
                 Some(&cache_dir),
                 dashboard_tx.as_ref(),
+                reasoning,
             )
             .await
         });

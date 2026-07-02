@@ -509,6 +509,7 @@ async fn run_adhoc_review_inner(
         Some(cache.clone()),
         cost_tracker.clone(),
         None, // workdir
+        None, // reasoning_effort
     )
     .await?;
 
