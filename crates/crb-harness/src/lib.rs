@@ -1133,9 +1133,17 @@ pub async fn evaluate_pr_consensus(
         .collect();
 
     // ── Adaptive agent dispatch (EXP-016) ──────────────────────────────
+    // NOTE: This experimental feature is intentionally disabled because it
+    // overrides user-selected roles with a single GEN agent, which:
+    //   (a) violates user role selection expectations, and
+    //   (b) prevents ARCH/AR agents from appearing in the results.
+    // Feature flag is kept to avoid breaking builds that enable it,
+    // but the override is suppressed to respect user-selected roles.
     #[cfg(feature = "exp16_adaptive_agents")]
     let parsed_roles: Vec<&str> = {
-        if crb_consensus::should_use_single_agent(diff, 3, 200) {
+        // Only apply adaptive dispatch when user has explicitly opted in
+        // by selecting only a single role; otherwise respect user's choice.
+        if parsed_roles.len() == 1 && crb_consensus::should_use_single_agent(diff, 3, 200) {
             info!("EXP-016 adaptive dispatch: small PR, using single GEN agent");
             vec!["GEN"]
         } else {

@@ -46,6 +46,7 @@ pub struct AppState {
 }
 
 /// State for an actively running benchmark.
+#[derive(Clone)]
 pub struct ActiveRun {
     /// When the run was started (Unix timestamp).
     pub created_at: u64,

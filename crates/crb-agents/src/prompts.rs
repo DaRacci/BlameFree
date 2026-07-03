@@ -41,6 +41,7 @@ pub struct AgentEntry {
 #[derive(Clone)]
 pub struct PromptLibrary {
     agents: HashMap<String, AgentEntry>,
+    sections: HashMap<String, String>,
     handlebars: Handlebars<'static>,
 }
 
@@ -104,17 +105,16 @@ impl PromptLibrary {
 
         let mut hb = Handlebars::new();
         hb.set_strict_mode(false);
+        // Disable HTML escaping — markdown content often contains backticks,
+        // equals signs, and apostrophes that must be passed through raw.
+        hb.register_escape_fn(handlebars::no_escape);
         // Register agent.hbs as "agent"
         hb.register_template_string("agent", &agent_template)
             .map_err(|e| format!("Failed to register agent template: {e}"))?;
-        // Register each section as a partial
-        for (name, content) in &sections {
-            hb.register_partial(name, content)
-                .map_err(|e| format!("Failed to register partial '{name}': {e}"))?;
-        }
 
         Ok(Self {
             agents,
+            sections,
             handlebars: hb,
         })
     }
@@ -136,6 +136,10 @@ impl PromptLibrary {
     /// `vars` carries runtime variables like `diff`, `file_list`, `language`.
     /// Agent context (role_name, role_abbreviation, etc.) comes from the
     /// embedded YAML frontmatter.
+    ///
+    /// Section content (output_format, max_findings, submit_finding) is
+    /// rendered with the current context and injected as variables so that
+    /// `agent.hbs` can reference them with `{{output_format}}` etc.
     pub fn render(&self, role: &str, vars: &HashMap<String, serde_json::Value>) -> String {
         let entry = match self.agents.get(&role.to_uppercase()) {
             Some(e) => e,
@@ -164,6 +168,22 @@ impl PromptLibrary {
 
         for (k, v) in vars {
             ctx.insert(k.clone(), v.clone());
+        }
+
+        // Render section content and inject into context.
+        // Sections themselves may contain template variables (e.g.
+        // `max_findings.hbs` references `{{max_findings}}`, and
+        // `output_format.hbs` references `{{role_abbreviation}}`),
+        // so render each section through the engine first.
+        let base_ctx = serde_json::Value::Object(ctx.clone());
+        for (name, content) in &self.sections {
+            if !ctx.contains_key(name) {
+                let rendered = self
+                    .handlebars
+                    .render_template(content, &base_ctx)
+                    .unwrap_or_else(|_| content.clone());
+                ctx.insert(name.clone(), rendered.into());
+            }
         }
 
         let ctx_value = serde_json::Value::Object(ctx);

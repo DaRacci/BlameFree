@@ -46,6 +46,9 @@ impl TemplateEngine {
     pub fn new() -> Self {
         let mut registry = Handlebars::new();
         registry.set_strict_mode(false);
+        // Disable HTML escaping — markdown content often contains backticks,
+        // equals signs, and apostrophes that must be passed through raw.
+        registry.register_escape_fn(handlebars::no_escape);
 
         // Register built-in helpers
         registry.register_helper(

@@ -609,14 +609,13 @@ pub async fn get_run(
     tracing::info!("GET /api/runs/{}", id);
 
     // Check if run is still in progress (in active_runs before output dir exists)
-    {
+    let active_run_config = {
         let runs = state.active_runs.read().await;
-        if let Some(active_run) = runs.get(&id) {
-            let status = if active_run.finished {
-                "completed".to_string()
-            } else {
-                "running".to_string()
-            };
+        runs.get(&id).cloned()
+    };
+    if let Some(ref active_run) = active_run_config {
+        if !active_run.finished {
+            // Running — return in-memory state
             let roles: Vec<String> = active_run
                 .config
                 .roles
@@ -633,7 +632,7 @@ pub async fn get_run(
                 total_tokens: 0,
                 duration_secs: None,
                 model: active_run.config.model.clone(),
-                status,
+                status: "running".to_string(),
                 config: Some(RunConfigResponse {
                     model: active_run.config.model.clone(),
                     dataset: active_run.config.dataset_dir.clone(),
@@ -642,6 +641,7 @@ pub async fn get_run(
             };
             return Json(detail).into_response();
         }
+        // Finished — fall through to disk reading below (do NOT return early with empty results)
     }
 
     let run_path = state.output_dir.join(&id);
@@ -788,6 +788,13 @@ pub async fn get_run(
         duration_secs = compute_duration_from_timestamps(&run_path);
     }
 
+    // Merge config from active run state if available (it isn't stored on disk)
+    let config = active_run_config.as_ref().map(|ar| RunConfigResponse {
+        model: ar.config.model.clone(),
+        dataset: ar.config.dataset_dir.clone(),
+        roles: ar.config.roles.split(',').map(|s| s.trim().to_string()).collect(),
+    });
+
     let detail = RunDetail {
         id: id.clone(),
         name: id.clone(),
@@ -809,7 +816,7 @@ pub async fn get_run(
         duration_secs: Some(duration_secs),
         model,
         status: "completed".to_string(),
-        config: None,
+        config,
     };
 
     Json(detail).into_response()
