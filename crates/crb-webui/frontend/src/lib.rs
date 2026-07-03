@@ -478,7 +478,13 @@ pub fn App() -> impl IntoView {
 
 #[component]
 fn Sidebar() -> impl IntoView {
-    let (collapsed, set_collapsed) = create_signal(false);
+    let initial_collapsed = leptos::window()
+        .inner_width()
+        .ok()
+        .and_then(|v| v.as_f64())
+        .map(|w| w < 1200.0)
+        .unwrap_or(false);
+    let (collapsed, set_collapsed) = create_signal(initial_collapsed);
     let (mobile_open, set_mobile_open) = create_signal(false);
 
     let active_class = move |path: &str| -> &'static str {
@@ -509,11 +515,12 @@ fn Sidebar() -> impl IntoView {
     // display_name and avatar_url are inlined in the template to avoid
     // multiple captures of the `user` closure.
 
+    let close_mobile = move |_| set_mobile_open.set(false);
+
     view! {
         // Mobile hamburger button (visible on small screens)
         <button
-            class="btn btn--ghost sidebar__toggle"
-            style="position: fixed; top: 12px; left: 12px; z-index: 200; display: none;"
+            class="sidebar__hamburger btn btn--ghost"
             aria-label="Toggle navigation menu"
             on:click=toggle_mobile
         >
@@ -541,25 +548,25 @@ fn Sidebar() -> impl IntoView {
 
             <ul class="sidebar__nav">
                 <li>
-                    <a href="/" class=move || format!("sidebar__item {}", active_class("/runs/"))>
+                    <a href="/" class=move || format!("sidebar__item {}", active_class("/runs/")) on:click=close_mobile>
                         <span class="sidebar__icon">""</span>
                         <span class="sidebar__label">"Dashboard"</span>
                     </a>
                 </li>
                 <li>
-                    <a href="/" class=move || format!("sidebar__item {}", active_class("/runs/"))>
+                    <a href="/" class=move || format!("sidebar__item {}", active_class("/runs/")) on:click=close_mobile>
                         <span class="sidebar__icon">""</span>
                         <span class="sidebar__label">"Benchmarks"</span>
                     </a>
                 </li>
                 <li>
-                    <a href="/adhoc" class=move || format!("sidebar__item {}", active_class("/adhoc"))>
+                    <a href="/adhoc" class=move || format!("sidebar__item {}", active_class("/adhoc")) on:click=close_mobile>
                         <span class="sidebar__icon">""</span>
                         <span class="sidebar__label">"Ad-hoc Review"</span>
                     </a>
                 </li>
                 <li>
-                    <a href="/admin" class=move || format!("sidebar__item {}", active_class("/admin"))>
+                    <a href="/admin" class=move || format!("sidebar__item {}", active_class("/admin")) on:click=close_mobile>
                         <span class="sidebar__icon">""</span>
                         <span class="sidebar__label">"Admin"</span>
                     </a>
@@ -589,7 +596,7 @@ fn Sidebar() -> impl IntoView {
                                 {avatar}
                                 <span class="sidebar__username">{username}</span>
                             </div>
-                            <a href="/auth/logout" class="btn btn--ghost sidebar__logout">
+                            <a href="/auth/logout" class="btn btn--ghost sidebar__logout" on:click=close_mobile>
                                 "Log out"
                             </a>
                         </div>
@@ -598,7 +605,7 @@ fn Sidebar() -> impl IntoView {
                     // Not logged in — show login button
                     view! {
                         <div class="sidebar__auth">
-                            <a href="/auth/login" class="btn btn--primary sidebar__login">
+                            <a href="/auth/login" class="btn btn--primary sidebar__login" on:click=close_mobile>
                                 "Log in"
                             </a>
                         </div>

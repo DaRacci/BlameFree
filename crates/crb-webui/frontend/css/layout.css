@@ -356,9 +356,16 @@
 }
 
 /* Responsive */
-@media (max-width: 1199px) {
+/* Tablet: sidebar collapsed by default, content adjusts */
+@media (min-width: 768px) and (max-width: 1199px) {
   .main-content {
     margin-left: 64px;
+  }
+  /* When sidebar is expanded (not collapsed), content shifts to match */
+  .sidebar:not(.sidebar--collapsed) ~ .main-content,
+  .sidebar:not(.sidebar--collapsed) + .main-content,
+  .sidebar:not(.sidebar--collapsed).main-content {
+    margin-left: 240px;
   }
   .content-grid--agent-panes {
     grid-template-columns: repeat(2, 1fr);

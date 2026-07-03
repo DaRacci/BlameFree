@@ -9,7 +9,7 @@
   display: flex;
   flex-direction: column;
   z-index: var(--z-sidebar);
-  transition: width var(--transition-normal);
+  transition: width var(--transition-normal), transform var(--transition-normal);
   overflow: hidden;
 }
 
@@ -119,6 +119,29 @@
   white-space: nowrap;
 }
 
+/* Mobile hamburger button — hidden on desktop, shown on mobile */
+.sidebar__hamburger {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: var(--z-overlay);
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.sidebar__hamburger:hover {
+  background: var(--bg-surface-hover);
+}
+
 /* Mobile overlay */
 .sidebar-overlay {
   display: none;
@@ -181,8 +204,8 @@
   margin-left: var(--spacing-xs);
 }
 
-/* Responsive: collapsed by default */
-@media (max-width: 1199px) {
+/* Tablet: collapsed (icons-only) by default, toggle can expand */
+@media (min-width: 768px) and (max-width: 1199px) {
   .sidebar {
     width: 64px;
   }
@@ -205,21 +228,75 @@
     justify-content: center;
     padding: var(--spacing-md) 0;
   }
+
+  /* When toggled open (not collapsed), show full sidebar */
+  .sidebar:not(.sidebar--collapsed) {
+    width: 240px;
+  }
+  .sidebar:not(.sidebar--collapsed) .sidebar__brand,
+  .sidebar:not(.sidebar--collapsed) .sidebar__label,
+  .sidebar:not(.sidebar--collapsed) .sidebar__version,
+  .sidebar:not(.sidebar--collapsed) .badge--pill {
+    display: block;
+  }
+  .sidebar:not(.sidebar--collapsed) .sidebar__item {
+    justify-content: flex-start;
+    padding: var(--spacing-md) var(--spacing-lg);
+  }
+  .sidebar:not(.sidebar--collapsed) .sidebar__header {
+    justify-content: flex-start;
+    padding: var(--spacing-lg);
+  }
+  .sidebar:not(.sidebar--collapsed) .sidebar__footer {
+    display: flex;
+    justify-content: flex-start;
+    padding: var(--spacing-md) var(--spacing-lg);
+  }
 }
 
-/* Mobile: sidebar hidden, hamburger overlay */
+/* Mobile: sidebar slides in/out, hamburger visible */
 @media (max-width: 767px) {
   .sidebar {
-    display: none;
+    transform: translateX(-100%);
+    width: 280px;
   }
   .sidebar--mobile-open {
-    display: flex;
-    width: 240px;
+    transform: translateX(0);
+    /* High z-index so sidebar appears above the overlay backdrop and all content */
+    z-index: 1000;
   }
   .sidebar--mobile-open .sidebar__brand,
   .sidebar--mobile-open .sidebar__label,
   .sidebar--mobile-open .sidebar__version,
   .sidebar--mobile-open .badge--pill {
     display: block;
+  }
+  .sidebar--mobile-open .sidebar__item {
+    justify-content: flex-start;
+    padding: var(--spacing-md) var(--spacing-lg);
+  }
+  .sidebar--mobile-open .sidebar__header {
+    justify-content: flex-start;
+    padding: var(--spacing-lg);
+  }
+  .sidebar--mobile-open .sidebar__footer {
+    display: flex;
+    justify-content: flex-start;
+    padding: var(--spacing-md) var(--spacing-lg);
+  }
+  /* Hide the collapse toggle button on mobile — hamburger replaces it */
+  .sidebar .sidebar__toggle {
+    display: none;
+  }
+
+  /* Show hamburger button on mobile */
+  .sidebar__hamburger {
+    display: flex;
+    z-index: 1100;
+  }
+
+  /* Hide collapse toggle in sidebar header on mobile */
+  .sidebar__header .sidebar__toggle {
+    display: none;
   }
 }
