@@ -19,7 +19,7 @@ use axum::response::IntoResponse;
 use axum::Json;
 use serde::Serialize;
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::server::AppState;
 
@@ -146,7 +146,7 @@ pub async fn get_logs_stream(
 
     let log_path = state.log_file.clone();
 
-    let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(100);
+    let (tx, rx) = mpsc::unbounded_channel::<Result<Event, Infallible>>();
 
     // Spawn a background task that reads the log file and feeds events
     tokio::spawn(async move {
@@ -156,7 +156,6 @@ pub async fn get_logs_stream(
                 for line in &lines {
                     if tx
                         .send(Ok(Event::default().data(line.clone())))
-                        .await
                         .is_err()
                     {
                         return; // client disconnected
@@ -211,7 +210,6 @@ pub async fn get_logs_stream(
             for line in content.lines() {
                 if tx
                     .send(Ok(Event::default().data(line.to_string())))
-                    .await
                     .is_err()
                 {
                     return; // client disconnected
@@ -220,7 +218,7 @@ pub async fn get_logs_stream(
         }
     });
 
-    let stream = ReceiverStream::new(rx);
+    let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
     Sse::new(stream)
         .keep_alive(
             axum::response::sse::KeepAlive::new()
