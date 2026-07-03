@@ -196,9 +196,20 @@ pub async fn run_harness(
     let forward_tx = webui_tx.clone();
 
     tokio::spawn(async move {
-        while let Ok(event) = harness_rx.recv().await {
-            if let Some(converted) = convert_harness_event(event) {
-                let _ = forward_tx.send(converted);
+        loop {
+            match harness_rx.recv().await {
+                Ok(event) => {
+                    if let Some(converted) = convert_harness_event(event) {
+                        let _ = forward_tx.send(converted);
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!("Harness event bridge lagged by {} messages", n);
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    break;
+                }
             }
         }
     });
