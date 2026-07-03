@@ -675,8 +675,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crb-agents",
+ "crb-dashboard",
  "crb-judge",
  "crb-reporting",
+ "futures",
  "regex",
  "rig-core",
  "serde",

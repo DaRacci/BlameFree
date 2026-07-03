@@ -99,6 +99,7 @@ pub fn LivePage() -> impl IntoView {
         let set_conn = set_connected.clone();
         // Read signals needed for handle_event
         let role_pr = role_current_pr.clone();
+        let state_pr = pr_states.clone();
         let roles = available_roles.clone();
 
         spawn_local(async move {
@@ -119,6 +120,7 @@ pub fn LivePage() -> impl IntoView {
                                 let current_roles = roles.get_untracked();
                                 handle_event(
                                     ev,
+                                    &state_pr,
                                     &set_states,
                                     &set_order,
                                     &set_selected,
@@ -353,6 +355,7 @@ pub fn LivePage() -> impl IntoView {
 
 fn handle_event(
     ev: DashboardEvent,
+    pr_states: &ReadSignal<HashMap<String, PrState>>,
     set_states: &WriteSignal<HashMap<String, PrState>>,
     set_order: &WriteSignal<Vec<String>>,
     set_selected: &WriteSignal<Option<String>>,
@@ -371,6 +374,11 @@ fn handle_event(
                     states.insert(pr_key.clone(), PrState::new(&pr_key, roles));
                 }
                 if let Some(pr) = states.get_mut(&pr_key) {
+                    // Dynamically add agent if it doesn't exist yet (roles may have been
+                    // empty when the PrState was created, e.g. during the async roles fetch)
+                    if !pr.agents.contains_key(&role) {
+                        pr.agents.insert(role.clone(), PerAgentState::new(&role));
+                    }
                     if let Some(agent) = pr.agents.get_mut(&role) {
                         agent.status = "reviewing".into();
                     }
@@ -386,10 +394,21 @@ fn handle_event(
                     order.push(pr_key.clone());
                 }
             });
-            // Auto-select first PR
+            // Auto-select: pick the first PR, or switch to this PR if the
+            // currently selected PR is already completed.
             set_selected.update(|sel| {
-                if sel.is_none() {
-                    *sel = Some(pr_key);
+                match sel {
+                    None => *sel = Some(pr_key.clone()),
+                    Some(ref current) => {
+                        let should_switch = pr_states
+                            .get()
+                            .get(current)
+                            .map(|s| s.completed)
+                            .unwrap_or(true);
+                        if should_switch {
+                            *sel = Some(pr_key.clone());
+                        }
+                    }
                 }
             });
         }

@@ -510,6 +510,7 @@ async fn run_adhoc_review_inner(
         cost_tracker.clone(),
         None, // workdir
         None, // reasoning_effort
+        None, // dashboard_tx
     )
     .await?;
 

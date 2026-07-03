@@ -1124,6 +1124,7 @@ pub async fn evaluate_pr_consensus(
     cost_tracker: Arc<crate::cost::CostTracker>,
     workdir: Option<&str>,
     reasoning_effort: Option<&str>,
+    dashboard_tx: Option<&broadcast::Sender<DashboardEvent>>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // Parse comma-separated roles
     let parsed_roles: Vec<&str> = roles
@@ -1229,6 +1230,7 @@ pub async fn evaluate_pr_consensus(
             tool_preamble.as_deref(),
             workdir,
             additional_params,
+            dashboard_tx.map(|t| t.clone()),
         )
         .await?;
 
@@ -1505,6 +1507,7 @@ pub async fn evaluate_pr_with_postprocessing(
             cost_tracker.clone(),
             None,
             reasoning_effort,
+            dashboard_tx,
         )
         .await?
     };

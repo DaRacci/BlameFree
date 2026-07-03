@@ -15,12 +15,13 @@ use std::time::Duration;
 
 use anyhow::Result;
 use regex::Regex;
-use rig_core::agent::{Agent, HookAction, PromptHook, PromptResponse, ToolCallHookAction};
+use rig_core::agent::{Agent, HookAction, PromptHook, ToolCallHookAction};
 use rig_core::completion::{
     AssistantContent, CompletionModel, CompletionResponse, Message, Prompt, PromptError, Usage,
 };
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
+use rig_core::streaming::StreamingPrompt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::task::JoinSet;
@@ -424,6 +425,7 @@ pub async fn run_reviewers(
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
     additional_params: Option<serde_json::Value>,
+    dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_dashboard::DashboardEvent>>,
 ) -> (Vec<(Role, Vec<Finding>)>, usize, Usage) {
     let mut set = JoinSet::new();
     let agent_api_calls = Arc::new(AtomicUsize::new(0));
@@ -457,6 +459,7 @@ pub async fn run_reviewers(
         let model_name = config.model.clone();
         let agent_api_calls = agent_api_calls.clone();
         let aggregate_usage = aggregate_usage.clone();
+        let dashboard_tx = dashboard_tx.clone();
 
         set.spawn(async move {
             let cache_key = compute_agent_cache_key(
@@ -536,14 +539,82 @@ pub async fn run_reviewers(
             // Clone role for async block capture (Role no longer Copy)
             let role_async = role.clone();
             let outcome = tokio::time::timeout(Duration::from_secs(900), async {
+                use futures::StreamExt;
+                use rig_core::agent::MultiTurnStreamItem;
+
                 let role = role_async;
-                let resp: PromptResponse = agent
-                    .prompt(&diff)
+
+                // Start streaming the agent response
+                let mut stream = agent
+                    .stream_prompt(&diff)
                     .with_hook(turn_budget_hook)
-                    .extended_details()
-                    .await?;
-                let response = resp.output;
-                let usage = resp.usage;
+                    .await;
+
+                let mut response = String::new();
+                let mut usage = Usage::new();
+                let mut reasoning_text: Option<String> = None;
+
+                while let Some(item) = stream.next().await {
+                    match item.map_err(|e| anyhow::anyhow!("{e}"))? {
+                        MultiTurnStreamItem::StreamAssistantItem(assistant) => {
+                            if let rig_core::streaming::StreamedAssistantContent::Text(text) = assistant {
+                                let chunk = text.text;
+                                response.push_str(&chunk);
+                                if let Some(ref tx) = dashboard_tx {
+                                    let _ = tx.send(crb_dashboard::DashboardEvent::AgentChunk {
+                                        role: role.to_string(),
+                                        chunk: chunk.clone(),
+                                    });
+                                }
+                            }
+                        }
+                        MultiTurnStreamItem::CompletionCall(call) => {
+                            // Accumulate per-completion-call usage
+                            if call.usage.input_tokens > 0 || call.usage.output_tokens > 0 {
+                                usage.input_tokens += call.usage.input_tokens;
+                                usage.output_tokens += call.usage.output_tokens;
+                                usage.total_tokens += call.usage.total_tokens;
+                                usage.cached_input_tokens += call.usage.cached_input_tokens;
+                                usage.cache_creation_input_tokens += call.usage.cache_creation_input_tokens;
+                                usage.reasoning_tokens += call.usage.reasoning_tokens;
+                                usage.tool_use_prompt_tokens += call.usage.tool_use_prompt_tokens;
+                            }
+                        }
+                        MultiTurnStreamItem::FinalResponse(final_resp) => {
+                            // Use aggregated usage from final response
+                            let final_usage = final_resp.usage();
+                            if usage.input_tokens == 0 && usage.output_tokens == 0 {
+                                usage = final_usage;
+                            }
+                            // If no text was streamed, use final response text
+                            if response.is_empty() {
+                                response = final_resp.response().to_string();
+                            }
+
+                            // Extract reasoning from chat history
+                            reasoning_text = final_resp.history().and_then(|msgs| {
+                                let mut reasoning = String::new();
+                                for msg in msgs {
+                                    if let Message::Assistant { content, .. } = msg {
+                                        for item in content.iter() {
+                                            if let AssistantContent::Reasoning(r) = item {
+                                                use std::fmt::Write;
+                                                let _ = write!(reasoning, "{}", r.display_text());
+                                            }
+                                        }
+                                    }
+                                }
+                                if reasoning.is_empty() { None } else { Some(reasoning) }
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Save reasoning to cache if available (after stream completes)
+                if let (Some(ref cache), Some(ref reasoning)) = (&cache, &reasoning_text) {
+                    cache.save_agent_reasoning_with_key(&cache_key, role.as_str(), reasoning);
+                }
 
                 // Record usage in aggregate
                 if let Ok(mut agg) = aggregate_usage.lock() {
@@ -559,27 +630,6 @@ pub async fn run_reviewers(
                 // Cache the response + usage if cache is active
                 if let Some(ref cache) = cache {
                     cache.save_agent_with_key_and_usage(&cache_key, role.as_str(), &diff, &response, &usage);
-                }
-
-                // Capture reasoning/thinking content from the response messages
-                let reasoning_text = resp.messages.as_ref().and_then(|msgs| {
-                    let mut reasoning = String::new();
-                    for msg in msgs {
-                        if let Message::Assistant { content, .. } = msg {
-                            for item in content.iter() {
-                                if let AssistantContent::Reasoning(r) = item {
-                                    use std::fmt::Write;
-                                    let _ = write!(reasoning, "{}", r.display_text());
-                                }
-                            }
-                        }
-                    }
-                    if reasoning.is_empty() { None } else { Some(reasoning) }
-                });
-
-                // Save reasoning to cache if available
-                if let (Some(ref cache), Some(ref reasoning)) = (cache, &reasoning_text) {
-                    cache.save_agent_reasoning_with_key(&cache_key, role.as_str(), reasoning);
                 }
 
                 // Log raw response for debugging
@@ -783,6 +833,7 @@ pub async fn run_consensus(
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
     additional_params: Option<serde_json::Value>,
+    dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_dashboard::DashboardEvent>>,
 ) -> ConsensusReport {
     // Step 1: run all reviewers concurrently with content-addressed caching
     let (agents, agent_api_calls, agent_usage) = run_reviewers(
@@ -800,6 +851,7 @@ pub async fn run_consensus(
         tool_preamble,
         workdir,
         additional_params,
+        dashboard_tx,
     )
     .await;
 
@@ -1014,6 +1066,7 @@ pub async fn evaluate_pr_with_consensus(
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
     additional_params: Option<serde_json::Value>,
+    dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_dashboard::DashboardEvent>>,
 ) -> Result<(PrResult, Usage, Usage, usize, usize, usize)> {
     // ── Adaptive agent dispatch (EXP-016) ──────────────────────────────
     #[cfg(feature = "exp16_adaptive_agents")]
@@ -1074,6 +1127,7 @@ pub async fn evaluate_pr_with_consensus(
         tool_preamble,
         workdir,
         additional_params,
+        dashboard_tx,
     )
     .await;
     // Build verdicts for compatibility with crb-reporting::PrResult.

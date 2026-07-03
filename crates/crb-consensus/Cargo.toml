@@ -10,6 +10,7 @@ exp16_adaptive_agents = []
 
 [dependencies]
 crb-agents = { path = "../crb-agents" }
+crb-dashboard = { path = "../crb-dashboard" }
 crb-judge = { path = "../crb-judge" }
 crb-reporting = { path = "../crb-reporting" }
 rig-core = { workspace = true }
@@ -20,4 +21,5 @@ regex = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 sha2 = { workspace = true }
+futures = "0.3"
 
