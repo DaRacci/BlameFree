@@ -193,5 +193,8 @@ async fn main() -> anyhow::Result<()> {
         log_path,
     );
 
+    // Pre-warm model capabilities cache before accepting requests
+    crb_harness::model_capabilities::warm_model_cache().await;
+
     server::start(app_state, args.port).await
 }

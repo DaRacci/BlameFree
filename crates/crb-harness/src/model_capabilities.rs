@@ -2,14 +2,14 @@
 //!
 //! Queries the OpenRouter models API to discover which models support
 //! reasoning, with a fallback heuristic when the API is unreachable.
-//! Results are cached once per process via a [`tokio::sync::OnceCell`].
+//! Results are cached via [`std::sync::OnceLock`] — initialised once,
+//! then read lock-free by all threads.
 
-use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::OnceLock;
 
-// ── Reasoning types (unchanged from the static registry) ────────────────────
+// ── Reasoning types ──────────────────────────────────────────────────────────
 
 /// Configuration for model reasoning/thinking support.
 ///
@@ -72,9 +72,6 @@ impl ReasoningEffort {
 impl ReasoningConfig {
     /// Convert this reasoning config into JSON additional_params that can be
     /// injected into the API request via `agent.additional_params`.
-    ///
-    /// For OpenAI/DeepSeek style: `{"reasoning": {"effort": "medium"}}`
-    /// For Anthropic style: `{"thinking": {"type": "enabled", "budget_tokens": 2048}}`
     pub fn to_additional_params_json(&self) -> serde_json::Value {
         match self {
             ReasoningConfig::ReasoningEffort { effort } => {
@@ -108,60 +105,115 @@ struct OpenRouterModelsResponse {
 #[derive(serde::Deserialize)]
 struct OpenRouterModel {
     id: String,
-    /// If `Some`, this model supports reasoning. The value is an object
-    /// containing `max_tokens` and `max_output_tokens` limits.
+    /// If `Some`, this model supports reasoning.
     reasoning: Option<serde_json::Value>,
 }
 
 // ── Cached reasoning model IDs ───────────────────────────────────────────────
 
-/// Lazily-initialised cache of model IDs that support reasoning.
+/// Cache of model IDs that support reasoning, populated via
+/// [`warm_model_cache`] or lazily on first query.
 ///
-/// Initialised on first call to [`supports_reasoning`] via a blocking HTTP
-/// request, or falls back to heuristics on failure.
-static REASONING_MODEL_IDS: Lazy<Mutex<Option<HashSet<String>>>> =
-    Lazy::new(|| Mutex::new(None));
+/// Uses [`OnceLock`] so reads are lock-free after initialisation.
+static REASONING_MODEL_IDS: OnceLock<Option<HashSet<String>>> = OnceLock::new();
 
-/// A flag that flips to `true` once the initial fetch has been attempted (even
-/// on failure) so we never retry the API.
-static INITIALISED: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+/// Whether we fell back to heuristic matching (API was unreachable or
+/// not yet initialised in async context).
+static USING_FALLBACK: OnceLock<bool> = OnceLock::new();
 
-/// Whether we fell back to heuristic matching (API was unreachable).
-static USING_FALLBACK: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
-
-/// Initialise the reasoning-model cache from the OpenRouter models API.
+/// Warm the model capabilities cache by querying the OpenRouter API.
 ///
-/// This is called automatically the first time [`supports_reasoning`] is
-/// invoked.  It can also be called explicitly at startup if you want to
-/// pre-warm the cache in a non-blocking way (e.g. in a background task).
-pub fn ensure_initialised() {
-    let mut done = INITIALISED.lock().unwrap();
-    if *done {
+/// Call this at server startup (before any concurrent agent tasks run)
+/// to avoid fallback heuristics. Safe to call multiple times — subsequent
+/// calls are no-ops.
+///
+/// Uses async reqwest so it's safe inside a tokio runtime.
+pub async fn warm_model_cache() {
+    // Already initialised — nothing to do
+    if REASONING_MODEL_IDS.get().is_some() {
         return;
     }
-    *done = true;
 
-    match fetch_reasoning_model_ids_blocking() {
+    match fetch_reasoning_models_async().await {
         Ok(ids) => {
-            let mut cache = REASONING_MODEL_IDS.lock().unwrap();
-            *cache = Some(ids);
             tracing::info!(
-                reason_model_count = cache.as_ref().map(|s| s.len()).unwrap_or(0),
-                "OpenRouter model cache: reasoning-capable models loaded"
+                count = ids.len(),
+                "OpenRouter models API: reasoning-capable models discovered"
             );
+            let _ = REASONING_MODEL_IDS.set(Some(ids));
+            let _ = USING_FALLBACK.set(false);
         }
         Err(e) => {
             tracing::warn!(
                 "OpenRouter model API unreachable ({}); using fallback heuristic",
                 e
             );
-            *USING_FALLBACK.lock().unwrap() = true;
+            let _ = REASONING_MODEL_IDS.set(None);
+            let _ = USING_FALLBACK.set(true);
         }
     }
 }
 
-/// Blocking HTTP call to fetch the list of reasoning-capable model IDs.
-fn fetch_reasoning_model_ids_blocking() -> Result<HashSet<String>, String> {
+/// Async HTTP call to fetch the list of reasoning-capable model IDs.
+async fn fetch_reasoning_models_async() -> Result<HashSet<String>, String> {
+    let url = "https://openrouter.ai/api/v1/models";
+    let response = reqwest::get(url)
+        .await
+        .map_err(|e| format!("HTTP request failed: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("API returned {}", response.status()));
+    }
+
+    let body: OpenRouterModelsResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
+
+    let ids: HashSet<String> = body
+        .data
+        .into_iter()
+        .filter(|m| m.reasoning.is_some())
+        .map(|m| m.id)
+        .collect();
+
+    Ok(ids)
+}
+
+// ── Sync initialisation (for non-tokio contexts, e.g. CLI benchmark) ────────
+
+/// Initialise the model cache synchronously using a blocking HTTP call.
+///
+/// Only use this OUTSIDE a tokio runtime (e.g. from `main()` before
+/// the async runtime starts, or from a CLI tool that uses blocking I/O).
+/// Inside a tokio runtime, use async [`warm_model_cache`] instead.
+pub fn warm_model_cache_blocking() {
+    if REASONING_MODEL_IDS.get().is_some() {
+        return;
+    }
+
+    match fetch_reasoning_models_blocking() {
+        Ok(ids) => {
+            tracing::info!(
+                count = ids.len(),
+                "OpenRouter models API: reasoning-capable models discovered (blocking)"
+            );
+            let _ = REASONING_MODEL_IDS.set(Some(ids));
+            let _ = USING_FALLBACK.set(false);
+        }
+        Err(e) => {
+            tracing::warn!(
+                "OpenRouter model API unreachable ({}); using fallback heuristic",
+                e
+            );
+            let _ = REASONING_MODEL_IDS.set(None);
+            let _ = USING_FALLBACK.set(true);
+        }
+    }
+}
+
+/// Blocking HTTP call — must NOT be called from within a tokio async context.
+fn fetch_reasoning_models_blocking() -> Result<HashSet<String>, String> {
     let url = "https://openrouter.ai/api/v1/models";
     let response = reqwest::blocking::get(url)
         .map_err(|e| format!("HTTP request failed: {e}"))?;
@@ -181,37 +233,28 @@ fn fetch_reasoning_model_ids_blocking() -> Result<HashSet<String>, String> {
         .map(|m| m.id)
         .collect();
 
-    tracing::info!(
-        count = ids.len(),
-        "OpenRouter models API: reasoning-capable models discovered"
-    );
-
     Ok(ids)
 }
 
 // ── Public query functions ───────────────────────────────────────────────────
 
 /// Check whether a model supports reasoning, consulting the cached OpenRouter
-/// model list, with fallback to heuristic matching on failure.
+/// model list, with fallback to heuristic matching.
 ///
-/// The cache is lazily populated on the first call.  Returns `true` if the
-/// model is known to support reasoning.
+/// If the cache has been warmed (via [`warm_model_cache`] or
+/// [`warm_model_cache_blocking`]), uses the API result. Otherwise falls
+/// back to the heuristic immediately — no blocking I/O, safe in any context.
 pub fn supports_reasoning(model: &str) -> bool {
-    ensure_initialised();
-
-    let cache = REASONING_MODEL_IDS.lock().unwrap();
-    if let Some(ref ids) = *cache {
-        // API cache is available – do an exact match against model IDs
-        // (The user may pass the model id with or without a provider prefix.)
-        ids.contains(model)
-            || ids.iter().any(|id| {
-                // Also check if the user-specified model string ends with our id
-                // (e.g. user passes "openai/o3-mini" and API has "o3-mini")
-                model.ends_with(id) || id.ends_with(model)
-            })
-    } else {
-        // API was unreachable – use heuristic fallback
-        fallback_is_reasoning_model(model)
+    match REASONING_MODEL_IDS.get() {
+        Some(Some(ids)) => {
+            // API cache is available — exact match
+            ids.contains(model)
+                || ids.iter().any(|id| model.ends_with(id) || id.ends_with(model))
+        }
+        _ => {
+            // Cache not warmed or API failed — fallback heuristic
+            fallback_is_reasoning_model(model)
+        }
     }
 }
 

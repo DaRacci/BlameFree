@@ -300,6 +300,11 @@ fn main() -> Result<()> {
             reasoning_effort,
         } => {
             let rt = tokio::runtime::Runtime::new()?;
+
+            // Pre-warm model capabilities cache (uses blocking HTTP, must be
+            // called outside the async runtime)
+            crb_harness::model_capabilities::warm_model_cache_blocking();
+
             rt.block_on(run_benchmark(
                 benchmark_dir,
                 dataset_dir,
