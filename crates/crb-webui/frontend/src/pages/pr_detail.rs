@@ -114,7 +114,7 @@ pub fn PrDetailPage() -> impl IntoView {
         match role {
             "SA" => "Security Auditor (SA)",
             "CL" => "Code Logician (CL)",
-            "AR" => "Architecture Reviewer (AR)",
+            "AR" | "ARCH" => "Architecture Reviewer (ARCH)",
             "SEC" => "Security Evaluator (SEC)",
             _ => "Unknown Agent",
         }
@@ -124,7 +124,7 @@ pub fn PrDetailPage() -> impl IntoView {
         match role {
             "SA" => "#3b82f6",
             "CL" => "#22c55e",
-            "AR" => "#f59e0b",
+            "AR" | "ARCH" => "#f59e0b",
             "SEC" => "#ef4444",
             _ => "#8b5cf6",
         }

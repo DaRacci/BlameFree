@@ -8,12 +8,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::server::AppState;
 
+/// Information about an available role/agent.
+#[derive(Debug, Clone, Serialize)]
+pub struct RoleInfo {
+    pub abbreviation: String,
+    #[serde(default)]
+    pub incompatible_with_roles: Vec<String>,
+}
+
 /// Available configuration options.
 #[derive(Debug, Clone, Serialize)]
 pub struct ConfigResponse {
     pub models: Vec<String>,
     pub datasets: Vec<String>,
-    pub roles: Vec<String>,
+    pub roles: Vec<RoleInfo>,
     /// Whether reduce-diff mode is enabled (compile-time feature flag).
     pub reduce_diff_enabled: bool,
     /// Whether OAuth authentication is configured.
@@ -79,9 +87,33 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
         .map(|d| d.id)
         .collect();
 
-    let roles: Vec<String> = crb_agents::prompts::PromptLibrary::new()
-        .map(|lib| lib.roles().into_iter().map(|s| s.to_string()).collect())
-        .unwrap_or_else(|_| vec!["SA".to_string(), "CL".to_string(), "AR".to_string(), "SEC".to_string()]);
+    let roles: Vec<RoleInfo> = crb_agents::prompts::PromptLibrary::new()
+        .map(|lib| {
+            let mut role_infos: Vec<RoleInfo> = lib
+                .roles()
+                .iter()
+                .map(|abbr| {
+                    let config = lib.config(abbr);
+                    RoleInfo {
+                        abbreviation: abbr.to_string(),
+                        incompatible_with_roles: config
+                            .map(|c| c.incompatible_with_roles.clone())
+                            .unwrap_or_default(),
+                    }
+                })
+                .collect();
+            role_infos.sort_by(|a, b| a.abbreviation.cmp(&b.abbreviation));
+            role_infos
+        })
+        .unwrap_or_else(|_| {
+            vec![
+                RoleInfo { abbreviation: "ARCH".to_string(), incompatible_with_roles: vec![] },
+                RoleInfo { abbreviation: "CL".to_string(), incompatible_with_roles: vec![] },
+                RoleInfo { abbreviation: "GEN".to_string(), incompatible_with_roles: vec!["SA".to_string(), "CL".to_string(), "ARCH".to_string(), "SEC".to_string()] },
+                RoleInfo { abbreviation: "SA".to_string(), incompatible_with_roles: vec![] },
+                RoleInfo { abbreviation: "SEC".to_string(), incompatible_with_roles: vec![] },
+            ]
+        });
 
     Json(ConfigResponse {
         models,

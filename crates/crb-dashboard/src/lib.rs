@@ -221,7 +221,7 @@ pub struct Dashboard {
 
 impl Dashboard {
     pub fn new(total_prs: usize, rx: mpsc::Receiver<DashboardEvent>) -> Self {
-        let roles = ["SA", "CL", "AR", "SEC"];
+        let roles = ["SA", "CL", "ARCH", "SEC"];
         Self {
             agent_panes: roles.iter().map(|r| AgentPane::new(r)).collect(),
             total_prs,

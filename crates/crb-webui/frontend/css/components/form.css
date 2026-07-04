@@ -181,6 +181,21 @@
   background: var(--bg-surface-hover);
 }
 
+.checkbox-label--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--border-muted, #21262d);
+}
+
+.checkbox-label--disabled:hover {
+  border-color: var(--border-muted, #21262d);
+  background: transparent;
+}
+
+.checkbox-label--disabled input[type="checkbox"] {
+  cursor: not-allowed;
+}
+
 .checkbox-label input[type="checkbox"] {
   appearance: none;
   width: 16px;

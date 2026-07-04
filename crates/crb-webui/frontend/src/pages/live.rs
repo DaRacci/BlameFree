@@ -5,6 +5,17 @@ use crate::{api_url, AppConfig, DashboardEvent};
 use crate::components::agent_pane::AgentPane;
 use crate::components::progress_bar::ProgressBar;
 
+/// Map a role abbreviation to a human-readable display name.
+fn role_display_name(role: &str) -> &'static str {
+    match role {
+        "SA" => "Security Auditor (SA)",
+        "CL" => "Code Logician (CL)",
+        "AR" | "ARCH" => "Architecture Reviewer (ARCH)",
+        "SEC" => "Security Evaluator (SEC)",
+        _ => role,
+    }
+}
+
 // ─── Per-PR agent state ─────────────────────────────────────────────────────
 
 /// State for a single agent (role) within a single PR.
@@ -312,9 +323,10 @@ pub fn LivePage() -> impl IntoView {
                                         });
                                         let pr_key = sel_key.clone();
                                         let role_name = role.clone();
+                                        let display_name = role_display_name(&role_name);
                                         view! {
                                             <AgentPane
-                                                name=role_name
+                                                name=display_name
                                                 status=move || status_val.clone()
                                                 response=move || resp_val.clone()
                                                 current_pr=move || Some(pr_key.clone())

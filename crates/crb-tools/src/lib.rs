@@ -763,11 +763,11 @@ use crate::budget::ToolCallBudget;
 /// Each role gets a different set of tools based on what it needs to do:
 /// - **SA** (Static Analysis): shell, read_file
 /// - **CL** (Code Logic): shell, read_file, git
-/// - **AR** (Architecture): shell, read_file, git
+/// - **AR** / **ARCH** (Architecture): shell, read_file, git
 /// - **SEC** (Security): shell, read_file, git
 pub fn tools_for_role(role: &str) -> Vec<&'static str> {
     match role {
-        "CL" | "AR" | "SEC" => vec!["shell", "read_file", "git"],
+        "CL" | "AR" | "ARCH" | "SEC" => vec!["shell", "read_file", "git"],
         _ => vec!["shell", "read_file"],
     }
 }

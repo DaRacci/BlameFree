@@ -1,6 +1,17 @@
 use leptos::*;
 use crate::{LogsListResponse, AgentLogResponse, api_url};
 
+/// Map a role abbreviation to a human-readable display name.
+fn role_display_name(role: &str) -> &'static str {
+    match role {
+        "SA" => "Security Auditor (SA)",
+        "CL" => "Code Logician (CL)",
+        "AR" | "ARCH" => "Architecture Reviewer (ARCH)",
+        "SEC" => "Security Evaluator (SEC)",
+        _ => role,
+    }
+}
+
 #[component]
 pub fn LogViewer(
     logs: LogsListResponse,
@@ -100,7 +111,7 @@ pub fn LogViewer(
                                         style="margin: 0.25rem 0;"
                                     >
                                         <summary style=style_agent_header>
-                                            {agent_name.clone()}
+                                            {role_display_name(&agent_name.clone())}
                                         </summary>
                                         <div style=style_agent_body>
                                             {move || {

@@ -118,13 +118,21 @@ pub struct NewRunResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoleInfo {
+    #[serde(default)]
+    pub abbreviation: String,
+    #[serde(default)]
+    pub incompatible_with_roles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub models: Vec<String>,
     #[serde(default)]
     pub datasets: Vec<String>,
     #[serde(default)]
-    pub roles: Vec<String>,
+    pub roles: Vec<RoleInfo>,
     /// Whether reduce-diff mode is enabled (compile-time feature flag).
     #[serde(default)]
     pub reduce_diff_enabled: bool,

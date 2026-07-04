@@ -1,4 +1,4 @@
-use crate::{api_url, AdhocReviewResponse, AppConfig, GithubPrListItem};
+use crate::{api_url, AdhocReviewResponse, AppConfig, GithubPrListItem, RoleInfo};
 use leptos::*;
 use leptos_router::*;
 
@@ -25,7 +25,7 @@ pub fn AdhocReviewPage() -> impl IntoView {
     let (repo, set_repo) = create_signal(String::new());
     let (model, set_model) = create_signal("deepseek/deepseek-v4-flash".to_string());
     let (selected_roles, set_selected_roles) = create_signal::<Vec<String>>(Vec::new());
-    let (available_roles, set_available_roles) = create_signal::<Vec<String>>(Vec::new());
+    let (available_roles, set_available_roles) = create_signal::<Vec<RoleInfo>>(Vec::new());
     let (loading, set_loading) = create_signal(false);
     let (error, set_error) = create_signal::<Option<String>>(None);
 
@@ -48,6 +48,26 @@ pub fn AdhocReviewPage() -> impl IntoView {
             }
         }
     });
+
+    let is_role_disabled = move |role_abbr: &str, role_infos: &Vec<RoleInfo>| -> bool {
+        let selected = selected_roles.get();
+        if selected.contains(&role_abbr.to_string()) {
+            return false;
+        }
+        for s in &selected {
+            if let Some(info) = role_infos.iter().find(|r| r.abbreviation == *s) {
+                if info.incompatible_with_roles.contains(&role_abbr.to_string()) {
+                    return true;
+                }
+            }
+            if let Some(info) = role_infos.iter().find(|r| r.abbreviation == role_abbr) {
+                if info.incompatible_with_roles.contains(s) {
+                    return true;
+                }
+            }
+        }
+        false
+    };
 
     let toggle_role = move |role: &str| {
         let role = role.to_string();
@@ -360,21 +380,63 @@ pub fn AdhocReviewPage() -> impl IntoView {
                     <div class="form-field">
                         <label class="form-field__label">"Roles / Agents"</label>
                         <div class="checkbox-group">
-                            {move || available_roles.get().iter().map(|role| {
-                                let role_clone = role.clone();
-                                let checked = is_role_selected(role);
-                                let display_role = role.clone();
-                                view! {
-                                    <label class="checkbox-label">
-                                        <input
-                                            type="checkbox"
-                                            checked=checked
-                                            on:click=move |_| toggle_role(&role_clone)
-                                        />
-                                        <span>{display_role}</span>
-                                    </label>
-                                }
-                            }).collect::<Vec<_>>()}
+                            {move || {
+                                let role_infos = available_roles.get();
+                                let role_infos_cloned = role_infos.clone();
+                                role_infos.iter().map(|role_info| {
+                                    let abbr = role_info.abbreviation.clone();
+                                    let checked = is_role_selected(&abbr);
+                                    let disabled = is_role_disabled(&abbr, &role_infos_cloned);
+                                    let title = if disabled {
+                                        let incompatible_with = role_infos_cloned.iter()
+                                            .filter(|ri| {
+                                                let selected = selected_roles.get();
+                                                selected.contains(&ri.abbreviation)
+                                                    && ri.incompatible_with_roles.contains(&abbr)
+                                            })
+                                            .map(|ri| ri.abbreviation.clone())
+                                            .chain(
+                                                role_infos_cloned.iter()
+                                                    .filter(|ri| {
+                                                        let selected = selected_roles.get();
+                                                        ri.abbreviation == abbr
+                                                            && selected.iter().any(|s| ri.incompatible_with_roles.contains(s))
+                                                    })
+                                                    .flat_map(|ri| {
+                                                        let selected = selected_roles.get();
+                                                        let s = ri.incompatible_with_roles.iter()
+                                                            .filter(|ir| selected.contains(ir))
+                                                            .cloned()
+                                                            .collect::<Vec<_>>();
+                                                        s
+                                                    })
+                                            )
+                                            .collect::<Vec<_>>();
+                                        format!("Incompatible with: {}", incompatible_with.join(", "))
+                                    } else {
+                                        String::new()
+                                    };
+                                    view! {
+                                        <label class=move || {
+                                            format!("checkbox-label{}",
+                                                if is_role_disabled(&abbr, &role_infos_cloned) { " checkbox-label--disabled" } else { "" }
+                                            )
+                                        }>
+                                            <input
+                                                type="checkbox"
+                                                checked=checked
+                                                disabled=disabled
+                                                on:click=move |_| {
+                                                    if !is_role_disabled(&abbr, &role_infos_cloned) {
+                                                        toggle_role(&abbr)
+                                                    }
+                                                }
+                                            />
+                                            <span title=title>{abbr.clone()}</span>
+                                        </label>
+                                    }
+                                }).collect::<Vec<_>>()
+                            }}
                         </div>
                         <p class="form-field__helper">"Select at least one role for this review."</p>
                     </div>

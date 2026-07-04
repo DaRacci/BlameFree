@@ -625,7 +625,7 @@ pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>
     let roles = vec![
         "SA".to_string(),
         "CL".to_string(),
-        "AR".to_string(),
+        "ARCH".to_string(),
         "SEC".to_string(),
     ];
     let params = ReviewParams {

@@ -1,4 +1,4 @@
-use crate::{api_url, AppConfig, DatasetInfo, NewRunRequest, NewRunResponse, PrEntry, ReasoningEffortsResponse};
+use crate::{api_url, AppConfig, DatasetInfo, NewRunRequest, NewRunResponse, PrEntry, ReasoningEffortsResponse, RoleInfo};
 use leptos::*;
 use leptos_router::*;
 
@@ -199,6 +199,29 @@ pub fn NewRunPage() -> impl IntoView {
         },
     );
 
+    let is_role_disabled = move |role_abbr: &str, role_infos: &Vec<RoleInfo>| -> bool {
+        let selected = roles.get();
+        // If role is already selected, it shouldn't be disabled (user can deselect it)
+        if selected.contains(&role_abbr.to_string()) {
+            return false;
+        }
+        for s in &selected {
+            // Direct: does the selected role list `role_abbr` as incompatible?
+            if let Some(info) = role_infos.iter().find(|r| r.abbreviation == *s) {
+                if info.incompatible_with_roles.contains(&role_abbr.to_string()) {
+                    return true;
+                }
+            }
+            // Reverse: does `role_abbr` list the selected role as incompatible?
+            if let Some(info) = role_infos.iter().find(|r| r.abbreviation == role_abbr) {
+                if info.incompatible_with_roles.contains(s) {
+                    return true;
+                }
+            }
+        }
+        false
+    };
+
     let toggle_role = move |role: &str| {
         let r = role.to_string();
         set_roles.update(|roles| {
@@ -368,28 +391,75 @@ pub fn NewRunPage() -> impl IntoView {
                     <div class="form-section__fields">
                         {move || {
                             let cfg = config.get();
-                            let roles_list: Vec<String> = if let Some(ref c) = cfg {
+                            let role_infos: Vec<RoleInfo> = if let Some(ref c) = cfg {
                                 c.roles.clone()
                             } else {
-                                vec!["SA".into(), "CL".into(), "AR".into(), "SEC".into()]
+                                vec![
+                                    RoleInfo { abbreviation: "ARCH".to_string(), incompatible_with_roles: vec![] },
+                                    RoleInfo { abbreviation: "CL".to_string(), incompatible_with_roles: vec![] },
+                                    RoleInfo { abbreviation: "GEN".to_string(), incompatible_with_roles: vec!["SA".to_string(), "CL".to_string(), "ARCH".to_string(), "SEC".to_string()] },
+                                    RoleInfo { abbreviation: "SA".to_string(), incompatible_with_roles: vec![] },
+                                    RoleInfo { abbreviation: "SEC".to_string(), incompatible_with_roles: vec![] },
+                                ]
                             };
+                            let role_infos_cloned = role_infos.clone();
                             view! {
                                 <div class="form-field">
                                     <label class="form-field__label">"Roles / Agents"</label>
                                     <div class="checkbox-group">
-                                        {roles_list.into_iter().map(|r| {
-                                            let checked = roles.get().contains(&r);
+                                        {role_infos.into_iter().map(|r| {
+                                            let abbr = r.abbreviation.clone();
+                                            let checked = roles.get().contains(&abbr);
+                                            let disabled = is_role_disabled(&abbr, &role_infos_cloned);
+                                            let title = if disabled {
+                                                let incompatible_with = role_infos_cloned.iter()
+                                                    .filter(|ri| {
+                                                        let selected = roles.get();
+                                                        selected.contains(&ri.abbreviation)
+                                                            && ri.incompatible_with_roles.contains(&abbr)
+                                                    })
+                                                    .map(|ri| ri.abbreviation.clone())
+                                                    .chain(
+                                                        role_infos_cloned.iter()
+                                                            .filter(|ri| {
+                                                                let selected = roles.get();
+                                                                ri.abbreviation == abbr
+                                                                    && selected.iter().any(|s| ri.incompatible_with_roles.contains(s))
+                                                            })
+                                                            .flat_map(|ri| {
+                                                                let selected = roles.get();
+                                                                let s = ri.incompatible_with_roles.iter()
+                                                                    .filter(|ir| selected.contains(ir))
+                                                                    .cloned()
+                                                                    .collect::<Vec<_>>();
+                                                                s
+                                                            })
+                                                    )
+                                                    .collect::<Vec<_>>();
+                                                format!("Incompatible with: {}", incompatible_with.join(", "))
+                                            } else {
+                                                String::new()
+                                            };
                                             view! {
-                                                <label class="checkbox-label">
+                                                <label class=move || {
+                                                    format!("checkbox-label{}",
+                                                        if is_role_disabled(&abbr, &role_infos_cloned) { " checkbox-label--disabled" } else { "" }
+                                                    )
+                                                }>
                                                     <input
                                                         type="checkbox"
                                                         prop:checked=checked
+                                                        disabled=disabled
                                                         on:click={
-                                                            let r_clone = r.clone();
-                                                            move |_| toggle_role(&r_clone)
+                                                            let abbr_clone = abbr.clone();
+                                                            move |_| {
+                                                                if !is_role_disabled(&abbr_clone, &role_infos_cloned) {
+                                                                    toggle_role(&abbr_clone)
+                                                                }
+                                                            }
                                                         }
                                                     />
-                                                    {r}
+                                                    <span title=title>{abbr}</span>
                                                 </label>
                                             }
                                         }).collect::<Vec<_>>()}
@@ -620,10 +690,11 @@ async fn get_config() -> Result<AppConfig, String> {
             ],
             datasets: vec!["swir-bench".into(), "code-review-bench".into()],
             roles: vec![
-                "SA".into(),
-                "CL".into(),
-                "AR".into(),
-                "SEC".into(),
+                RoleInfo { abbreviation: "ARCH".to_string(), incompatible_with_roles: vec![] },
+                RoleInfo { abbreviation: "CL".to_string(), incompatible_with_roles: vec![] },
+                RoleInfo { abbreviation: "GEN".to_string(), incompatible_with_roles: vec!["SA".to_string(), "CL".to_string(), "ARCH".to_string(), "SEC".to_string()] },
+                RoleInfo { abbreviation: "SA".to_string(), incompatible_with_roles: vec![] },
+                RoleInfo { abbreviation: "SEC".to_string(), incompatible_with_roles: vec![] },
             ],
             reduce_diff_enabled: false,
             auth_enabled: false,
