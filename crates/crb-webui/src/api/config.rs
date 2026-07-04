@@ -4,17 +4,9 @@ use std::path::Path;
 
 use axum::extract::{Path as AxumPath, State};
 use axum::Json;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::server::AppState;
-
-/// Information about an available role/agent.
-#[derive(Debug, Clone, Serialize)]
-pub struct RoleInfo {
-    pub abbreviation: String,
-    #[serde(default)]
-    pub incompatible_with_roles: Vec<String>,
-}
 
 /// Available configuration options.
 #[derive(Debug, Clone, Serialize)]
@@ -29,11 +21,8 @@ pub struct ConfigResponse {
     pub auth_enabled: bool,
 }
 
-/// Response for GET /api/config/reasoning-efforts.
-#[derive(Debug, Clone, Serialize)]
-pub struct ReasoningEffortsResponse {
-    pub levels: Vec<String>,
-}
+pub use crb_shared::ReasoningEffortsResponse;
+pub use crb_shared::RoleInfo;
 
 /// Information about an available model.
 #[derive(Debug, Clone, Serialize)]
@@ -42,35 +31,10 @@ pub struct ModelInfo {
     pub name: String,
 }
 
-/// Per-dataset config loaded from dataset.toml
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DatasetConfig {
-    #[serde(default)]
-    pub defaults: DatasetDefaults,
-}
-
-/// Default values that auto-fill the New Run form when a dataset is selected.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct DatasetDefaults {
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default)]
-    pub concurrency: Option<usize>,
-    #[serde(default)]
-    pub max_findings: Option<usize>,
-    #[serde(default)]
-    pub roles: Option<String>,
-}
-
-/// Information about an available dataset.
-#[derive(Debug, Clone, Serialize)]
-pub struct DatasetInfo {
-    pub id: String,
-    pub path: String,
-    pub pr_count: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub config: Option<DatasetConfig>,
-}
+pub use crb_shared::DatasetConfig;
+pub use crb_shared::DatasetDefaults;
+pub use crb_shared::DatasetInfo;
+pub use crb_shared::PrEntry;
 
 /// GET /api/config — list available models, datasets, and roles.
 pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
@@ -107,11 +71,31 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
         })
         .unwrap_or_else(|_| {
             vec![
-                RoleInfo { abbreviation: "ARCH".to_string(), incompatible_with_roles: vec![] },
-                RoleInfo { abbreviation: "CL".to_string(), incompatible_with_roles: vec![] },
-                RoleInfo { abbreviation: "GEN".to_string(), incompatible_with_roles: vec!["SA".to_string(), "CL".to_string(), "ARCH".to_string(), "SEC".to_string()] },
-                RoleInfo { abbreviation: "SA".to_string(), incompatible_with_roles: vec![] },
-                RoleInfo { abbreviation: "SEC".to_string(), incompatible_with_roles: vec![] },
+                RoleInfo {
+                    abbreviation: "ARCH".to_string(),
+                    incompatible_with_roles: vec![],
+                },
+                RoleInfo {
+                    abbreviation: "CL".to_string(),
+                    incompatible_with_roles: vec![],
+                },
+                RoleInfo {
+                    abbreviation: "GEN".to_string(),
+                    incompatible_with_roles: vec![
+                        "SA".to_string(),
+                        "CL".to_string(),
+                        "ARCH".to_string(),
+                        "SEC".to_string(),
+                    ],
+                },
+                RoleInfo {
+                    abbreviation: "SA".to_string(),
+                    incompatible_with_roles: vec![],
+                },
+                RoleInfo {
+                    abbreviation: "SEC".to_string(),
+                    incompatible_with_roles: vec![],
+                },
             ]
         });
 
@@ -174,18 +158,12 @@ fn load_dataset_config(dir: &Path) -> Option<DatasetConfig> {
         Ok(content) => match toml::from_str::<DatasetConfig>(&content) {
             Ok(cfg) => Some(cfg),
             Err(e) => {
-                tracing::warn!(
-                    "Failed to parse dataset.toml in {}: {e}",
-                    dir.display()
-                );
+                tracing::warn!("Failed to parse dataset.toml in {}: {e}", dir.display());
                 None
             }
         },
         Err(e) => {
-            tracing::warn!(
-                "Failed to read dataset.toml in {}: {e}",
-                dir.display()
-            );
+            tracing::warn!("Failed to read dataset.toml in {}: {e}", dir.display());
             None
         }
     }
@@ -215,7 +193,8 @@ fn count_prs_in_dir(dir: &Path) -> usize {
                             }
                             serde_json::Value::Object(obj) => {
                                 // Also support {"entries": [...]} format
-                                if let Some(entries) = obj.get("entries").and_then(|v| v.as_array()) {
+                                if let Some(entries) = obj.get("entries").and_then(|v| v.as_array())
+                                {
                                     count += entries.len();
                                 }
                             }
@@ -227,16 +206,6 @@ fn count_prs_in_dir(dir: &Path) -> usize {
         }
     }
     count
-}
-
-/// A single PR entry returned by GET /api/datasets/:id/prs.
-#[derive(Debug, Clone, Serialize)]
-pub struct PrEntry {
-    pub key: String,
-    pub url: String,
-    pub title: String,
-    pub repo: String,
-    pub pr_number: u32,
 }
 
 /// GET /api/datasets/:id/prs — list all PRs in a dataset.
@@ -272,18 +241,15 @@ pub async fn list_dataset_prs(
 fn read_prs_from_json(path: &Path, content: &str, prs: &mut Vec<PrEntry>) {
     // Try parsing as array first
     let items: Vec<serde_json::Value> = match serde_json::from_str(content) {
-        Ok(val) => {
-            match val {
-                serde_json::Value::Array(arr) => arr,
-                serde_json::Value::Object(obj) => {
-                    obj.get("entries")
-                        .and_then(|v| v.as_array())
-                        .cloned()
-                        .unwrap_or_default()
-                }
-                _ => return,
-            }
-        }
+        Ok(val) => match val {
+            serde_json::Value::Array(arr) => arr,
+            serde_json::Value::Object(obj) => obj
+                .get("entries")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default(),
+            _ => return,
+        },
         Err(_) => return,
     };
 

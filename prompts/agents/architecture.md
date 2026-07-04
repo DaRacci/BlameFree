@@ -1,5 +1,5 @@
 ---
-role_name: Architecture
+role_name: Architecture Reviewer
 role_abbreviation: ARCH
 role_domain: "**cross-file consistency violations**: API breaks, layering violations, circular dependencies, contract violations, and design pattern misuse that affects callers or consumers outside the changed file."
 role_anti_hallucination_rules: |

@@ -19,9 +19,9 @@ use rig_core::client::ProviderClient;
 use tokio::sync::{broadcast, RwLock};
 
 use crate::api::BenchmarkConfig;
+use crate::events::AggregateMetrics;
 use crate::events::DashboardEvent;
 use crate::events::MetricsData;
-use crate::events::AggregateMetrics;
 use crate::server::ActiveRun;
 use crate::server::AppState;
 
@@ -65,9 +65,7 @@ pub async fn run_harness(
 
     // ── Prompt library (embedded at compile time) ───────────────────────────────
     let prompts_dir = Path::new(&config.prompts_dir);
-    let prompt_lib = Arc::new(
-        PromptLibrary::new().expect("Embedded prompts should be available"),
-    );
+    let prompt_lib = Arc::new(PromptLibrary::new().expect("Embedded prompts should be available"));
 
     // ── Rule loading ─────────────────────────────────────────────────────────
     let ruleset = {
@@ -118,60 +116,61 @@ pub async fn run_harness(
 
     // ── PR filter ─────────────────────────────────────────────────────────────
     use std::collections::HashSet;
-    let filtered_prs: Vec<crb_reporting::GoldenCommentEntry> = if let Some(ref filter) = config.pr_filter {
-        let filter_patterns: HashSet<String> = filter
-            .split(',')
-            .map(|s| s.trim().to_lowercase())
-            .collect();
+    let filtered_prs: Vec<crb_reporting::GoldenCommentEntry> =
+        if let Some(ref filter) = config.pr_filter {
+            let filter_patterns: HashSet<String> =
+                filter.split(',').map(|s| s.trim().to_lowercase()).collect();
 
-        let available_urls: Vec<String> = all_prs.iter().map(|pr| pr.url.clone()).collect();
+            let available_urls: Vec<String> = all_prs.iter().map(|pr| pr.url.clone()).collect();
 
-        let filtered: Vec<_> = all_prs
-            .into_iter()
-            .filter(|pr| {
-                let url_lower = pr.url.to_lowercase();
-                filter_patterns.iter().any(|pattern| {
-                    if let Some((repo_part, pr_num_str)) = pattern.split_once("/pull/") {
-                        if let Ok(pr_num) = pr_num_str.parse::<u32>() {
-                            let pr_tag = format!("/pull/{}", pr_num);
-                            if let Some(pos) = url_lower.find(&pr_tag) {
-                                let after = &url_lower[pos + pr_tag.len()..];
-                                if after.is_empty() || !after.chars().next().unwrap().is_ascii_digit() {
-                                    if url_lower.contains(repo_part) {
-                                        return true;
+            let filtered: Vec<_> = all_prs
+                .into_iter()
+                .filter(|pr| {
+                    let url_lower = pr.url.to_lowercase();
+                    filter_patterns.iter().any(|pattern| {
+                        if let Some((repo_part, pr_num_str)) = pattern.split_once("/pull/") {
+                            if let Ok(pr_num) = pr_num_str.parse::<u32>() {
+                                let pr_tag = format!("/pull/{}", pr_num);
+                                if let Some(pos) = url_lower.find(&pr_tag) {
+                                    let after = &url_lower[pos + pr_tag.len()..];
+                                    if after.is_empty()
+                                        || !after.chars().next().unwrap().is_ascii_digit()
+                                    {
+                                        if url_lower.contains(repo_part) {
+                                            return true;
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                    // Exact match only — fall through to exact PR number or URL suffix matching.
-                    // This avoids substring bugs where "1" matches "/pull/10".
-                    if let Ok(num) = pattern.parse::<u32>() {
-                        // Bare number: match exactly against the PR number extracted from the URL.
-                        url_lower
-                            .rsplit('/')
-                            .next()
-                            .and_then(|s| s.parse::<u32>().ok())
-                            == Some(num)
-                    } else {
-                        // Non-numeric fallback: exact URL suffix match (e.g. "repo/pull/1").
-                        url_lower.ends_with(&format!("/{}", pattern))
-                    }
+                        // Exact match only — fall through to exact PR number or URL suffix matching.
+                        // This avoids substring bugs where "1" matches "/pull/10".
+                        if let Ok(num) = pattern.parse::<u32>() {
+                            // Bare number: match exactly against the PR number extracted from the URL.
+                            url_lower
+                                .rsplit('/')
+                                .next()
+                                .and_then(|s| s.parse::<u32>().ok())
+                                == Some(num)
+                        } else {
+                            // Non-numeric fallback: exact URL suffix match (e.g. "repo/pull/1").
+                            url_lower.ends_with(&format!("/{}", pattern))
+                        }
+                    })
                 })
-            })
-            .collect();
+                .collect();
 
-        if filtered.is_empty() {
-            tracing::warn!(
-                "--pr-filter \"{}\" matched no PRs. Available URLs:\n  {}",
-                filter,
-                available_urls.join("\n  ")
-            );
-        }
-        filtered
-    } else {
-        all_prs
-    };
+            if filtered.is_empty() {
+                tracing::warn!(
+                    "--pr-filter \"{}\" matched no PRs. Available URLs:\n  {}",
+                    filter,
+                    available_urls.join("\n  ")
+                );
+            }
+            filtered
+        } else {
+            all_prs
+        };
 
     tracing::info!("After PR filter: {} PR(s) to evaluate", filtered_prs.len());
 
@@ -189,7 +188,7 @@ pub async fn run_harness(
 
     let total_prs = filtered_prs.len();
 
-    // ── Event bridge: harness → web UI ─────────────────────────────────────
+    // ── Event bridge: harness -> web UI ─────────────────────────────────────
     // The library emits `crb_dashboard::DashboardEvent`; we convert and
     // forward to the SSE broadcast channel.
     let (harness_tx, mut harness_rx) = broadcast::channel::<HarnessEvent>(256);
@@ -221,9 +220,7 @@ pub async fn run_harness(
     // subdirectory, which is the standard project convention (contains
     // base-repos/, diffs/, worktrees/).
     let bench_dir = benchmark_dir.unwrap_or_else(|| {
-        tracing::warn!(
-            "No --benchmark-dir set; defaulting to 'benchmark/' directory"
-        );
+        tracing::warn!("No --benchmark-dir set; defaulting to 'benchmark/' directory");
         Path::new("benchmark")
     });
 
@@ -308,8 +305,10 @@ pub async fn run_harness(
                 total_agent_calls += 4;
                 if let Some(ref c) = result.cost {
                     total_cost += c.total_usd;
-                    total_tokens +=
-                        c.agent_tokens_in + c.agent_tokens_out + c.judge_tokens_in + c.judge_tokens_out;
+                    total_tokens += c.agent_tokens_in
+                        + c.agent_tokens_out
+                        + c.judge_tokens_in
+                        + c.judge_tokens_out;
                 }
 
                 results.push(result);
@@ -398,9 +397,9 @@ pub async fn run_harness(
     let _ = webui_tx.send(DashboardEvent::RunFinished {
         total_prs: results.len(),
         aggregated: AggregateMetrics {
-            total_tp,
-            total_fp,
-            total_fn,
+            true_positives: total_tp,
+            false_positives: total_fp,
+            false_negatives: total_fn,
             precision: avg_precision,
             recall: avg_recall,
             f1: avg_f1,
@@ -426,9 +425,15 @@ fn convert_harness_event(event: HarnessEvent) -> Option<DashboardEvent> {
         HarnessEvent::AgentChunk { role, chunk } => {
             Some(DashboardEvent::AgentChunk { role, chunk })
         }
-        HarnessEvent::AgentFinished { role, findings, success } => {
-            Some(DashboardEvent::AgentFinished { role, findings, success })
-        }
+        HarnessEvent::AgentFinished {
+            role,
+            findings,
+            success,
+        } => Some(DashboardEvent::AgentFinished {
+            role,
+            findings,
+            success,
+        }),
         HarnessEvent::PrCompleted {
             pr_key,
             metrics,
@@ -436,45 +441,34 @@ fn convert_harness_event(event: HarnessEvent) -> Option<DashboardEvent> {
             total_tokens,
             agent_calls,
             findings_count,
-        } => {
-            Some(DashboardEvent::PrCompleted {
-                pr_key,
-                metrics: MetricsData {
-                    true_positives: metrics.true_positives,
-                    false_positives: metrics.false_positives,
-                    false_negatives: metrics.false_negatives,
-                    precision: metrics.precision,
-                    recall: metrics.recall,
-                    f1: metrics.f1,
-                },
-                cost,
-                total_tokens,
-                agent_calls,
-                findings_count,
-            })
-        }
+        } => Some(DashboardEvent::PrCompleted {
+            pr_key,
+            metrics: MetricsData {
+                true_positives: metrics.true_positives,
+                false_positives: metrics.false_positives,
+                false_negatives: metrics.false_negatives,
+                precision: metrics.precision,
+                recall: metrics.recall,
+                f1: metrics.f1,
+            },
+            cost,
+            total_tokens,
+            agent_calls,
+            findings_count,
+        }),
         HarnessEvent::RunFinished {
             total_prs,
             aggregated,
             total_cost,
             total_tokens,
             total_agent_calls,
-        } => {
-            Some(DashboardEvent::RunFinished {
-                total_prs,
-                aggregated: AggregateMetrics {
-                    total_tp: aggregated.total_tp,
-                    total_fp: aggregated.total_fp,
-                    total_fn: aggregated.total_fn,
-                    precision: aggregated.precision,
-                    recall: aggregated.recall,
-                    f1: aggregated.f1,
-                },
-                total_cost,
-                total_tokens,
-                total_agent_calls,
-            })
-        }
+        } => Some(DashboardEvent::RunFinished {
+            total_prs,
+            aggregated,
+            total_cost,
+            total_tokens,
+            total_agent_calls,
+        }),
     }
 }
 
@@ -511,9 +505,7 @@ pub async fn run_replay_via_library(
     let judge = build_judge(&client, model);
 
     // Use a default prompt library (built-in prompts)
-    let prompt_lib = Arc::new(
-        PromptLibrary::new().expect("Embedded prompts should be available"),
-    );
+    let prompt_lib = Arc::new(PromptLibrary::new().expect("Embedded prompts should be available"));
 
     // No rules or linters for replay
     let ruleset: Option<RuleSet> = None;

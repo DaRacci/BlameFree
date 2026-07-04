@@ -44,7 +44,7 @@ A web dashboard solves all of these with a single browser interface.
 ## Key Design Decisions
 
 1. **Leptos + axum** — Leptos provides isomorphic Rust WASM with SSR-like hydration. Axum is chosen for its async SSE support and ecosystem.
-2. **SSE over WebSocket** — SSE is simpler to implement, works with standard HTTP, and fits the server→client streaming pattern (no bidirectional communication needed).
+2. **SSE over WebSocket** — SSE is simpler to implement, works with standard HTTP, and fits the server->client streaming pattern (no bidirectional communication needed).
 3. **Subprocess management** — The backend spawns `crb-harness --dashboard-events` as a subprocess and reads JSON events from its stdout. This decouples the harness from the web UI.
 4. **Filesystem-based persistence** — Past runs are discovered by scanning the `output/` directory for per-PR JSON files and aggregate summaries.
 5. **Optional `--dashboard-events` flag on crb-harness** — When set, the harness outputs structured JSON events (one per line) to stdout instead of (or in addition to) tracing output.

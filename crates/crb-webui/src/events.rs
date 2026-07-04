@@ -11,16 +11,10 @@ use serde::{Deserialize, Serialize};
 pub enum DashboardEvent {
     /// An agent has started its review for a given PR.
     #[serde(rename = "agent_started")]
-    AgentStarted {
-        pr_key: String,
-        role: String,
-    },
+    AgentStarted { pr_key: String, role: String },
     /// A chunk of streaming response text from an agent.
     #[serde(rename = "agent_chunk")]
-    AgentChunk {
-        role: String,
-        chunk: String,
-    },
+    AgentChunk { role: String, chunk: String },
     /// An agent has finished its review.
     #[serde(rename = "agent_finished")]
     AgentFinished {
@@ -70,15 +64,7 @@ pub struct MetricsData {
 }
 
 /// Aggregate metrics across all PRs.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct AggregateMetrics {
-    pub total_tp: usize,
-    pub total_fp: usize,
-    pub total_fn: usize,
-    pub precision: f64,
-    pub recall: f64,
-    pub f1: f64,
-}
+pub use crb_dashboard::AggregateMetrics;
 
 /// Parse a single line of JSON from the harness subprocess stdout.
 ///

@@ -7,14 +7,12 @@ edition = "2021"
 name = "crb_auditor"
 path = "src/lib.rs"
 
-[[bin]]
-name = "crb-auditor"
-path = "src/main.rs"
-
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
 regex = { workspace = true }
-clap = { workspace = true }
-once_cell = { workspace = true }
-crb-agents = { path = "../crb-agents" }
+crb-tools = { path = "../crb-tools" }
+crb-shared = { path = "../crb-shared" }
+
+[lints]
+workspace = true

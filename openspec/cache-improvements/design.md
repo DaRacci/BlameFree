@@ -10,57 +10,57 @@ New cache management capabilities are added to `crb-harness/src/cache.rs` (core 
 |---|---|---|
 | LlmCache methods | `crates/crb-harness/src/cache.rs` | Add stats(), prune(), scrub(), backup(), restore(), rebuild() |
 | CLI subcommands | `crates/crb-benchmark/src/main.rs` | Commands enum: CacheStats, CachePrune, CacheScrub, CacheBackup, CacheRestore, CacheRebuild; extend Clean with --outputs |
-| Summary/history | `crates/crb-harness/src/lib.rs` | write_summary() → append to _runs.json |
+| Summary/history | `crates/crb-harness/src/lib.rs` | write_summary() -> append to _runs.json |
 | Helpers | `crates/crb-reporting/src/lib.rs` | Per-PR metadata writing helpers |
 
 ## Data Flow
 
 ### Cache Stats
 ```
-cli → LlmCache::stats(base_dir) → walks all PR dirs
-  → reads each index.json → computes per-PR & total stats
-  → returns CacheStats struct → table or --json output
+cli -> LlmCache::stats(base_dir) -> walks all PR dirs
+  -> reads each index.json -> computes per-PR & total stats
+  -> returns CacheStats struct -> table or --json output
 ```
 
 ### Cache Prune
 ```
-cli → LlmCache::prune(base_dir, options) → for each PR dir:
-  → apply criteria: age (timestamp), --max-size, --max-prs
-  → --dry-run: print what would be removed
-  → actual: remove files, update index.json, remove empty PR dirs
+cli -> LlmCache::prune(base_dir, options) -> for each PR dir:
+  -> apply criteria: age (timestamp), --max-size, --max-prs
+  -> --dry-run: print what would be removed
+  -> actual: remove files, update index.json, remove empty PR dirs
 ```
 
 ### Cache Scrub
 ```
-cli → LlmCache::scrub(base_dir) → for each PR dir:
-  → read index.json → verify every file_path exists on disk
-  → find orphan files (on disk but not in index)
-  → detect/rebuild corrupted index.json from filesystem scan
+cli -> LlmCache::scrub(base_dir) -> for each PR dir:
+  -> read index.json -> verify every file_path exists on disk
+  -> find orphan files (on disk but not in index)
+  -> detect/rebuild corrupted index.json from filesystem scan
 ```
 
 ### Clean --outputs
 ```
-extend existing run_clean() → add --outputs flag that nukes output/ dir contents
+extend existing run_clean() -> add --outputs flag that nukes output/ dir contents
 ```
 
 ### Cache Backup / Restore
 ```
-backup: timestamped tarball of cache_dir → backup_{timestamp}.tar.gz
-restore: extract tarball → overwrite cache_dir or restore to new location
+backup: timestamped tarball of cache_dir -> backup_{timestamp}.tar.gz
+restore: extract tarball -> overwrite cache_dir or restore to new location
 ```
 
 ### Run History (Batch 2)
 ```
-write_summary() → also append entry to cache_dir/_runs.json array
+write_summary() -> also append entry to cache_dir/_runs.json array
   each entry: { run_id, timestamp, model, judge_model, total_prs, duration_secs, total_cost_usd, ... }
 _runs.json is append-only, read/modify/write (small file, acceptable)
 ```
 
 ### Cache Rebuild (Batch 3, experimental)
 ```
-cache-rebuild: iterate all index.json entries → compute new cache keys
-  → if prompt hash migration needed → re-save entries with new keys
-  → optional --dry-run
+cache-rebuild: iterate all index.json entries -> compute new cache keys
+  -> if prompt hash migration needed -> re-save entries with new keys
+  -> optional --dry-run
 ```
 
 ## Dependencies

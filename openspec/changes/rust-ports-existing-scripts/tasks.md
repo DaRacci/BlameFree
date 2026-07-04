@@ -52,9 +52,9 @@
 ### Core Functions
 - [x] `fn severity_value(severity: &Severity) -> u8` — Critical=0, High=1, Medium=2, Low=3
 - [x] `fn has_never_downgrade_pattern(finding: &Finding) -> Option<&'static str>` — check text+evidence against all protections
-- [x] `fn match_inflated_pattern(finding: &Finding) -> Option<&'static InflatedCategory>` — check text+evidence against all inflated categories
+- [x] `fn has_inflated_pattern(finding: &Finding) -> Option<&'static InflatedCategory>` — check text+evidence against all inflated categories
 - [x] `fn compute_new_severity(current: Severity, quantum: i32) -> Severity` — apply downgrade, clamped
-- [x] `fn apply_severity_auditor(findings: Vec<Finding>) -> Vec<Finding>` — full pipeline (NEVER_DOWNGRADE → multi-agent Critical → INFLATED_PATTERNS → downgrade)
+- [x] `fn apply_severity_auditor(findings: Vec<Finding>) -> Vec<Finding>` — full pipeline (NEVER_DOWNGRADE -> multi-agent Critical -> INFLATED_PATTERNS -> downgrade)
 - [x] `fn format_severity_audit_report(before: &[Finding], after: &[Finding]) -> String` — human-readable report
 
 ## Harness Integration
@@ -84,10 +84,10 @@
 - [ ] `test_semantic_dedup_jaccard` — dedup by text similarity at 0.4 threshold
 - [ ] `test_semantic_dedup_keeps_richest` — longest text, has line, has evidence
 - [ ] `test_semantic_dedup_cross_validation` — combines agent counts
-- [x] `test_parse_report_table_format` — valid table report → findings
-- [x] `test_parse_report_bullet_format` — valid bullet report → findings
-- [x] `test_parse_report_json_format` — valid JSON report → findings
-- [x] `test_parse_report_empty` — empty/garbage text → empty vec
+- [x] `test_parse_report_table_format` — valid table report -> findings
+- [x] `test_parse_report_bullet_format` — valid bullet report -> findings
+- [x] `test_parse_report_json_format` — valid JSON report -> findings
+- [x] `test_parse_report_empty` — empty/garbage text -> empty vec
 - [ ] `test_parse_report_stops_at_notes` — stops at "## Notes" section
 - [x] `test_format_candidate_basic` — badge + source
 - [x] `test_format_candidate_cross_validated` — [cross-validated] when cross_validated_by >= 2
@@ -98,17 +98,17 @@
 - [x] `test_has_never_downgrade_security` — SQL injection, XSS, RCE patterns found
 - [x] `test_has_never_downgrade_data_integrity` — race condition, deadlock patterns found
 - [x] `test_has_never_downgrade_correctness` — null pointer, crash patterns found
-- [x] `test_has_never_downgrade_no_match` — style nit text → None
+- [x] `test_has_never_downgrade_no_match` — style nit text -> None
 - [ ] `test_has_never_downgrade_in_evidence` — pattern in evidence, not text
-- [x] `test_match_inflated_architecture` — SRP violation, God class → architecture_nits
-- [x] `test_match_inflated_hypothetical` — "could cause" → hypothetical_theoretical
-- [x] `test_match_inflated_style` — naming convention, formatting → style_nits
-- [x] `test_match_inflated_no_match` — genuine bug text → None
+- [x] `test_match_inflated_architecture` — SRP violation, God class -> architecture_nits
+- [x] `test_match_inflated_hypothetical` — "could cause" -> hypothetical_theoretical
+- [x] `test_match_inflated_style` — naming convention, formatting -> style_nits
+- [x] `test_match_inflated_no_match` — genuine bug text -> None
 - [x] `test_apply_severity_auditor_protected` — SQL injection finding not downgraded
-- [x] `test_apply_severity_auditor_multi_agent_critical` — Critical with 3 agents → not downgraded
-- [x] `test_apply_severity_auditor_architecture_downgrade` — HIGH SRP → LOW (-2)
-- [x] `test_apply_severity_auditor_hypothetical_downgrade` — HIGH "could cause" → MEDIUM (-1)
-- [x] `test_apply_severity_auditor_style_downgrade` — HIGH naming convention → LOW (-3)
+- [x] `test_apply_severity_auditor_multi_agent_critical` — Critical with 3 agents -> not downgraded
+- [x] `test_apply_severity_auditor_architecture_downgrade` — HIGH SRP -> LOW (-2)
+- [x] `test_apply_severity_auditor_hypothetical_downgrade` — HIGH "could cause" -> MEDIUM (-1)
+- [x] `test_apply_severity_auditor_style_downgrade` — HIGH naming convention -> LOW (-3)
 - [x] `test_apply_severity_auditor_no_downgrade_above_critical` — never goes above Critical
 - [x] `test_apply_severity_auditor_no_upgrade` — Low stays Low
 - [ ] `test_apply_severity_auditor_trail_fields` — severity_audited, severity_audit_reason set

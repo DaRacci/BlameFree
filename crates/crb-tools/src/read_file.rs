@@ -15,8 +15,10 @@ use serde::Deserialize;
 pub struct ReadFileArgs {
     /// Path to the file to read (relative to repo root).
     pub path: String,
+
     /// Starting line number (1-indexed, optional).
     pub start_line: Option<u32>,
+
     /// Maximum number of lines to read (optional, defaults to 200).
     pub max_lines: Option<u32>,
 }
@@ -80,12 +82,13 @@ impl Tool for ReadFileTool {
         ToolDefinition {
             name: Self::NAME.to_string(),
             description: "Read a file from the repository. Use with optional start_line/max_lines to read specific sections rather than entire files at once. Prefer this over using the terminal tool to cat files.".to_string(),
-            parameters: serde_json::to_value(schemars::schema_for!(ReadFileArgs)).unwrap(),
+            parameters: serde_json::to_value(schemars::schema_for!(ReadFileArgs)).unwrap_or_default(),
         }
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         // Reject absolute paths
+        // TODO: check against path traversal (e.g., `..`) in addition to canonicalization
         if args.path.starts_with('/') {
             return Err(ReadFileError::IoError(format!(
                 "absolute paths not allowed: {}",
@@ -97,22 +100,21 @@ impl Tool for ReadFileTool {
             .map_err(|e| ReadFileError::IoError(e.to_string()))?;
         let target = repo_root.join(&args.path);
 
-        // Security: ensure path is within repo root
-        let target_canonical = dunce::canonicalize(&target)
-            .map_err(|e| ReadFileError::IoError(format!("cannot resolve path '{}': {e}", args.path)))?;
+        // ensure path is within repo root
+        let target_canonical = dunce::canonicalize(&target).map_err(|e| {
+            ReadFileError::IoError(format!("cannot resolve path '{}': {e}", args.path))
+        })?;
 
         if !target_canonical.starts_with(&repo_root) {
             return Err(ReadFileError::PathOutsideRepo(args.path.clone()));
         }
 
-        // Check file size
         let metadata = std::fs::metadata(&target_canonical)
             .map_err(|e| ReadFileError::IoError(e.to_string()))?;
         if metadata.len() > self.max_file_size {
             return Err(ReadFileError::FileTooLarge(metadata.len()));
         }
 
-        // Read the file
         let content = std::fs::read_to_string(&target_canonical)
             .map_err(|e| ReadFileError::IoError(e.to_string()))?;
 
@@ -123,7 +125,11 @@ impl Tool for ReadFileTool {
         let result = lines.join("\n");
 
         if lines.len() < content.lines().count() - start {
-            Ok(format!("{result}\n... (showing {} of {} lines)", lines.len(), content.lines().count()))
+            Ok(format!(
+                "{result}\n... (showing {} of {} lines)",
+                lines.len(),
+                content.lines().count()
+            ))
         } else {
             Ok(result)
         }
@@ -149,7 +155,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_file_basic() -> Result<(), ReadFileError> {
-        // Create a temp file
         let dir = tempfile::tempdir().unwrap();
         let file_path = dir.path().join("test.txt");
         let mut f = std::fs::File::create(&file_path).unwrap();

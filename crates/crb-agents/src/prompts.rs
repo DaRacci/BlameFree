@@ -1,18 +1,14 @@
-//! Embedded prompt library — prompts compiled into the binary.
-//!
-//! Agent `.md` files have YAML frontmatter that is parsed and stripped.
-//! All rendering goes through `agent.hbs`, never raw markdown.
-
 use handlebars::Handlebars;
 use include_dir::{include_dir, Dir};
 use std::collections::HashMap;
 
 use crate::manifest::{split_frontmatter, AgentEntry};
 
-/// Embedded prompts directory (compiled into binary).
 static PROMPTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../prompts");
+const AGENT_TEMPLATE_PATH: &str = "agent.hbs";
+const AGENTS_DIR: &str = "agents";
+const SECTIONS_DIR: &str = "sections";
 
-/// Embedded prompt library
 #[derive(Clone)]
 pub struct PromptLibrary {
     agents: HashMap<String, AgentEntry>,
@@ -25,14 +21,14 @@ impl PromptLibrary {
     /// or no agents are found.
     pub fn new() -> Result<Self, String> {
         let agent_template = PROMPTS_DIR
-            .get_file("builtin/handlebars/agent.hbs")
+            .get_file(AGENT_TEMPLATE_PATH)
             .ok_or("agent.hbs not found in embedded prompts")?
             .contents_utf8()
             .ok_or("agent.hbs is not valid UTF-8")?
             .to_string();
 
         let mut sections: HashMap<String, String> = HashMap::new();
-        if let Some(sections_dir) = PROMPTS_DIR.get_dir("sections") {
+        if let Some(sections_dir) = PROMPTS_DIR.get_dir(SECTIONS_DIR) {
             for entry in sections_dir.files() {
                 let name = entry
                     .path()
@@ -40,35 +36,25 @@ impl PromptLibrary {
                     .and_then(|s| s.to_str())
                     .unwrap_or_default();
                 let content = entry.contents_utf8().unwrap_or("").to_string();
-                // Map submit_findings → submit_finding for template compat
-                let key = if name == "submit_findings" {
-                    "submit_finding"
-                } else {
-                    name
-                };
-                sections.insert(key.to_string(), content);
+                sections.insert(name.to_string(), content);
             }
         }
 
         let mut agents: HashMap<String, AgentEntry> = HashMap::new();
-        if let Some(agents_dir) = PROMPTS_DIR.get_dir("agents") {
+        if let Some(agents_dir) = PROMPTS_DIR.get_dir(AGENTS_DIR) {
             for file in agents_dir.files() {
-                if file.path().extension().map_or(true, |e| e != "md") {
+                if file.path().extension().is_none_or(|e| e != "md") {
                     continue;
                 }
                 let content = file.contents_utf8().unwrap_or("");
                 if let Some((yaml_str, body)) = split_frontmatter(content) {
-                    let mut entry: AgentEntry =
-                        serde_yaml::from_str(yaml_str).unwrap_or_default();
+                    let mut entry: AgentEntry = serde_yaml::from_str(yaml_str).unwrap_or_default();
                     if entry.role_abbreviation.is_empty() {
                         continue;
                     }
                     let clean_body = body.trim().to_string();
                     entry.role_prompt = clean_body;
-                    agents.insert(
-                        entry.role_abbreviation.to_uppercase(),
-                        entry,
-                    );
+                    agents.insert(entry.role_abbreviation.to_uppercase(), entry);
                 }
             }
         }
@@ -77,12 +63,7 @@ impl PromptLibrary {
             return Err("No agents found in embedded prompts".into());
         }
 
-        let mut hb = Handlebars::new();
-        hb.set_strict_mode(false);
-        // Disable HTML escaping — markdown content often contains backticks,
-        // equals signs, and apostrophes that must be passed through raw.
-        hb.register_escape_fn(handlebars::no_escape);
-        // Register agent.hbs as "agent"
+        let mut hb = crate::templates::new_handlebars_registry();
         hb.register_template_string("agent", &agent_template)
             .map_err(|e| format!("Failed to register agent template: {e}"))?;
 
@@ -107,41 +88,45 @@ impl PromptLibrary {
 
     /// Render a role's prompt through agent.hbs.
     ///
-    /// `vars` carries runtime variables like `diff`, `file_list`, `language`.
+    /// `vars` provides runtime variables like `diff`, `file_list`, `language`
+    ///
     /// Agent context (role_name, role_abbreviation, etc.) comes from the
     /// embedded YAML frontmatter.
     ///
     /// Section content (output_format, max_findings, submit_finding) is
     /// rendered with the current context and injected as variables so that
     /// `agent.hbs` can reference them with `{{output_format}}` etc.
-    pub fn render(&self, role: &str, vars: &HashMap<String, serde_json::Value>) -> String {
+    pub fn render(&self, role: &str, vars: HashMap<String, serde_json::Value>) -> String {
         let entry = match self.agents.get(&role.to_uppercase()) {
             Some(e) => e,
             None => return format!("Unknown role: {}", role),
         };
 
         let mut ctx = serde_json::Map::new();
-        ctx.insert("role_name".into(), entry.role_name.clone().into());
-        ctx.insert(
-            "role_abbreviation".into(),
-            entry.role_abbreviation.clone().into(),
-        );
-        ctx.insert(
-            "role_domain".into(),
-            entry.role_domain.clone().into(),
-        );
-        ctx.insert(
-            "role_anti_hallucination_rules".into(),
-            entry.role_anti_hallucination_rules.clone().unwrap_or_default().into(),
-        );
-        ctx.insert(
-            "role_review_methodology".into(),
-            entry.role_review_methodology.clone().unwrap_or_default().into(),
-        );
-        ctx.insert("role_prompt".into(), entry.role_prompt.clone().into());
+        vars.into_iter().for_each(|(k, v)| {
+            ctx.insert(k, v);
+        });
 
-        for (k, v) in vars {
-            ctx.insert(k.clone(), v.clone());
+        let fields = AgentEntry::SERDE_FIELDS;
+        for field in fields {
+            ctx.insert(
+                field.to_string(),
+                match *field {
+                    "role_name" => entry.role_name.clone(),
+                    "role_abbreviation" => entry.role_abbreviation.clone(),
+                    "role_domain" => entry.role_domain.clone(),
+                    "role_anti_hallucination_rules" => entry
+                        .role_anti_hallucination_rules
+                        .clone()
+                        .unwrap_or_default(),
+                    "role_review_methodology" => {
+                        entry.role_review_methodology.clone().unwrap_or_default()
+                    }
+                    "role_prompt" => entry.role_prompt.clone(),
+                    _ => continue,
+                }
+                .into(),
+            );
         }
 
         // Render section content and inject into context.

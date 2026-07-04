@@ -1,8 +1,8 @@
-mod jaccard;
-pub use jaccard::jaccard_similarity;
-
-mod deduplicate;
-pub use deduplicate::semantic_dedup;
+pub mod deduplicate;
+pub mod finding;
+pub mod jaccard;
+pub mod pattern;
+pub mod severity;
 
 /// Sanitize a string for use as a filename.
 pub fn sanitize_filename(name: &str) -> String {

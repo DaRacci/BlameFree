@@ -12,7 +12,9 @@ pub mod matcher;
 pub mod parser;
 pub mod preamble;
 
-pub use matcher::{detect_language, detect_repo_languages};
+pub use matcher::{
+    detect_language, detect_repo_languages, language_from_str, language_to_extension, Language,
+};
 pub use parser::parse_rule_file;
 pub use preamble::format_preamble;
 
@@ -57,6 +59,7 @@ impl RuleSet {
     /// Each `.md` file is parsed via [`parse_rule_file`]; parse or I/O errors
     /// are logged via `tracing::warn!` and the offending file is skipped, so one
     /// bad file does not prevent loading the rest.
+    #[allow(clippy::cognitive_complexity)]
     pub fn load_from_dir(dir: &Path) -> anyhow::Result<Self> {
         if !dir.exists() || !dir.is_dir() {
             tracing::info!(
@@ -84,7 +87,7 @@ impl RuleSet {
             };
 
             let path = entry.path();
-            if path.extension().map_or(true, |ext| ext != "md") {
+            if path.extension().is_none_or(|ext| ext != "md") {
                 continue;
             }
 
@@ -100,10 +103,7 @@ impl RuleSet {
             match parse_rule_file(&content, &path) {
                 Ok(rule) => rules.push(rule),
                 Err(e) => {
-                    tracing::warn!(
-                        "Failed to parse rule file {}: {e}",
-                        path.display()
-                    );
+                    tracing::warn!("Failed to parse rule file {}: {e}", path.display());
                     bad_files += 1;
                 }
             }
@@ -149,29 +149,6 @@ impl RuleSet {
         matched
     }
 
-    /// Return rules whose globs match at least one file of the given language.
-    ///
-    /// This is a convenience wrapper for cases where you know the language but
-    /// don't have concrete file paths.
-    pub fn matching_language(&self, language: &str) -> Vec<&Rule> {
-        // Check each rule's globs against a representative path pattern for the
-        // language.  We use a synthetic path like `file.<ext>` to see if the
-        // glob would match.
-        let ext = language_to_extension(language);
-        let synthetic_path = PathBuf::from(format!("file.{}", ext));
-
-        let mut matched: Vec<&Rule> = self.always_rules.iter().collect();
-        for rule in &self.rules {
-            if rule.always_apply {
-                continue;
-            }
-            if matcher::rule_matches_path(rule, &synthetic_path) {
-                matched.push(rule);
-            }
-        }
-        matched
-    }
-
     /// Build a formatted preamble string suitable for injection into an agent's
     /// system prompt.
     ///
@@ -181,32 +158,6 @@ impl RuleSet {
         preamble::format_preamble(&matched)
     }
 }
-
-/// Map a language identifier to a representative file extension.
-///
-/// Used by [`RuleSet::matching_language`] to create synthetic paths for glob
-/// matching.
-fn language_to_extension(language: &str) -> &'static str {
-    match language {
-        "python" => "py",
-        "rust" => "rs",
-        "typescript" => "ts",
-        "javascript" => "js",
-        "go" => "go",
-        "ruby" => "rb",
-        "java" => "java",
-        "kotlin" => "kt",
-        "swift" => "swift",
-        "csharp" => "cs",
-        "cpp" => "cpp",
-        "c" => "c",
-        "php" => "php",
-        "scala" => "scala",
-        _ => "txt",
-    }
-}
-
-// ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -247,7 +198,7 @@ mod tests {
         .unwrap();
 
         let rs = RuleSet::load_from_dir(dir.path()).unwrap();
-        // rule2 is always-apply → goes to always_rules, rule1 stays in rules
+        // rule2 is always-apply -> goes to always_rules, rule1 stays in rules
         assert_eq!(rs.rules.len(), 1);
         assert_eq!(rs.always_rules.len(), 1);
     }
@@ -283,8 +234,7 @@ mod tests {
         .unwrap();
 
         let rs = RuleSet::load_from_dir(dir.path()).unwrap();
-        let matched =
-            rs.matching(&[PathBuf::from("src/main.py"), PathBuf::from("README.md")]);
+        let matched = rs.matching(&[PathBuf::from("src/main.py"), PathBuf::from("README.md")]);
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].description.as_deref(), Some("Py"));
     }
@@ -315,26 +265,6 @@ mod tests {
         let rs = RuleSet::load_from_dir(dir.path()).unwrap();
         let matched = rs.matching(&[PathBuf::from("main.rs")]);
         assert!(matched.is_empty());
-    }
-
-    #[test]
-    fn test_matching_language() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("py.md"),
-            "---\ndescription: Py\nglobs: \"**/*.py\"\n---\nPython rule.",
-        )
-        .unwrap();
-        std::fs::write(
-            dir.path().join("rs.md"),
-            "---\ndescription: Rs\nglobs: \"**/*.rs\"\n---\nRust rule.",
-        )
-        .unwrap();
-
-        let rs = RuleSet::load_from_dir(dir.path()).unwrap();
-        let matched = rs.matching_language("python");
-        assert_eq!(matched.len(), 1);
-        assert_eq!(matched[0].description.as_deref(), Some("Py"));
     }
 
     #[test]

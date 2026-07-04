@@ -29,7 +29,10 @@ fn filter_removes_pnpm_lock() {
     let result = preprocess_diff(diff);
     // The lock file section should be removed; only src/lib.rs remains
     assert!(result.contains("src/lib.rs"), "should contain src/lib.rs");
-    assert!(!result.contains("pnpm-lock"), "should NOT contain pnpm-lock");
+    assert!(
+        !result.contains("pnpm-lock"),
+        "should NOT contain pnpm-lock"
+    );
     assert!(result.contains("filtered"), "should contain a filter note");
 }
 
@@ -89,7 +92,10 @@ fn filter_removes_minified_and_coverage() {
     // The diff section for coverage should be removed, but the word "coverage"
     // may still appear in the filter summary note, so check for the diff marker instead
     assert!(result.contains("src/lib.rs"), "should keep real file");
-    assert!(!result.contains("coverage/report"), "should remove coverage diff");
+    assert!(
+        !result.contains("coverage/report"),
+        "should remove coverage diff"
+    );
     assert!(result.contains("filtered"), "should have filter note");
 }
 
@@ -115,7 +121,10 @@ fn filter_no_filterable_files_no_note() {
     let result = preprocess_diff(diff);
     assert!(result.contains("src/lib.rs"));
     // No filter note expected
-    assert!(!result.contains("filtered"), "no filter note when nothing filtered");
+    assert!(
+        !result.contains("filtered"),
+        "no filter note when nothing filtered"
+    );
 }
 
 #[cfg(feature = "reduce-diff")]
@@ -146,7 +155,10 @@ fn filter_multiple_categories_noted() {
     );
     let result = preprocess_diff(diff);
     assert!(result.contains("filtered"), "should note filtering");
-    assert!(result.contains("1 lock") || result.contains("1 vendor"), "should detail categories");
+    assert!(
+        result.contains("1 lock") || result.contains("1 vendor"),
+        "should detail categories"
+    );
     assert!(result.contains("src/lib.rs"), "should keep real code");
 }
 
@@ -207,7 +219,10 @@ mod strip_diff_metadata_tests {
         );
         let result = strip_diff_metadata(diff);
         // Should not contain "diff --git"
-        assert!(!result.contains("diff --git"), "diff --git should be stripped");
+        assert!(
+            !result.contains("diff --git"),
+            "diff --git should be stripped"
+        );
         // Should not contain "index "
         assert!(!result.contains("index "), "index lines should be stripped");
         // Should still contain --- and +++

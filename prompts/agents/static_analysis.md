@@ -1,5 +1,5 @@
 ---
-role_name: Static Analysis
+role_name: Static Analyser
 role_abbreviation: SA
 role_domain: "**structural defects detectable from code structure alone**: type errors, null safety violations, resource leaks, dead code, incorrect error handling, race conditions evident from structure, and correctness violations that compilers and linters miss."
 role_anti_hallucination_rules: |

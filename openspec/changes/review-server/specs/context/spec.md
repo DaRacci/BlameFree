@@ -125,17 +125,17 @@ The system SHALL detect the primary language and technology stack of the reposit
 #### Detection priority order
 The system SHALL check files in the following order and return the first match:
 
-1. `Cargo.toml` → Rust
-2. `go.mod` → Go
-3. `Cargo.toml` + `package.json` → Rust/JavaScript (multi-language)
-4. `pyproject.toml` → Python
-5. `requirements.txt` → Python
-6. `package.json` → JavaScript/TypeScript
-7. `build.gradle` or `build.gradle.kts` → Kotlin/Java
-8. `pom.xml` → Java
-9. `Gemfile` → Ruby
-10. `*.csproj` → C#
-11. `CMakeLists.txt` → C/C++
+1. `Cargo.toml` -> Rust
+2. `go.mod` -> Go
+3. `Cargo.toml` + `package.json` -> Rust/JavaScript (multi-language)
+4. `pyproject.toml` -> Python
+5. `requirements.txt` -> Python
+6. `package.json` -> JavaScript/TypeScript
+7. `build.gradle` or `build.gradle.kts` -> Kotlin/Java
+8. `pom.xml` -> Java
+9. `Gemfile` -> Ruby
+10. `*.csproj` -> C#
+11. `CMakeLists.txt` -> C/C++
 12. Default: `"Unknown"`
 
 ### Requirement: Module Analysis
@@ -183,12 +183,12 @@ The system SHALL convert gathered context into template variables for prompt inj
 - GIVEN a `RepoContext` with repo = "owner/repo", language = "Rust", tech_stack = ["Tokio", "Axum"]
 - WHEN the system creates template variables
 - THEN it produces `HashMap` entries:
-  - `"repo"` → `"owner/repo"`
-  - `"language"` → `"Rust"`
-  - `"tech_stack"` → `"Tokio, Axum"`
-  - `"modules"` → `"src/routes, src/models"`
-  - `"changed_files"` → `"src/main.rs, src/routes/review.rs"`
-  - `"call_graph"` → `""` (empty if CRG unavailable)
+  - `"repo"` -> `"owner/repo"`
+  - `"language"` -> `"Rust"`
+  - `"tech_stack"` -> `"Tokio, Axum"`
+  - `"modules"` -> `"src/routes, src/models"`
+  - `"changed_files"` -> `"src/main.rs, src/routes/review.rs"`
+  - `"call_graph"` -> `""` (empty if CRG unavailable)
 
 #### Scenario: Apply to agent prompt
 - GIVEN a prompt template containing `{repo}` and `{language}`

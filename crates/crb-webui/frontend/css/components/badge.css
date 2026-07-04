@@ -28,22 +28,46 @@
 }
 
 /* Semantic variants */
-.badge--success .badge__dot { background: var(--accent-green); }
-.badge--success { border-color: var(--accent-green); color: var(--accent-green); }
+.badge--success .badge__dot {
+  background: var(--accent-green);
+}
+.badge--success {
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+}
 
-.badge--warning .badge__dot { background: var(--accent-orange); }
-.badge--warning { border-color: var(--accent-orange); color: var(--accent-orange); }
+.badge--warning .badge__dot {
+  background: var(--accent-orange);
+}
+.badge--warning {
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
 
-.badge--danger .badge__dot { background: var(--accent-red); }
-.badge--danger { border-color: var(--accent-red); color: var(--accent-red); }
+.badge--danger .badge__dot {
+  background: var(--accent-red);
+}
+.badge--danger {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+}
 
-.badge--info .badge__dot { background: var(--accent-blue); }
-.badge--info { border-color: var(--accent-blue); color: var(--accent-blue); }
+.badge--info .badge__dot {
+  background: var(--accent-blue);
+}
+.badge--info {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
 
-.badge--neutral .badge__dot { background: var(--text-tertiary); }
-.badge--neutral { border-color: var(--border-default); color: var(--text-secondary); }
+.badge--neutral .badge__dot {
+  background: var(--text-tertiary);
+}
+.badge--neutral {
+  border-color: var(--border-default);
+  color: var(--text-secondary);
+}
 
-/* Dot-only badge */
 .badge-dot {
   width: 10px;
   height: 10px;
@@ -51,8 +75,18 @@
   display: inline-block;
 }
 
-.badge-dot--success { background: var(--accent-green); }
-.badge-dot--warning { background: var(--accent-orange); }
-.badge-dot--danger { background: var(--accent-red); }
-.badge-dot--info { background: var(--accent-blue); }
-.badge-dot--neutral { background: var(--text-tertiary); }
+.badge-dot--success {
+  background: var(--accent-green);
+}
+.badge-dot--warning {
+  background: var(--accent-orange);
+}
+.badge-dot--danger {
+  background: var(--accent-red);
+}
+.badge-dot--info {
+  background: var(--accent-blue);
+}
+.badge-dot--neutral {
+  background: var(--text-tertiary);
+}

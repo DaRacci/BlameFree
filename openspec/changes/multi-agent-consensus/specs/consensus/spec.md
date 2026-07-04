@@ -177,10 +177,10 @@ pub async fn judge_comment(
 1. Filter candidates by `file == golden.file` and `line == golden.line`.
 2. Among filtered, check if any `finding.message` matches
    `golden.message_regex` (regex match).
-3. If match found → `TruePositive` for that finding.
+3. If match found -> `TruePositive` for that finding.
 4. All matched findings removed from candidate pool.
-5. Goldens with no match → `FalseNegative`.
-6. Remaining unmatched candidates → `FalsePositive`.
+5. Goldens with no match -> `FalseNegative`.
+6. Remaining unmatched candidates -> `FalsePositive`.
 
 **LLM-based matching (alternative, gated by feature flag):**
 - Send golden + candidate sublist to a judge Extractor.
@@ -236,7 +236,7 @@ pub async fn run_consensus(
 
 **Flow:**
 1. Validate inputs (non-null diff, non-empty configs).
-2. Run `run_reviewers()` → get agent results.
+2. Run `run_reviewers()` -> get agent results.
 3. Flatten all findings into one `Vec<Finding>`.
 4. For each golden, call `judge_comment()`.
 5. Track TPs, FPs, FNs.

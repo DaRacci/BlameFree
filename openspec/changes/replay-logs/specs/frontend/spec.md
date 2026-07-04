@@ -50,8 +50,8 @@ When no cache data exists:
 ```
 
 ### Data Fetching
-- On tab switch: `GET /api/runs/:id/logs` → returns list of PRs with available agent roles
-- On agent row click: `GET /api/runs/:id/logs/:pr_key/:role` → returns prompt + response
+- On tab switch: `GET /api/runs/:id/logs` -> returns list of PRs with available agent roles
+- On agent row click: `GET /api/runs/:id/logs/:pr_key/:role` -> returns prompt + response
 - Lazy loading: only fetch logs for agents the user expands
 
 ## Replay Mode
@@ -85,7 +85,7 @@ When no cache data exists:
 │  #128   │ 0.667       │ 0.667     │ ✅      │
 │  #256   │ 0.923       │ 0.923     │ ✅      │
 │                                              │
-│  Aggregate: F1=0.822 → F1=0.822 ✅          │
+│  Aggregate: F1=0.822 -> F1=0.822 ✅          │
 │                                              │
 │  [ Close ]                                   │
 └──────────────────────────────────────────────┘
@@ -93,7 +93,7 @@ When no cache data exists:
 
 ### Data Flow for Replay
 1. User clicks "Replay Run"
-2. `POST /api/runs/:id/replay` → returns 202 with replay_id
+2. `POST /api/runs/:id/replay` -> returns 202 with replay_id
 3. Start polling `GET /api/runs/:id/replay/status` every 500ms
 4. Progress bar updates with `progress_pct`
 5. On status="completed": fetch original run detail + replay run detail

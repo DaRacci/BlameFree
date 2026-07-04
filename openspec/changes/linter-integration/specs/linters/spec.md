@@ -22,11 +22,11 @@ The system SHALL run static analysis linters as subprocesses on checked-out PR b
 - GIVEN a dataset entry for any of the 5 languages
 - WHEN the harness evaluates the PR
 - THEN it runs the appropriate linter(s) for that language:
-  - Python → ruff
-  - TypeScript → eslint
-  - Go → go vet + staticcheck
-  - Ruby → rubocop
-  - Java → checkstyle or spotbugs
+  - Python -> ruff
+  - TypeScript -> eslint
+  - Go -> go vet + staticcheck
+  - Ruby -> rubocop
+  - Java -> checkstyle or spotbugs
 
 ### Requirement: Finding Translation
 The system SHALL translate linter output into a Rust `Finding` struct with serde + schemars derives, matching the format used by LLM agents.

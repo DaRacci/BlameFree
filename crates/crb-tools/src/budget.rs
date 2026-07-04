@@ -3,13 +3,17 @@
 //! A `ToolCallBudget` limits how many tool invocations an agent can make
 //! during a single review session, preventing runaway tool calls.
 
+use std::collections::HashMap;
+
 /// Budget for agent tool calls during a single PR evaluation.
 #[derive(Debug, Clone)]
 pub struct ToolCallBudget {
     /// Maximum number of tool invocations across all tools.
     pub max_total_calls: usize,
+
     /// Per-tool-type maximum invocations.
     pub max_per_tool: usize,
+
     /// Whether to hard-stop (return error) or soft-stop (warn + return empty)
     /// when the budget is exhausted.
     pub hard_stop: bool,
@@ -30,7 +34,7 @@ impl Default for ToolCallBudget {
 pub struct ToolCallTracker {
     budget: ToolCallBudget,
     total_calls: usize,
-    per_tool_calls: std::collections::HashMap<String, usize>,
+    per_tool_calls: HashMap<String, usize>,
 }
 
 impl ToolCallTracker {
@@ -39,7 +43,7 @@ impl ToolCallTracker {
         Self {
             budget,
             total_calls: 0,
-            per_tool_calls: std::collections::HashMap::new(),
+            per_tool_calls: HashMap::new(),
         }
     }
 
@@ -57,7 +61,10 @@ impl ToolCallTracker {
             tracing::warn!("{} — allowing anyway (soft stop)", msg);
         }
 
-        let per_tool = self.per_tool_calls.entry(tool_name.to_string()).or_insert(0);
+        let per_tool = self
+            .per_tool_calls
+            .entry(tool_name.to_string())
+            .or_insert(0);
         if *per_tool >= self.budget.max_per_tool {
             let msg = format!(
                 "Tool '{}' call budget exhausted: {} calls (max {})",
@@ -70,7 +77,10 @@ impl ToolCallTracker {
         }
 
         self.total_calls += 1;
-        *self.per_tool_calls.entry(tool_name.to_string()).or_insert(0) += 1;
+        *self
+            .per_tool_calls
+            .entry(tool_name.to_string())
+            .or_insert(0) += 1;
         Ok(())
     }
 

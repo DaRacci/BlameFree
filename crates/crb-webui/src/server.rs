@@ -4,12 +4,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use axum::extract::{State};
+use axum::body::Body;
+use axum::extract::State;
 use axum::http::{StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use axum::body::Body;
 use axum::routing::{get, post};
 use axum::Router;
+use rustls::pki_types::UnixTime;
 use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
@@ -24,24 +25,34 @@ use crate::static_assets::StaticAssets;
 pub struct AppState {
     /// Directory containing per-PR JSON result files.
     pub output_dir: PathBuf,
+
     /// Directory containing datasets.
     pub dataset_dir: PathBuf,
+
     /// Directory of the static frontend files. `None` uses embedded assets.
     pub static_dir: Option<PathBuf>,
+
     /// Comma-separated list of available models.
     pub models: String,
+
     /// Path to the code-review-benchmark directory (must contain offline/).
     pub benchmark_dir: Option<PathBuf>,
+
     /// Active (running) benchmark runs.
     pub active_runs: Arc<RwLock<HashMap<String, ActiveRun>>>,
+
     /// Active replay operations.
     pub replays: Arc<RwLock<HashMap<String, ReplayState>>>,
+
     /// Web UI configuration (includes optional OAuth).
     pub config: WebUiConfig,
+
     /// Session store for OAuth-authenticated users.
     pub session_store: SessionStore,
+
     /// Octocrab GitHub API client (authenticated via GITHUB_TOKEN env var).
     pub octocrab: octocrab::Octocrab,
+
     /// Path to the server log file.
     pub log_file: PathBuf,
 }
@@ -49,28 +60,23 @@ pub struct AppState {
 /// State for an actively running benchmark.
 #[derive(Clone)]
 pub struct ActiveRun {
-    /// When the run was started (Unix timestamp).
-    pub created_at: u64,
+    /// When the run was started.
+    pub created_at: UnixTime,
+
     /// The config used to start this run.
     pub config: crate::api::BenchmarkConfig,
+
     /// Broadcast channel for SSE events.
     pub tx: broadcast::Sender<DashboardEvent>,
+
     /// Number of completed PRs.
     pub completed_prs: usize,
+
     /// Total number of PRs.
     pub total_prs: usize,
+
     /// Whether the run has finished.
     pub finished: bool,
-}
-
-/// State of a replay operation.
-pub struct ReplayState {
-    pub status: String,        // "running", "completed", "failed"
-    pub progress_pct: u32,
-    pub completed_prs: u32,
-    pub total_prs: u32,
-    pub message: String,
-    pub output_dir: PathBuf,
 }
 
 impl AppState {
@@ -104,24 +110,42 @@ impl AppState {
 /// Start the axum HTTP server.
 pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
     let api_router = Router::new()
-        .route("/api/runs", get(crate::api::list_runs).post(crate::api::start_run))
+        .route(
+            "/api/runs",
+            get(crate::api::list_runs).post(crate::api::start_run),
+        )
         .route("/api/runs/:id", get(crate::api::get_run))
         .route("/api/runs/:id/live", get(crate::api::live_stream))
         .route("/api/config", get(crate::api::get_config))
         .route("/api/config/datasets", get(crate::api::list_datasets))
-        .route("/api/config/reasoning-efforts", get(crate::api::list_reasoning_efforts))
+        .route(
+            "/api/config/reasoning-efforts",
+            get(crate::api::list_reasoning_efforts),
+        )
         .route("/api/runs/:id/logs", get(crate::api::list_logs))
-        .route("/api/runs/:id/logs/:pr_key/:role", get(crate::api::get_agent_log))
+        .route(
+            "/api/runs/:id/logs/:pr_key/:role",
+            get(crate::api::get_agent_log),
+        )
         .route("/api/runs/:id/prs/:pr_key", get(crate::api::get_pr_agents))
         .route("/api/runs/:id/replay", post(crate::api::start_replay))
-        .route("/api/runs/:id/replay/status", get(crate::api::replay_status))
-        .route("/api/runs/:id/pr-detail/:pr_key", get(crate::api::get_pr_detail))
+        .route(
+            "/api/runs/:id/replay/status",
+            get(crate::api::replay_status),
+        )
+        .route(
+            "/api/runs/:id/pr-detail/:pr_key",
+            get(crate::api::get_pr_detail),
+        )
         .route("/api/datasets/:id/prs", get(crate::api::list_dataset_prs))
         // Ad-hoc review endpoints
         .route("/api/adhoc/review", post(crate::api::start_adhoc_review))
         .route("/api/adhoc/runs", get(crate::api::list_adhoc_runs))
         .route("/api/adhoc/runs/:id", get(crate::api::get_adhoc_run))
-        .route("/api/adhoc/prs/:owner/:repo", get(crate::api::list_repo_prs))
+        .route(
+            "/api/adhoc/prs/:owner/:repo",
+            get(crate::api::list_repo_prs),
+        )
         // Admin endpoints
         .route("/api/admin/logs", get(crate::api::get_logs))
         .route("/api/admin/logs/stream", get(crate::api::get_logs_stream));
@@ -156,10 +180,7 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
 ///
 /// When `--static-dir` is set, serves from disk (dev mode).
 /// Otherwise, serves from assets embedded at build time via `rust-embed`.
-async fn static_or_index(
-    State(state): State<AppState>,
-    uri: Uri,
-) -> Response {
+async fn static_or_index(State(state): State<AppState>, uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
 
     // Try disk-based serving if a static directory is configured
@@ -175,7 +196,8 @@ async fn static_or_index(
         if file_path.exists() && file_path.is_file() {
             match tokio::fs::read(&file_path).await {
                 Ok(data) => {
-                    let content_type = mime_type_from_extension(file_path.extension().and_then(|e| e.to_str()));
+                    let content_type =
+                        mime_type_from_extension(file_path.extension().and_then(|e| e.to_str()));
                     return Response::builder()
                         .header("Content-Type", content_type)
                         .body(Body::from(data))
@@ -196,7 +218,9 @@ async fn static_or_index(
 
     if let Some(asset) = StaticAssets::get(asset_path) {
         let content_type = mime_type_from_extension(
-            std::path::Path::new(asset_path).extension().and_then(|e| e.to_str()),
+            std::path::Path::new(asset_path)
+                .extension()
+                .and_then(|e| e.to_str()),
         );
         return Response::builder()
             .header("Content-Type", content_type)

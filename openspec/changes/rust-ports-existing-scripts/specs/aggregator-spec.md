@@ -122,7 +122,7 @@ The system SHALL format findings as `Candidate` structs with severity badge, cro
 - THEN the text includes `" [cross-validated]"` after the severity badge
 
 ### Requirement: Batch Aggregation
-The system SHALL process multiple reports through the full pipeline: parse → dedup → sort → cap → format.
+The system SHALL process multiple reports through the full pipeline: parse -> dedup -> sort -> cap -> format.
 
 #### Scenario: Single PR pipeline
 - GIVEN a `Map` with one PR URL and its report text

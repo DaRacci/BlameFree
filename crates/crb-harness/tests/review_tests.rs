@@ -46,7 +46,7 @@ fn setup_temp_repo() -> (tempfile::TempDir, PathBuf) {
 }
 
 // ---------------------------------------------------------------------------
-// review_diff on working tree with no changes → empty findings
+// review_diff on working tree with no changes -> empty findings
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -69,12 +69,19 @@ fn review_diff_no_changes() {
 
     assert!(result.is_ok(), "review_diff should not panic");
     let findings = result.unwrap();
-    assert!(findings.is_ok(), "review_diff should return Ok: {:?}", findings.err());
-    assert!(findings.unwrap().is_empty(), "expected empty findings for clean repo");
+    assert!(
+        findings.is_ok(),
+        "review_diff should return Ok: {:?}",
+        findings.err()
+    );
+    assert!(
+        findings.unwrap().is_empty(),
+        "expected empty findings for clean repo"
+    );
 }
 
 // ---------------------------------------------------------------------------
-// review_diff with unstaged changes → should produce a diff but fail
+// review_diff with unstaged changes -> should produce a diff but fail
 // gracefully without API key
 // ---------------------------------------------------------------------------
 
@@ -132,7 +139,10 @@ fn review_diff_commit_range() {
         rt.block_on(crb_harness::review_diff(args))
     }));
 
-    assert!(result.is_ok(), "review_diff with commit range should not panic");
+    assert!(
+        result.is_ok(),
+        "review_diff with commit range should not panic"
+    );
 }
 
 // ---------------------------------------------------------------------------

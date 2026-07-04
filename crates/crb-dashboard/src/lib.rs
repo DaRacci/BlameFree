@@ -6,9 +6,14 @@
 ///
 /// If stdout is not a real TTY, the dashboard falls back to a silent drain
 /// (events are consumed and discarded) so the sender side doesn't block.
-pub async fn run_dashboard(total_prs: usize, rx: mpsc::Receiver<DashboardEvent>) -> anyhow::Result<()> {
+pub async fn run_dashboard(
+    total_prs: usize,
+    rx: mpsc::Receiver<DashboardEvent>,
+) -> anyhow::Result<()> {
     use crossterm::event::{self, Event, KeyCode};
-    use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+    use crossterm::terminal::{
+        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    };
     use crossterm::ExecutableCommand;
     use ratatui::backend::CrosstermBackend;
     use ratatui::Terminal;
@@ -83,7 +88,7 @@ async fn drain_events(mut rx: mpsc::Receiver<DashboardEvent>) {
 use std::time::Instant;
 
 use crb_judge::Metrics;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 pub mod render;
@@ -94,15 +99,9 @@ pub mod render;
 #[derive(Debug, Clone, Serialize)]
 pub enum DashboardEvent {
     /// An agent has started its review for a given PR.
-    AgentStarted {
-        pr_key: String,
-        role: String,
-    },
+    AgentStarted { pr_key: String, role: String },
     /// A chunk of streaming response text from an agent.
-    AgentChunk {
-        role: String,
-        chunk: String,
-    },
+    AgentChunk { role: String, chunk: String },
     /// An agent has finished its review.
     AgentFinished {
         role: String,
@@ -129,11 +128,14 @@ pub enum DashboardEvent {
 }
 
 /// Aggregate metrics across all PRs.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AggregateMetrics {
-    pub total_tp: usize,
-    pub total_fp: usize,
-    pub total_fn: usize,
+    #[serde(rename = "total_tp")]
+    pub true_positives: usize,
+    #[serde(rename = "total_fp")]
+    pub false_positives: usize,
+    #[serde(rename = "total_fn")]
+    pub false_negatives: usize,
     pub precision: f64,
     pub recall: f64,
     pub f1: f64,
@@ -254,7 +256,8 @@ impl Dashboard {
                     pane.status = AgentStatus::Reviewing;
                     pane.findings_count = 0;
                     pane.response_buffer.clear();
-                    pane.response_buffer.push(format!("[Agent {} started]", role));
+                    pane.response_buffer
+                        .push(format!("[Agent {} started]", role));
                 }
             }
             DashboardEvent::AgentChunk { role, chunk } => {
@@ -262,7 +265,11 @@ impl Dashboard {
                     pane.push_chunk(&chunk);
                 }
             }
-            DashboardEvent::AgentFinished { role, findings, success } => {
+            DashboardEvent::AgentFinished {
+                role,
+                findings,
+                success,
+            } => {
                 if let Some(pane) = self.pane_mut(&role) {
                     pane.status = if success {
                         AgentStatus::Done { findings }
@@ -290,14 +297,14 @@ impl Dashboard {
                 self.completed_pr_keys.push(pr_key.clone());
 
                 // Accumulate metrics
-                self.aggregated.total_tp += metrics.true_positives;
-                self.aggregated.total_fp += metrics.false_positives;
-                self.aggregated.total_fn += metrics.false_negatives;
+                self.aggregated.true_positives += metrics.true_positives;
+                self.aggregated.false_positives += metrics.false_positives;
+                self.aggregated.false_negatives += metrics.false_negatives;
 
                 // Recompute running averages
-                let tp_f = self.aggregated.total_tp as f64;
-                let fp_f = self.aggregated.total_fp as f64;
-                let fn_f = self.aggregated.total_fn as f64;
+                let tp_f = self.aggregated.true_positives as f64;
+                let fp_f = self.aggregated.false_positives as f64;
+                let fn_f = self.aggregated.false_negatives as f64;
                 self.aggregated.precision = if tp_f + fp_f > 0.0 {
                     tp_f / (tp_f + fp_f)
                 } else {

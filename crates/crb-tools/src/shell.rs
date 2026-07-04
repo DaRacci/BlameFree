@@ -75,7 +75,7 @@ impl Tool for ShellTool {
         ToolDefinition {
             name: Self::NAME.to_string(),
             description: "Execute a shell command in the repository working directory. Use for running tests, builds, linters, or any CLI operation. Output is capped at 100KB; very long output will be truncated with a note. IMPORTANT: Do NOT use this for reading files (use read_file), searching code (use grep), or listing directories (use list_dir).".to_string(),
-            parameters: serde_json::to_value(schemars::schema_for!(ShellArgs)).unwrap(),
+            parameters: serde_json::to_value(schemars::schema_for!(ShellArgs)).unwrap_or_default(),
         }
     }
 
@@ -92,9 +92,7 @@ impl Tool for ShellTool {
                     .output()
             })
             .await
-            .map_err(|join_err| {
-                ShellError::SpawnFailed(join_err.to_string())
-            })?
+            .map_err(|join_err| ShellError::SpawnFailed(join_err.to_string()))?
             .map_err(|io_err| ShellError::SpawnFailed(io_err.to_string()))
         })
         .await
@@ -108,19 +106,31 @@ impl Tool for ShellTool {
             }
             let stderr = String::from_utf8_lossy(&result.stderr).to_string();
             if !output.is_empty() || !stderr.is_empty() {
-                let sep = if !output.is_empty() && !stderr.is_empty() { "\n" } else { "" };
+                let sep = if !output.is_empty() && !stderr.is_empty() {
+                    "\n"
+                } else {
+                    ""
+                };
                 output = format!("{}{}{}", output, sep, stderr);
             }
             output = format!("{}\n[exit code: {code}]", output);
             if output.len() > max_output {
-                output = format!("{}\n... (output truncated at {} bytes)", &output[..MAX_OUTPUT], MAX_OUTPUT);
+                output = format!(
+                    "{}\n... (output truncated at {} bytes)",
+                    &output[..MAX_OUTPUT],
+                    MAX_OUTPUT
+                );
             }
             return Ok(output);
         }
 
         let mut stdout = String::from_utf8_lossy(&result.stdout).to_string();
         if stdout.len() > max_output {
-            stdout = format!("{}\n... (output truncated at {} bytes)", &stdout[..MAX_OUTPUT], MAX_OUTPUT);
+            stdout = format!(
+                "{}\n... (output truncated at {} bytes)",
+                &stdout[..MAX_OUTPUT],
+                MAX_OUTPUT
+            );
         }
 
         Ok(stdout)

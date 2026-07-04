@@ -74,8 +74,8 @@
 
 - [x] **4.4 Integration tests**
   - Run mock diff through full pipeline with known golden comments.
-  - Verify metrics are correct: all TPs → 1.0/1.0/1.0.
-  - Verify all FNs → 0.0/0.0/0.0.
+  - Verify metrics are correct: all TPs -> 1.0/1.0/1.0.
+  - Verify all FNs -> 0.0/0.0/0.0.
   - Verify mixed case produces correct intermediate metrics.
 
 ## Phase 5: Edge Cases & Hardening
@@ -85,9 +85,9 @@
   - Ensure `ConsensusReport` records agent-level errors.
 
 - [x] **5.2 Empty inputs**
-  - Empty diff → all agents return empty vectors → precision=1.0, recall=1.0,
+  - Empty diff -> all agents return empty vectors -> precision=1.0, recall=1.0,
     F1=1.0 (no findings matches no goldens vacuously).
-  - Empty golden set → all findings are FPs → precision=0.0, recall=1.0, F1=0.0.
+  - Empty golden set -> all findings are FPs -> precision=0.0, recall=1.0, F1=0.0.
 
 - [x] **5.3 Large findings output**
   - Cap total findings across all agents (configurable, default 100).

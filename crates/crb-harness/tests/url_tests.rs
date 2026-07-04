@@ -113,8 +113,7 @@ fn empty_string() {
 
 #[test]
 fn url_with_query_params() {
-    let result =
-        crb_harness::extract_pr_info("https://github.com/owner/repo/pull/42?diff=unified");
+    let result = crb_harness::extract_pr_info("https://github.com/owner/repo/pull/42?diff=unified");
     assert!(result.is_none()); // regex ends with $, so query params break match
 }
 

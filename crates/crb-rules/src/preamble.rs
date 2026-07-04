@@ -40,8 +40,6 @@ pub fn format_preamble(matched: &[&Rule]) -> String {
     preamble
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -59,7 +57,10 @@ mod tests {
 
     #[test]
     fn test_format_preamble_with_descriptions() {
-        let r1 = rule(Some("Python Standards"), "Use type hints for all public functions.");
+        let r1 = rule(
+            Some("Python Standards"),
+            "Use type hints for all public functions.",
+        );
         let r2 = rule(Some("Security"), "Always validate user input.");
         let matched = vec![&r1, &r2];
 

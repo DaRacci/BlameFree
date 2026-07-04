@@ -1,28 +1,26 @@
-/* crb-webui Design System — Entry Point */
+/* Design Tokens */
+@import url("css/tokens.css");
 
-/* 1. Design Tokens */
-@import url('css/tokens.css');
+/* Reset & Base */
+@import url("css/reset.css");
+@import url("css/base.css");
 
-/* 2. Reset & Base */
-@import url('css/reset.css');
-@import url('css/base.css');
+/* Layout System */
+@import url("css/layout.css");
 
-/* 3. Layout System */
-@import url('css/layout.css');
+/* Components */
+@import url("css/components/card.css");
+@import url("css/components/button.css");
+@import url("css/components/form.css");
+@import url("css/components/badge.css");
+@import url("css/components/table.css");
+@import url("css/components/skeleton.css");
+@import url("css/components/progress.css");
+@import url("css/components/nav.css");
 
-/* 4. Components */
-@import url('css/components/card.css');
-@import url('css/components/button.css');
-@import url('css/components/form.css');
-@import url('css/components/badge.css');
-@import url('css/components/table.css');
-@import url('css/components/skeleton.css');
-@import url('css/components/progress.css');
-@import url('css/components/nav.css');
-
-/* 5. Pages */
-@import url('css/pages/home.css');
-@import url('css/pages/run-detail.css');
-@import url('css/pages/new-run.css');
-@import url('css/pages/live-view.css');
-@import url('css/pages/admin.css');
+/* Pages */
+@import url("css/pages/home.css");
+@import url("css/pages/run-detail.css");
+@import url("css/pages/new-run.css");
+@import url("css/pages/live-view.css");
+@import url("css/pages/admin.css");

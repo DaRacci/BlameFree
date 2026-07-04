@@ -1,20 +1,11 @@
 use crate::api_url;
+use crb_webui_shared::admin::LogsResponse;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use leptos::*;
-use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::MessageEvent;
-
-/// Response from GET /api/admin/logs.
-#[derive(Debug, Clone, Deserialize)]
-struct LogsResponse {
-    pub logs: String,
-    pub available: bool,
-    #[serde(default)]
-    pub message: Option<String>,
-}
 
 /// Admin page component.
 ///
@@ -26,7 +17,6 @@ struct LogsResponse {
 /// sibling sections with minimal changes.
 #[component]
 pub fn AdminPage() -> impl IntoView {
-    // ─── Log viewer state ──────────────────────────────────────
     let (logs, set_logs) = create_signal::<String>(String::new());
     let (loading, set_loading) = create_signal(true);
     let (error, set_error) = create_signal::<Option<String>>(None);
@@ -37,7 +27,6 @@ pub fn AdminPage() -> impl IntoView {
     // Number of live-streamed lines received
     let (live_line_count, set_live_line_count) = create_signal(0usize);
 
-    // ─── Initial fetch via GET /api/admin/logs ─────────────────
     let logs_url = api_url("/api/admin/logs");
     spawn_local(async move {
         match gloo_net::http::Request::get(&logs_url).send().await {
@@ -70,13 +59,12 @@ pub fn AdminPage() -> impl IntoView {
         set_loading.set(false);
     });
 
-    // ─── SSE connection to /api/admin/logs/stream ──────────────
     let stream_url = api_url("/api/admin/logs/stream");
-    let sse_logs = set_logs.clone();
-    let sse_lines = set_live_line_count.clone();
-    let sse_conn = set_connection_status.clone();
+    let sse_logs = set_logs;
+    let sse_lines = set_live_line_count;
+    let sse_conn = set_connection_status;
     spawn_local(async move {
-        match connect_sse(&stream_url, sse_conn.clone()).await {
+        match connect_sse(&stream_url, sse_conn).await {
             Ok(mut rx) => {
                 while let Some(line) = rx.next().await {
                     sse_logs.update(|s| {
@@ -96,7 +84,6 @@ pub fn AdminPage() -> impl IntoView {
         }
     });
 
-    // ─── Scroll-to-bottom ref for auto-scroll ──────────────────
     let log_container_ref = create_node_ref::<html::Div>();
 
     // Auto-scroll to bottom when logs update (only after initial load)
@@ -111,7 +98,6 @@ pub fn AdminPage() -> impl IntoView {
         }
     });
 
-    // ─── Connection status indicator class ─────────────────────
     let status_class = move || {
         let s = connection_status.get();
         match s.as_str() {
@@ -137,12 +123,10 @@ pub fn AdminPage() -> impl IntoView {
 
     view! {
         <div class="admin-page">
-            // ─── Page Header ──────────────────────────────────────
             <div class="page-header">
                 <h1 class="page-header__title">"Admin"</h1>
             </div>
 
-            // ─── Log Viewer Section ───────────────────────────────
             <div class="admin-section">
                 <div class="admin-section__header">
                     <h2 class="admin-section__title">"Server Logs"</h2>
@@ -183,7 +167,7 @@ pub fn AdminPage() -> impl IntoView {
                     let line_count = logs.get().lines().count();
                     let _conn_status = connection_status.get();
 
-                    return view! {
+                    view! {
                         <div class="log-viewer">
                             <div class="log-viewer__toolbar">
                                 <span class="log-viewer__toolbar-label">
@@ -196,14 +180,12 @@ pub fn AdminPage() -> impl IntoView {
                                 <pre class="log-viewer__pre">{logs.get()}</pre>
                             </div>
                         </div>
-                    }.into_view();
+                    }.into_view()
                 }}
             </div>
         </div>
     }
 }
-
-// ─── SSE connection via web_sys::EventSource ────────────────────────────────
 
 /// Connect to an SSE endpoint and return a channel receiver that yields
 /// event data strings as they arrive.
@@ -217,7 +199,7 @@ async fn connect_sse(
         .map_err(|e| format!("Failed to construct EventSource: {:?}", e))?;
 
     // onopen — connection established
-    let on_open = set_connected.clone();
+    let on_open = set_connected;
     let open_closure = Closure::wrap(Box::new(move || {
         on_open.set("connected".into());
     }) as Box<dyn FnMut()>);
@@ -237,7 +219,7 @@ async fn connect_sse(
     msg_closure.forget();
 
     // onerror — connection lost or error
-    let on_err = set_connected.clone();
+    let on_err = set_connected;
     let es_for_err = es.clone();
     let err_closure = Closure::wrap(Box::new(move || {
         // EventSource auto-reconnects, but we update the status

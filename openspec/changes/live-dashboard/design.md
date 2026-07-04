@@ -34,11 +34,11 @@ main()
   └─ for pr in prs {
        └─ spawn(evaluate_pr_with_postprocessing())
             ├─ evaluate_pr_single_agent()
-            │    ├─ agent SA  → emit AgentStarted, AgentChunk, AgentFinished
-            │    ├─ agent CL  → emit AgentStarted, AgentChunk, AgentFinished
-            │    ├─ agent AR  → emit AgentStarted, AgentChunk, AgentFinished
-            │    └─ agent SEC → emit AgentStarted, AgentChunk, AgentFinished
-            │    └─ on complete → emit PrCompleted
+            │    ├─ agent SA  -> emit AgentStarted, AgentChunk, AgentFinished
+            │    ├─ agent CL  -> emit AgentStarted, AgentChunk, AgentFinished
+            │    ├─ agent AR  -> emit AgentStarted, AgentChunk, AgentFinished
+            │    └─ agent SEC -> emit AgentStarted, AgentChunk, AgentFinished
+            │    └─ on complete -> emit PrCompleted
             └─ collect findings, write report
      }
   └─ join dashboard_task, print_terminal_summary()
@@ -79,7 +79,7 @@ main()
 │  }                                                        │
 │                                                           │
 │  loop {                                                   │
-│    try_recv_all_events() → update state                   │
+│    try_recv_all_events() -> update state                   │
 │    render() via Ratatui                                   │
 │    tokio::time::sleep(100ms)                              │
 │  }                                                        │
@@ -292,7 +292,7 @@ if args.dashboard {
 This function spawns 4 agent tasks in a `JoinSet`, one per role. Each agent currently:
 
 1. Computes cache key
-2. Checks cache → hit: return cached, miss: call API
+2. Checks cache -> hit: return cached, miss: call API
 3. Parses findings
 4. Records cost
 
@@ -328,7 +328,7 @@ let _ = d_tx.send(DashboardEvent::AgentFinished {
 
 ### 4.3 evaluate_pr_consensus (consensus path)
 
-The same `DashboardChannel` is threaded through `evaluate_pr_consensus` → `run_consensus` → `run_reviewers` → `build_reviewer_agent` and into each agent's prompt call. Each role emits the same events as in the single-agent path.
+The same `DashboardChannel` is threaded through `evaluate_pr_consensus` -> `run_consensus` -> `run_reviewers` -> `build_reviewer_agent` and into each agent's prompt call. Each role emits the same events as in the single-agent path.
 
 ### 4.4 Agent Streaming Support
 
@@ -422,7 +422,6 @@ impl DashboardState {
             Constraint::Length(1),     // Cost footer
         ]).split(area);
 
-        // Title
         let elapsed = format_elapsed(self.start_time.elapsed());
         frame.render_widget(
             Paragraph::new(format!(" crb-harness Live Dashboard  {}", elapsed))

@@ -14,7 +14,7 @@ use crate::normalize_text;
 /// # Examples
 ///
 /// ```ignore
-/// use crb_utils::jaccard_similarity;
+/// use crb_shared::jaccard_similarity;
 ///
 /// // Identical strings
 /// assert_eq!(jaccard_similarity("hello world", "hello world", false), 1.0);

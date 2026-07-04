@@ -19,8 +19,8 @@ model, parameters). If the exact same input is presented again, the cached
 response is returned without making an API call.
 
 **Contract:**
-- Given identical prompt input, model, and parameters → cache hit
-- Given different prompt input (even one character difference) → cache miss
+- Given identical prompt input, model, and parameters -> cache hit
+- Given different prompt input (even one character difference) -> cache miss
 - Cache key derivation is internal to tokudo; callers must not compute keys
 
 ### 2.2 Semantic Caching
@@ -30,7 +30,7 @@ caching**: prompts that are semantically equivalent (but textually different)
 share a cache entry.
 
 **Contract:**
-- A prompt that is semantically identical to a previous prompt → **may** be a
+- A prompt that is semantically identical to a previous prompt -> **may** be a
   cache hit (depends on tokudo's semantic similarity threshold)
 - Semantic caching is transparent — callers do not opt in separately beyond
   enabling `.with_cache()`
@@ -39,9 +39,9 @@ share a cache entry.
 
 | Dimension | Boundary | Behavior |
 |-----------|----------|----------|
-| Model | Different model → separate cache | Tokudo partitions by model name |
-| Cache directory | Different dir → separate cache | Each dir is isolated |
-| PR key | Different PR → separate sub-cache | Determined by tokudo's layout |
+| Model | Different model -> separate cache | Tokudo partitions by model name |
+| Cache directory | Different dir -> separate cache | Each dir is isolated |
+| PR key | Different PR -> separate sub-cache | Determined by tokudo's layout |
 
 ## 3. Cache Lifecycle
 
@@ -67,8 +67,8 @@ let optimized = OptimizedModel::new(model)
 Triggered automatically before every LLM call:
 
 1. Tokudo computes a cache key from the prompt, model, and parameters
-2. If a cached response exists → return it immediately (no API call)
-3. If no cached response → proceed to API call
+2. If a cached response exists -> return it immediately (no API call)
+3. If no cached response -> proceed to API call
 
 **Observability:**
 - Cache hits and misses are reported via structured tracing (when`.with_observability(true)` is enabled)

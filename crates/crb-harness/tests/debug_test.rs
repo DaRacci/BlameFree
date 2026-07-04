@@ -25,15 +25,18 @@ fn debug_minified_coverage() {
     );
     let result = crb_harness::preprocess_diff(diff);
     println!("RESULT:\n---\n{}---\n", result);
-    println!("Contains 'bundle.min.js': {}", result.contains("bundle.min.js"));
+    println!(
+        "Contains 'bundle.min.js': {}",
+        result.contains("bundle.min.js")
+    );
     println!("Contains 'coverage': {}", result.contains("coverage"));
     println!("Contains 'src/lib.rs': {}", result.contains("src/lib.rs"));
     println!("Contains 'filtered': {}", result.contains("filtered"));
-    
+
     // Check what the note says
     if let Some(start) = result.find('[') {
         if let Some(end) = result[start..].find(']') {
-            let note = &result[start..start+end+1];
+            let note = &result[start..start + end + 1];
             println!("FILTER NOTE: {:?}", note);
         }
     }

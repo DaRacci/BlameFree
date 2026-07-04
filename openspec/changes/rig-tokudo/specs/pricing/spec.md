@@ -112,7 +112,7 @@ recorded (from the cached response's metadata) but the cost is $0.00.
 | `agent_cache_hit_rate()` | Accessible via tokudo's observability |
 | `judge_cache_hit_rate()` | Accessible via tokudo's observability |
 | `total_tokens()` | Accessible via tokudo's observability |
-| `to_summary()` → `CostSummary` | Map from tokudo's cost data |
+| `to_summary()` -> `CostSummary` | Map from tokudo's cost data |
 
 ### 5.2 CostSummary Backwards Compatibility
 

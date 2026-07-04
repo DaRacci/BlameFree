@@ -58,10 +58,10 @@ struct LinterTool {
 ```
 
 Implements `rig::tool::Tool` with:
-- `NAME` → `"linter"` (overridden per-instance via constructor)
-- `Args` → `LinterArgs`
-- `Output` → `Vec<Finding>`
-- `Error` → `LinterError`
+- `NAME` -> `"linter"` (overridden per-instance via constructor)
+- `Args` -> `LinterArgs`
+- `Output` -> `Vec<Finding>`
+- `Error` -> `LinterError`
 
 ## 5. LinterConfig
 

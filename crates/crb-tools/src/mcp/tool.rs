@@ -16,46 +16,19 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use rig_compose::tool::ToolSchema;
 use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
-use rig_compose::tool::ToolSchema;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 
-use crate::mcp_config::{McpConfig, McpServerConfig, McpTransportType};
-
-// ── Errors ──────────────────────────────────────────────────────────────────
-
-/// Errors from MCP tool operations.
-#[derive(Debug)]
-pub enum McpError {
-    /// Server connection or transport error.
-    TransportError(String),
-    /// The MCP tool call returned an error.
-    ToolError(String),
-    /// Configuration error.
-    ConfigError(String),
-    /// Request timed out.
-    TimeoutElapsed,
-}
-
-impl fmt::Display for McpError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::TransportError(e) => write!(f, "MCP transport error: {e}"),
-            Self::ToolError(e) => write!(f, "MCP tool error: {e}"),
-            Self::ConfigError(e) => write!(f, "MCP config error: {e}"),
-            Self::TimeoutElapsed => write!(f, "MCP request timed out"),
-        }
-    }
-}
-
-impl std::error::Error for McpError {}
-
-// ── Arguments & Response ────────────────────────────────────────────────────
+use crate::{
+    error::McpError,
+    mcp::config::{McpConfig, McpServerConfig, McpTransportType},
+};
 
 /// Arguments for a rig-core MCP tool invocation.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -74,8 +47,6 @@ pub struct McpResponse {
     /// Error message if not successful.
     pub error: Option<String>,
 }
-
-// ── HTTP Transport ──────────────────────────────────────────────────────────
 
 /// An HTTP MCP transport that talks to a remote MCP server via JSON-RPC 2.0
 /// over HTTP POST.
@@ -111,9 +82,7 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
     }
 
     /// Discover tools from the MCP server via `list_tools`.
-    async fn list_tools(
-        &self,
-    ) -> Result<Vec<ToolSchema>, rig_compose::registry::KernelError> {
+    async fn list_tools(&self) -> Result<Vec<ToolSchema>, rig_compose::registry::KernelError> {
         let url = format!("{}/list_tools", self.endpoint);
 
         let payload = serde_json::json!({
@@ -123,17 +92,11 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
         });
 
         let response = tokio::time::timeout(self.timeout, async {
-            self.client
-                .post(&url)
-                .json(&payload)
-                .send()
-                .await
+            self.client.post(&url).json(&payload).send().await
         })
         .await
         .map_err(|_| {
-            rig_compose::registry::KernelError::ToolFailed(
-                "MCP list_tools timed out".into(),
-            )
+            rig_compose::registry::KernelError::ToolFailed("MCP list_tools timed out".into())
         })?
         .map_err(|e| {
             rig_compose::registry::KernelError::ToolFailed(format!(
@@ -172,14 +135,9 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
         let schemas: Result<Vec<_>, _> = tools
             .iter()
             .map(|t| {
-                let name = t
-                    .get("name")
-                    .and_then(|n| n.as_str())
-                    .ok_or_else(|| {
-                        rig_compose::registry::KernelError::ToolFailed(
-                            "MCP tool missing 'name'".into(),
-                        )
-                    })?;
+                let name = t.get("name").and_then(|n| n.as_str()).ok_or_else(|| {
+                    rig_compose::registry::KernelError::ToolFailed("MCP tool missing 'name'".into())
+                })?;
                 let description = t
                     .get("description")
                     .and_then(|d| d.as_str())
@@ -237,9 +195,7 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
         })
         .await
         .map_err(|_| {
-            rig_compose::registry::KernelError::ToolFailed(
-                "MCP call_tool timed out".into(),
-            )
+            rig_compose::registry::KernelError::ToolFailed("MCP call_tool timed out".into())
         })?
         .map_err(|e| {
             rig_compose::registry::KernelError::ToolFailed(format!(
@@ -265,16 +221,11 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
         }
 
         // Extract result
-        let result = body
-            .get("result")
-            .cloned()
-            .unwrap_or(Value::Null);
+        let result = body.get("result").cloned().unwrap_or(Value::Null);
 
         Ok(result)
     }
 }
-
-// ── Rig-Core Compatible Tool ────────────────────────────────────────────────
 
 /// A [`rig_core::tool::Tool`] wrapper around an MCP transport + tool schema.
 ///
@@ -319,7 +270,7 @@ impl RigCoreMcpTool {
 
     /// Number of cached results.
     pub fn cache_size(&self) -> usize {
-        self.cache.lock().unwrap().len()
+        self.cache.lock().map_or(0, |guard| guard.len())
     }
 
     /// The display name of this tool (server_toolname).
@@ -344,14 +295,13 @@ impl Tool for RigCoreMcpTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        // Compute cache key
         let key = Self::cache_key(&self.tool_name, &args.arguments);
 
-        // Check cache
         {
-            let cache = self.cache.lock().map_err(|e| {
-                McpError::ToolError(format!("cache lock poisoned: {e}"))
-            })?;
+            let cache = self
+                .cache
+                .lock()
+                .map_err(|e| McpError::ToolError(format!("cache lock poisoned: {e}")))?;
             if let Some(cached) = cache.get(&key) {
                 info!(
                     "MCP cache hit for tool '{}' (key={})",
@@ -362,7 +312,6 @@ impl Tool for RigCoreMcpTool {
             }
         }
 
-        // Parse arguments JSON
         let parsed_args: Value = serde_json::from_str(&args.arguments).map_err(|e| {
             McpError::ToolError(format!(
                 "invalid JSON arguments for '{}': {e}",
@@ -370,33 +319,27 @@ impl Tool for RigCoreMcpTool {
             ))
         })?;
 
-        // Call the tool via transport
         let result = self
             .transport
             .call_tool(&self.schema.name, parsed_args)
             .await
             .map_err(|e| {
-                McpError::ToolError(format!(
-                    "MCP tool '{}' call failed: {e}",
-                    self.schema.name
-                ))
+                McpError::ToolError(format!("MCP tool '{}' call failed: {e}", self.schema.name))
             })?;
 
         let result_str = result.to_string();
 
-        // Cache the result
         {
-            let mut cache = self.cache.lock().map_err(|e| {
-                McpError::ToolError(format!("cache lock poisoned: {e}"))
-            })?;
+            let mut cache = self
+                .cache
+                .lock()
+                .map_err(|e| McpError::ToolError(format!("cache lock poisoned: {e}")))?;
             cache.insert(key, result_str.clone());
         }
 
         Ok(result_str)
     }
 }
-
-// ── Factory Functions ───────────────────────────────────────────────────────
 
 /// Load MCP configuration, connect to enabled servers, and return
 /// ready-to-use [`RigCoreMcpTool`] instances.
@@ -408,24 +351,22 @@ impl Tool for RigCoreMcpTool {
 /// This is a synchronous function that blocks the current thread to
 /// perform async discovery. Call from an async context via
 /// `tokio::task::spawn_blocking` if needed.
+#[allow(clippy::cognitive_complexity)]
 pub fn load_mcp_tools(config_path: &Path) -> Result<Vec<RigCoreMcpTool>, McpError> {
-    let config = McpConfig::load(config_path).map_err(|e| {
-        McpError::ConfigError(format!("Failed to load MCP config: {e}"))
-    })?;
+    let config = McpConfig::load(config_path)
+        .map_err(|e| McpError::ConfigError(format!("Failed to load MCP config: {e}")))?;
 
-    let enabled_servers: Vec<&McpServerConfig> = config
-        .servers
-        .iter()
-        .filter(|s| s.enabled)
-        .collect();
+    let enabled_servers: Vec<&McpServerConfig> =
+        config.servers.iter().filter(|s| s.enabled).collect();
 
     if enabled_servers.is_empty() {
         info!("No enabled MCP servers in config");
         return Ok(Vec::new());
     }
 
-    let rt = tokio::runtime::Handle::try_current()
-        .map_err(|_| McpError::ConfigError("No Tokio runtime available; cannot discover MCP tools".into()))?;
+    let rt = tokio::runtime::Handle::try_current().map_err(|_| {
+        McpError::ConfigError("No Tokio runtime available; cannot discover MCP tools".into())
+    })?;
 
     let mut all_tools: Vec<RigCoreMcpTool> = Vec::new();
 
@@ -448,7 +389,6 @@ pub fn load_mcp_tools(config_path: &Path) -> Result<Vec<RigCoreMcpTool>, McpErro
             }
         };
 
-        // Discover tools
         let schemas = rt.block_on(async { transport.list_tools().await });
 
         match schemas {
@@ -460,7 +400,7 @@ pub fn load_mcp_tools(config_path: &Path) -> Result<Vec<RigCoreMcpTool>, McpErro
                 );
 
                 for schema in schemas {
-                    let tool = RigCoreMcpTool::new(&server.name, transport.clone(), schema);
+                    let tool = RigCoreMcpTool::new(&server.name, Arc::clone(&transport), schema);
                     all_tools.push(tool);
                 }
             }
@@ -486,8 +426,6 @@ pub fn has_enabled_servers(config_path: &Path) -> bool {
         Err(_) => false,
     }
 }
-
-// ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -557,7 +495,9 @@ mod tests {
 
     #[test]
     fn test_has_enabled_servers_no_file() {
-        assert!(!has_enabled_servers(Path::new("/tmp/nonexistent_mcp_file.toml")));
+        assert!(!has_enabled_servers(Path::new(
+            "/tmp/nonexistent_mcp_file.toml"
+        )));
     }
 
     #[test]

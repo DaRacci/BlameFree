@@ -1,5 +1,5 @@
 ---
-role_name: Code Logic
+role_name: Code Logician
 role_abbreviation: CL
 role_domain: "**runtime logic bugs that cause incorrect behavior**: off-by-one errors, inverted conditions, missing edge cases, incorrect state transitions, null/undefined dereferences, async/await defects, and concurrency bugs."
 role_anti_hallucination_rules: |

@@ -1,13 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
 use regex::Regex;
-use serde_json::{Map, Value};
 
-use crate::jaccard_similarity;
+use crate::{finding::Finding, jaccard::jaccard_similarity};
 
 /// Try to extract a function/method name from finding text.
-pub fn extract_function(text: &str) -> Option<String> {
-    // Pattern 1: function/method/class/def/const `name`
+#[allow(clippy::unwrap_used)]
+pub(crate) fn extract_function(text: &str) -> Option<String> {
     let pats: &[Regex] = &[
         Regex::new(r"(?i)(?:function|method|class|def|const)\s+`?(\w+)`?").unwrap(),
         Regex::new(r"(?i)`?([\w.]+)`?\s*(?:function|method|class)").unwrap(),
@@ -17,7 +16,7 @@ pub fn extract_function(text: &str) -> Option<String> {
 
     for pat in pats {
         if let Some(caps) = pat.captures(text) {
-            if caps.len() >= 3 && caps.get(2).map_or(false, |m| !m.as_str().is_empty()) {
+            if caps.len() >= 3 && caps.get(2).is_some_and(|m| !m.as_str().is_empty()) {
                 return Some(format!("{}.{}", &caps[1], &caps[2]));
             }
             return Some(caps[1].to_string());
@@ -34,26 +33,19 @@ pub fn extract_function(text: &str) -> Option<String> {
 }
 
 /// Deduplicate findings by (file, function) then by text similarity.
-pub fn semantic_dedup(findings: Vec<Map<String, Value>>) -> Vec<Map<String, Value>> {
+#[allow(clippy::unwrap_used)]
+pub fn semantic_dedup(findings: Vec<Finding>) -> Vec<Finding> {
     if findings.len() <= 1 {
         return findings;
     }
 
-    let mut groups: HashMap<(String, String), Vec<Map<String, Value>>> = HashMap::new();
-    let mut ungrouped: Vec<Map<String, Value>> = Vec::new();
+    let mut groups: HashMap<(String, String), Vec<Finding>> = HashMap::new();
+    let mut ungrouped: Vec<Finding> = Vec::new();
 
     for f in findings {
-        let file = f
-            .get("path")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        let func = f
-            .get("text")
-            .and_then(|v| v.as_str())
-            .map(extract_function)
-            .flatten();
-        let line = f.get("line").and_then(|v| v.as_u64()).unwrap_or(0);
+        let file = f.file.clone().unwrap_or_default();
+        let func = extract_function(&f.message);
+        let line = f.line.unwrap_or(0);
 
         if let Some(fn_name) = func {
             if !file.is_empty() {
@@ -69,14 +61,14 @@ pub fn semantic_dedup(findings: Vec<Map<String, Value>>) -> Vec<Map<String, Valu
         }
     }
 
-    let mut merged: Vec<Map<String, Value>> = Vec::new();
+    let mut merged: Vec<Finding> = Vec::new();
 
     for (_key, group) in groups {
         if group.len() == 1 {
             merged.push(group.into_iter().next().unwrap());
         } else {
             // Merge: keep richest finding, track cross-validation
-            let best = group
+            let mut best = group
                 .iter()
                 .max_by(|a, b| {
                     let a_score = score_finding(a);
@@ -89,21 +81,13 @@ pub fn semantic_dedup(findings: Vec<Map<String, Value>>) -> Vec<Map<String, Valu
             // Combine agent counts
             let total_agents: u64 = group
                 .iter()
-                .map(|f| {
-                    f.get("cross_validated_by")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(1)
-                })
+                .map(|f| f.cross_validated_by.unwrap_or(1))
                 .sum();
 
-            let mut result = best;
-            result.insert("cross_validated".to_string(), Value::Bool(true));
-            result.insert(
-                "cross_validated_by".to_string(),
-                Value::Number(total_agents.into()),
-            );
-            result.insert("merged_from".to_string(), Value::Number(group.len().into()));
-            merged.push(result);
+            best.cross_validated = true;
+            best.cross_validated_by = Some(total_agents);
+            best.merged_from = Some(group.len() as u64);
+            merged.push(best);
         }
     }
 
@@ -121,17 +105,7 @@ pub fn semantic_dedup(findings: Vec<Map<String, Value>>) -> Vec<Map<String, Valu
                 if merged_indices.contains(&j) {
                     continue;
                 }
-                let sim = jaccard_similarity(
-                    ungrouped[i]
-                        .get("text")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(""),
-                    ungrouped[j]
-                        .get("text")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(""),
-                    true,
-                );
+                let sim = jaccard_similarity(&ungrouped[i].message, &ungrouped[j].message, true);
                 if sim >= sim_threshold {
                     similar.push(j);
                     merged_indices.insert(j);
@@ -139,38 +113,17 @@ pub fn semantic_dedup(findings: Vec<Map<String, Value>>) -> Vec<Map<String, Valu
             }
             if similar.len() > 1 {
                 merged_indices.insert(i);
-                let best = similar
+                let best_idx = *similar
                     .iter()
-                    .max_by(|&&a, &&b| {
-                        ungrouped[a]
-                            .get("text")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .len()
-                            .cmp(
-                                &ungrouped[b]
-                                    .get("text")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .len(),
-                            )
-                    })
+                    .max_by(|&&a, &&b| ungrouped[a].message.len().cmp(&ungrouped[b].message.len()))
                     .unwrap();
-                let mut best_finding = ungrouped[*best].clone();
+                let mut best_finding = ungrouped[best_idx].clone();
                 let total_agents: u64 = similar
                     .iter()
-                    .map(|&idx| {
-                        ungrouped[idx]
-                            .get("cross_validated_by")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(1)
-                    })
+                    .map(|&idx| ungrouped[idx].cross_validated_by.unwrap_or(1))
                     .sum();
-                best_finding.insert("cross_validated".to_string(), Value::Bool(true));
-                best_finding.insert(
-                    "cross_validated_by".to_string(),
-                    Value::Number(total_agents.into()),
-                );
+                best_finding.cross_validated = true;
+                best_finding.cross_validated_by = Some(total_agents);
                 merged.push(best_finding);
             } else if !merged_indices.contains(&i) {
                 merged.push(ungrouped[i].clone());
@@ -183,16 +136,12 @@ pub fn semantic_dedup(findings: Vec<Map<String, Value>>) -> Vec<Map<String, Valu
     merged
 }
 
-fn score_finding(f: &Map<String, Value>) -> (usize, bool, bool) {
-    let text_len = f
-        .get("text")
-        .and_then(|v| v.as_str())
-        .map(|s| s.len())
-        .unwrap_or(0);
-    let has_line = f.get("line").is_some();
+fn score_finding(f: &Finding) -> (usize, bool, bool) {
+    let text_len = f.message.len();
+    let has_line = f.line.is_some();
     let has_evidence = f
-        .get("evidence")
-        .and_then(|v| v.as_str())
+        .evidence
+        .as_deref()
         .map(|s| !s.is_empty())
         .unwrap_or(false);
     (text_len, has_line, has_evidence)
@@ -224,9 +173,11 @@ mod tests {
 
     #[test]
     fn test_semantic_dedup_single() {
-        let mut f = Map::new();
-        f.insert("text".to_string(), Value::String("test".to_string()));
-        let result = semantic_dedup(vec![f.clone()]);
+        let f = Finding {
+            message: "test".to_string(),
+            ..Default::default()
+        };
+        let result = semantic_dedup(vec![f]);
         assert_eq!(result.len(), 1);
     }
 }

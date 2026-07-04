@@ -85,9 +85,9 @@ Events from the same agent are emitted in order:
 
 ```
 AgentStarted(role=SA, pr="PR #42")
-  → AgentChunk(role=SA, text="Analyzing...")
-  → AgentChunk(role=SA, text="Found unsafe...")
-  → AgentFinished(role=SA, pr="PR #42", findings=3, duration=12345)
+  -> AgentChunk(role=SA, text="Analyzing...")
+  -> AgentChunk(role=SA, text="Found unsafe...")
+  -> AgentFinished(role=SA, pr="PR #42", findings=3, duration=12345)
 ```
 
 Events from different agents may interleave arbitrarily. The dashboard applies events to the correct agent pane based on the `role` field.
@@ -110,10 +110,10 @@ Idle ──[AgentStarted]──▶ Running ──[AgentFinished]──▶ Finish
                            └──[AgentChunk]──▶ Running (text appended)
 ```
 
-- `AgentChunk` received while in `Idle` → ignored.
-- `AgentFinished` while in `Idle` → ignored.
-- `AgentStarted` while in `Running` → resets buffer, stays `Running` (new PR).
-- Any event received in `Finished` → ignored until next `AgentStarted`.
+- `AgentChunk` received while in `Idle` -> ignored.
+- `AgentFinished` while in `Idle` -> ignored.
+- `AgentStarted` while in `Running` -> resets buffer, stays `Running` (new PR).
+- Any event received in `Finished` -> ignored until next `AgentStarted`.
 
 ## 4. Input Handling
 
@@ -128,7 +128,7 @@ Idle ──[AgentStarted]──▶ Running ──[AgentFinished]──▶ Finish
 ### 5.1 Startup
 
 ```
-1. Check `--dashboard` flag → if not set, return (no-op).
+1. Check `--dashboard` flag -> if not set, return (no-op).
 2. Check `std::io::IsTerminal::is_terminal()` on stdout.
    - If false: warn "Dashboard requires a TTY; falling back to tracing mode."
    - Return early; no terminal setup.
@@ -141,8 +141,8 @@ Idle ──[AgentStarted]──▶ Running ──[AgentFinished]──▶ Finish
 ### 5.2 Shutdown
 
 ```
-1. User presses `q` → set `should_exit = true` → break render loop.
-2. Main loop sends final `RunProgress(completed=total)` → stops after processing.
+1. User presses `q` -> set `should_exit = true` -> break render loop.
+2. Main loop sends final `RunProgress(completed=total)` -> stops after processing.
 3. Dashboard task processes remaining events, renders one final frame.
 4. Execute `LeaveAlternateScreen`.
 5. Disable raw mode.

@@ -7,66 +7,6 @@ use std::path::PathBuf;
 use std::process::Command;
 
 // ---------------------------------------------------------------------------
-// parse_github_url
-// ---------------------------------------------------------------------------
-
-#[test]
-fn parse_github_url_valid() {
-    let result = crb_benchmark::scaffold::parse_github_url("https://github.com/owner/repo/pull/42");
-    assert!(result.is_ok());
-    let (owner, repo, num) = result.unwrap();
-    assert_eq!(owner, "owner");
-    assert_eq!(repo, "repo");
-    assert_eq!(num, 42);
-}
-
-#[test]
-fn parse_github_url_with_hyphens() {
-    let result =
-        crb_benchmark::scaffold::parse_github_url("https://github.com/my-org/my-repo/pull/123");
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap(), ("my-org".to_string(), "my-repo".to_string(), 123));
-}
-
-#[test]
-fn parse_github_url_not_github() {
-    let result =
-        crb_benchmark::scaffold::parse_github_url("https://gitlab.com/owner/repo/merge_requests/1");
-    assert!(result.is_err());
-}
-
-#[test]
-fn parse_github_url_no_pr_number() {
-    let result = crb_benchmark::scaffold::parse_github_url("https://github.com/owner/repo");
-    assert!(result.is_err());
-}
-
-#[test]
-fn parse_github_url_empty() {
-    let result = crb_benchmark::scaffold::parse_github_url("");
-    assert!(result.is_err());
-}
-
-#[test]
-fn parse_github_url_non_numeric_pr() {
-    let result =
-        crb_benchmark::scaffold::parse_github_url("https://github.com/owner/repo/pull/abc");
-    assert!(result.is_err());
-}
-
-#[test]
-fn parse_github_url_trailing_slash() {
-    // The regex is not $ anchored, so trailing slash still matches
-    let result =
-        crb_benchmark::scaffold::parse_github_url("https://github.com/owner/repo/pull/42/");
-    assert!(result.is_ok());
-    let (owner, repo, num) = result.unwrap();
-    assert_eq!(owner, "owner");
-    assert_eq!(repo, "repo");
-    assert_eq!(num, 42);
-}
-
-// ---------------------------------------------------------------------------
 // Worktree creation (basic git operations)
 // ---------------------------------------------------------------------------
 

@@ -1,8 +1,11 @@
-use crate::{
-    api_url, AgentLogResponse, PrAgentEntry, PrAgentsResponse,
+use std::collections::HashMap;
+
+use crate::api_url;
+use crb_webui_shared::runs::{AgentLogResponse, PrAgentEntry, PrAgentsResponse};
+use leptos::{
+    component, create_local_resource, create_signal, view, DynAttrs, IntoView, SignalGet, SignalSet,
 };
-use leptos::*;
-use leptos_router::*;
+use leptos_router::{use_params_map, A};
 
 #[component]
 pub fn PrDetailPage() -> impl IntoView {
@@ -15,14 +18,10 @@ pub fn PrDetailPage() -> impl IntoView {
     let (loading, set_loading) = create_signal(true);
     let (error, set_error) = create_signal::<Option<String>>(None);
 
-    // Per-agent log data: map from role to AgentLogResponse
     let (agent_logs, set_agent_logs) =
-        create_signal::<std::collections::HashMap<String, AgentLogResponse>>(
-            std::collections::HashMap::new(),
-        );
+        create_signal::<HashMap<String, AgentLogResponse>>(HashMap::new());
     let (logs_loading, set_logs_loading) = create_signal(false);
 
-    // Fetch PR agents info on load
     let fetch_pr = move || {
         let rid = run_id();
         let pk = pr_key();
@@ -33,62 +32,53 @@ pub fn PrDetailPage() -> impl IntoView {
         set_error.set(None);
         let rid_clone = rid.clone();
         let pk_clone = pk.clone();
-        let set_title = set_pr_title.clone();
-        let set_agents = set_agents.clone();
-        let set_loading = set_loading.clone();
-        let set_error = set_error.clone();
-        let set_logs = set_agent_logs.clone();
-        let set_logs_loading = set_logs_loading.clone();
+        let set_title = set_pr_title;
+        let set_agents = set_agents;
+        let set_loading = set_loading;
+        let set_error = set_error;
+        let set_logs = set_agent_logs;
+        let set_logs_loading = set_logs_loading;
         wasm_bindgen_futures::spawn_local(async move {
-            // Fetch PR agents info
             let url = api_url(&format!("/api/runs/{}/prs/{}", rid_clone, pk_clone));
             match gloo_net::http::Request::get(&url).send().await {
-                Ok(r) if r.ok() => {
-                    match r.json::<PrAgentsResponse>().await {
-                        Ok(pr) => {
-                            set_title.set(pr.pr_title);
-                            set_agents.set(pr.agents.clone());
-                            set_loading.set(false);
+                Ok(r) if r.ok() => match r.json::<PrAgentsResponse>().await {
+                    Ok(pr) => {
+                        set_title.set(pr.pr_title);
+                        set_agents.set(pr.agents.clone());
+                        set_loading.set(false);
 
-                            // Fetch all agent logs in parallel
-                            set_logs_loading.set(true);
-                            let roles: Vec<String> =
-                                pr.agents.iter().map(|a| a.role.clone()).collect();
-                            if roles.is_empty() {
-                                set_logs_loading.set(false);
-                                return;
-                            }
-                            let rid2 = rid_clone.clone();
-                            let pk2 = pk_clone.clone();
-                            let set_logs = set_logs.clone();
-                            let set_logs_loading = set_logs_loading.clone();
-                            wasm_bindgen_futures::spawn_local(async move {
-                                let mut results = std::collections::HashMap::new();
-                                for role in &roles {
-                                    let log_url = api_url(&format!(
-                                        "/api/runs/{}/logs/{}/{}",
-                                        rid2, pk2, role
-                                    ));
-                                    if let Ok(resp) =
-                                        gloo_net::http::Request::get(&log_url).send().await
-                                    {
-                                        if let Ok(log) =
-                                            resp.json::<AgentLogResponse>().await
-                                        {
-                                            results.insert(role.clone(), log);
-                                        }
+                        set_logs_loading.set(true);
+                        let roles: Vec<String> = pr.agents.iter().map(|a| a.role.clone()).collect();
+                        if roles.is_empty() {
+                            set_logs_loading.set(false);
+                            return;
+                        }
+                        let rid2 = rid_clone.clone();
+                        let pk2 = pk_clone.clone();
+                        let set_logs = set_logs;
+                        let set_logs_loading = set_logs_loading;
+                        wasm_bindgen_futures::spawn_local(async move {
+                            let mut results = HashMap::new();
+                            for role in &roles {
+                                let log_url =
+                                    api_url(&format!("/api/runs/{}/logs/{}/{}", rid2, pk2, role));
+                                if let Ok(resp) =
+                                    gloo_net::http::Request::get(&log_url).send().await
+                                {
+                                    if let Ok(log) = resp.json::<AgentLogResponse>().await {
+                                        results.insert(role.clone(), log);
                                     }
                                 }
-                                set_logs.set(results);
-                                set_logs_loading.set(false);
-                            });
-                        }
-                        Err(e) => {
-                            set_error.set(Some(format!("Failed to parse PR data: {}", e)));
-                            set_loading.set(false);
-                        }
+                            }
+                            set_logs.set(results);
+                            set_logs_loading.set(false);
+                        });
                     }
-                }
+                    Err(e) => {
+                        set_error.set(Some(format!("Failed to parse PR data: {}", e)));
+                        set_loading.set(false);
+                    }
+                },
                 Ok(r) => {
                     set_error.set(Some(format!("Server returned {}", r.status())));
                     set_loading.set(false);
@@ -132,7 +122,6 @@ pub fn PrDetailPage() -> impl IntoView {
 
     view! {
         <div class="pr-detail-page">
-            // ─── Breadcrumb ────────────────────────────────────────
             <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 14px; color: var(--text-secondary, #8b949e);">
                 <A href=move || "/".to_string()>"Home"</A>
                 <span>"/"</span>
@@ -143,7 +132,6 @@ pub fn PrDetailPage() -> impl IntoView {
                 <span>{move || pr_key()}</span>
             </div>
 
-            // ─── Header ────────────────────────────────────────────
             <div class="page-header">
                 <div>
                     <h1 class="page-header__title">{move || pr_title.get()}</h1>
@@ -166,7 +154,6 @@ pub fn PrDetailPage() -> impl IntoView {
                 </div>
             </div>
 
-            // ─── Loading state ─────────────────────────────────────
             {move || {
                 if loading.get() {
                     view! {
@@ -206,7 +193,6 @@ pub fn PrDetailPage() -> impl IntoView {
                         let logs = agent_logs.get();
                         let logs_loading_val = logs_loading.get();
 
-                        // ─── Tiled grid layout ──────────────────────────
                         view! {
                             <div style="margin-bottom: 1rem;">
                                 <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -228,7 +214,6 @@ pub fn PrDetailPage() -> impl IntoView {
                                     let role = agent.role.clone();
                                     let role_display_name = role_display(&role);
                                     let color = role_color(&role);
-                                    let border_style = format!("2px solid {}", color);
                                     let log = logs.get(&role);
 
                                     let (has_prompt, has_response, has_reasoning) = log.as_ref().map(|l| {
@@ -240,7 +225,7 @@ pub fn PrDetailPage() -> impl IntoView {
                                     let reasoning_content = log.as_ref().and_then(|l| l.reasoning.clone());
 
                                     view! {
-                                        <div style="background: #1e2938; border-radius: 8px; border-left: {border_style}; overflow: hidden;">
+                                        <div style=format!("background: #1e2938; border-radius: 8px; border-left: 2px solid {color}; overflow: hidden;")>
                                             // Agent header
                                             <div style="padding: 12px 16px; background: #0f172a; border-bottom: 1px solid #334155;">
                                                 <div style="display: flex; justify-content: space-between; align-items: center;">

@@ -16,8 +16,10 @@ use serde::Deserialize;
 pub struct GrepArgs {
     /// Regex pattern to search for in file contents.
     pub pattern: String,
+
     /// Directory path to search in (relative to repo root, optional; defaults to repo root).
     pub path: Option<String>,
+
     /// Optional file glob pattern to filter which files to search (e.g. "*.rs").
     pub file_glob: Option<String>,
 }
@@ -76,7 +78,7 @@ impl Tool for GrepTool {
                  path:line:content. Use before reading files to find relevant locations. Do NOT use \
                  the terminal tool for searches."
                     .to_string(),
-            parameters: serde_json::to_value(schemars::schema_for!(GrepArgs)).unwrap(),
+            parameters: serde_json::to_value(schemars::schema_for!(GrepArgs)).unwrap_or_default(),
         }
     }
 

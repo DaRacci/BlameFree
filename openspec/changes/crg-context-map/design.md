@@ -37,18 +37,18 @@ The CRG context map system has four layers:
 
 **Current pipeline (from `crb-consensus`):**
 ```
-diff → build_agent() → agent.prompt(diff) → parse findings → judge
+diff -> build_agent() -> agent.prompt(diff) -> parse findings -> judge
                           ↑
                   tools (read_file, grep, terminal, list_dir)
 ```
 
 **New pipeline:**
 ```
-diff → build_context_map(repo_path)
-     → context_map.render_compact()  ← injected as {context_map} template var
-     → build_agent(context_map_injected)
-     → agent.prompt(diff)             ← no tool calls needed (usually)
-     → parse findings → judge
+diff -> build_context_map(repo_path)
+     -> context_map.render_compact()  ← injected as {context_map} template var
+     -> build_agent(context_map_injected)
+     -> agent.prompt(diff)             ← no tool calls needed (usually)
+     -> parse findings -> judge
                           ↑
                   query tools (context_query, read_context_section,
                                find_references, find_definition,
@@ -167,7 +167,7 @@ class AuthService(src/auth.py:100) extends BaseService
   methods: login, logout, refresh_token
 
 === DEPENDENCIES ===
-src/auth.py → [os, jwt, src.config, src.models.user]
+src/auth.py -> [os, jwt, src.config, src.models.user]
 
 === DIFF CHANGES ===
 MODIFIED: src/auth.py (+15/-3)
@@ -386,7 +386,7 @@ let context_cache_key = compute_context_cache_key(
 );
 ```
 
-- **Same diff + same repo state → same context map → cache hit.**
+- **Same diff + same repo state -> same context map -> cache hit.**
 - **Cache TTL**: Until HEAD changes.
 - **Storage**: On-disk JSON cache + serialized compact text.
 - **Cache hit rate target**: ≥ 80% for repeated runs on same repo state.

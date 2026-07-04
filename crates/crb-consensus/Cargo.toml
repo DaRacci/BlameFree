@@ -10,7 +10,7 @@ exp16_adaptive_agents = []
 
 [dependencies]
 crb-agents = { path = "../crb-agents" }
-crb-utils = { path = "../crb-utils" }
+crb-shared = { path = "../crb-shared" }
 crb-dashboard = { path = "../crb-dashboard" }
 crb-judge = { path = "../crb-judge" }
 crb-reporting = { path = "../crb-reporting" }
@@ -24,3 +24,5 @@ tracing = { workspace = true }
 sha2 = { workspace = true }
 futures = "0.3"
 
+[lints]
+workspace = true

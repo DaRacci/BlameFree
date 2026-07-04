@@ -13,57 +13,11 @@ use serde::{Deserialize, Serialize};
 use crate::harness;
 use crate::server::{ActiveRun, AppState};
 
-/// Summary of a past benchmark run.
-#[derive(Debug, Clone, Serialize)]
-pub struct RunSummary {
-    pub id: String,
-    pub name: String,
-    pub pr_count: usize,
-    pub avg_f1: f64,
-    pub avg_precision: f64,
-    pub avg_recall: f64,
-    pub total_cost: f64,
-    pub total_tokens: usize,
-    pub duration_secs: f64,
-    pub created_at: String,
-    pub model: String,
-    pub status: String,
-}
+pub use crb_shared::RunSummary;
 
-/// Detailed run result with per-PR data (API response shape matching frontend expectations).
-#[derive(Debug, Clone, Serialize)]
-pub struct RunDetail {
-    pub id: String,
-    pub name: String,
-    pub pr_count: usize,
-    pub results: Vec<PrResultResponse>,
-    pub aggregate: Option<AggregateMetricsResponse>,
-    pub total_cost: Option<f64>,
-    pub total_tokens: usize,
-    pub duration_secs: Option<f64>,
-    pub model: String,
-    pub status: String,
-    pub config: Option<RunConfigResponse>,
-}
+pub use crb_shared::RunDetail;
 
-/// Cost information embedded in per-PR result JSON files.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CostJson {
-    #[serde(default)]
-    pub total_usd: f64,
-    #[serde(default)]
-    pub agent_tokens_in: u64,
-    #[serde(default)]
-    pub agent_tokens_out: u64,
-    #[serde(default)]
-    pub judge_tokens_in: u64,
-    #[serde(default)]
-    pub judge_tokens_out: u64,
-    #[serde(default)]
-    pub agent_call_count: u64,
-    #[serde(default)]
-    pub judge_call_count: u64,
-}
+pub use crb_shared::CostJson;
 
 /// A single PR result as it appears in the JSON files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,70 +44,15 @@ pub struct PrResultJson {
     pub agent_responses: Vec<String>,
 }
 
-/// API response shape for a single PR result (matching frontend PrResult).
-#[derive(Debug, Clone, Serialize)]
-pub struct PrResultResponse {
-    pub pr_number: u32,
-    pub pr_key: String,
-    pub title: String,
-    pub f1: Option<f64>,
-    pub precision: Option<f64>,
-    pub recall: Option<f64>,
-    pub cost: Option<f64>,
-    pub status: Option<String>,
-    #[serde(default)]
-    pub has_agents: bool,
-}
+pub use crb_shared::PrResult;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct MetricsJson {
-    #[serde(default)]
-    pub true_positives: usize,
-    #[serde(default)]
-    pub false_positives: usize,
-    #[serde(default)]
-    pub false_negatives: usize,
-    #[serde(default)]
-    pub precision: f64,
-    #[serde(default)]
-    pub recall: f64,
-    #[serde(default)]
-    pub f1: f64,
-}
+pub use crb_shared::MetricsJson;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VerdictJson {
-    #[serde(default)]
-    pub reasoning: String,
-    #[serde(default, rename = "match")]
-    pub match_: bool,
-    #[serde(default)]
-    pub confidence: f64,
-}
+pub use crb_shared::VerdictJson;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AggregateMetricsResponse {
-    pub avg_f1: f64,
-    pub avg_precision: f64,
-    pub avg_recall: f64,
-    pub total_tp: usize,
-    pub total_fp: usize,
-    pub total_fn: usize,
-    #[serde(default)]
-    pub total_cost: f64,
-    #[serde(default)]
-    pub total_prs: u32,
-    #[serde(default)]
-    pub duration_secs: f64,
-}
+pub use crb_shared::AggregateMetrics;
 
-/// Run config returned in the run detail response.
-#[derive(Debug, Clone, Serialize)]
-pub struct RunConfigResponse {
-    pub model: String,
-    pub dataset: String,
-    pub roles: Vec<String>,
-}
+pub use crb_shared::RunConfig;
 
 /// Configuration for starting a new benchmark run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -197,7 +96,9 @@ pub struct BenchmarkConfig {
     pub reasoning_effort: Option<String>,
 }
 
-fn default_use_cache() -> bool { true }
+fn default_use_cache() -> bool {
+    true
+}
 
 /// Deserialize `roles` from either a comma-separated string or a Vec<String>.
 fn deserialize_roles<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
@@ -254,73 +155,10 @@ pub struct StartRunResponse {
     pub total_prs: usize,
 }
 
-/// Response from GET /api/runs/:id/logs
-#[derive(Debug, Clone, Serialize)]
-pub struct LogsListResponse {
-    pub run_id: String,
-    pub cache_available: bool,
-    pub prs: Vec<PrLogsEntry>,
-}
-
-/// A single PR's available log entries
-#[derive(Debug, Clone, Serialize)]
-pub struct PrLogsEntry {
-    pub pr_key: String,
-    pub pr_title: String,
-    pub agents: Vec<String>,
-}
-
-/// Response from GET /api/runs/:id/logs/:pr_key/:role
-#[derive(Debug, Clone, Serialize)]
-pub struct AgentLogResponse {
-    pub run_id: String,
-    pub pr_key: String,
-    pub role: String,
-    pub prompt: Option<String>,
-    pub response: Option<String>,
-    pub reasoning: Option<String>,
-    pub available: bool,
-}
-
-/// Response from GET /api/runs/:id/prs/:pr_key — lightweight PR detail for the tiled log page
-#[derive(Debug, Clone, Serialize)]
-pub struct PrAgentsResponse {
-    pub run_id: String,
-    pub pr_key: String,
-    pub pr_title: String,
-    pub agents: Vec<PrAgentEntry>,
-    pub has_output: bool,
-}
-
-/// Per-agent availability entry
-#[derive(Debug, Clone, Serialize)]
-pub struct PrAgentEntry {
-    pub role: String,
-    pub has_prompt: bool,
-    pub has_response: bool,
-    pub has_reasoning: bool,
-}
-
-/// Response from POST /api/runs/:id/replay
-#[derive(Debug, Clone, Serialize)]
-pub struct ReplayStartResponse {
-    pub run_id: String,
-    pub status: String,
-    pub cache_available: bool,
-}
-
-/// Response from GET /api/runs/:id/replay/status
-#[derive(Debug, Clone, Serialize)]
-pub struct ReplayStatusResponse {
-    pub run_id: String,
-    pub status: String,
-    pub progress_pct: u32,
-    pub completed_prs: u32,
-    pub total_prs: u32,
-    pub message: String,
-}
-
-// ── Handlers ────────────────────────────────────────────────────────────────
+pub use crb_shared::{
+    AgentLogResponse, LogsListResponse, PrAgentEntry, PrAgentsResponse, PrDetailResponse,
+    PrLogsEntry, ReplayStartResponse, ReplayStatusResponse,
+};
 
 /// GET /api/runs — list all benchmark runs (both completed and active).
 pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
@@ -363,16 +201,20 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
             runs.push(RunSummary {
                 id: id.clone(),
                 name: id.clone(),
-                pr_count: ar.total_prs,
-                avg_f1: 0.0,
-                avg_precision: 0.0,
-                avg_recall: 0.0,
-                total_cost: 0.0,
+                pr_count: ar.total_prs as u32,
+                avg_f1: Some(0.0),
+                avg_precision: Some(0.0),
+                avg_recall: Some(0.0),
+                total_cost: Some(0.0),
                 total_tokens: 0,
-                duration_secs: 0.0,
+                duration_secs: Some(0.0),
                 created_at: format_timestamp(ar.created_at),
-                model: ar.config.model.clone(),
-                status: if ar.finished { "completed".to_string() } else { "running".to_string() },
+                model: Some(ar.config.model.clone()),
+                status: if ar.finished {
+                    "completed".to_string()
+                } else {
+                    "running".to_string()
+                },
             });
         }
     }
@@ -461,7 +303,7 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
                     has_summary = true;
                     if let Some(metrics) = summary.get("aggregate_metrics") {
                         if let Some(am) = metrics.as_object() {
-                            let ag = AggregateMetricsResponse {
+                            let ag = AggregateMetrics {
                                 avg_f1: am.get("avg_f1").and_then(|v| v.as_f64()).unwrap_or(0.0),
                                 avg_precision: am
                                     .get("avg_precision")
@@ -524,15 +366,15 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
                             return Ok(RunSummary {
                                 id: name.to_string(),
                                 name: name.to_string(),
-                                pr_count,
-                                avg_f1: ag.avg_f1,
-                                avg_precision: ag.avg_precision,
-                                avg_recall: ag.avg_recall,
-                                total_cost,
+                                pr_count: pr_count as u32,
+                                avg_f1: Some(ag.avg_f1),
+                                avg_precision: Some(ag.avg_precision),
+                                avg_recall: Some(ag.avg_recall),
+                                total_cost: Some(total_cost),
                                 total_tokens,
-                                duration_secs,
+                                duration_secs: Some(duration_secs),
                                 created_at: get_file_modified(path),
-                                model,
+                                model: Some(model),
                                 status: "completed".to_string(),
                             });
                         }
@@ -560,7 +402,8 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
 
     // Aggregate per-PR cost if available
     if total_cost == 0.0 {
-        total_cost = results.iter()
+        total_cost = results
+            .iter()
             .filter_map(|r| r.cost.as_ref().map(|c| c.total_usd))
             .sum();
     }
@@ -573,15 +416,15 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
     Ok(RunSummary {
         id: name.to_string(),
         name: name.to_string(),
-        pr_count,
-        avg_f1,
-        avg_precision,
-        avg_recall,
-        total_cost,
+        pr_count: pr_count as u32,
+        avg_f1: Some(avg_f1),
+        avg_precision: Some(avg_precision),
+        avg_recall: Some(avg_recall),
+        total_cost: Some(total_cost),
         total_tokens,
-        duration_secs,
+        duration_secs: Some(duration_secs),
         created_at: get_file_modified(path),
-        model: "unknown".to_string(),
+        model: Some("unknown".to_string()),
         status: "completed".to_string(),
     })
 }
@@ -633,7 +476,7 @@ pub async fn get_run(
                 duration_secs: None,
                 model: active_run.config.model.clone(),
                 status: "running".to_string(),
-                config: Some(RunConfigResponse {
+                config: Some(RunConfig {
                     model: active_run.config.model.clone(),
                     dataset: active_run.config.dataset_dir.clone(),
                     roles,
@@ -667,7 +510,7 @@ pub async fn get_run(
         }
     };
 
-    let mut results: Vec<PrResultResponse> = Vec::new();
+    let mut results: Vec<PrResult> = Vec::new();
     let mut total_cost = 0.0f64;
     let mut total_tokens = 0usize;
     let mut model = "unknown".to_string();
@@ -735,7 +578,7 @@ pub async fn get_run(
                         .to_string();
                     let pr_key_for_agents = pr_key.clone();
 
-                    results.push(PrResultResponse {
+                    results.push(PrResult {
                         pr_number,
                         pr_key,
                         title: pr.pr_title,
@@ -789,10 +632,15 @@ pub async fn get_run(
     }
 
     // Merge config from active run state if available (it isn't stored on disk)
-    let config = active_run_config.as_ref().map(|ar| RunConfigResponse {
+    let config = active_run_config.as_ref().map(|ar| RunConfig {
         model: ar.config.model.clone(),
         dataset: ar.config.dataset_dir.clone(),
-        roles: ar.config.roles.split(',').map(|s| s.trim().to_string()).collect(),
+        roles: ar
+            .config
+            .roles
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect(),
     });
 
     let detail = RunDetail {
@@ -800,7 +648,7 @@ pub async fn get_run(
         name: id.clone(),
         pr_count,
         results,
-        aggregate: Some(AggregateMetricsResponse {
+        aggregate: Some(AggregateMetrics {
             avg_f1,
             avg_precision,
             avg_recall,
@@ -962,7 +810,8 @@ fn scan_agent_roles(pr_cache_dir: &Path) -> Vec<String> {
         for entry in entries.flatten() {
             let fname = entry.file_name().to_string_lossy().to_string();
             if let Some(rest) = fname.strip_prefix("agent_") {
-                if let Some(role) = rest.strip_suffix("_prompt.txt")
+                if let Some(role) = rest
+                    .strip_suffix("_prompt.txt")
                     .or_else(|| rest.strip_suffix("_response.txt"))
                 {
                     roles.insert(role.to_string());
@@ -1049,12 +898,20 @@ pub async fn list_logs(
                 if file_path.extension().map_or(true, |e| e != "json") {
                     continue;
                 }
-                let fname = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let fname = file_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 if fname == crb_harness::paths::SUMMARY_FILE || fname.starts_with("candidates") {
                     continue;
                 }
                 // Filename stem is the pr_key
-                let stem = file_path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                let stem = file_path
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 if stem.is_empty() || stem.starts_with('_') || stem.starts_with('.') {
                     continue;
                 }
@@ -1164,7 +1021,11 @@ fn resolve_pr_title(output_dir: &Path, run_id: &str, pr_key: &str) -> String {
             if let Ok(content) = std::fs::read_to_string(&path) {
                 if let Ok(pr) = serde_json::from_str::<PrResultJson>(&content) {
                     // Match by PR number from URL being equal to parsed pr_key
-                    let pr_num_from_url = pr.url.rsplit('/').next().and_then(|s| s.parse::<u32>().ok());
+                    let pr_num_from_url = pr
+                        .url
+                        .rsplit('/')
+                        .next()
+                        .and_then(|s| s.parse::<u32>().ok());
                     let pr_num_from_key = pr_key.parse::<u32>().ok();
                     if pr_num_from_url.is_some() && pr_num_from_url == pr_num_from_key {
                         if !pr.pr_title.is_empty() {
@@ -1259,7 +1120,12 @@ pub async fn get_pr_agents(
                 let has_prompt = read_agent_log_file(cd, &pr_key, &role, "prompt").is_some();
                 let has_response = read_agent_log_file(cd, &pr_key, &role, "response").is_some();
                 let has_reasoning = read_agent_log_file(cd, &pr_key, &role, "reasoning").is_some();
-                entries.push(PrAgentEntry { role, has_prompt, has_response, has_reasoning });
+                entries.push(PrAgentEntry {
+                    role,
+                    has_prompt,
+                    has_response,
+                    has_reasoning,
+                });
             }
             entries
         } else {
@@ -1281,8 +1147,13 @@ pub async fn get_pr_agents(
                     if path.extension().map_or(true, |e| e != "json") {
                         continue;
                     }
-                    let fname = path.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-                    if fname == crb_harness::paths::SUMMARY_FILE || fname.starts_with("candidates") {
+                    let fname = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_lowercase();
+                    if fname == crb_harness::paths::SUMMARY_FILE || fname.starts_with("candidates")
+                    {
                         continue;
                     }
                     if fname.contains(&pr_key_lower) {
@@ -1469,25 +1340,6 @@ pub async fn replay_status(
     }
 }
 
-/// Detailed per-PR response with verdicts, findings count, cost breakdown.
-#[derive(Debug, Clone, Serialize)]
-pub struct PrDetailResponse {
-    pub run_id: String,
-    pub pr_title: String,
-    pub url: String,
-    pub findings_count: usize,
-    pub golden_count: usize,
-    pub metrics: MetricsJson,
-    pub verdicts: Vec<VerdictJson>,
-    pub cost: Option<CostJson>,
-    /// Raw findings JSON from agents
-    #[serde(default)]
-    pub findings: serde_json::Value,
-    /// Raw agent response texts
-    #[serde(default)]
-    pub agent_responses: Vec<String>,
-}
-
 /// GET /api/runs/:id/pr-detail/:pr_key — get full details for a specific PR from its result file
 pub async fn get_pr_detail(
     State(state): State<AppState>,
@@ -1497,13 +1349,23 @@ pub async fn get_pr_detail(
 
     let run_path = state.output_dir.join(&id);
     if !run_path.exists() || !run_path.is_dir() {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": format!("Run not found: {}", id) }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": format!("Run not found: {}", id) })),
+        )
+            .into_response();
     }
 
     // Find the matching PR result file — pr_key could be a filename fragment or PR number
     let entries = match std::fs::read_dir(&run_path) {
         Ok(e) => e,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "Cannot read run directory"}))).into_response(),
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Cannot read run directory"})),
+            )
+                .into_response()
+        }
     };
 
     let pr_key_lower = pr_key.to_lowercase();
@@ -1512,7 +1374,11 @@ pub async fn get_pr_detail(
         if file_path.extension().map_or(true, |e| e != "json") {
             continue;
         }
-        let fname = file_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let fname = file_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         if fname == crb_harness::paths::SUMMARY_FILE || fname.starts_with("candidates") {
             continue;
         }
@@ -1529,7 +1395,11 @@ pub async fn get_pr_detail(
 
         // Match by filename containing pr_key (normalize spaces to underscores for filename matching),
         // or by PR number extracted from URL, or by PR title containing pr_key
-        let pr_num_from_url = pr.url.rsplit('/').next().and_then(|s| s.parse::<u32>().ok());
+        let pr_num_from_url = pr
+            .url
+            .rsplit('/')
+            .next()
+            .and_then(|s| s.parse::<u32>().ok());
         let pr_num_from_key = pr_key.parse::<u32>().ok();
         // Normalize spaces to underscores in the pr_key for filename matching (files use underscores)
         let pr_key_normalized = pr_key_lower.replace(' ', "_");
@@ -1556,9 +1426,14 @@ pub async fn get_pr_detail(
                 cost: pr.cost,
                 findings: pr.findings,
                 agent_responses: pr.agent_responses,
-            }).into_response();
+            })
+            .into_response();
         }
     }
 
-    (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": format!("PR not found: {}", pr_key) }))).into_response()
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({"error": format!("PR not found: {}", pr_key) })),
+    )
+        .into_response()
 }

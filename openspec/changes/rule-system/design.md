@@ -49,8 +49,8 @@ crb-harness (binary)
 │  2. Load RuleSet::load_from_dir(rules_dir)                   │
 │  3. For each PR:                                             │
 │     a. Collect changed file paths from PR diff               │
-│     b. Call ruleset.matching(&changed_paths) → Vec<&Rule>    │
-│     c. Call ruleset.format_preamble(&changed_paths) → String │
+│     b. Call ruleset.matching(&changed_paths) -> Vec<&Rule>    │
+│     c. Call ruleset.format_preamble(&changed_paths) -> String │
 │     d. Pass preamble string to build_agent(..., preamble)    │
 │     e. Agent evaluates with enriched system prompt           │
 │                                                              │

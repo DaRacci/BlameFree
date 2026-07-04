@@ -42,8 +42,8 @@
 
 - [ ] **2.2 Unit tests for store**
   - Job creation and UUID uniqueness
-  - Status transitions (Pending → Processing → Complete)
-  - Invalid transitions (Complete → Processing should fail)
+  - Status transitions (Pending -> Processing -> Complete)
+  - Invalid transitions (Complete -> Processing should fail)
   - Cancel of pending vs completed jobs
   - Max jobs eviction
   - Thread safety under concurrent access
@@ -63,12 +63,12 @@
   - Implement `FromStr` for `ReviewStatus` if needed for query params
 
 - [ ] **3.3 Set up axum router in `src/main.rs`**
-  - `GET /health` → `health::health_check`
-  - `POST /review` → `review::submit_review`
-  - `GET /review/{id}` → `review::get_review`
-  - `GET /review/{id}/comments` → `review::get_comments`
-  - `POST /review/{id}/cancel` → `review::cancel_review`
-  - `GET /reviews` → `review::list_reviews`
+  - `GET /health` -> `health::health_check`
+  - `POST /review` -> `review::submit_review`
+  - `GET /review/{id}` -> `review::get_review`
+  - `GET /review/{id}/comments` -> `review::get_comments`
+  - `POST /review/{id}/cancel` -> `review::cancel_review`
+  - `GET /reviews` -> `review::list_reviews`
   - Attach `CorsLayer` (allow all origins for MVP)
   - Attach `TraceLayer` for request logging
   - Start server with `tokio::net::TcpListener` + `axum::serve`
@@ -143,15 +143,15 @@
 
 - [ ] **5.2 Implement tech-stack detection**
   - Scan repo root for well-known files:
-    - `Cargo.toml` → Rust + parse key dependencies
-    - `package.json` → Node.js + parse dependencies
-    - `pyproject.toml` / `requirements.txt` → Python
-    - `go.mod` → Go
-    - `pom.xml` → Java/Maven
-    - `build.gradle` → Java/Gradle
-    - `.csproj` → C#
-    - `Gemfile` → Ruby
-    - `CMakeLists.txt` → C/C++
+    - `Cargo.toml` -> Rust + parse key dependencies
+    - `package.json` -> Node.js + parse dependencies
+    - `pyproject.toml` / `requirements.txt` -> Python
+    - `go.mod` -> Go
+    - `pom.xml` -> Java/Maven
+    - `build.gradle` -> Java/Gradle
+    - `.csproj` -> C#
+    - `Gemfile` -> Ruby
+    - `CMakeLists.txt` -> C/C++
   - Return detected language as string, tech stack as Vec<String>
 
 - [ ] **5.3 Implement module analysis**
@@ -181,10 +181,10 @@
 - [ ] **6.2 Handle the "no golden comments" case**
   - In server mode, there are no golden comments to compare against
   - The consensus pipeline should run agents only, skip judge evaluation
-  - Alternatively, pass empty goldens list → all findings are FPs → still get structured findings
+  - Alternatively, pass empty goldens list -> all findings are FPs -> still get structured findings
   - Decision: run agents directly via `run_reviewers()`, skip consensus judge, collect findings as-is
 
-- [ ] **6.3 Implement agent results → ReviewFinding conversion**
+- [ ] **6.3 Implement agent results -> ReviewFinding conversion**
   - Map each `Finding` from agents to `ReviewFinding`
   - Add `source_role` based on which agent produced it
   - Group findings by severity for metrics

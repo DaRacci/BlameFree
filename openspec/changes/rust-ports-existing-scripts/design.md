@@ -44,9 +44,9 @@ aggregator::semantic_dedup()           ── group by (file,function) then
 Vec<Finding> (deduped)
     │
     ▼
-severity_auditor::apply_severity_auditor()  ── NEVER_DOWNGRADE check →
-    │                                              multi-agent Critical check →
-    ▼                                             INFLATED_PATTERNS match → downgrade
+severity_auditor::apply_severity_auditor()  ── NEVER_DOWNGRADE check ->
+    │                                              multi-agent Critical check ->
+    ▼                                             INFLATED_PATTERNS match -> downgrade
 Vec<Finding> (audited)
     │
     ▼
@@ -63,15 +63,15 @@ Map<Url, Candidates> + Stats
 #### `fn classify_severity(text: &str) -> Severity`
 
 Normalise a severity string to the `Severity` enum. Handles:
-- Direct matches: `"critical"` / `"crit"` → `Severity::Critical`, `"high"` → `Severity::High`, `"medium"` / `"med"` → `Severity::Medium`, `"low"` → `Severity::Low`. Case-insensitive.
-- Prefix matching ("crit" → Critical, "hig" → High, "med" → Medium, "low" → Low).
+- Direct matches: `"critical"` / `"crit"` -> `Severity::Critical`, `"high"` -> `Severity::High`, `"medium"` / `"med"` -> `Severity::Medium`, `"low"` -> `Severity::Low`. Case-insensitive.
+- Prefix matching ("crit" -> Critical, "hig" -> High, "med" -> Medium, "low" -> Low).
 - Default to `Severity::Medium` on empty or unrecognised input.
 
 #### `fn normalize(text: &str) -> String`
 
 - Lowercase the text.
 - Strip markdown formatting: `*`, `_`, `` ` ``, `#`, `[`, `]`.
-- Collapse whitespace (multiple spaces → single space, trim).
+- Collapse whitespace (multiple spaces -> single space, trim).
 
 #### `fn extract_function(text: &str) -> Option<String>`
 
@@ -135,12 +135,12 @@ Returns empty `Vec` if no findings parsed.
 Full pipeline per PR:
 1. Parse each report via `parse_report()`.
 2. Dedup via `semantic_dedup()`.
-3. Sort by severity order (Critical→Low).
+3. Sort by severity order (Critical->Low).
 4. Cap at `MAX_CANDIDATES_PER_PR = 20`.
 5. Format via `format_candidate()`.
 
 Returns:
-- `Map<Url, Candidates>` — mapping PR URL → tool-name → candidate list
+- `Map<Url, Candidates>` — mapping PR URL -> tool-name -> candidate list
 - `Stats` — `{ total_findings, candidates, parse_warnings, reports_with_warnings, passed_to_adjudication, report_stats }`
 
 ### Key Types (shared, defined in `crb-agents` crate)
@@ -182,13 +182,13 @@ Static instances (compiled once via `once_cell::sync::Lazy`):
 
 #### `fn severity_value(severity: &Severity) -> u8`
 
-Maps `Critical → 0, High → 1, Medium → 2, Low → 3`.
+Maps `Critical -> 0, High -> 1, Medium -> 2, Low -> 3`.
 
 #### `fn has_never_downgrade_pattern(finding: &Finding) -> Option<&'static str>`
 
 Check finding `text + evidence` (lowercased, combined) against all `NEVER_DOWNGRADE_CATEGORIES` patterns. Returns `Some(category_name)` on first match, `None` otherwise.
 
-#### `fn match_inflated_pattern(finding: &Finding) -> Option<&'static InflatedCategory>`
+#### `fn has_inflated_pattern(finding: &Finding) -> Option<&'static InflatedCategory>`
 
 Check combined text+evidence against all `INFLATED_CATEGORIES` patterns. Returns the first-matching category.
 
@@ -201,7 +201,7 @@ Apply quantum: new_val = (current_val - quantum), clamped to `[Critical, Low]`. 
 For each finding:
 1. **NEVER_DOWNGRADE check** — if `has_never_downgrade_pattern()` returns `Some`, keep original severity. Set `severity_audited = false`, `severity_audit_reason = "protected_by_never_downgrade_pattern: {category}"`.
 2. **Multi-agent Critical guard** — if severity is `Critical` and `cross_validated_by >= 2`, skip downgrade. Reason: `"protected_by_multi_agent_critical: {n}_agents"`.
-3. **Inflated pattern check** — if `match_inflated_pattern()` returns a category, compute new severity via `compute_new_severity()`. Only downgrade (never upgrade). Reason: `"downgraded: {orig}→{new} by category='{cat}' pattern='{pat}' (quantum={q})"`.
+3. **Inflated pattern check** — if `has_inflated_pattern()` returns a category, compute new severity via `compute_new_severity()`. Only downgrade (never upgrade). Reason: `"downgraded: {orig}->{new} by category='{cat}' pattern='{pat}' (quantum={q})"`.
 4. If no inflated pattern matches: keep original, reason: `"no_inflated_patterns_matched"`.
 
 Never upgrades. Never downgrades a finding past `Low`.
@@ -238,5 +238,5 @@ Generate human-readable report:
 || Dedup strategy | Group-key then Jaccard | Matches Python exactly; O(n²) Jaccard only for remaining ungrouped |
 || Severity type | `enum Severity` in `crb-agents` | Strongly-typed, cross-crate shared; no magic strings |
 || Compile-once patterns | `once_cell::sync::Lazy<Vec<Regex>>` | Pattern list grows rarely; negligible memory cost |
-|| parse_report order | table → bullet → JSON | Matches Python; table format is the primary Phase 4 format |
+|| parse_report order | table -> bullet -> JSON | Matches Python; table format is the primary Phase 4 format |
 || NEVER_DOWNGRADE priority | Highest | Security/integrity/correctness patterns must always win |

@@ -28,7 +28,6 @@
   pointer-events: none;
 }
 
-/* Variants */
 .btn--primary {
   background: var(--accent-blue);
   color: var(--text-inverse);
@@ -87,7 +86,6 @@
   background: var(--bg-surface);
 }
 
-/* Sizes */
 .btn--sm {
   padding: var(--spacing-xs) var(--spacing-md);
   font-size: var(--text-xs);
@@ -107,7 +105,6 @@
   width: 100%;
 }
 
-/* Icon */
 .btn__icon {
   font-size: var(--text-lg);
   line-height: 1;

@@ -9,8 +9,6 @@ use serde::Serialize;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
-// ── Reasoning types ──────────────────────────────────────────────────────────
-
 /// Configuration for model reasoning/thinking support.
 ///
 /// Contains all the information needed to inject reasoning parameters
@@ -39,7 +37,6 @@ pub const REASONING_EFFORT_LEVELS: &[&str] = &["low", "medium", "high", "max"];
 #[serde(rename_all = "snake_case")]
 pub enum ReasoningEffort {
     Low,
-    #[serde(rename = "medium")]
     Medium,
     High,
     Max,
@@ -93,8 +90,6 @@ impl ReasoningConfig {
     }
 }
 
-// ── API discovery types ──────────────────────────────────────────────────────
-
 /// Response from OpenRouter's `GET /api/v1/models` endpoint.
 #[derive(serde::Deserialize)]
 struct OpenRouterModelsResponse {
@@ -108,8 +103,6 @@ struct OpenRouterModel {
     /// If `Some`, this model supports reasoning.
     reasoning: Option<serde_json::Value>,
 }
-
-// ── Cached reasoning model IDs ───────────────────────────────────────────────
 
 /// Cache of model IDs that support reasoning, populated via
 /// [`warm_model_cache`] or lazily on first query.
@@ -180,8 +173,6 @@ async fn fetch_reasoning_models_async() -> Result<HashSet<String>, String> {
     Ok(ids)
 }
 
-// ── Sync initialisation (for non-tokio contexts, e.g. CLI benchmark) ────────
-
 /// Initialise the model cache synchronously using a blocking HTTP call.
 ///
 /// Only use this OUTSIDE a tokio runtime (e.g. from `main()` before
@@ -215,8 +206,7 @@ pub fn warm_model_cache_blocking() {
 /// Blocking HTTP call — must NOT be called from within a tokio async context.
 fn fetch_reasoning_models_blocking() -> Result<HashSet<String>, String> {
     let url = "https://openrouter.ai/api/v1/models";
-    let response = reqwest::blocking::get(url)
-        .map_err(|e| format!("HTTP request failed: {e}"))?;
+    let response = reqwest::blocking::get(url).map_err(|e| format!("HTTP request failed: {e}"))?;
 
     if !response.status().is_success() {
         return Err(format!("API returned {}", response.status()));
@@ -236,25 +226,21 @@ fn fetch_reasoning_models_blocking() -> Result<HashSet<String>, String> {
     Ok(ids)
 }
 
-// ── Public query functions ───────────────────────────────────────────────────
-
 /// Check whether a model supports reasoning, consulting the cached OpenRouter
 /// model list, with fallback to heuristic matching.
 ///
 /// If the cache has been warmed (via [`warm_model_cache`] or
 /// [`warm_model_cache_blocking`]), uses the API result. Otherwise falls
-/// back to the heuristic immediately — no blocking I/O, safe in any context.
+/// back to the heuristic immediately; no blocking I/O, safe in any context.
 pub fn supports_reasoning(model: &str) -> bool {
     match REASONING_MODEL_IDS.get() {
         Some(Some(ids)) => {
-            // API cache is available — exact match
             ids.contains(model)
-                || ids.iter().any(|id| model.ends_with(id) || id.ends_with(model))
+                || ids
+                    .iter()
+                    .any(|id| model.ends_with(id) || id.ends_with(model))
         }
-        _ => {
-            // Cache not warmed or API failed — fallback heuristic
-            fallback_is_reasoning_model(model)
-        }
+        _ => fallback_is_reasoning_model(model),
     }
 }
 
@@ -315,8 +301,6 @@ pub fn make_additional_params(
     let config = get_reasoning_config(model, Some(effort))?;
     Some(config.to_additional_params_json())
 }
-
-// ── Convenience builder for the harness ──────────────────────────────────────
 
 /// Convert a `reasoning_effort: Option<String>` plus a `model: &str` into
 /// the `additional_params: Option<serde_json::Value>` that should be passed

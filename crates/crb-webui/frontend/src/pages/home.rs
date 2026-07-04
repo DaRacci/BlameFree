@@ -1,8 +1,14 @@
-use leptos::*;
-use crate::{RunSummary, AdhocRunSummary, api_url};
+use crb_webui_shared::{adhoc::AdhocRunSummary, runs::RunSummary};
+use leptos::{
+    component, create_effect, create_signal, set_interval, spawn_local, view, IntoView, SignalGet,
+    SignalSet, WriteSignal,
+};
 use std::time::Duration;
 
-// ─── Home Page Component ─────────────────────────────────────────────────────
+use crate::fetch_json;
+
+const API_RUNS_URL: &str = "/api/runs";
+const API_ADHOC_RUNS_URL: &str = "/api/adhoc/runs";
 
 #[component]
 pub fn HomePage() -> impl IntoView {
@@ -12,16 +18,15 @@ pub fn HomePage() -> impl IntoView {
     let (error, set_error) = create_signal::<Option<String>>(None);
     let (has_active, set_has_active) = create_signal(false);
 
-    // ─── Fetch all data ──────────────────────────────────────────────────
     let fetch = move |sb: WriteSignal<Vec<RunSummary>>,
-                       sa: WriteSignal<Vec<AdhocRunSummary>>,
-                       sl: WriteSignal<bool>,
-                       se: WriteSignal<Option<String>>,
-                       sha: WriteSignal<bool>| {
+                      sa: WriteSignal<Vec<AdhocRunSummary>>,
+                      sl: WriteSignal<bool>,
+                      se: WriteSignal<Option<String>>,
+                      sha: WriteSignal<bool>| {
         spawn_local(async move {
             let mut active = false;
 
-            match get_bench_runs().await {
+            match fetch_json::<Vec<RunSummary>>(API_RUNS_URL).await {
                 Ok(data) => {
                     if data.iter().any(|r| r.status == "running") {
                         active = true;
@@ -31,7 +36,7 @@ pub fn HomePage() -> impl IntoView {
                 Err(e) => se.set(Some(e)),
             }
 
-            match get_adhoc_runs().await {
+            match fetch_json::<Vec<AdhocRunSummary>>(API_ADHOC_RUNS_URL).await {
                 Ok(data) => {
                     if data.iter().any(|r| r.status == "running") {
                         active = true;
@@ -46,7 +51,6 @@ pub fn HomePage() -> impl IntoView {
         });
     };
 
-    // Initial load
     fetch(
         set_bench_runs,
         set_adhoc_runs,
@@ -54,33 +58,29 @@ pub fn HomePage() -> impl IntoView {
         set_error,
         set_has_active,
     );
-
-    // ─── Auto-refresh when active runs exist ────────────────────────────
-    let s_bench = set_bench_runs.clone();
-    let s_adhoc = set_adhoc_runs.clone();
-    let s_loading = set_loading.clone();
-    let s_error = set_error.clone();
-    let s_has_active = set_has_active.clone();
+    let s_bench = set_bench_runs;
+    let s_adhoc = set_adhoc_runs;
+    let s_loading = set_loading;
+    let s_error = set_error;
+    let s_has_active = set_has_active;
     create_effect(move |_| {
         if has_active.get() {
-            let sb = s_bench.clone();
-            let sa = s_adhoc.clone();
-            let sl = s_loading.clone();
-            let se = s_error.clone();
-            let sha = s_has_active.clone();
+            let sb = s_bench;
+            let sa = s_adhoc;
+            let sl = s_loading;
+            let se = s_error;
+            let sha = s_has_active;
             set_interval(
                 move || {
-                    fetch(sb.clone(), sa.clone(), sl.clone(), se.clone(), sha.clone());
+                    fetch(sb, sa, sl, se, sha);
                 },
                 Duration::from_secs(5),
             );
         }
     });
 
-    // ─── View ────────────────────────────────────────────────────────────
     view! {
         <div class="home-page">
-            // ─── Page Header ──────────────────────────────────────────
             <div class="page-header">
                 <h1 class="page-header__title">"Overview"</h1>
                 <div class="page-header__actions">
@@ -93,7 +93,6 @@ pub fn HomePage() -> impl IntoView {
                 </div>
             </div>
 
-            // ─── Content ──────────────────────────────────────────────────
             {move || {
                 if loading.get() {
                     view! {
@@ -132,7 +131,6 @@ pub fn HomePage() -> impl IntoView {
                     let bench = bench_runs.get();
                     let adhoc = adhoc_runs.get();
 
-                    // ── Compute stats ─────────────────────────────────
                     let completed_bench: Vec<&RunSummary> = bench.iter()
                         .filter(|r| r.status != "running" && r.status != "pending")
                         .collect();
@@ -147,7 +145,6 @@ pub fn HomePage() -> impl IntoView {
                         if vals.is_empty() { 0.0 } else { vals.iter().sum::<f64>() / vals.len() as f64 }
                     };
 
-                    // ── Active runs (benchmark + ad-hoc) ─────────────
                     let active_bench: Vec<&RunSummary> = bench.iter()
                         .filter(|r| r.status == "running" || r.status == "pending")
                         .collect();
@@ -156,7 +153,6 @@ pub fn HomePage() -> impl IntoView {
                         .collect();
                     let has_any_active = !active_bench.is_empty() || !active_adhoc.is_empty();
 
-                    // ── Merged recent runs (sorted by created_at) ────
                     let mut merged: Vec<RecentRunItem> = Vec::new();
                     for r in bench.iter() {
                         merged.push(RecentRunItem::Benchmark(r.clone()));
@@ -290,7 +286,6 @@ pub fn HomePage() -> impl IntoView {
                             }.into_view()
                         }}
 
-                        // ─── Recent Runs ────────────────────────────────
                         <div class="section-header">
                             <h2 class="section-header__title">"Recent Runs"</h2>
                         </div>
@@ -351,8 +346,6 @@ pub fn HomePage() -> impl IntoView {
     }
 }
 
-// ─── Helper Types ─────────────────────────────────────────────────────────────
-
 #[derive(Debug, Clone)]
 enum RecentRunItem {
     Benchmark(RunSummary),
@@ -360,13 +353,6 @@ enum RecentRunItem {
 }
 
 impl RecentRunItem {
-    fn id(&self) -> &str {
-        match self {
-            RecentRunItem::Benchmark(r) => &r.id,
-            RecentRunItem::Adhoc(r) => &r.id,
-        }
-    }
-
     fn status(&self) -> &str {
         match self {
             RecentRunItem::Benchmark(r) => &r.status,
@@ -403,49 +389,9 @@ impl RecentRunItem {
     }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 fn format_elapsed(secs: f64) -> String {
     let total = secs as u64;
     let mins = total / 60;
     let secs_rem = total % 60;
     format!("{:02}:{:02} elapsed", mins, secs_rem)
-}
-
-async fn get_bench_runs() -> Result<Vec<RunSummary>, String> {
-    let url = api_url("/api/runs");
-    let response = gloo_net::http::Request::get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.ok() {
-        return Err(format!("Server returned {}", response.status()));
-    }
-
-    let data: Vec<RunSummary> = response
-        .json()
-        .await
-        .map_err(|e| format!("Parse error: {}", e))?;
-
-    Ok(data)
-}
-
-async fn get_adhoc_runs() -> Result<Vec<AdhocRunSummary>, String> {
-    let url = api_url("/api/adhoc/runs");
-    let response = gloo_net::http::Request::get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.ok() {
-        return Err(format!("Server returned {}", response.status()));
-    }
-
-    let data: Vec<AdhocRunSummary> = response
-        .json()
-        .await
-        .map_err(|e| format!("Parse error: {}", e))?;
-
-    Ok(data)
 }

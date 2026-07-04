@@ -84,8 +84,7 @@ fn review_args_default_path_is_dot() {
 #[test]
 fn review_args_commit_range() {
     use clap::Parser;
-    let args =
-        crb_harness::config::ReviewArgs::parse_from(["test", "--commits", "HEAD~3..HEAD"]);
+    let args = crb_harness::config::ReviewArgs::parse_from(["test", "--commits", "HEAD~3..HEAD"]);
     assert_eq!(args.commits.as_deref(), Some("HEAD~3..HEAD"));
     assert!(!args.working);
 }
@@ -122,26 +121,16 @@ fn load_cached_diff_exists() {
     let diffs_dir = dir.path().join("diffs");
     std::fs::create_dir_all(&diffs_dir).expect("create diffs dir");
     let diff_path = diffs_dir.join("owner_repo_42.diff");
-    std::fs::write(&diff_path, "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new").expect("write diff");
+    std::fs::write(
+        &diff_path,
+        "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new",
+    )
+    .expect("write diff");
     let result = crb_harness::load_cached_diff(dir.path(), "owner", "repo", 42);
     assert!(result.is_some());
     let content = result.unwrap();
     assert!(content.contains("old"));
     assert!(content.contains("new"));
-}
-
-// ---------------------------------------------------------------------------
-// trim_end_matches on URL (tested via extract_pr_info but also independently)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn sanitize_filename_via_utils() {
-    use crb_harness::utils;
-    assert_eq!(utils::sanitize_filename("hello world"), "hello_world");
-    assert_eq!(utils::sanitize_filename("file.name.txt"), "file_name_txt");
-    assert_eq!(utils::sanitize_filename("already_ok"), "already_ok");
-    assert_eq!(utils::sanitize_filename(""), "");
-    assert_eq!(utils::sanitize_filename("a|b<c>d:e"), "a_b_c_d_e");
 }
 
 // ---------------------------------------------------------------------------
@@ -151,8 +140,7 @@ fn sanitize_filename_via_utils() {
 #[test]
 fn cli_review_subcommand() {
     use clap::Parser;
-    let cli =
-        crb_harness::config::Cli::parse_from(["crb-harness", "review", "--working"]);
+    let cli = crb_harness::config::Cli::parse_from(["crb-harness", "review", "--working"]);
     match cli {
         crb_harness::config::Cli::Review(args) => {
             assert!(args.working);

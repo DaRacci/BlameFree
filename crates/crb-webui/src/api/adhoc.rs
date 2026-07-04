@@ -11,12 +11,12 @@ use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
-use crb_utils::sanitize_filename;
+use crb_shared::sanitize_filename;
 use serde::{Deserialize, Serialize};
 
 use crate::api::runs::{
-    AggregateMetricsResponse, CostJson, MetricsJson, PrResultJson, PrResultResponse,
-    RunConfigResponse, RunDetail, VerdictJson,
+    AggregateMetrics, CostJson, MetricsJson, PrResult, PrResultJson, RunConfig, RunDetail,
+    VerdictJson,
 };
 use crate::server::AppState;
 use rig_core::client::ProviderClient;
@@ -39,30 +39,8 @@ fn default_adhoc_roles() -> Vec<String> {
     vec!["SA".to_string(), "CL".to_string()]
 }
 
-/// Response from POST /api/adhoc/review
-#[derive(Debug, Clone, Serialize)]
-pub struct AdhocReviewResponse {
-    pub run_id: String,
-    pub pr_title: String,
-    pub status: String,
-}
+pub use crb_shared::{AdhocReviewResponse, AdhocRunSummary, GithubPrListItem};
 
-/// Summary of an ad-hoc review run (for the list endpoint)
-#[derive(Debug, Clone, Serialize)]
-pub struct AdhocRunSummary {
-    pub id: String,
-    pub pr_url: String,
-    pub pr_title: String,
-    pub status: String,
-    pub created_at: String,
-    pub model: String,
-    pub roles: Vec<String>,
-    pub findings_count: usize,
-    pub total_cost: f64,
-}
-
-/// ── POST /api/adhoc/review ──────────────────────────────────────────────
-///
 /// Submit a GitHub PR URL for ad-hoc review. Fetches the PR diff + metadata
 /// from the GitHub API, runs the harness agents, and stores results.
 pub async fn start_adhoc_review(
@@ -237,8 +215,8 @@ pub async fn get_adhoc_run(
         .unwrap_or(0.0);
 
     // Read per-PR result files
-    let mut results: Vec<PrResultResponse> = Vec::new();
-    let mut aggregate_metrics = AggregateMetricsResponse {
+    let mut results: Vec<PrResult> = Vec::new();
+    let mut aggregate_metrics = AggregateMetrics {
         avg_f1: 0.0,
         avg_precision: 0.0,
         avg_recall: 0.0,
@@ -269,7 +247,7 @@ pub async fn get_adhoc_run(
             if let Ok(content) = std::fs::read_to_string(&file_path) {
                 if let Ok(pr_json) = serde_json::from_str::<PrResultJson>(&content) {
                     let metrics = &pr_json.metrics;
-                    results.push(PrResultResponse {
+                    results.push(PrResult {
                         pr_number: 0,
                         pr_key: file_name.trim_end_matches(".json").to_string(),
                         title: pr_json.pr_title,
@@ -312,7 +290,7 @@ pub async fn get_adhoc_run(
         duration_secs,
         model: model.clone(),
         status,
-        config: Some(RunConfigResponse {
+        config: Some(RunConfig {
             model,
             dataset: String::new(),
             roles,
@@ -325,13 +303,6 @@ pub async fn get_adhoc_run(
 /// ── GET /api/adhoc/prs/:owner/:repo ──────────────────────────────────────────
 ///
 /// List open PRs from a GitHub repo (proxied to avoid CORS).
-#[derive(Debug, Serialize)]
-pub struct GithubPrListItem {
-    pub number: u32,
-    pub title: String,
-    pub html_url: String,
-}
-
 pub async fn list_repo_prs(
     State(state): State<AppState>,
     AxumPath((owner, repo)): AxumPath<(String, String)>,

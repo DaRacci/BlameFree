@@ -53,6 +53,10 @@ crb-reporting = { path = "../crb-reporting" }
 crb-judge = { path = "../crb-judge" }
 crb-rules = { path = "../crb-rules" }
 crb-tools = { path = "../crb-tools" }
-crb-utils = { path = "../crb-utils" }
+crb-shared = { path = "../crb-shared" }
 crb-agents = { path = "../crb-agents" }
+crb-webui-shared = { path = "../crb-webui-shared" }
 rig-core = { workspace = true }
+
+[lints]
+workspace = true

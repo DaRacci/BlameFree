@@ -87,10 +87,10 @@ Main Content
 │       └── Button: "🆕 New Benchmark" (btn--primary, links to /new)
 │
 ├── Summary Metrics Row (.content-grid with auto-fit, minmax(200px, 1fr))
-│   ├── MetricCard: "Total Runs" → value: number
-│   ├── MetricCard: "Avg F1" → value: float (2dp)
-│   ├── MetricCard: "Total Cost" → value: currency
-│   └── MetricCard: "Avg Duration" → value: time string
+│   ├── MetricCard: "Total Runs" -> value: number
+│   ├── MetricCard: "Avg F1" -> value: float (2dp)
+│   ├── MetricCard: "Total Cost" -> value: currency
+│   └── MetricCard: "Avg Duration" -> value: time string
 │
 └── Run Card Grid (.card-grid with auto-fill, minmax(340px, 1fr))
     ├── RunCard × N (sorted by date descending, filterable by search)
@@ -187,7 +187,7 @@ Main Content
 │       ├── Columns: PR (linked), F1, Precision, Recall, Findings, Cost, Status
 │       ├── Sortable by: F1, Precision, Recall, Cost (click header to toggle asc/desc)
 │       ├── Filterable by: All, High F1 (>0.7), Low F1 (<0.3), Failed
-│       └── Clickable rows → link to /runs/:id/pr/:pr_key (future)
+│       └── Clickable rows -> link to /runs/:id/pr/:pr_key (future)
 │
 └── Cost Breakdown Section
     ├── Section header: "Cost Breakdown"
@@ -198,7 +198,7 @@ Main Content
 
 ### Interactive Behavior
 
-- **Sort:** Click column header → cycle: none → ascending → descending. Active sort column shows arrow and accent color.
+- **Sort:** Click column header -> cycle: none -> ascending -> descending. Active sort column shows arrow and accent color.
 - **Filter:** Dropdown filters table rows client-side.
 - **Back link:** Smooth scroll to top, then navigate to `/`.
 - **Row click:** Navigate to per-PR detail view (if implemented in future).
@@ -355,7 +355,7 @@ Main Content
 │  │          │  │                                             │ │
 │  │          │  │  [██████████████░░░░░░░░]  5/12 PRs        │ │
 │  │          │  │  Current: discourse-graphite/pull/7        │ │
-│  │          │  │  → F1=0.33                                 │ │
+│  │          │  │  -> F1=0.33                                 │ │
 │  │          │  └──────────────────────────────────────────┘ │
 │  └──────────┘                                               │
 └──────────────────────────────────────────────────────────────┘
@@ -371,10 +371,10 @@ Main Content
 │   └── Back button: "⬅ Back" (links to /runs/:id)
 │
 ├── Live Metrics Row (.content-grid with auto-fit, minmax(160px, 1fr))
-│   ├── MetricCard: "Progress" → "5/12 PRs" (value: --text-base)
-│   ├── MetricCard: "Elapsed" → "3m 42s"
-│   ├── MetricCard: "Cost" → "$0.07"
-│   └── MetricCard: "Current PR" → "#7" (or "—" if idle)
+│   ├── MetricCard: "Progress" -> "5/12 PRs" (value: --text-base)
+│   ├── MetricCard: "Elapsed" -> "3m 42s"
+│   ├── MetricCard: "Cost" -> "$0.07"
+│   └── MetricCard: "Current PR" -> "#7" (or "—" if idle)
 │
 ├── Agent Panes Grid (2×2 grid, --spacing-lg gap)
 │   ├── AgentPane: SA (Security Analyst) — top-left
@@ -387,7 +387,7 @@ Main Content
 │
 └── Bottom Bar
     ├── Progress Bar (overall run progress)
-    └── Current PR info line: "PR: discourse-graphite/pull/7 → F1=0.33"
+    └── Current PR info line: "PR: discourse-graphite/pull/7 -> F1=0.33"
 ```
 
 ### Interactive Behavior

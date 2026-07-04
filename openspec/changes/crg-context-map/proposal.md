@@ -15,7 +15,7 @@ Current code review agents rely on live tool calls — `read_file`, `grep`, `ter
 
 1. **Token cost is ~8x too high** — Each agent makes 3-6 tool turns, each returning file/command output. A single PR review across 4 agents consumes 60K-200K tokens at $0.06-$0.20/PR.
 2. **deepseek-v4-flash cannot terminate tool loops** — The model will continue calling tools indefinitely unless a hard cap is enforced, which degrades review quality when the cap is prematurely hit.
-3. **Latency suffers** — Live tool calls are sequential (parse → read → think → call again), adding 10-30s of wall-clock time per agent.
+3. **Latency suffers** — Live tool calls are sequential (parse -> read -> think -> call again), adding 10-30s of wall-clock time per agent.
 
 ## Solution
 

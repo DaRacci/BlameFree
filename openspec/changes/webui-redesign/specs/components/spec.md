@@ -269,7 +269,7 @@ Alternative compact form (dot only):
 
 ### Interaction
 
-- **Sortable header:** Hover shows sort arrow (↕→↑/↓), click toggles sort direction. Active sort column header has `color: var(--accent-blue)`.
+- **Sortable header:** Hover shows sort arrow (↕->↑/↓), click toggles sort direction. Active sort column header has `color: var(--accent-blue)`.
 - **Clickable row:** If row links to detail page, entire row is clickable with `cursor: pointer`. Hover state applies.
 
 ### States
@@ -323,7 +323,7 @@ Shimmering placeholder shapes that mirror the dimensions of the expected content
 ```
 ┌──────────────────────────────────┐
 │  ┌──────────────────────────┐    │  ← shimmer gradient
-│  │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │    │     sweep left→right
+│  │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │    │     sweep left->right
 │  │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓         │    │
 │  │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │    │
 │  └──────────────────────────┘    │

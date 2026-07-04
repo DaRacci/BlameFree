@@ -5,31 +5,39 @@
 //! The markdown body after the frontmatter becomes `role_prompt`.
 
 use serde::Deserialize;
+use serde_fields::SerdeField;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 /// A single agent entry parsed from a markdown manifest file.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, SerdeField, Default)]
 pub struct AgentEntry {
-    /// Human-readable role name (e.g. "Static Analysis").
+    /// Human-readable role name.
     pub role_name: String,
-    /// Short abbreviation (e.g. "SA", "CL").
+
+    /// Short abbreviation.
     pub role_abbreviation: String,
+
     /// Description of the role's domain.
     pub role_domain: String,
-    /// Anti-hallucination rules (optional).
+
+    /// Additional rules to append to the Anti-hallucination rules section.
     #[serde(default)]
     pub role_anti_hallucination_rules: Option<String>,
-    /// Review methodology text (optional).
+
+    /// Review methodology text.
     #[serde(default)]
     pub role_review_methodology: Option<String>,
-    /// Whether this agent is the generalist (covers all domains).
+
+    /// Whether this agent is the generalist.
     #[serde(default)]
     pub generalist_agent: bool,
+
     /// Roles this agent is incompatible with (e.g. generalist
     /// is incompatible with individual specialist agents).
     #[serde(default)]
     pub incompatible_with_roles: Vec<String>,
+
     /// The markdown body after YAML frontmatter (filled after parsing).
     #[serde(skip)]
     pub role_prompt: String,
@@ -38,9 +46,10 @@ pub struct AgentEntry {
 /// Holds all parsed agent manifests from `prompts/agents/*.md`.
 #[derive(Debug, Clone)]
 pub struct AgentManifest {
-    /// Map from abbreviation (e.g. "SA", "GEN") to entry.
+    /// Map from abbreviation to entry.
     agents: HashMap<String, AgentEntry>,
-    /// The abbreviation of the generalist agent (if any).
+
+    /// The abbreviation of the generalist agent.
     generalist_abbreviation: Option<String>,
 }
 
@@ -65,8 +74,6 @@ impl AgentManifest {
     /// Each file must have YAML frontmatter delimited by `---`.
     /// Exactly one file must have `generalist_agent: true`.
     ///
-    /// # Errors
-    ///
     /// Returns an error if:
     /// - The directory cannot be read.
     /// - Any `.md` file cannot be read or parsed.
@@ -82,11 +89,10 @@ impl AgentManifest {
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map_or(false, |ext| ext == "md") {
+            if path.extension().is_some_and(|ext| ext == "md") {
                 let content = std::fs::read_to_string(&path)?;
-                let (entry, body) = Self::parse_frontmatter(&content, &path)?;
+                let entry = Self::parse_frontmatter(&content, &path)?;
 
-                // Check for duplicate abbreviations
                 let abbr = entry.role_abbreviation.to_uppercase();
                 if !seen_abbreviations.insert(abbr.clone()) {
                     anyhow::bail!(
@@ -105,7 +111,6 @@ impl AgentManifest {
             }
         }
 
-        // Validate exactly one generalist
         match generalist_count {
             0 => anyhow::bail!(
                 "No agent with `generalist_agent: true` found in {}",
@@ -126,7 +131,7 @@ impl AgentManifest {
     }
 
     /// Parse YAML frontmatter and markdown body from a `.md` file.
-    fn parse_frontmatter(content: &str, path: &Path) -> anyhow::Result<(AgentEntry, String)> {
+    fn parse_frontmatter(content: &str, path: &Path) -> anyhow::Result<AgentEntry> {
         let (yaml_str, body) = split_frontmatter(content).ok_or_else(|| {
             anyhow::anyhow!(
                 "Agent file {} does not start with YAML frontmatter (`---`)",
@@ -153,7 +158,7 @@ impl AgentManifest {
             );
         }
 
-        Ok((entry, role_prompt))
+        Ok(entry)
     }
 
     /// Get an agent entry by abbreviation (case-insensitive).
@@ -207,8 +212,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn test_agents_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../prompts/agents")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../prompts/agents")
     }
 
     #[test]
@@ -272,10 +276,7 @@ mod tests {
         assert_eq!(gen.role_name, "General");
         assert_eq!(gen.role_abbreviation, "GEN");
         assert!(gen.generalist_agent);
-        assert_eq!(
-            gen.incompatible_with_roles,
-            vec!["SEC", "SA", "CL", "ARCH"]
-        );
+        assert_eq!(gen.incompatible_with_roles, vec!["SEC", "SA", "CL", "ARCH"]);
     }
 
     #[test]
@@ -325,19 +326,17 @@ role_domain: testing
 ---
 Body content here
 "#;
-        let (entry, body) =
-            AgentManifest::parse_frontmatter(content, &PathBuf::from("test.md")).unwrap();
+        let entry = AgentManifest::parse_frontmatter(content, &PathBuf::from("test.md")).unwrap();
         assert_eq!(entry.role_name, "Test");
         assert_eq!(entry.role_abbreviation, "TEST");
-        assert_eq!(body, "Body content here");
+        assert_eq!(entry.role_prompt, "Body content here");
         assert!(!entry.generalist_agent);
     }
 
     #[test]
     fn test_invalid_file_no_frontmatter() {
         let content = "Just a plain file without frontmatter";
-        let result =
-            AgentManifest::parse_frontmatter(content, &PathBuf::from("bad.md"));
+        let result = AgentManifest::parse_frontmatter(content, &PathBuf::from("bad.md"));
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("does not start with YAML frontmatter"));
@@ -347,13 +346,12 @@ Body content here
     fn test_invalid_yaml() {
         let content = r#"---
 role_name: Test
-role_abbreviation: 
+role_abbreviation:
   - invalid: yaml
 ---
 body
 "#;
-        let result =
-            AgentManifest::parse_frontmatter(content, &PathBuf::from("bad.md"));
+        let result = AgentManifest::parse_frontmatter(content, &PathBuf::from("bad.md"));
         assert!(result.is_err());
     }
 
@@ -376,12 +374,10 @@ Body"#,
 
         let result = AgentManifest::load_from_dir(&dir);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("No agent with `generalist_agent: true`")
-        );
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No agent with `generalist_agent: true`"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -417,12 +413,7 @@ Body"#,
 
         let result = AgentManifest::load_from_dir(&dir);
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Duplicate")
-        );
+        assert!(result.unwrap_err().to_string().contains("Duplicate"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

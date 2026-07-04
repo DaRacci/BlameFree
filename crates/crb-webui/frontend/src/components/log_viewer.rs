@@ -1,32 +1,21 @@
-use leptos::*;
-use crate::{LogsListResponse, AgentLogResponse, api_url};
-
-/// Map a role abbreviation to a human-readable display name.
-fn role_display_name(role: &str) -> String {
-    match role {
-        "SA" => "Security Auditor (SA)".to_string(),
-        "CL" => "Code Logician (CL)".to_string(),
-        "AR" | "ARCH" => "Architecture Reviewer (ARCH)".to_string(),
-        "SEC" => "Security Evaluator (SEC)".to_string(),
-        _ => role.to_string(),
-    }
-}
+use crate::{api_url, role_display_name};
+use crb_webui_shared::runs::{AgentLogResponse, LogsListResponse};
+use leptos::{component, create_signal, view, IntoView, SignalGet, SignalSet};
+use log::error;
 
 #[component]
-pub fn LogViewer(
-    logs: LogsListResponse,
-    run_id: String,
-) -> impl IntoView {
-    let style_container = "background: #1e2938; border-radius: 8px; padding: 1rem; margin-top: 0.5rem;";
+pub fn LogViewer(logs: LogsListResponse, run_id: String) -> impl IntoView {
+    let style_container =
+        "background: #1e2938; border-radius: 8px; padding: 1rem; margin-top: 0.5rem;";
     let style_pr_header = "cursor: pointer; padding: 0.75rem; background: #334155; border-radius: 6px; margin-bottom: 0.25rem; color: #e2e8f0; font-weight: 600;";
     let style_pr_body = "padding: 0.5rem 0.75rem;";
     let style_agent_header = "cursor: pointer; padding: 0.5rem; background: #1e2938; border-radius: 4px; margin: 0.25rem 0; color: #94a3b8; font-size: 0.9rem;";
     let style_agent_body = "padding: 0.5rem; margin-left: 0.5rem; border-left: 2px solid #3b82f6;";
     let style_pre = "background: #0f172a; padding: 0.75rem; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; font-size: 0.8rem; color: #e2e8f0; margin: 0.5rem 0;";
-    let style_label = "color: #64748b; font-size: 0.8rem; font-weight: 600; margin-top: 0.5rem; display: block;";
+    let style_label =
+        "color: #64748b; font-size: 0.8rem; font-weight: 600; margin-top: 0.5rem; display: block;";
     let style_empty = "color: #64748b; font-style: italic; text-align: center; padding: 2rem;";
 
-    // If no cache available, show empty state
     if !logs.cache_available {
         return view! {
             <div style=style_container>
@@ -35,7 +24,6 @@ pub fn LogViewer(
         };
     }
 
-    // If no PRs, show empty state
     if logs.prs.is_empty() {
         return view! {
             <div style=style_container>
@@ -64,7 +52,6 @@ pub fn LogViewer(
                                 let pr_key_for_fetch = pr_key.clone();
                                 let role_for_fetch = agent_name.clone();
 
-                                // Signal to hold fetched agent log
                                 let (agent_log, set_agent_log) = create_signal::<Option<AgentLogResponse>>(None);
                                 let (fetching, set_fetching) = create_signal(false);
                                 let (fetched, set_fetched) = create_signal(false);
@@ -75,9 +62,9 @@ pub fn LogViewer(
                                         let run_id = run_id_for_fetch.clone();
                                         let pr_key = pr_key_for_fetch.clone();
                                         let role = role_for_fetch.clone();
-                                        let set_log = set_agent_log.clone();
-                                        let set_fetch = set_fetching.clone();
-                                        let set_fetched = set_fetched.clone();
+                                        let set_log = set_agent_log;
+                                        let set_fetch = set_fetching;
+                                        let set_fetched = set_fetched;
                                         wasm_bindgen_futures::spawn_local(async move {
                                             let url = api_url(&format!("/api/runs/{}/logs/{}/{}", run_id, pr_key, role));
                                             let resp = gloo_net::http::Request::get(&url).send().await;
@@ -88,15 +75,15 @@ pub fn LogViewer(
                                                             set_log.set(Some(log));
                                                         }
                                                         Err(e) => {
-                                                            log::error!("Failed to parse agent log: {}", e);
+                                                            error!("Failed to parse agent log: {}", e);
                                                         }
                                                     }
                                                 }
                                                 Ok(r) => {
-                                                    log::error!("Agent log fetch returned status: {}", r.status());
+                                                    error!("Agent log fetch returned status: {}", r.status());
                                                 }
                                                 Err(e) => {
-                                                    log::error!("Agent log fetch error: {}", e);
+                                                    error!("Agent log fetch error: {}", e);
                                                 }
                                             }
                                             set_fetch.set(false);

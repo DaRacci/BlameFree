@@ -1,6 +1,10 @@
-use crate::{api_url, AppConfig, DatasetInfo, NewRunRequest, NewRunResponse, PrEntry, ReasoningEffortsResponse, RoleInfo};
-use leptos::*;
-use leptos_router::*;
+use crate::{api_url, AppConfig, NewRunRequest, NewRunResponse, RoleInfo};
+use crb_webui_shared::config::{DatasetInfo, PrEntry, ReasoningEffortsResponse};
+use leptos::{
+    component, create_local_resource, create_signal, event_target_value, spawn_local, view,
+    IntoView, SignalGet, SignalSet, SignalUpdate,
+};
+use leptos_router::use_navigate;
 
 #[component]
 pub fn NewRunPage() -> impl IntoView {
@@ -23,18 +27,17 @@ pub fn NewRunPage() -> impl IntoView {
     let (concurrency, set_concurrency) = create_signal(String::new());
     let (max_findings, set_max_findings) = create_signal(String::new());
     let (use_cache, set_use_cache) = create_signal(true);
-    let (reasoning_effort, set_reasoning_effort) = create_signal::<Option<String>>(Some("medium".to_string()));
+    let (reasoning_effort, set_reasoning_effort) =
+        create_signal::<Option<String>>(Some("medium".to_string()));
     let (submitting, set_submitting) = create_signal(false);
     let (submit_error, set_submit_error) = create_signal::<Option<String>>(None);
     let (_submit_result, set_submit_result) = create_signal::<Option<String>>(None);
 
-    // Dynamically loaded reasoning effort levels
     let (effort_levels, set_effort_levels) = create_signal::<Vec<String>>(Vec::new());
     let (effort_loading, set_effort_loading) = create_signal(true);
 
     let navigator = use_navigate();
 
-    // Fetch PRs for a given dataset
     let fetch_prs = move |ds_id: String| {
         if ds_id.is_empty() {
             set_available_prs.set(Vec::new());
@@ -42,9 +45,9 @@ pub fn NewRunPage() -> impl IntoView {
             return;
         }
         set_prs_loading.set(true);
-        let set_available = set_available_prs.clone();
-        let set_selected = set_selected_prs.clone();
-        let set_loading = set_prs_loading.clone();
+        let set_available = set_available_prs;
+        let set_selected = set_selected_prs;
+        let set_loading = set_prs_loading;
         spawn_local(async move {
             match get_dataset_prs(&ds_id).await {
                 Ok(prs) => {
@@ -62,7 +65,6 @@ pub fn NewRunPage() -> impl IntoView {
         });
     };
 
-    // When dataset selection changes, auto-fill from config defaults and fetch PRs
     let on_dataset_change = move |ev: leptos::ev::Event| {
         let new_ds = event_target_value(&ev);
         set_dataset.set(new_ds.clone());
@@ -92,30 +94,27 @@ pub fn NewRunPage() -> impl IntoView {
             }
         }
 
-        // Fetch PRs for this dataset
         fetch_prs(new_ds);
     };
 
-    // Fetch config
-    let _fetch_config = create_local_resource(
+    let fetch_config = create_local_resource(
         || (),
         move |_| {
-            let set_config = set_config.clone();
-            let set_loading = set_config_loading.clone();
-            let set_error = set_config_error.clone();
-            let set_model = set_model.clone();
-            let dataset = dataset.clone();
-            let set_dataset = set_dataset.clone();
-            let set_datasets = set_datasets.clone();
-            let set_datasets_loading = set_datasets_loading.clone();
-            let set_concurrency = set_concurrency.clone();
-            let set_max_findings = set_max_findings.clone();
-            let set_roles = set_roles.clone();
-            let fetch_prs = fetch_prs.clone();
+            let set_config = set_config;
+            let set_loading = set_config_loading;
+            let set_error = set_config_error;
+            let set_model = set_model;
+            let dataset = dataset;
+            let set_dataset = set_dataset;
+            let set_datasets = set_datasets;
+            let set_datasets_loading = set_datasets_loading;
+            let set_concurrency = set_concurrency;
+            let set_max_findings = set_max_findings;
+            let set_roles = set_roles;
+            let fetch_prs = fetch_prs;
             async move {
                 set_loading.set(true);
                 set_datasets_loading.set(true);
-                // Fetch config first
                 match get_config().await {
                     Ok(cfg) => {
                         if let Some(m) = cfg.models.first() {
@@ -132,13 +131,11 @@ pub fn NewRunPage() -> impl IntoView {
                         set_loading.set(false);
                     }
                 }
-                // Then fetch dataset details (with config)
+
                 match get_datasets().await {
                     Ok(ds) => {
-                        // Auto-fill from first dataset's config defaults
                         if let Some(first) = ds.first() {
                             let current_ds = dataset.get();
-                            // If the first dataset is already selected, apply its defaults
                             if first.id == current_ds {
                                 if let Some(ref cfg) = first.config {
                                     if let Some(ref m) = cfg.defaults.model {
@@ -169,18 +166,15 @@ pub fn NewRunPage() -> impl IntoView {
                     }
                 }
 
-                // Fetch PRs for the initially selected dataset
                 let initial_ds = dataset.get();
                 if !initial_ds.is_empty() {
                     fetch_prs(initial_ds);
                 }
 
-                // Fetch reasoning effort levels
                 match get_reasoning_efforts().await {
                     Ok(levels) => {
                         let has_medium = levels.contains(&"medium".to_string());
                         set_effort_levels.set(levels);
-                        // Default to "medium" if available, or first entry
                         let current = reasoning_effort.get();
                         if current == Some("medium".to_string()) && !has_medium {
                             let first_level = effort_levels.get().first().cloned();
@@ -191,7 +185,12 @@ pub fn NewRunPage() -> impl IntoView {
                     }
                     Err(_) => {
                         // Fallback: use hardcoded defaults on error
-                        set_effort_levels.set(vec!["low".into(), "medium".into(), "high".into(), "max".into()]);
+                        set_effort_levels.set(vec![
+                            "low".into(),
+                            "medium".into(),
+                            "high".into(),
+                            "max".into(),
+                        ]);
                     }
                 }
                 set_effort_loading.set(false);
@@ -206,7 +205,10 @@ pub fn NewRunPage() -> impl IntoView {
         }
         for s in &selected {
             if let Some(info) = role_infos.iter().find(|r| r.abbreviation == *s) {
-                if info.incompatible_with_roles.contains(&role_abbr.to_string()) {
+                if info
+                    .incompatible_with_roles
+                    .contains(&role_abbr.to_string())
+                {
                     return true;
                 }
             }
@@ -239,9 +241,7 @@ pub fn NewRunPage() -> impl IntoView {
         // If all PRs are selected, send None (run all); otherwise send comma-joined keys
         let total_keys = available_prs.get().len();
         let selected = selected_prs.get();
-        let pr_filter = if selected.len() == total_keys {
-            None
-        } else if selected.is_empty() {
+        let pr_filter = if selected.len() == total_keys || selected.is_empty() {
             None
         } else {
             Some(selected.join(","))
@@ -282,7 +282,6 @@ pub fn NewRunPage() -> impl IntoView {
                 </div>
             </div>
 
-            // Config loading state
             {move || {
                 if config_loading.get() || datasets_loading.get() {
                     view! {
@@ -293,7 +292,6 @@ pub fn NewRunPage() -> impl IntoView {
                 } else { view! { <span></span> }.into_view() }
             }}
 
-            // Config error
             {move || {
                 if let Some(e) = config_error.get() {
                     view! {
@@ -307,7 +305,6 @@ pub fn NewRunPage() -> impl IntoView {
                 } else { view! { <span></span> }.into_view() }
             }}
 
-            // Reduce-diff badge
             {move || {
                 config.get().map(|cfg| {
                     if cfg.reduce_diff_enabled {
@@ -327,7 +324,6 @@ pub fn NewRunPage() -> impl IntoView {
             }}
 
             <form on:submit=on_submit>
-                // ─── Configuration Section ───────────────────────────
                 <section class="form-section">
                     <h2 class="form-section__title">"Configuration"</h2>
                     <div class="form-section__fields">
@@ -382,7 +378,6 @@ pub fn NewRunPage() -> impl IntoView {
                     </div>
                 </section>
 
-                // ─── Execution Section ──────────────────────────────
                 <section class="form-section">
                     <h2 class="form-section__title">"Execution"</h2>
                     <div class="form-section__fields">
@@ -466,7 +461,6 @@ pub fn NewRunPage() -> impl IntoView {
                     </div>
                 </section>
 
-                // ─── PR Filter Section ─────────────────────────────
                 <section class="form-section">
                     <h2 class="form-section__title">"PR Selection"</h2>
                     <div class="form-section__fields">
@@ -552,7 +546,6 @@ pub fn NewRunPage() -> impl IntoView {
                     </div>
                 </section>
 
-                // ─── Advanced Section ─────────────────────────────
                 <section class="form-section">
                     <h2 class="form-section__title">"Advanced"</h2>
                     <div class="form-section__fields">
@@ -635,7 +628,6 @@ pub fn NewRunPage() -> impl IntoView {
                     </div>
                 </section>
 
-                // ─── Form Actions ──────────────────────────────────────
                 <div class="form-actions">
                     <button
                         type="submit"
@@ -652,7 +644,6 @@ pub fn NewRunPage() -> impl IntoView {
                     </button>
                 </div>
 
-                // Submit error
                 {move || {
                     if let Some(e) = submit_error.get() {
                         view! {
@@ -677,7 +668,6 @@ async fn get_config() -> Result<AppConfig, String> {
         .map_err(|e| format!("Network error: {}", e))?;
 
     if !response.ok() {
-        // Return sensible defaults
         return Ok(AppConfig {
             models: vec![
                 "deepseek/deepseek-v4-flash".into(),
@@ -685,11 +675,31 @@ async fn get_config() -> Result<AppConfig, String> {
             ],
             datasets: vec!["swir-bench".into(), "code-review-bench".into()],
             roles: vec![
-                RoleInfo { abbreviation: "ARCH".to_string(), incompatible_with_roles: vec![] },
-                RoleInfo { abbreviation: "CL".to_string(), incompatible_with_roles: vec![] },
-                RoleInfo { abbreviation: "GEN".to_string(), incompatible_with_roles: vec!["SA".to_string(), "CL".to_string(), "ARCH".to_string(), "SEC".to_string()] },
-                RoleInfo { abbreviation: "SA".to_string(), incompatible_with_roles: vec![] },
-                RoleInfo { abbreviation: "SEC".to_string(), incompatible_with_roles: vec![] },
+                RoleInfo {
+                    abbreviation: "ARCH".to_string(),
+                    incompatible_with_roles: vec![],
+                },
+                RoleInfo {
+                    abbreviation: "CL".to_string(),
+                    incompatible_with_roles: vec![],
+                },
+                RoleInfo {
+                    abbreviation: "GEN".to_string(),
+                    incompatible_with_roles: vec![
+                        "SA".to_string(),
+                        "CL".to_string(),
+                        "ARCH".to_string(),
+                        "SEC".to_string(),
+                    ],
+                },
+                RoleInfo {
+                    abbreviation: "SA".to_string(),
+                    incompatible_with_roles: vec![],
+                },
+                RoleInfo {
+                    abbreviation: "SEC".to_string(),
+                    incompatible_with_roles: vec![],
+                },
             ],
             reduce_diff_enabled: false,
             auth_enabled: false,

@@ -1,5 +1,8 @@
 use std::collections::HashSet;
+use std::env;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time;
 
 use anyhow::Context;
 use anyhow::Result;
@@ -9,9 +12,12 @@ use crb_dashboard::DashboardEvent;
 use crb_judge::build_judge;
 use crb_reporting::{load_golden_datasets, write_report, GoldenCommentEntry};
 use crb_rules::RuleSet;
-use crb_utils::sanitize_filename;
+use crb_shared::sanitize_filename;
 use rig_core::client::ProviderClient;
 use tokio::sync::broadcast;
+use tokio::sync::mpsc;
+use tracing::error;
+use tracing::warn;
 use tracing::{info, info_span};
 
 mod diffs;
@@ -38,24 +44,28 @@ enum Commands {
         #[arg(long, default_value = "benchmark")]
         benchmark_dir: PathBuf,
     },
+
     /// Extract diffs from scaffolded repos into persistent worktrees.
     FetchDiffs {
         /// Benchmark directory (contains base-repos/, diffs/, worktrees/).
         #[arg(long, default_value = "benchmark")]
         benchmark_dir: PathBuf,
     },
+
     /// Validate golden datasets for integrity.
     Validate {
         /// Directory containing golden comment datasets.
         #[arg(long, default_value = "datasets/golden_comments")]
         dataset_dir: PathBuf,
     },
+
     /// Show all PRs in a dataset with URLs.
     List {
         /// Directory containing golden comment datasets.
         #[arg(long, default_value = "datasets/golden_comments")]
         dataset_dir: PathBuf,
     },
+
     /// Remove worktrees, outputs, and optionally diffs from a benchmark directory.
     Clean {
         /// Benchmark directory (contains base-repos/, diffs/, worktrees/).
@@ -74,20 +84,25 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         dry_run: bool,
     },
+
     /// Run the full benchmark evaluation pipeline over a dataset.
     Run {
         /// Benchmark directory (contains base-repos/, diffs/, worktrees/).
         #[arg(long, env = "BENCHMARK_DIR", default_value = "benchmark")]
         benchmark_dir: String,
+
         /// Directory containing golden comment datasets.
         #[arg(long, env = "DATASET_DIR", default_value = "datasets/golden_comments")]
         dataset_dir: String,
+
         /// Directory for evaluation output (JSON per-PR + summary CSV).
         #[arg(long, short = 'o', env = "OUTPUT_DIR", default_value = "output")]
         output_dir: String,
+
         /// Model for agent reviews.
         #[arg(long, env = "MODEL", default_value = "deepseek/deepseek-v4-pro")]
         model: String,
+
         /// Model for the LLM judge.
         #[arg(
             long,
@@ -95,54 +110,67 @@ enum Commands {
             default_value = "deepseek/deepseek-v4-flash"
         )]
         judge_model: String,
+
         /// Maximum concurrent PR evaluations.
         #[arg(long, env = "CONCURRENCY", default_value_t = 4)]
         concurrency: usize,
+
         /// Dry run: load config and datasets, print stats, then exit.
         #[arg(long, default_value_t = false)]
         dry_run: bool,
+
         /// Resume mode: skip PRs with existing result files.
         #[arg(long, default_value_t = false)]
         resume: bool,
+
         /// Skip linter execution.
         #[arg(long, default_value_t = false)]
         skip_linters: bool,
+
         /// Only run linters, skip LLM agents.
         #[arg(long, default_value_t = false)]
         linters_only: bool,
+
         /// Skip consensus orchestration.
         #[arg(long, default_value_t = false)]
         skip_consensus: bool,
+
         /// Path to linters.toml.
         #[arg(long, env = "LINTERS_CONFIG", default_value = "linters.toml")]
         linters_config: String,
+
         /// Skip rule loading.
         #[arg(long, default_value_t = false)]
         skip_rules: bool,
-        /// Path to prompts directory.
-        #[arg(long, env = "PROMPTS_DIR", default_value = "prompts/builtin")]
-        prompts_dir: PathBuf,
-        /// Validate mode.
+
+        /// Validate golden datasets and exit.
         #[arg(long, default_value_t = false)]
         validate: bool,
+
         /// CI mode.
         #[arg(long, default_value_t = false)]
         ci: bool,
+
         /// Comma-separated agent roles.
         #[arg(long, env = "ROLES", default_value = "SA,CL,AR,SEC")]
         roles: String,
+
         /// Max findings per agent.
         #[arg(long, env = "MAX_FINDINGS", default_value_t = 20)]
         max_findings: usize,
+
         /// PR filter pattern.
         #[arg(long)]
         pr_filter: Option<String>,
+
         /// Cache directory.
         #[arg(long, env = "CACHE_DIR", default_value = "cache")]
         cache_dir: PathBuf,
+
         /// Dashboard mode (TUI).
         #[arg(long, default_value_t = false)]
         dashboard: bool,
+
         /// Dashboard events JSON output.
         #[arg(long, default_value_t = false)]
         dashboard_events: bool,
@@ -150,10 +178,12 @@ enum Commands {
         /// Auto-backup cache before running.
         #[arg(long, default_value_t = false)]
         auto_backup: bool,
+
         /// Reasoning effort level [possible values: low, medium, high, max].
         #[arg(long, default_value = "medium")]
         reasoning_effort: String,
     },
+
     /// Show cache statistics.
     CacheStats {
         #[arg(long, env = "CACHE_DIR", default_value = "cache")]
@@ -162,6 +192,7 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+
     /// Prune cache entries by age, size, or PR count.
     CachePrune {
         #[arg(long, env = "CACHE_DIR", default_value = "cache")]
@@ -182,6 +213,7 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+
     /// Scrub cache for stale entries, orphans, and corrupted indices.
     CacheScrub {
         #[arg(long, env = "CACHE_DIR", default_value = "cache")]
@@ -196,6 +228,7 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         json: bool,
     },
+
     /// Backup cache to a tar.gz archive.
     CacheBackup {
         #[arg(long, env = "CACHE_DIR", default_value = "cache")]
@@ -204,6 +237,7 @@ enum Commands {
         #[arg(long)]
         output: Option<PathBuf>,
     },
+
     /// Restore cache from a tar.gz backup.
     CacheRestore {
         backup_file: PathBuf,
@@ -211,6 +245,7 @@ enum Commands {
         #[arg(long, env = "CACHE_DIR", default_value = "cache")]
         cache_dir: PathBuf,
     },
+
     /// Rebuild cache indices from raw data.
     CacheRebuild {
         #[arg(long, env = "CACHE_DIR", default_value = "cache")]
@@ -229,9 +264,9 @@ fn main() -> Result<()> {
     }
 
     // Fallback: if OPENAI_API_KEY is not set but OPENROUTER_API_KEY is, use that
-    if std::env::var("OPENAI_API_KEY").is_err() {
-        if let Ok(key) = std::env::var("OPENROUTER_API_KEY") {
-            std::env::set_var("OPENAI_API_KEY", key);
+    if env::var("OPENAI_API_KEY").is_err() {
+        if let Ok(key) = env::var("OPENROUTER_API_KEY") {
+            env::set_var("OPENAI_API_KEY", key);
             eprintln!("[dotenv] OPENAI_API_KEY not found - falling back to OPENROUTER_API_KEY");
         }
     }
@@ -313,7 +348,6 @@ fn main() -> Result<()> {
             skip_consensus,
             linters_config,
             skip_rules,
-            prompts_dir,
             validate,
             ci,
             roles,
@@ -420,7 +454,7 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
                     if status.success() {
                         println!("Removed worktree: {}", wt_path.display());
                     } else {
-                        tracing::warn!("Failed to remove worktree at {}", wt_path.display());
+                        warn!("Failed to remove worktree at {}", wt_path.display());
                     }
                 }
             }
@@ -620,7 +654,6 @@ async fn run_benchmark(
     skip_consensus: bool,
     linters_config: String,
     skip_rules: bool,
-    prompts_dir: PathBuf,
     validate: bool,
     ci: bool,
     roles: String,
@@ -646,13 +679,13 @@ async fn run_benchmark(
         let backup_path = PathBuf::from(format!("cache_backup_{}.tar.gz", ts));
         match crb_harness::LlmCache::backup(&cache_dir, &backup_path) {
             Ok(()) => info!("Auto-backup created at {}", backup_path.display()),
-            Err(e) => tracing::warn!("Auto-backup failed: {e}"),
+            Err(e) => warn!("Auto-backup failed: {e}"),
         }
     }
 
     // ── --validate flag ────────────────────────────────────────────────────
     let workspace_root =
-        std::env::current_dir().context("Failed to determine current working directory")?;
+        env::current_dir().context("Failed to determine current working directory")?;
     if validate {
         return crb_harness::run_validate(&workspace_root, "5.14").await;
     }
@@ -663,7 +696,6 @@ async fn run_benchmark(
     let all_prs = load_golden_datasets(&dataset_dir)?;
     info!("Loaded {} PR entries total", all_prs.len());
 
-    // ── --pr-filter flag with exact PR number match ──────────────────────
     let all_prs = if let Some(ref filter) = pr_filter {
         let filter_patterns: HashSet<String> =
             filter.split(',').map(|s| s.trim().to_lowercase()).collect();
@@ -700,7 +732,7 @@ async fn run_benchmark(
             .collect();
 
         if filtered.is_empty() {
-            tracing::warn!(
+            warn!(
                 "--pr-filter \"{}\" matched no PRs. Available URLs:\n  {}",
                 filter,
                 available_urls.join("\n  ")
@@ -714,7 +746,6 @@ async fn run_benchmark(
 
     info!("After --pr-filter: {} PR(s) to evaluate", all_prs.len());
 
-    // ── Dry run ───────────────────────────────────────────────────────────
     if dry_run {
         println!("[DRY RUN] Would evaluate {} PR(s)", all_prs.len());
         println!("  Model:              {}", model);
@@ -730,7 +761,6 @@ async fn run_benchmark(
         return Ok(());
     }
 
-    // ── Resume support ────────────────────────────────────────────────────
     let prs_to_evaluate: Vec<&GoldenCommentEntry> = if resume {
         let existing: HashSet<String> = if output_dir.exists() {
             std::fs::read_dir(&output_dir)?
@@ -768,13 +798,11 @@ async fn run_benchmark(
         return Ok(());
     }
 
-    // ── Clients ───────────────────────────────────────────────────────────
     let client = rig_core::providers::openai::Client::from_env()
         .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
 
     let judge = build_judge(&client, &judge_model);
 
-    // ── Linter config ─────────────────────────────────────────────────────
     let linter_config_path = std::path::Path::new(&linters_config);
     let linter_configs = if linter_config_path.exists() && !skip_linters {
         match crb_tools::load_linter_config(&linters_config) {
@@ -783,7 +811,7 @@ async fn run_benchmark(
                 Some(configs)
             }
             Err(e) => {
-                tracing::warn!("Failed to load linter config: {e}. Linters disabled.");
+                warn!("Failed to load linter config: {e}. Linters disabled.");
                 None
             }
         }
@@ -791,7 +819,6 @@ async fn run_benchmark(
         None
     };
 
-    // ── Rule loading ──────────────────────────────────────────────────────
     let ruleset = if !skip_rules {
         let rules_dir = std::path::Path::new(".crb/rules/");
         match RuleSet::load_from_dir(rules_dir) {
@@ -805,7 +832,7 @@ async fn run_benchmark(
                 Some(rs)
             }
             Err(e) => {
-                tracing::warn!("Failed to load rules from {}: {e}", rules_dir.display());
+                warn!("Failed to load rules from {}: {e}", rules_dir.display());
                 None
             }
         }
@@ -813,20 +840,16 @@ async fn run_benchmark(
         None
     };
 
-    // ── Prompt library ───────────────────────────────────────────────────
-    let prompt_lib =
-        std::sync::Arc::new(PromptLibrary::new().expect("Embedded prompts should be available"));
+    let prompt_lib = Arc::new(PromptLibrary::new().expect("Embedded prompts should be available"));
 
-    // ── Cache directory ───────────────────────────────────────────────────
-    let start_time = std::time::Instant::now();
+    let start_time = time::Instant::now();
 
-    // ── Dashboard event system (TUI and/or JSON stdout) ─────────────────
     let (event_broadcast_tx, _) = broadcast::channel::<DashboardEvent>(256);
 
     let dashboard_tx: Option<broadcast::Sender<DashboardEvent>> = if dashboard {
         let mut rx = event_broadcast_tx.subscribe();
         let total_prs = prs_to_evaluate.len();
-        let (mpsc_tx, mpsc_rx) = tokio::sync::mpsc::channel::<DashboardEvent>(1024);
+        let (mpsc_tx, mpsc_rx) = mpsc::channel::<DashboardEvent>(1024);
         tokio::spawn(async move {
             while let Ok(event) = rx.recv().await {
                 if mpsc_tx.send(event).await.is_err() {
@@ -836,7 +859,7 @@ async fn run_benchmark(
         });
         tokio::spawn(async move {
             if let Err(e) = crb_dashboard::run_dashboard(total_prs, mpsc_rx).await {
-                tracing::error!("Dashboard error: {e}");
+                error!("Dashboard error: {e}");
             }
         });
         Some(event_broadcast_tx.clone())
@@ -846,7 +869,6 @@ async fn run_benchmark(
         None
     };
 
-    // ── Dashboard Events (JSON stdout) ──────────────────────────────────
     if dashboard_events {
         let mut rx = event_broadcast_tx.subscribe();
         tokio::spawn(async move {
@@ -862,8 +884,7 @@ async fn run_benchmark(
         });
     }
 
-    // ── Concurrency ───────────────────────────────────────────────────────
-    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrency));
+    let sem = Arc::new(tokio::sync::Semaphore::new(concurrency));
     let mut set = tokio::task::JoinSet::new();
 
     for pr in prs_to_evaluate {
@@ -912,7 +933,6 @@ async fn run_benchmark(
         });
     }
 
-    // ── Collect results ───────────────────────────────────────────────────
     let mut results = Vec::new();
     while let Some(res) = set.join_next().await {
         match res {
@@ -921,15 +941,14 @@ async fn run_benchmark(
                 results.push(result);
             }
             Ok(Err(e)) => {
-                tracing::error!("PR evaluation failed: {e}");
+                error!("PR evaluation failed: {e}");
             }
             Err(e) => {
-                tracing::error!("Join error: {e}");
+                error!("Join error: {e}");
             }
         }
     }
 
-    // ── Send RunFinished event (if dashboard active) ─────────────────────
     if let Some(tx) = &dashboard_tx {
         let total_prs = results.len();
         let mut total_cost = 0.0f64;
@@ -943,7 +962,7 @@ async fn run_benchmark(
             total_tp += r.metrics.true_positives;
             total_fp += r.metrics.false_positives;
             total_fn += r.metrics.false_negatives;
-            total_agent_calls += 4; // 4 agents per PR
+            total_agent_calls += 4;
             if let Some(ref c) = r.cost {
                 total_cost += c.total_usd;
                 total_tokens +=
@@ -970,9 +989,9 @@ async fn run_benchmark(
         let _ = tx.send(DashboardEvent::RunFinished {
             total_prs,
             aggregated: crb_dashboard::AggregateMetrics {
-                total_tp,
-                total_fp,
-                total_fn,
+                true_positives: total_tp,
+                false_positives: total_fp,
+                false_negatives: total_fn,
                 precision: avg_precision,
                 recall: avg_recall,
                 f1: avg_f1,
@@ -983,7 +1002,6 @@ async fn run_benchmark(
         });
     }
 
-    // ── Report ────────────────────────────────────────────────────────────
     write_report(&results, &output_dir)?;
     info!(
         "Done. {} PR(s) evaluated, results in {}",
@@ -991,10 +1009,7 @@ async fn run_benchmark(
         output_dir.display()
     );
 
-    // ── Terminal cost summary ───────────────────────────────────────────
     crb_harness::print_terminal_summary(&results);
-
-    // ── Write _summary.json ──────────────────────────────────────────────
     crb_harness::write_summary(
         &cache_dir,
         &model,
@@ -1003,7 +1018,6 @@ async fn run_benchmark(
         start_time.elapsed(),
     )?;
 
-    // ── --ci flag: validate and exit with proper code ─────────────────────
     if ci {
         let metrics: Vec<crb_judge::Metrics> = results.iter().map(|r| r.metrics.clone()).collect();
         let (avg_precision, avg_recall, avg_f1) =

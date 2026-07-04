@@ -16,6 +16,7 @@ use serde::Deserialize;
 pub struct ListDirArgs {
     /// Path to the directory to list (relative to the repo root).
     pub path: String,
+
     /// Maximum number of items to return (optional).
     pub max_items: Option<usize>,
 }
@@ -56,15 +57,15 @@ impl Tool for ListDirTool {
         ToolDefinition {
             name: Self::NAME.to_string(),
             description:
-                "List the contents of a directory. Returns filenames with indicators: directories \
-                 show '/', files show ' (file)'. Use to explore repo structure."
+                "List the contents of a directory. Returns filenames with indicators: directories show '/', files show ' (file)'."
                     .to_string(),
-            parameters: serde_json::to_value(schemars::schema_for!(ListDirArgs)).unwrap(),
+            parameters: serde_json::to_value(schemars::schema_for!(ListDirArgs))
+                .unwrap_or_default(),
         }
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        // Reject absolute paths
+        // TODO:  check to ensure that the path does not contain '..' to prevent directory traversal attacks.
         if args.path.starts_with('/') {
             return Err(ListDirError::IoError(format!(
                 "absolute paths not allowed: {}",

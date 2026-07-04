@@ -3,7 +3,7 @@
 - [x] Implement git helper functions in `crates/crb-tools/src/lib.rs`: clean_repo (git clean -fdx), checkout_pr (git fetch + checkout), extract_diff (git diff)
 - [x] Implement validation in `crates/crb-harness/src/validation.rs`: Baseline struct (serde Deserialize), compute_delta(), threshold checks
 - [x] Add `--validate` flag to `crates/crb-harness/src/main.rs` (clap derive)
-- [x] Add `--ci` flag that runs scaffold → evaluate → validate → report in one command
+- [x] Add `--ci` flag that runs scaffold -> evaluate -> validate -> report in one command
 - [x] Add `--cached-diffs` flag to skip scaffolding and use pre-extracted diff files
 - [x] Store v5.14 baseline JSON from most recent known-good run
 - [ ] Validate against regression set (3 PRs) — should match within noise

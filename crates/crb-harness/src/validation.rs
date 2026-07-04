@@ -54,7 +54,9 @@ pub struct MetricDeltas {
 ///
 /// The file is expected at `<workspace_root>/baselines/<version>.json`.
 pub fn load_baseline(workspace_root: &Path, version: &str) -> Result<Baseline> {
-    let path = workspace_root.join("baselines").join(format!("{version}.json"));
+    let path = workspace_root
+        .join("baselines")
+        .join(format!("{version}.json"));
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read baseline file: {}", path.display()))?;
     let baseline: Baseline = serde_json::from_str(&content)

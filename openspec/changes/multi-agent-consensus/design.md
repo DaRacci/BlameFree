@@ -222,10 +222,10 @@ You are given:
 2. CANDIDATE FINDINGS: findings produced by N independent reviewer agents.
 
 For each GOLDEN COMMENT, determine:
-- If ANY candidate finding matches it (file, line, semantic content match) → TRUE POSITIVE
-- If NO candidate finding matches it → FALSE NEGATIVE
+- If ANY candidate finding matches it (file, line, semantic content match) -> TRUE POSITIVE
+- If NO candidate finding matches it -> FALSE NEGATIVE
 
-Then, for any CANDIDATE FINDING that did NOT match any golden → FALSE POSITIVE.
+Then, for any CANDIDATE FINDING that did NOT match any golden -> FALSE POSITIVE.
 
 Output: JSON array of { "golden_index": int, "candidate_index": int | null, "result": "TP" | "FP" | "FN" }
 "#;

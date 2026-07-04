@@ -88,10 +88,10 @@ Remove empty PR directories after pruning.
 
 ### `scrub(base_dir: &Path, dry_run: bool, repair: bool) -> Result<ScrubResult>`
 For each PR directory:
-- Read `index.json` → for each entry, stat the referenced file_path
-  - File missing → stale entry
+- Read `index.json` -> for each entry, stat the referenced file_path
+  - File missing -> stale entry
 - Scan all files in agents/, judge/, context/ subdirs
-  - File not in index → orphan
+  - File not in index -> orphan
 - If `index.json` is missing or corrupt, scan filesystem to rebuild it
 - If `repair`: remove stale entries from index, remove orphan files, write corrected index
 

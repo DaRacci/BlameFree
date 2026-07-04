@@ -29,8 +29,6 @@
   color: var(--text-secondary);
 }
 
-/* ── PR Selector Tabs ──────────────────────────────────────────────── */
-
 .live-view-page .pr-selector {
   margin-top: var(--spacing-lg);
   padding: var(--spacing-sm) var(--spacing-md);

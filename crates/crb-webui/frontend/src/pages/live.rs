@@ -1,36 +1,24 @@
-use leptos::*;
-use leptos_router::*;
-use std::collections::HashMap;
-use crate::{api_url, AppConfig, DashboardEvent};
 use crate::components::agent_pane::AgentPane;
 use crate::components::progress_bar::ProgressBar;
-
-/// Map a role abbreviation to a human-readable display name.
-fn role_display_name(role: &str) -> String {
-    match role {
-        "SA" => "Security Auditor (SA)".to_string(),
-        "CL" => "Code Logician (CL)".to_string(),
-        "AR" | "ARCH" => "Architecture Reviewer (ARCH)".to_string(),
-        "SEC" => "Security Evaluator (SEC)".to_string(),
-        _ => role.to_string(),
-    }
-}
-
-// ─── Per-PR agent state ─────────────────────────────────────────────────────
+use crate::{api_url, role_display_name, AppConfig, DashboardEvent};
+use leptos::{
+    component, create_signal, spawn_local, view, IntoView, ReadSignal, SignalGet,
+    SignalGetUntracked, SignalSet, SignalUpdate, WriteSignal,
+};
+use leptos_router::use_params_map;
+use std::collections::HashMap;
 
 /// State for a single agent (role) within a single PR.
 #[derive(Debug, Clone)]
 struct PerAgentState {
-    role: String,
-    status: String,      // "pending", "reviewing", "done", "failed"
-    response: String,     // accumulated response chunks
+    status: String,   // "pending", "reviewing", "done", "failed"
+    response: String, // accumulated response chunks
     findings: Option<usize>,
 }
 
 impl PerAgentState {
-    fn new(role: &str) -> Self {
+    fn new() -> Self {
         Self {
-            role: role.to_string(),
             status: "pending".into(),
             response: String::new(),
             findings: None,
@@ -38,29 +26,29 @@ impl PerAgentState {
     }
 }
 
-/// State for a single PR - holds one agent pane per role.
+/// State for a single PR, containing the state of all agents (roles) working on it.
 #[derive(Debug, Clone)]
 struct PrState {
-    pr_key: String,
     agents: HashMap<String, PerAgentState>,
     completed: bool,
 }
 
 impl PrState {
-    fn new(pr_key: &str, roles: &[String]) -> Self {
+    fn new(roles: &[String]) -> Self {
         let mut agents = HashMap::new();
         for role in roles {
-            agents.insert(role.clone(), PerAgentState::new(role));
+            agents.insert(role.clone(), PerAgentState::new());
         }
         Self {
-            pr_key: pr_key.to_string(),
             agents,
             completed: false,
         }
     }
 
     fn all_completed(&self) -> bool {
-        self.agents.values().all(|a| a.status == "done" || a.status == "failed")
+        self.agents
+            .values()
+            .all(|a| a.status == "done" || a.status == "failed")
     }
 }
 
@@ -76,7 +64,8 @@ pub fn LivePage() -> impl IntoView {
     let (pr_order, set_pr_order) = create_signal::<Vec<String>>(Vec::new());
     let (selected_pr, set_selected_pr) = create_signal::<Option<String>>(None);
     // Track which PR each role is currently working on (for AgentChunk/AgentFinished which lack pr_key)
-    let (role_current_pr, set_role_current_pr) = create_signal::<HashMap<String, String>>(HashMap::new());
+    let (role_current_pr, set_role_current_pr) =
+        create_signal::<HashMap<String, String>>(HashMap::new());
 
     // Available roles fetched from the server
     let (available_roles, set_available_roles) = create_signal::<Vec<String>>(Vec::new());
@@ -92,27 +81,28 @@ pub fn LivePage() -> impl IntoView {
         let url = api_url("/api/config");
         if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
             if let Ok(config) = resp.json::<AppConfig>().await {
-                let role_abbrs: Vec<String> = config.roles.into_iter().map(|r| r.abbreviation).collect();
+                let role_abbrs: Vec<String> =
+                    config.roles.into_iter().map(|r| r.abbreviation).collect();
                 set_available_roles.set(role_abbrs);
             }
         }
     });
 
     // ─── SSE connection ───────────────────────────────────────────────
-    let _connect = {
+    {
         let id = run_id();
-        let set_states = set_pr_states.clone();
-        let set_order = set_pr_order.clone();
-        let set_selected = set_selected_pr.clone();
-        let set_role_pr = set_role_current_pr.clone();
-        let set_done = set_progress_done.clone();
-        let set_total = set_progress_total.clone();
-        let set_stat = set_status.clone();
-        let set_conn = set_connected.clone();
+        let set_states = set_pr_states;
+        let set_order = set_pr_order;
+        let set_selected = set_selected_pr;
+        let set_role_pr = set_role_current_pr;
+        let set_done = set_progress_done;
+        let set_total = set_progress_total;
+        let set_stat = set_status;
+        let set_conn = set_connected;
         // Read signals needed for handle_event
-        let role_pr = role_current_pr.clone();
-        let state_pr = pr_states.clone();
-        let roles = available_roles.clone();
+        let role_pr = role_current_pr;
+        let state_pr = pr_states;
+        let roles = available_roles;
 
         spawn_local(async move {
             if id.is_empty() {
@@ -164,14 +154,15 @@ pub fn LivePage() -> impl IntoView {
     let _pr_list = move || {
         let order = pr_order.get();
         let states = pr_states.get();
-        order.iter().filter_map(|key| {
-            states.get(key).map(|s| (key.clone(), s.completed))
-        }).collect::<Vec<_>>()
+        order
+            .iter()
+            .filter_map(|key| states.get(key).map(|s| (key.clone(), s.completed)))
+            .collect::<Vec<_>>()
     };
 
     // Ensure there's always a selection once PRs arrive
-    let _ensure_selection = {
-        let set_sel = set_selected_pr.clone();
+    {
+        let set_sel = set_selected_pr;
         let order = pr_order.get();
         let sel = selected_pr.get();
         if !order.is_empty() && sel.is_none() {
@@ -190,7 +181,11 @@ pub fn LivePage() -> impl IntoView {
     let done = move || progress_done.get();
     let pct = move || {
         let t = total();
-        if t > 0 { (done() as f64 / t as f64 * 100.0) as u32 } else { 0 }
+        if t > 0 {
+            (done() as f64 / t as f64 * 100.0) as u32
+        } else {
+            0
+        }
     };
 
     view! {
@@ -288,7 +283,7 @@ pub fn LivePage() -> impl IntoView {
                                         let is_sel = sel.as_deref() == Some(&key);
                                         let completed = states.get(&key).map(|s| s.completed).unwrap_or(false);
                                         let click_key = key.clone();
-                                        let set_sel = set_selected_pr.clone();
+                                        let set_sel = set_selected_pr;
                                         view! {
                                             <button
                                                 class=move || {
@@ -317,7 +312,6 @@ pub fn LivePage() -> impl IntoView {
                                 if let Some(state) = pr_state {
                                     roles.iter().map(|role| {
                                         let agent_ref = state.agents.get(role);
-                                        // Clone values so closures don't borrow from temporary state
                                         let status_val = agent_ref.map(|a| a.status.clone()).unwrap_or_else(|| "pending".into());
                                         let resp_val = agent_ref.and_then(|a| {
                                             if a.response.is_empty() { None } else { Some(a.response.clone()) }
@@ -340,7 +334,6 @@ pub fn LivePage() -> impl IntoView {
                             }}
                         </div>
 
-                        // ─── Bottom Progress Bar ──────────────────────
                         <div class="bottom-bar" style="margin-top: var(--spacing-xl, 24px); padding: var(--spacing-md, 12px); background: var(--bg-surface, #161b22); border: 1px solid var(--border-default, #30363d); border-radius: var(--radius-lg, 8px);">
                             {move || {
                                 if total() > 0 {
@@ -364,8 +357,7 @@ pub fn LivePage() -> impl IntoView {
     }
 }
 
-// ─── Event handler ──────────────────────────────────────────────────────────
-
+#[allow(clippy::too_many_arguments)]
 fn handle_event(
     ev: DashboardEvent,
     pr_states: &ReadSignal<HashMap<String, PrState>>,
@@ -384,13 +376,13 @@ fn handle_event(
             // Ensure PR state exists
             set_states.update(|states| {
                 if !states.contains_key(&pr_key) {
-                    states.insert(pr_key.clone(), PrState::new(&pr_key, roles));
+                    states.insert(pr_key.clone(), PrState::new(roles));
                 }
                 if let Some(pr) = states.get_mut(&pr_key) {
                     // Dynamically add agent if it doesn't exist yet (roles may have been
                     // empty when the PrState was created, e.g. during the async roles fetch)
                     if !pr.agents.contains_key(&role) {
-                        pr.agents.insert(role.clone(), PerAgentState::new(&role));
+                        pr.agents.insert(role.clone(), PerAgentState::new());
                     }
                     if let Some(agent) = pr.agents.get_mut(&role) {
                         agent.status = "reviewing".into();
@@ -409,18 +401,16 @@ fn handle_event(
             });
             // Auto-select: pick the first PR, or switch to this PR if the
             // currently selected PR is already completed.
-            set_selected.update(|sel| {
-                match sel {
-                    None => *sel = Some(pr_key.clone()),
-                    Some(ref current) => {
-                        let should_switch = pr_states
-                            .get()
-                            .get(current)
-                            .map(|s| s.completed)
-                            .unwrap_or(true);
-                        if should_switch {
-                            *sel = Some(pr_key.clone());
-                        }
+            set_selected.update(|sel| match sel {
+                None => *sel = Some(pr_key.clone()),
+                Some(ref current) => {
+                    let should_switch = pr_states
+                        .get()
+                        .get(current)
+                        .map(|s| s.completed)
+                        .unwrap_or(true);
+                    if should_switch {
+                        *sel = Some(pr_key.clone());
                     }
                 }
             });
@@ -440,13 +430,21 @@ fn handle_event(
             }
         }
 
-        DashboardEvent::AgentFinished { role, findings, success } => {
+        DashboardEvent::AgentFinished {
+            role,
+            findings,
+            success,
+        } => {
             let pr_key = role_current_pr.get().get(&role).cloned();
             if let Some(key) = pr_key {
                 set_states.update(|states| {
                     if let Some(pr) = states.get_mut(&key) {
                         if let Some(agent) = pr.agents.get_mut(&role) {
-                            agent.status = if success { "done".into() } else { "failed".into() };
+                            agent.status = if success {
+                                "done".into()
+                            } else {
+                                "failed".into()
+                            };
                             agent.findings = Some(findings);
                         }
                         // Check if all agents for this PR are done
@@ -458,14 +456,18 @@ fn handle_event(
             }
         }
 
-        DashboardEvent::RunProgress { completed_prs, total_prs, current_pr } => {
+        DashboardEvent::RunProgress {
+            completed_prs,
+            total_prs,
+            current_pr,
+        } => {
             set_done.set(completed_prs);
             set_total.set(total_prs);
             if let Some(pr_key) = current_pr {
                 // Ensure this PR is tracked
                 set_states.update(|states| {
                     if !states.contains_key(&pr_key) {
-                        states.insert(pr_key.clone(), PrState::new(&pr_key, roles));
+                        states.insert(pr_key.clone(), PrState::new(roles));
                     }
                 });
                 set_order.update(|order| {
@@ -498,9 +500,9 @@ fn handle_event(
 
 // ─── SSE connection via web_sys::EventSource ──────────────────────────────────
 
+use futures::channel::mpsc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-use futures::channel::mpsc;
 use web_sys::MessageEvent;
 
 async fn connect_sse(url: &str) -> Result<mpsc::UnboundedReceiver<String>, String> {

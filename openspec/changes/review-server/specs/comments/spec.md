@@ -30,7 +30,7 @@ Each individual finding from the review pipeline SHALL be represented as a struc
 | `source_role` | `String` | Yes | Which agent role produced this finding: `"SA"`, `"CL"`, `"AR"`, `"SEC"` |
 
 #### Conversion from Finding
-`crb-agents::Finding` → `ReviewFinding`:
+`crb-agents::Finding` -> `ReviewFinding`:
 ```
 ReviewFinding.file         = Finding.file
 ReviewFinding.line         = Finding.line
@@ -81,7 +81,7 @@ The `GET /review/{id}/comments` endpoint SHALL return findings in a format compa
 }
 ```
 
-#### Field mapping (ReviewFinding → ReviewComment)
+#### Field mapping (ReviewFinding -> ReviewComment)
 | ReviewComment field | Source | Notes |
 |---------------------|--------|-------|
 | `file` | `ReviewFinding.file` | Default to `""` if `None` |
@@ -118,7 +118,7 @@ The system SHALL compute and return aggregated metrics alongside findings.
 - `high_count` — count of findings with severity == "High"
 - `medium_count` — count of findings with severity == "Medium"
 - `low_count` — count of findings with severity == "Low"
-- `by_role` — map of agent role → findings count for that role
+- `by_role` — map of agent role -> findings count for that role
 
 ### Requirement: Severity Classification
 Findings SHALL be classified into one of four severity levels.
@@ -175,11 +175,11 @@ The `ReviewComment` format SHALL be compatible with the existing `crb-reporting:
 
 #### Compatibility mapping
 ```
-ReviewComment.file     → GoldenCommentEntry file context (future field)
-ReviewComment.line     → GoldenComment line number (future field)
-ReviewComment.body     → GoldenComment.comment (when used as ground truth)
-ReviewComment.severity → GoldenComment.severity
-ReviewComment.rule_code → agent source (future field)
+ReviewComment.file     -> GoldenCommentEntry file context (future field)
+ReviewComment.line     -> GoldenComment line number (future field)
+ReviewComment.body     -> GoldenComment.comment (when used as ground truth)
+ReviewComment.severity -> GoldenComment.severity
+ReviewComment.rule_code -> agent source (future field)
 ```
 
 Note: The existing `GoldenCommentEntry` does not have `file`/`line` fields (they default to empty/0). The server's `ReviewComment` introduces these fields, which can be backfilled into golden comments as the dataset evolves.

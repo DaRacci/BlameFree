@@ -1,4 +1,5 @@
-use crate::{api_url, AdhocReviewResponse, AppConfig, GithubPrListItem, RoleInfo};
+use crate::{api_url, AppConfig, RoleInfo};
+use crb_webui_shared::adhoc::{AdhocReviewResponse, GithubPrListItem};
 use leptos::*;
 use leptos_router::*;
 
@@ -56,7 +57,10 @@ pub fn AdhocReviewPage() -> impl IntoView {
         }
         for s in &selected {
             if let Some(info) = role_infos.iter().find(|r| r.abbreviation == *s) {
-                if info.incompatible_with_roles.contains(&role_abbr.to_string()) {
+                if info
+                    .incompatible_with_roles
+                    .contains(&role_abbr.to_string())
+                {
                     return true;
                 }
             }
@@ -131,7 +135,9 @@ pub fn AdhocReviewPage() -> impl IntoView {
             match selected_pr_number.get() {
                 Some(n) => n,
                 None => {
-                    set_error.set(Some("Please select a PR from the list or switch to manual entry.".to_string()));
+                    set_error.set(Some(
+                        "Please select a PR from the list or switch to manual entry.".to_string(),
+                    ));
                     return;
                 }
             }
@@ -144,13 +150,20 @@ pub fn AdhocReviewPage() -> impl IntoView {
             match manual.trim().parse::<u32>() {
                 Ok(n) => n,
                 Err(_) => {
-                    set_error.set(Some("Invalid PR number. Please enter a numeric value.".to_string()));
+                    set_error.set(Some(
+                        "Invalid PR number. Please enter a numeric value.".to_string(),
+                    ));
                     return;
                 }
             }
         };
 
-        let url_val = format!("https://github.com/{}/{}/pull/{}", owner_val.trim(), repo_val.trim(), pr_number);
+        let url_val = format!(
+            "https://github.com/{}/{}/pull/{}",
+            owner_val.trim(),
+            repo_val.trim(),
+            pr_number
+        );
 
         set_loading.set(true);
         set_error.set(None);
@@ -178,7 +191,10 @@ pub fn AdhocReviewPage() -> impl IntoView {
                     if r.ok() {
                         match r.json::<AdhocReviewResponse>().await {
                             Ok(data) => {
-                                navigator(&format!("/adhoc/runs/{}", data.run_id), Default::default());
+                                navigator(
+                                    &format!("/adhoc/runs/{}", data.run_id),
+                                    Default::default(),
+                                );
                             }
                             Err(e) => {
                                 set_error.set(Some(format!("Failed to parse response: {}", e)));
@@ -213,7 +229,6 @@ pub fn AdhocReviewPage() -> impl IntoView {
                 "Submit a GitHub PR for a one-off review by the agent team."
             </p>
 
-            // ─── Repository Section ─────────────────────────────────
             <section class="form-section">
                 <h2 class="form-section__title">"Repository"</h2>
                 <div class="form-section__fields">
@@ -361,7 +376,6 @@ pub fn AdhocReviewPage() -> impl IntoView {
                 </div>
             </section>
 
-            // ─── Model Section ───────────────────────────────────
             <section class="form-section">
                 <h2 class="form-section__title">"Configuration"</h2>
                 <div class="form-section__fields">

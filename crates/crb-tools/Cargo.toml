@@ -6,6 +6,7 @@ edition = "2021"
 [features]
 default = []
 exp14_template_vars = []
+exp14_submit_finding = []
 
 [dependencies]
 rig-core = { workspace = true }
@@ -17,9 +18,15 @@ schemars = { workspace = true }
 toml = "0.8"
 dunce = "1.0"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
-tempfile = "3"
 tracing = { workspace = true }
 async-trait = "0.1"
 rig-mcp = "0.2.5"
 rig-compose = "0.5.0"
 sha2 = { workspace = true }
+crb-shared = { path = "../crb-shared" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

@@ -65,8 +65,8 @@ The review server exposes the multi-agent code review pipeline as a RESTful HTTP
                                                ▼
                                     ┌──────────────────────────┐
                                     │  ReviewJobStore          │
-                                    │  status → "complete"     │
-                                    │  findings → [...results] │
+                                    │  status -> "complete"     │
+                                    │  findings -> [...results] │
                                     └──────────────────────────┘
 ```
 
@@ -291,7 +291,7 @@ When a review request arrives with `repo_url` and `pr_number`:
 1. **Parse URL** — Extract `owner`, `repo` from `https://github.com/{owner}/{repo}/pull/{num}`.
 2. **Clone or fetch** — Shallow clone (`--depth 1`) to `{repos_cache}/{owner}_{repo}`. If already cached, `git fetch` to update.
 3. **Checkout PR** — Fetch the PR branch: `git fetch origin pull/{pr_number}/head:{branch}` and check it out.
-4. **Detect tech stack** — Scan for language indicators: `Cargo.toml` → Rust, `package.json` → Node.js, `requirements.txt` → Python, `go.mod` → Go, `.csproj` → C#, etc.
+4. **Detect tech stack** — Scan for language indicators: `Cargo.toml` -> Rust, `package.json` -> Node.js, `requirements.txt` -> Python, `go.mod` -> Go, `.csproj` -> C#, etc.
 5. **Analyze modules** — List top-level source directories and key entry points.
 6. **CRG integration (optional)** — If `code-review-graph` is available on `PATH`, run `code-review-graph detect-changes` to get call-graph context for changed files.
 7. **Gather diff** — Run `git diff {base_branch}...HEAD` to get the diff (or use the provided diff from the request).
@@ -452,7 +452,7 @@ members = ["crates/*"]
 | Invalid `pr_number` | 400 | Return error for non-positive integers |
 | Repo clone fails (no network) | 202 (job failed) | Job enters `Failed` status with error detail |
 | Repo not found (404 from git) | 202 (job failed) | Job enters `Failed` status |
-| LLM API call fails | Transient → retry | Agent returns empty findings with warning; job completes |
+| LLM API call fails | Transient -> retry | Agent returns empty findings with warning; job completes |
 | Review not found | 404 | Return error `"review not found"` |
 | Cancel already-completed review | 409 | Return error `"review already completed"` |
 | Malformed UUID in path | 400 | Return error `"invalid review id"` |

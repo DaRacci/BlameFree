@@ -1,9 +1,11 @@
-use crate::components::log_viewer::LogViewer;
-use crate::components::metrics_card::MetricsCard;
+use std::sync::Arc;
+
+use crate::api_url;
 use crate::components::progress_bar::ProgressBar;
-use crate::components::replay_overlay::ReplayOverlay;
-use crate::{api_url, LogsListResponse, PrResult, RunDetail};
-use leptos::*;
+use crb_webui_shared::runs::{PrResult, RunDetail};
+use leptos::{
+    component, create_local_resource, create_signal, view, DynAttrs, IntoView, SignalGet, SignalSet,
+};
 use leptos_router::*;
 
 #[component]
@@ -15,57 +17,28 @@ pub fn RunDetailPage() -> impl IntoView {
     let (loading, set_loading) = create_signal(true);
     let (error, set_error) = create_signal::<Option<String>>(None);
 
-    let _fetch = create_local_resource(
-        move || run_id(),
-        move |id| {
-            let set_run = set_run.clone();
-            let set_loading = set_loading.clone();
-            let set_error = set_error.clone();
-            async move {
-                set_loading.set(true);
-                set_error.set(None);
-                match get_run_detail(&id).await {
-                    Ok(detail) => {
-                        set_run.set(Some(detail));
-                        set_loading.set(false);
-                    }
-                    Err(e) => {
-                        set_error.set(Some(e));
-                        set_loading.set(false);
-                    }
-                }
-            }
-        },
-    );
-
-    // ─── Replay state signals ──────────────────────────────
-    let (show_replay, set_show_replay) = create_signal(false);
-    let (replay_loading, set_replay_loading) = create_signal(false);
-
-    let run_replay = move |id: String| {
-        set_replay_loading.set(true);
-        let rl = set_replay_loading.clone();
-        let sr = set_show_replay.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            let url = api_url(&format!("/api/runs/{}/replay", id));
-            match gloo_net::http::Request::post(&url).send().await {
-                Ok(r) if r.ok() => {
-                    sr.set(true);
-                }
-                Ok(r) => {
-                    log::error!("Replay start returned status: {}", r.status());
+    let _fetch = create_local_resource(run_id, move |id| {
+        let set_run = set_run;
+        let set_loading = set_loading;
+        let set_error = set_error;
+        async move {
+            set_loading.set(true);
+            set_error.set(None);
+            match get_run_detail(&id).await {
+                Ok(detail) => {
+                    set_run.set(Some(detail));
+                    set_loading.set(false);
                 }
                 Err(e) => {
-                    log::error!("Replay start error: {}", e);
+                    set_error.set(Some(e));
+                    set_loading.set(false);
                 }
             }
-            rl.set(false);
-        });
-    };
+        }
+    });
 
     view! {
         <div class="run-detail-page">
-            // ─── Back Link ───────────────────────────────────────────
             <A href=move || "/".to_string()>"< Dashboard"</A>
 
             {move || {
@@ -100,8 +73,6 @@ pub fn RunDetailPage() -> impl IntoView {
                     let detail_clone = detail.clone();
                     let _detail_clone2 = detail.clone();
                     let detail_id = detail.id.clone();
-                    let detail_id_replay = detail.id.clone();
-                    let detail4_id_replay = detail.id.clone();
                     let results_clone = detail.results.clone();
                     let results_clone2 = detail.results.clone();
 
@@ -118,7 +89,6 @@ pub fn RunDetailPage() -> impl IntoView {
                     let live_url = format!("/runs/{}/live", detail.id);
 
                     view! {
-                        // ─── Page Header ──────────────────────────────
                         <div class="page-header">
                             <div>
                                 <h1 class="page-header__title">{&detail.name}</h1>
@@ -128,7 +98,7 @@ pub fn RunDetailPage() -> impl IntoView {
                                         <span class="badge__label">{&detail.status}</span>
                                     </span>
                                     <span style="font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
-                                        {format!("Model: ")}<span class="code">{&detail.model}</span>
+                                        {"Model: ".to_string()}<span class="code">{&detail.model}</span>
                                     </span>
                                 </div>
                             </div>
@@ -148,7 +118,6 @@ pub fn RunDetailPage() -> impl IntoView {
                             </div>
                         </div>
 
-                        // ─── Progress ──────────────────────────────────
                         {move || {
                             let total = results_clone.len() as u32;
                             let done = results_clone.iter().filter(|r| r.status.as_deref() == Some("done")).count() as u32;
@@ -167,7 +136,6 @@ pub fn RunDetailPage() -> impl IntoView {
                             }
                         }}
 
-                        // ─── Metrics ──────────────────────────────────
                         <div class="content-grid content-grid--metrics">
                             {move || {
                                 if let Some(ref agg) = detail_clone.aggregate {
@@ -222,7 +190,6 @@ pub fn RunDetailPage() -> impl IntoView {
                             }}
                         </div>
 
-                        // ─── Per-PR Results ────────────────────────────
                         <div class="section-header">
                             <h2 class="section-header__title">"Per-PR Results"</h2>
                         </div>
@@ -307,52 +274,6 @@ pub fn RunDetailPage() -> impl IntoView {
                                 </tbody>
                             </table>
                         </div>
-
-                        // ─── Replay Section ────────────────────────────
-                        {
-                            let replay_id = detail_id_replay.clone();
-                            move || {
-                                let run = run.get();
-                                let is_completed = run.as_ref().map(|r| {
-                                    r.status == "completed" || r.status == "done"
-                                }).unwrap_or(false);
-                                if is_completed {
-                                    let replay_id = replay_id.clone();
-                                    view! {
-                                        <div class="section-header" style="margin-top: 24px;">
-                                            <h2 class="section-header__title">"Replay"</h2>
-                                        </div>
-                                        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-                                            <button
-                                                class="btn btn--primary"
-                                                disabled=move || replay_loading.get()
-                                                on:click=move |_| run_replay(replay_id.clone())
-                                            >
-                                                {move || if replay_loading.get() {
-                                                    "Starting replay..."
-                                                } else {
-                                                    "Replay from Cache"
-                                                }}
-                                            </button>
-                                        </div>
-                                    }.into_view()
-                                } else {
-                                    view! { <span></span> }.into_view()
-                                }
-                            }
-                        }
-
-                        // ─── Replay Overlay ───────────────────────────
-                        {move || {
-                            let run_id = detail4_id_replay.clone();
-                            view! {
-                                <ReplayOverlay
-                                    visible=show_replay.get()
-                                    on_close=move || set_show_replay.set(false)
-                                    run_id=run_id
-                                />
-                            }
-                        }}
                     }
                 } else {
                     view! { <><p>"No data."</p></> }

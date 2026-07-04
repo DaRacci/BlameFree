@@ -5,10 +5,10 @@
 //! while remaining secure for a development dashboard.
 //!
 //! Routes (only registered when OAuth is configured):
-//! - `GET /auth/login`     → redirect to provider's OAuth authorization page
-//! - `GET /auth/callback`  → handle provider callback, create session
-//! - `GET /auth/logout`    → clear session
-//! - `GET /auth/me`        → return current user (or 401)
+//! - `GET /auth/login`     -> redirect to provider's OAuth authorization page
+//! - `GET /auth/callback`  -> handle provider callback, create session
+//! - `GET /auth/logout`    -> clear session
+//! - `GET /auth/me`        -> return current user (or 401)
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -21,13 +21,13 @@ use axum::Router;
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
 use oauth2::{
-    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl,
-    Scope, TokenResponse, TokenUrl,
+    AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, Scope,
+    TokenResponse, TokenUrl,
 };
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use reqwest::Client as HttpClient;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -37,18 +37,10 @@ use crate::server::AppState;
 /// Name of the session cookie.
 const SESSION_COOKIE_NAME: &str = "crb-session";
 
+pub use crb_shared::AuthUser;
+
 /// In-memory session store mapping session tokens to user data.
 pub type SessionStore = Arc<RwLock<HashMap<String, AuthUser>>>;
-
-/// Authenticated user information stored in the session.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthUser {
-    pub id: String,
-    pub login: String,
-    pub name: Option<String>,
-    pub email: Option<String>,
-    pub avatar_url: Option<String>,
-}
 
 /// Query parameters for the login endpoint.
 #[derive(Debug, Deserialize)]
@@ -104,16 +96,9 @@ async fn login(
     let csrf_token = CsrfToken::new(random_string(32));
 
     // Build the authorization URL with scopes
-    let scopes: Vec<Scope> = oauth
-        .scopes
-        .iter()
-        .map(|s| Scope::new(s.clone()))
-        .collect();
+    let scopes: Vec<Scope> = oauth.scopes.iter().map(|s| Scope::new(s.clone())).collect();
 
-    let (auth_url, _csrf) = client
-        .authorize_url(|| csrf_token)
-        .add_scopes(scopes)
-        .url();
+    let (auth_url, _csrf) = client.authorize_url(|| csrf_token).add_scopes(scopes).url();
 
     // Encode the CSRF state in the redirect so we can verify on callback
     let redirect_url = format!("{}&state={}", auth_url, _csrf.secret());
@@ -155,37 +140,34 @@ async fn callback(
         .insert(session_token.clone(), user);
 
     // Set the session cookie and Location header for redirect
-    let cookie_value = format!(
-        "{SESSION_COOKIE_NAME}={session_token}; Path=/; HttpOnly; SameSite=Lax"
-    );
+    let cookie_value =
+        format!("{SESSION_COOKIE_NAME}={session_token}; Path=/; HttpOnly; SameSite=Lax");
 
     let mut headers = HeaderMap::new();
     headers.insert(
         axum::http::header::SET_COOKIE,
-        cookie_value.parse().map_err(|_| err_tuple("Invalid cookie header"))?,
+        cookie_value
+            .parse()
+            .map_err(|_| err_tuple("Invalid cookie header"))?,
     );
     headers.insert(
         axum::http::header::LOCATION,
-        "/".parse().map_err(|_| err_tuple("Invalid location header"))?,
+        "/".parse()
+            .map_err(|_| err_tuple("Invalid location header"))?,
     );
 
     Ok((headers, StatusCode::FOUND))
 }
 
 /// GET /auth/logout — clear the session.
-async fn logout(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
+async fn logout(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     // Extract session token from cookie
     if let Some(token) = extract_session_cookie(&headers) {
         state.session_store.write().await.remove(&token);
     }
 
     // Clear the cookie
-    let clear_cookie = format!(
-        "{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-    );
+    let clear_cookie = format!("{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
 
     let mut resp_headers = HeaderMap::new();
     if let Ok(val) = clear_cookie.parse() {
@@ -243,10 +225,10 @@ fn build_oauth_client(config: &OAuthConfig, provider: &str) -> Result<BasicClien
         other => return Err(format!("Unsupported OAuth provider: {other}")),
     };
 
-    let auth_url = AuthUrl::new(auth_url_str.to_string())
-        .map_err(|e| format!("Invalid auth URL: {e}"))?;
-    let token_url = TokenUrl::new(token_url_str.to_string())
-        .map_err(|e| format!("Invalid token URL: {e}"))?;
+    let auth_url =
+        AuthUrl::new(auth_url_str.to_string()).map_err(|e| format!("Invalid auth URL: {e}"))?;
+    let token_url =
+        TokenUrl::new(token_url_str.to_string()).map_err(|e| format!("Invalid token URL: {e}"))?;
 
     let client = BasicClient::new(
         ClientId::new(config.client_id.clone()),
@@ -369,10 +351,7 @@ async fn fetch_user(provider: &str, access_token: &str) -> Result<AuthUser, (Sta
 
             Ok(AuthUser {
                 id: body["id"].to_string(),
-                login: body["username"]
-                    .as_str()
-                    .unwrap_or("unknown")
-                    .to_string(),
+                login: body["username"].as_str().unwrap_or("unknown").to_string(),
                 name: body["name"].as_str().map(String::from),
                 email: body["email"].as_str().map(String::from),
                 avatar_url: body["avatar_url"].as_str().map(String::from),

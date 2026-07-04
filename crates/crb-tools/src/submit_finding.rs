@@ -38,7 +38,9 @@ pub struct SubmitFindingCollector {
 impl SubmitFindingCollector {
     /// Create a new empty collector.
     pub fn new() -> Self {
-        Self { findings: Vec::new() }
+        Self {
+            findings: Vec::new(),
+        }
     }
 
     /// Submit a single finding (validated).
@@ -86,7 +88,7 @@ pub struct SubmitFindingArgs {
     /// Confidence level: "confirmed", "likely", "uncertain" (case-insensitive).
     #[serde(default)]
     pub confidence: Option<String>,
-    /// Which agent role found this: "SA", "CL", "AR", "SEC", "GEN" (case-insensitive).
+    /// Which agent role found this (case-insensitive).
     #[serde(default)]
     pub found_by: Option<String>,
 }
@@ -230,14 +232,21 @@ impl SubmitFindingTool {
 
         // ── Quality warnings ───────────────────────────────────────────
         if args.line.is_none() {
-            warnings.push("Finding has no line number — consider providing a specific line".to_string());
+            warnings.push(
+                "Finding has no line number — consider providing a specific line".to_string(),
+            );
         }
         if let Some(ref evidence) = args.evidence {
             if evidence.trim().len() < 10 {
-                warnings.push("Evidence is very short (< 10 chars) — consider adding more detail".to_string());
+                warnings.push(
+                    "Evidence is very short (< 10 chars) — consider adding more detail".to_string(),
+                );
             }
         } else {
-            warnings.push("Finding has no evidence — consider including code excerpts or reasoning".to_string());
+            warnings.push(
+                "Finding has no evidence — consider including code excerpts or reasoning"
+                    .to_string(),
+            );
         }
 
         // Return early if there are hard errors
@@ -352,8 +361,6 @@ impl Tool for SubmitFindingTool {
         }
     }
 }
-
-// ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

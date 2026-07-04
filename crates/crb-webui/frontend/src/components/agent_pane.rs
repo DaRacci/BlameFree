@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::{component, view, IntoView, Signal, SignalGet};
 
 #[component]
 pub fn AgentPane(
@@ -38,7 +38,6 @@ pub fn AgentPane(
         }
     };
 
-    // Generate a short code from name
     let short_name = {
         let name = name.clone();
         move || name.chars().take(2).collect::<String>().to_uppercase()

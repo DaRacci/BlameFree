@@ -1,0 +1,83 @@
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+pub struct Finding {
+    pub file: Option<String>,
+    pub line: Option<u32>,
+    pub message: String,
+    pub severity: String,
+    pub rule_code: Option<String>,
+
+    /// Whether the severity has been audited/downgraded by the severity auditor.
+    #[serde(default)]
+    pub severity_audited: bool,
+
+    /// Reason for the severity audit result (e.g., downgrade category, protection reason).
+    #[serde(default)]
+    pub severity_audit_reason: Option<String>,
+
+    /// Evidence supporting the finding (command output, code snippet, etc.).
+    #[serde(default)]
+    pub evidence: Option<String>,
+
+    /// Path trace / call chain showing how the issue was reached.
+    #[serde(default)]
+    pub path_trace: Option<String>,
+
+    /// Self reported Confidence level from the agent.
+    #[serde(default)]
+    pub confidence: Option<ConfidenceLevel>,
+
+    /// Agent tag that found this issue.
+    #[serde(default)]
+    pub found_by: Option<String>,
+
+    /// Number of agents that flagged this finding.
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "num_agents")]
+    pub agent_count: Option<u64>,
+
+    /// Whether this finding was cross-validated by multiple agents/occurrences.
+    #[serde(default)]
+    pub cross_validated: bool,
+
+    /// How many agents/occurrences cross-validated this finding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cross_validated_by: Option<u64>,
+
+    /// How many original findings were merged to produce this one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merged_from: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub enum ConfidenceLevel {
+    Confirmed,
+    Likely,
+    Uncertain,
+}
+
+/// Deduplicate a list of findings by (file, line) pairs.
+///
+/// When two findings share the same file path and line number, only the first
+/// occurrence is kept. This avoids double-counting findings that multiple
+/// agents or chunks produced for the same location.
+///
+/// # Ordering
+///
+/// The deduplication is stable: the first occurrence of each (file, line) pair
+/// is retained, and subsequent duplicates are dropped.
+pub fn deduplicate_findings(findings: Vec<Finding>) -> Vec<Finding> {
+    let mut seen: HashSet<(String, u32)> = HashSet::new();
+    let mut result = Vec::with_capacity(findings.len());
+
+    for f in findings {
+        let key = (f.file.clone().unwrap_or_default(), f.line.unwrap_or(0));
+        if seen.insert(key) {
+            result.push(f);
+        }
+    }
+
+    result
+}

@@ -1,11 +1,6 @@
 # crb-benchmark
 
-CLI tool for code review benchmark preparation tasks — cloning repos, extracting diffs, and validating golden datasets.
-
-- **`scaffold`** — Clone or fetch all benchmark repos referenced in a dataset
-- **`fetch-diffs`** — Extract diffs from scaffolded repos for offline evaluation
-- **`validate`** — Validate golden datasets for structural integrity
-- **`list`** — List all PRs in a dataset with their URLs and titles
+CLI tool for benchmarking this project for performance and inference quality.
 
 ## CLI subcommands
 
@@ -22,8 +17,3 @@ cargo run -p crb-benchmark -- scaffold --dataset-dir datasets/golden_comments --
 # Extract diffs from scaffolded repos
 cargo run -p crb-benchmark -- fetch-diffs --repos-dir repos --output-dir diffs
 ```
-
-## Key exports
-
-- Uses `crb_reporting::load_golden_datasets` for dataset loading
-- Uses `crb_reporting::GoldenCommentEntry` for PR data structures

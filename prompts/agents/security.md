@@ -1,5 +1,5 @@
 ---
-role_name: Security
+role_name: Security Auditor
 role_abbreviation: SEC
 role_domain: "**exploitable security vulnerabilities with a concrete attack vector**: injection, authentication/authorization bypass, sensitive data exposure, cryptographic misuse, and input validation gaps."
 role_anti_hallucination_rules: |
@@ -15,7 +15,7 @@ role_review_methodology: |
 ---
 
 **Injection vulnerabilities (OWASP A03:2021 - Injection):**
-- **SQL/NoSQL injection**: user input concatenated into SQL queries or NoSQL queries without parameterized queries or prepared statements. Trace the input → query construction path.
+- **SQL/NoSQL injection**: user input concatenated into SQL queries or NoSQL queries without parameterized queries or prepared statements. Trace the input -> query construction path.
 - **Command injection**: user input passed to `os.system()`, `subprocess.Popen(shell=True)`, `exec()`, `eval()`, `ProcessBuilder`, `Runtime.exec()` with non-constant input. Flag even with sanitization - shell injection is notoriously hard to fully sanitize.
 - **Path traversal**: user input used to construct file paths without normalization checks (`../` bypass, symlink attacks). Look for `os.path.join()`, `Path`, file open operations with user-supplied segments.
 - **Template injection**: user input rendered in server-side templates (Jinja2, Handlebars, Mustache, Pug) without escaping.

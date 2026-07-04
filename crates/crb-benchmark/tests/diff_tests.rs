@@ -27,9 +27,11 @@ fn setup_repo_with_diffs() -> (tempfile::TempDir, PathBuf) {
         .output()
         .expect("git config name");
 
-    // Commit 1: create a file
-    std::fs::write(repo_path.join("main.rs"), "fn main() {\n    println!(\"hello\");\n}\n")
-        .expect("write");
+    std::fs::write(
+        repo_path.join("main.rs"),
+        "fn main() {\n    println!(\"hello\");\n}\n",
+    )
+    .expect("write");
     Command::new("git")
         .args(["add", "main.rs"])
         .current_dir(&repo_path)
@@ -41,7 +43,6 @@ fn setup_repo_with_diffs() -> (tempfile::TempDir, PathBuf) {
         .output()
         .expect("git commit");
 
-    // Commit 2: modify the file
     std::fs::write(
         repo_path.join("main.rs"),
         "fn main() {\n    println!(\"hello world\");\n    // added comment\n}\n",
@@ -61,10 +62,6 @@ fn setup_repo_with_diffs() -> (tempfile::TempDir, PathBuf) {
     (dir, repo_path)
 }
 
-// ---------------------------------------------------------------------------
-// Verify git diff produces correct content
-// ---------------------------------------------------------------------------
-
 #[test]
 fn git_diff_between_commits() {
     let (_dir, repo_path) = setup_repo_with_diffs();
@@ -79,7 +76,10 @@ fn git_diff_between_commits() {
     let diff = String::from_utf8_lossy(&output.stdout);
     assert!(!diff.is_empty(), "diff should not be empty");
     assert!(diff.contains("main.rs"), "diff should mention main.rs");
-    assert!(diff.contains("hello world"), "diff should contain new content");
+    assert!(
+        diff.contains("hello world"),
+        "diff should contain new content"
+    );
     assert!(
         diff.contains("+") && diff.contains("-"),
         "diff should have additions and deletions"
@@ -90,7 +90,6 @@ fn git_diff_between_commits() {
 fn git_diff_working_tree() {
     let (_dir, repo_path) = setup_repo_with_diffs();
 
-    // Make an unstaged change
     std::fs::write(
         repo_path.join("main.rs"),
         "fn main() {\n    println!(\"modified!\");\n}\n",
@@ -106,14 +105,16 @@ fn git_diff_working_tree() {
 
     let diff = String::from_utf8_lossy(&output.stdout);
     assert!(!diff.is_empty(), "working tree diff should not be empty");
-    assert!(diff.contains("modified"), "diff should show unstaged changes");
+    assert!(
+        diff.contains("modified"),
+        "diff should show unstaged changes"
+    );
 }
 
 #[test]
 fn git_diff_staged_changes() {
     let (_dir, repo_path) = setup_repo_with_diffs();
 
-    // Stage a change
     std::fs::write(repo_path.join("main.rs"), "fn main() {\n    // staged\n}\n").expect("write");
     Command::new("git")
         .args(["add", "main.rs"])
@@ -121,7 +122,6 @@ fn git_diff_staged_changes() {
         .output()
         .expect("git add");
 
-    // Check staged diff
     let output = Command::new("git")
         .args(["diff", "--cached"])
         .current_dir(&repo_path)
@@ -134,10 +134,6 @@ fn git_diff_staged_changes() {
     assert!(diff.contains("staged"), "diff should show staged content");
 }
 
-// ---------------------------------------------------------------------------
-// Verify diff matches expected format
-// ---------------------------------------------------------------------------
-
 #[test]
 fn git_diff_format_has_hunks() {
     let (_dir, repo_path) = setup_repo_with_diffs();
@@ -149,31 +145,20 @@ fn git_diff_format_has_hunks() {
         .expect("git diff");
     let diff = String::from_utf8_lossy(&output.stdout);
 
-    // Should have diff --git header
     assert!(
         diff.starts_with("diff --git"),
         "diff should start with diff --git header"
     );
-    // Should have hunk header
-    assert!(
-        diff.contains("@@"),
-        "diff should contain hunk header (@@)"
-    );
+    assert!(diff.contains("@@"), "diff should contain hunk header (@@)");
 }
-
-// ---------------------------------------------------------------------------
-// Test fetch_single_diff() from crb_benchmark::diffs module
-// ---------------------------------------------------------------------------
 
 #[test]
 fn fetch_single_diff_via_worktree() {
     let (_dir, repo_path) = setup_repo_with_diffs();
 
-    // Simulate what fetch-diffs does: create a worktree and get diff
     let worktree_dir = tempfile::TempDir::new().expect("worktree temp");
     let wt_path = worktree_dir.path().join("wt");
 
-    // Create worktree at the merge ref (HEAD, the latest commit)
     let status = Command::new("git")
         .args(["worktree", "add", &wt_path.to_string_lossy(), "HEAD"])
         .current_dir(&repo_path)
@@ -181,8 +166,6 @@ fn fetch_single_diff_via_worktree() {
         .expect("git worktree add");
     assert!(status.success(), "worktree add");
 
-    // Inside the worktree at HEAD, diff against the parent commit
-    // (simulating merge diff extraction: HEAD^..HEAD)
     let output = Command::new("git")
         .args(["diff", "HEAD^", "HEAD"])
         .current_dir(&wt_path)
@@ -192,19 +175,17 @@ fn fetch_single_diff_via_worktree() {
     assert!(output.status.success(), "git diff should succeed");
     let diff = String::from_utf8_lossy(&output.stdout);
     assert!(!diff.is_empty(), "worktree diff should not be empty");
-    assert!(diff.contains("hello world"), "diff should contain second commit content");
+    assert!(
+        diff.contains("hello world"),
+        "diff should contain second commit content"
+    );
 
-    // Clean up
     Command::new("git")
         .args(["worktree", "remove", "--force", &wt_path.to_string_lossy()])
         .current_dir(&repo_path)
         .status()
         .expect("git worktree remove");
 }
-
-// ---------------------------------------------------------------------------
-// Empty repo edge case
-// ---------------------------------------------------------------------------
 
 #[test]
 fn git_diff_on_empty_initial_commit() {
@@ -227,14 +208,12 @@ fn git_diff_on_empty_initial_commit() {
         .output()
         .expect("git config name");
 
-    // Make an initial empty commit
     Command::new("git")
         .args(["commit", "--allow-empty", "-m", "Initial"])
         .current_dir(&repo_path)
         .output()
         .expect("git commit");
 
-    // Diff on empty repo should be empty (or just not crash)
     let output = Command::new("git")
         .arg("diff")
         .current_dir(&repo_path)

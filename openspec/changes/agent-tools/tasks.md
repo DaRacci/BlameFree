@@ -24,7 +24,7 @@
 
 - [x] **3.1 Fix `mcp.rs` `.send()` timeout bug** — move `.send()` inside `tokio::time::timeout()`.
 - [x] **3.2 Wire into harness single-agent path** — `evaluate_pr_single_agent()` computes and passes `tool_preamble`.
-- [x] **3.3 Wire into consensus pipeline** — Thread `tool_preamble` through `build_reviewer_agent()` → `run_reviewers()` → `run_consensus()` → `evaluate_pr_with_consensus()`.
+- [x] **3.3 Wire into consensus pipeline** — Thread `tool_preamble` through `build_reviewer_agent()` -> `run_reviewers()` -> `run_consensus()` -> `evaluate_pr_with_consensus()`.
 - [ ] **3.4 Prompt updates** — Ensure agent prompts mention tool usage effectively.
 - [ ] **3.5 Test with real PR** — Run a real PR through the harness to verify tool instructions appear in agent output.
 

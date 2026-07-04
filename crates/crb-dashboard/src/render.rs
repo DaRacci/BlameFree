@@ -25,8 +25,8 @@ pub fn render_dashboard(frame: &mut Frame, dash: &Dashboard) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),       // Progress bar row
-            Constraint::Min(8),          // Agent panes
+            Constraint::Length(3),              // Progress bar row
+            Constraint::Min(8),                 // Agent panes
             Constraint::Length(summary_height), // PR summaries
         ])
         .split(area);
@@ -69,7 +69,7 @@ fn render_progress_bar(frame: &mut Frame, area: Rect, dash: &Dashboard) {
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),
         )
-        .ratio(progress as f64)
+        .ratio(progress)
         .label(label);
 
     frame.render_widget(gauge, area);
@@ -204,7 +204,11 @@ fn render_final_report(frame: &mut Frame, area: Rect, dash: &Dashboard) {
         Line::from(Span::styled(
             format!(
                 " {} PRs | {:.1}% F1 | {} TP {} FP {} FN",
-                total_prs, f1 * 100.0, agg.total_tp, agg.total_fp, agg.total_fn
+                total_prs,
+                f1 * 100.0,
+                agg.true_positives,
+                agg.false_positives,
+                agg.false_negatives
             ),
             Style::default()
                 .fg(Color::Green)

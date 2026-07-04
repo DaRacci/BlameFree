@@ -2,22 +2,23 @@
 //!
 //! Orchestrates multiple LLM reviewer agents concurrently,
 //! then aggregates their structured findings via heuristic matching and LLM
-//! judge fallback against golden (expected) comments.
-//!
-//! Provides a [`evaluate_pr_with_consensus`] convenience function that matches
-//! the existing `evaluate_pr()` signature in `crb-harness` for drop-in use.
+//! judge fallback against golden comments.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::time::Duration;
 
 use anyhow::Result;
+use crb_reporting::golden::GoldenCommentEntry;
+use crb_shared::finding::Finding;
+use crb_shared::jaccard::jaccard_similarity;
 use regex::Regex;
 use rig_core::agent::{Agent, HookAction, PromptHook, ToolCallHookAction};
 use rig_core::completion::{
-    AssistantContent, CompletionModel, CompletionResponse, Message, Prompt, PromptError, Usage,
+    AssistantContent, CompletionModel, CompletionResponse, Message, PromptError, Usage,
 };
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
@@ -26,13 +27,19 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::task::JoinSet;
 
+use crb_agents::build_agent;
 use crb_agents::prompts::PromptLibrary;
-use crb_agents::templates::TemplateEngine;
-use crb_agents::{build_agent, Finding};
 use crb_judge::{run_judge, JudgeVerdict};
-use crb_reporting::{GoldenCommentEntry, PrResult};
+use crb_reporting::PrResult;
 
-// ── Turn budget hook ─────────────────────────────────────────────────────―
+/// Regex to extract JSON from markdown code blocks.
+#[allow(clippy::unwrap_used)]
+static RE_CODEBLOCK_JSON: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)```(?:json)?\s*\n(.*?)\n\s*```").unwrap());
+
+/// Regex to find any JSON array in a response.
+#[allow(clippy::unwrap_used)]
+static RE_JSON_ARRAY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[[\s\S]*\]").unwrap());
 
 /// A [`PromptHook`] that skips tool calls with budget nudge messages when the
 /// agent is approaching its turn limit.
@@ -40,7 +47,7 @@ use crb_reporting::{GoldenCommentEntry, PrResult};
 /// Mechanism:
 /// - Counts model-completion calls via [`on_completion_response`].
 /// - When ≤2 completions remain, [`on_tool_call`] returns `Skip` with a
-///   progressively firmer nudge ("X turns remaining…" → "LAST TURN: …").
+///   progressively firmer nudge ("X turns remaining…" -> "LAST TURN: …").
 /// - The skipped reason is fed back to the model as a synthetic tool result,
 ///   effectively "stripping tools" without requiring internal loop access.
 ///
@@ -75,8 +82,8 @@ impl<M: CompletionModel> PromptHook<M> for TurnBudgetHook {
     /// Skip tool calls when the agent is close to exhausting its turn budget.
     ///
     /// The 70 % / 90 % pattern from arXiv:2510.16786 translates to:
-    /// - ≤2 remaining → "You have X turns remaining."
-    /// - ≤1 remaining → "LAST TURN: …"
+    /// - ≤2 remaining -> "You have X turns remaining."
+    /// - ≤1 remaining -> "LAST TURN: …"
     async fn on_tool_call(
         &self,
         _tool_name: &str,
@@ -366,13 +373,12 @@ pub struct ConsensusReport {
 ///
 /// `prompt_lib` and `template_vars` are forwarded to [`crb_agents::build_agent`]
 /// to support file-based prompt loading and template substitution.
+#[allow(clippy::too_many_arguments)]
 pub fn build_reviewer_agent(
     client: &openai::Client,
     config: &ReviewerConfig,
     rules_preamble: Option<&str>,
     prompt_lib: &PromptLibrary,
-    template_engine: Option<&TemplateEngine>,
-    agent_manifest: Option<&crb_agents::AgentManifest>,
     template_vars: Option<&HashMap<String, serde_json::Value>>,
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
@@ -387,8 +393,6 @@ pub fn build_reviewer_agent(
         config.role.as_str(),
         rules_preamble,
         prompt_lib,
-        template_engine,
-        agent_manifest,
         template_vars,
         tool_preamble,
         workdir,
@@ -410,6 +414,7 @@ pub fn build_reviewer_agent(
 /// - Computes cache key from prompt_hash, diff_hash, model, role, rules_hash
 /// - On cache hit: skips API call, logs "CACHE HIT", uses cached response
 /// - On cache miss: makes API call, saves response, logs "CACHE MISS"
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub async fn run_reviewers(
     configs: Vec<ReviewerConfig>,
     diff: &str,
@@ -417,7 +422,6 @@ pub async fn run_reviewers(
     client: &openai::Client,
     rules_preamble: Option<&str>,
     prompt_lib: &PromptLibrary,
-    template_engine: Option<&TemplateEngine>,
     template_vars: Option<&HashMap<String, serde_json::Value>>,
     cache: Option<Arc<dyn CacheBackend>>,
     prompt_hash: &str,
@@ -444,8 +448,6 @@ pub async fn run_reviewers(
             &config,
             preamble.as_deref(),
             prompt_lib,
-            None, // template_engine (not used in run_reviewers yet)
-            None, // agent_manifest
             template_vars,
             tool_preamble.as_deref(),
             workdir,
@@ -457,8 +459,8 @@ pub async fn run_reviewers(
         let prompt_hash = prompt_hash.to_string();
         let rules_hash = rules_hash.to_string();
         let model_name = config.model.clone();
-        let agent_api_calls = agent_api_calls.clone();
-        let aggregate_usage = aggregate_usage.clone();
+        let agent_api_calls = Arc::clone(&agent_api_calls);
+        let aggregate_usage = Arc::clone(&aggregate_usage);
         let dashboard_tx = dashboard_tx.clone();
 
         set.spawn(async move {
@@ -494,15 +496,16 @@ pub async fn run_reviewers(
                     let mut findings: Vec<Finding> =
                         serde_json::from_str(&response).unwrap_or_else(|_| {
                             // Strategy 2: Extract JSON from markdown code blocks
-                            let re = Regex::new(r"(?s)```(?:json)?\s*\n(.*?)\n\s*```").unwrap();
+                            let re = &RE_CODEBLOCK_JSON;
                             if let Some(caps) = re.captures(&response) {
+                                #[allow(clippy::unwrap_used)]
                                 let inner = caps.get(1).unwrap().as_str().trim();
                                 if let Ok(f) = serde_json::from_str::<Vec<Finding>>(inner) {
                                     return f;
                                 }
                             }
                             // Strategy 3: Find any JSON array in the response
-                            let array_re = Regex::new(r"\[[\s\S]*\]").unwrap();
+                            let array_re = &RE_JSON_ARRAY;
                             if let Some(m) = array_re.find(&response) {
                                 if let Ok(f) = serde_json::from_str::<Vec<Finding>>(m.as_str()) {
                                     return f;
@@ -556,16 +559,14 @@ pub async fn run_reviewers(
 
                 while let Some(item) = stream.next().await {
                     match item.map_err(|e| anyhow::anyhow!("{e}"))? {
-                        MultiTurnStreamItem::StreamAssistantItem(assistant) => {
-                            if let rig_core::streaming::StreamedAssistantContent::Text(text) = assistant {
-                                let chunk = text.text;
-                                response.push_str(&chunk);
-                                if let Some(ref tx) = dashboard_tx {
-                                    let _ = tx.send(crb_dashboard::DashboardEvent::AgentChunk {
-                                        role: role.to_string(),
-                                        chunk: chunk.clone(),
-                                    });
-                                }
+                        MultiTurnStreamItem::StreamAssistantItem(rig_core::streaming::StreamedAssistantContent::Text(text)) => {
+                            let chunk = text.text;
+                            response.push_str(&chunk);
+                            if let Some(ref tx) = dashboard_tx {
+                                let _ = tx.send(crb_dashboard::DashboardEvent::AgentChunk {
+                                    role: role.to_string(),
+                                    chunk: chunk.clone(),
+                                });
                             }
                         }
                         MultiTurnStreamItem::CompletionCall(call) => {
@@ -640,15 +641,16 @@ pub async fn run_reviewers(
                 let mut findings: Vec<Finding> =
                     serde_json::from_str(&response).unwrap_or_else(|_| {
                         // Strategy 2: Extract JSON from markdown code blocks
-                        let re = Regex::new(r"(?s)```(?:json)?\s*\n(.*?)\n\s*```").unwrap();
+                        let re = &RE_CODEBLOCK_JSON;
                         if let Some(caps) = re.captures(&response) {
+                            #[allow(clippy::unwrap_used)]
                             let inner = caps.get(1).unwrap().as_str().trim();
                             if let Ok(f) = serde_json::from_str::<Vec<Finding>>(inner) {
                                 return f;
                             }
                         }
                         // Strategy 3: Find any JSON array in the response
-                        let array_re = Regex::new(r"\[[\s\S]*\]").unwrap();
+                        let array_re = &RE_JSON_ARRAY;
                         if let Some(m) = array_re.find(&response) {
                             if let Ok(f) = serde_json::from_str::<Vec<Finding>>(m.as_str()) {
                                 return f;
@@ -698,9 +700,9 @@ pub async fn run_reviewers(
                             let mut findings: Vec<Finding> =
                                 serde_json::from_str(&text).unwrap_or_else(|_| {
                                     let re =
-                                        Regex::new(r"(?s)```(?:json)?\s*\n(.*?)\n\s*```")
-                                            .unwrap();
+                                        &RE_CODEBLOCK_JSON;
                                     if let Some(caps) = re.captures(&text) {
+                                        #[allow(clippy::unwrap_used)]
                                         let inner = caps.get(1).unwrap().as_str().trim();
                                         if let Ok(f) =
                                             serde_json::from_str::<Vec<Finding>>(inner)
@@ -708,7 +710,7 @@ pub async fn run_reviewers(
                                             return f;
                                         }
                                     }
-                                    let array_re = Regex::new(r"\[[\s\S]*\]").unwrap();
+                                    let array_re = &RE_JSON_ARRAY;
                                     if let Some(m) = array_re.find(&text) {
                                         if let Ok(f) =
                                             serde_json::from_str::<Vec<Finding>>(m.as_str())
@@ -747,64 +749,12 @@ pub async fn run_reviewers(
     // Sort by role for deterministic ordering - JoinSet::join_next()
     // returns tasks in completion order, which is non-deterministic.
     results.sort_by(|a, b| a.0.cmp(&b.0));
-    let aggregate_usage = aggregate_usage
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
+    let aggregate_usage = *aggregate_usage.lock().unwrap_or_else(|e| e.into_inner());
     (
         results,
         agent_api_calls.load(Ordering::SeqCst),
         aggregate_usage,
     )
-}
-
-// ── Jaccard heuristic matching ──────────────────────────────────────────────
-
-/// Tokenize text exactly like Python's `.lower().split()`
-/// (whitespace split only, no punctuation stripping).
-fn tokenize(text: &str) -> Vec<String> {
-    text.to_lowercase()
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-/// Jaccard word-overlap heuristic matching (replicates Python step3_judge_comments).
-///
-/// - Tokenizes both strings into lowercase word sets (split on whitespace)
-/// - Computes Jaccard = |intersection| / |union|
-/// - Returns `Some(score)` if score >= threshold, `None` otherwise.
-///
-/// If either string is empty after tokenization the union is zero and `None` is
-/// returned (cannot compute meaningful similarity on empty sets).
-pub fn jaccard_match(finding_text: &str, golden_text: &str, threshold: f64) -> Option<f64> {
-    let finding_words = tokenize(finding_text);
-    let golden_words = tokenize(golden_text);
-
-    if finding_words.is_empty() || golden_words.is_empty() {
-        return None;
-    }
-
-    let finding_set: std::collections::BTreeSet<&str> =
-        finding_words.iter().map(|s| s.as_str()).collect();
-    let golden_set: std::collections::BTreeSet<&str> =
-        golden_words.iter().map(|s| s.as_str()).collect();
-
-    let intersection: usize = finding_set.intersection(&golden_set).count();
-    let union: usize = finding_set.union(&golden_set).count();
-
-    if union == 0 {
-        return None;
-    }
-
-    let score = intersection as f64 / union as f64;
-
-    if score >= threshold {
-        Some(score)
-    } else {
-        None
-    }
 }
 
 // ── Judging a golden comment ─────────────────────────────────────────────────
@@ -823,6 +773,7 @@ pub fn jaccard_match(finding_text: &str, golden_text: &str, threshold: f64) -> O
 ///    with threshold **0.3** (matching Python).  Returns `TruePositive` on the
 ///    **first** candidate scoring ≥ 0.3.
 /// 4. **FalseNegative** — no candidate matched.
+#[allow(clippy::too_many_arguments, clippy::cognitive_complexity)]
 pub async fn judge_comment(
     golden: &GoldenComment,
     candidates: &[Finding],
@@ -892,7 +843,7 @@ pub async fn judge_comment(
 
     // Step 3: LLM missed — try Jaccard word-overlap fallback (threshold 0.3)
     for finding in &file_matches {
-        if jaccard_match(&finding.message, &golden.message_regex, 0.3).is_some() {
+        if jaccard_similarity(&finding.message, &golden.message_regex, false) >= 0.3 {
             return MatchResult::TruePositive;
         }
     }
@@ -914,6 +865,7 @@ pub async fn judge_comment(
 ///
 /// If `cache` is provided, agent interactions and judge calls are cached
 /// using content-addressed keys derived from prompt hashes, diff hash, etc.
+#[allow(clippy::too_many_arguments)]
 pub async fn run_consensus(
     diff: &str,
     goldens: Vec<GoldenComment>,
@@ -922,7 +874,6 @@ pub async fn run_consensus(
     judge: &Agent<ResponsesCompletionModel>,
     rules_preamble: Option<&str>,
     prompt_lib: &PromptLibrary,
-    template_engine: Option<&TemplateEngine>,
     template_vars: Option<&HashMap<String, serde_json::Value>>,
     cache: Option<Arc<dyn CacheBackend>>,
     diff_hash: &str,
@@ -943,7 +894,6 @@ pub async fn run_consensus(
         client,
         rules_preamble,
         prompt_lib,
-        template_engine,
         template_vars,
         cache.clone(),
         prompt_hash,
@@ -1025,7 +975,7 @@ pub async fn run_consensus(
     let precision = if tp + fp > 0 {
         tp as f64 / (tp + fp) as f64
     } else if goldens.is_empty() {
-        // No goldens and no findings → perfect by definition
+        // No goldens and no findings -> perfect by definition
         1.0
     } else {
         0.0
@@ -1073,6 +1023,7 @@ pub async fn run_consensus(
 /// [`regex::escape`] as the message regex.
 ///
 /// If `cache` is provided, agent interactions and judge calls are cached.
+#[allow(clippy::too_many_arguments)]
 pub async fn evaluate_pr_with_consensus(
     pr: &GoldenCommentEntry,
     diff: &str,
@@ -1081,7 +1032,6 @@ pub async fn evaluate_pr_with_consensus(
     judge: &Agent<ResponsesCompletionModel>,
     rules_preamble: Option<&str>,
     prompt_lib: &PromptLibrary,
-    template_engine: Option<&TemplateEngine>,
     template_vars: Option<&HashMap<String, serde_json::Value>>,
     roles: &[&str],
     max_findings: usize,
@@ -1145,7 +1095,6 @@ pub async fn evaluate_pr_with_consensus(
         judge,
         rules_preamble,
         prompt_lib,
-        template_engine,
         template_vars,
         cache,
         diff_hash,
@@ -1266,6 +1215,7 @@ pub fn count_diff_lines(diff: &str) -> usize {
 /// - The diff does NOT touch any full-panel languages
 ///
 /// Returns `false` (full 4-agent panel) otherwise.
+#[allow(clippy::cognitive_complexity)]
 pub fn should_use_single_agent(diff: &str, max_files: usize, max_lines: usize) -> bool {
     let file_count = count_diff_files(diff);
     let line_count = count_diff_lines(diff);
@@ -1300,6 +1250,8 @@ pub fn should_use_single_agent(diff: &str, max_files: usize, max_lines: usize) -
 
 #[cfg(test)]
 mod tests {
+    use crb_shared::jaccard::jaccard_similarity;
+
     use super::*;
 
     #[test]
@@ -1375,61 +1327,62 @@ mod tests {
         assert!(file_matches.is_empty());
     }
 
-    // ── Jaccard tests ──────────────────────────────────────────────────
+    // ── Jaccard tests (via crb_shared) ───────────────────────────────────
 
     #[test]
     fn test_jaccard_identical() {
-        let score = jaccard_match(
+        let score = jaccard_similarity(
             "hardcoded secret in config",
             "hardcoded secret in config",
-            0.3,
+            false,
         );
-        assert!(score.unwrap() > 0.9);
+        assert!(score > 0.9);
     }
 
     #[test]
     fn test_jaccard_partial_overlap() {
-        let score = jaccard_match("hardcoded API key found", "hardcoded secret in config", 0.3);
+        let score = jaccard_similarity(
+            "hardcoded API key found",
+            "hardcoded secret in config",
+            false,
+        );
         // Intersection: {"hardcoded"}, Union: 7 words → 1/7 ≈ 0.142 < 0.3
-        assert!(score.is_none());
+        assert!(score < 0.3);
     }
 
     #[test]
     fn test_jaccard_lower_threshold() {
-        // With threshold 0.12, "hardcoded" is 1/7 ≈ 0.142
-        let score = jaccard_match(
+        let score = jaccard_similarity(
             "hardcoded API key found",
             "hardcoded secret in config",
-            0.12,
+            false,
         );
-        assert!(score.is_some());
-        assert!((score.unwrap() - 1.0 / 7.0).abs() < 0.01);
+        // Raw score ≈ 1/7 ≈ 0.142
+        assert!((score - 1.0 / 7.0).abs() < 0.01);
     }
 
     #[test]
     fn test_jaccard_no_overlap() {
-        let score = jaccard_match("null pointer check", "SQL injection vulnerability", 0.3);
-        assert!(score.is_none());
+        let score = jaccard_similarity("null pointer check", "SQL injection vulnerability", false);
+        assert_eq!(score, 0.0);
     }
 
     #[test]
     fn test_jaccard_empty_strings() {
-        assert!(jaccard_match("", "", 0.3).is_none());
-        assert!(jaccard_match("hello", "", 0.3).is_none());
+        assert_eq!(jaccard_similarity("", "", false), 0.0);
+        assert_eq!(jaccard_similarity("hello", "", false), 0.0);
     }
 
     #[test]
     fn test_jaccard_case_insensitive() {
-        let s1 = jaccard_match("SQL Injection", "sql injection", 0.3);
-        let s2 = jaccard_match("Sql Injection", "sql injection", 0.3);
+        let s1 = jaccard_similarity("SQL Injection", "sql injection", false);
+        let s2 = jaccard_similarity("Sql Injection", "sql injection", false);
         assert_eq!(s1, s2);
     }
 
-    // ── ConsensusReport metrics ─────────────────────────────────────
-
     #[test]
     fn test_consensus_report_empty() {
-        // No goldens, no findings → perfect metrics
+        // No goldens, no findings -> perfect metrics
         let report = ConsensusReport {
             agents: vec![],
             true_positives: vec![],
@@ -1467,13 +1420,7 @@ mod tests {
                     line: Some(1),
                     message: "foo".into(),
                     severity: "error".into(),
-                    rule_code: None,
-                    severity_audited: false,
-                    severity_audit_reason: None,
-                    evidence: None,
-                    path_trace: None,
-                    confidence: None,
-                    found_by: None,
+                    ..Default::default()
                 },
             )],
             false_positives: vec![],
@@ -1505,13 +1452,8 @@ mod tests {
                 line: Some(1),
                 message: "unexpected".into(),
                 severity: "warning".into(),
-                rule_code: None,
                 severity_audited: false,
-                severity_audit_reason: None,
-                evidence: None,
-                path_trace: None,
-                confidence: None,
-                found_by: None,
+                ..Default::default()
             }],
             false_negatives: vec![GoldenComment {
                 file: "a.rs".into(),
@@ -1536,8 +1478,6 @@ mod tests {
         assert!((report.recall - 0.0).abs() < 1e-6);
         assert!((report.f1 - 0.0).abs() < 1e-6);
     }
-
-    // ── ReviewerConfig serialization ────────────────────────────────
 
     #[test]
     fn test_reviewer_config_serialization() {
@@ -1570,8 +1510,6 @@ mod tests {
         assert_eq!(deserialized.file, "src/lib.rs");
         assert_eq!(deserialized.line, 100);
     }
-
-    // ── Adaptive dispatch tests (EXP-016) ──────────────────────────
 
     #[test]
     fn test_count_diff_files_empty() {

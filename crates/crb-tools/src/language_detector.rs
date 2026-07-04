@@ -27,8 +27,10 @@ use std::collections::HashMap;
 pub struct LanguageInfo {
     /// The primary programming language (e.g., "Rust", "TypeScript", "Python").
     pub primary_language: String,
+
     /// All file extensions found (e.g., `[".rs", ".toml"]`).
     pub file_extensions: Vec<String>,
+
     /// Framework hints (e.g., "Rails", "React", "Django").
     pub framework_hints: Vec<String>,
 }
@@ -44,7 +46,7 @@ fn extension_to_language() -> HashMap<&'static str, &'static str> {
     // Go
     map.insert("go", "Go");
     map.insert("mod", "Go"); // go.mod
-    // Python
+                             // Python
     map.insert("py", "Python");
     map.insert("pyi", "Python");
     map.insert("pyx", "Python");
@@ -453,4 +455,3 @@ diff --git a/client.ts b/client.ts
         assert_eq!(detect_primary_language(diff), "Rust"); // 3 Rust files > 2 TypeScript files
     }
 }
-

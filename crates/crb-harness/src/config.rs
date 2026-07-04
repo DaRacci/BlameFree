@@ -1,19 +1,11 @@
 use clap::Parser;
 use std::path::PathBuf;
 
-// =============================================================================
-// Top-level CLI entry point
-// =============================================================================
-
 #[derive(Debug, Clone, Parser)]
 pub enum Cli {
     /// Review a git diff (working tree or commit range)
     Review(ReviewArgs),
 }
-
-// =============================================================================
-// `review` subcommand
-// =============================================================================
 
 #[derive(Debug, Clone, Parser)]
 pub struct ReviewArgs {
@@ -29,7 +21,7 @@ pub struct ReviewArgs {
     #[arg(long, default_value = ".")]
     pub path: PathBuf,
 
-    /// Model to use for agent reviews (e.g. gpt-4o, claude-sonnet-4-20250514).
+    /// Model to use for agent reviews (e.g. gpt-4o, claude-sonnet-4-20250514, deepseek/deepseek-v4-flash).
     #[arg(long, env = "MODEL", default_value = "deepseek/deepseek-v4-pro")]
     pub model: String,
 }

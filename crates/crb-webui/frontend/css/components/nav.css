@@ -9,7 +9,9 @@
   display: flex;
   flex-direction: column;
   z-index: var(--z-sidebar);
-  transition: width var(--transition-normal), transform var(--transition-normal);
+  transition:
+    width var(--transition-normal),
+    transform var(--transition-normal);
   overflow: hidden;
 }
 
@@ -83,7 +85,7 @@
 }
 
 .sidebar__item--active::before {
-  content: '';
+  content: "";
   position: absolute;
   left: 0;
   top: 8px;
@@ -119,7 +121,7 @@
   white-space: nowrap;
 }
 
-/* Mobile hamburger button — hidden on desktop, shown on mobile */
+/* Mobile hamburger button */
 .sidebar__hamburger {
   display: none;
   position: fixed;
@@ -155,7 +157,6 @@
   display: block;
 }
 
-/* Collapsed state adjustments */
 .sidebar--collapsed .sidebar__brand,
 .sidebar--collapsed .sidebar__label,
 .sidebar--collapsed .sidebar__version,
@@ -229,7 +230,6 @@
     padding: var(--spacing-md) 0;
   }
 
-  /* When toggled open (not collapsed), show full sidebar */
   .sidebar:not(.sidebar--collapsed) {
     width: 240px;
   }
@@ -262,7 +262,6 @@
   }
   .sidebar--mobile-open {
     transform: translateX(0);
-    /* High z-index so sidebar appears above the overlay backdrop and all content */
     z-index: 1000;
   }
   .sidebar--mobile-open .sidebar__brand,
@@ -284,7 +283,7 @@
     justify-content: flex-start;
     padding: var(--spacing-md) var(--spacing-lg);
   }
-  /* Hide the collapse toggle button on mobile — hamburger replaces it */
+  /* Hide the collapse toggle button on mobile */
   .sidebar .sidebar__toggle {
     display: none;
   }

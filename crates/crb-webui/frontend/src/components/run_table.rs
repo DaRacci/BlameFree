@@ -1,5 +1,5 @@
-use leptos::*;
-use crate::RunSummary;
+use crb_webui_shared::runs::RunSummary;
+use leptos::{component, create_signal, view, IntoView, SignalGet, SignalSet, SignalUpdate};
 
 #[component]
 pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
@@ -20,37 +20,73 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
         let asc = sort_asc.get();
         match sort_column.get() {
             SortColumn::Name => {
-                runs.sort_by(|a, b| if asc { a.name.cmp(&b.name) } else { b.name.cmp(&a.name) });
+                runs.sort_by(|a, b| {
+                    if asc {
+                        a.name.cmp(&b.name)
+                    } else {
+                        b.name.cmp(&a.name)
+                    }
+                });
             }
             SortColumn::Status => {
-                runs.sort_by(|a, b| if asc { a.status.cmp(&b.status) } else { b.status.cmp(&a.status) });
+                runs.sort_by(|a, b| {
+                    if asc {
+                        a.status.cmp(&b.status)
+                    } else {
+                        b.status.cmp(&a.status)
+                    }
+                });
             }
             SortColumn::Model => {
                 runs.sort_by(|a, b| {
                     let a_m = a.model.as_deref().unwrap_or("");
                     let b_m = b.model.as_deref().unwrap_or("");
-                    if asc { a_m.cmp(b_m) } else { b_m.cmp(a_m) }
+                    if asc {
+                        a_m.cmp(b_m)
+                    } else {
+                        b_m.cmp(a_m)
+                    }
                 });
             }
             SortColumn::F1 => {
                 runs.sort_by(|a, b| {
                     let a_v = a.avg_f1.unwrap_or(-1.0);
                     let b_v = b.avg_f1.unwrap_or(-1.0);
-                    if asc { a_v.partial_cmp(&b_v).unwrap() } else { b_v.partial_cmp(&a_v).unwrap() }
+                    if asc {
+                        a_v.partial_cmp(&b_v).unwrap()
+                    } else {
+                        b_v.partial_cmp(&a_v).unwrap()
+                    }
                 });
             }
             SortColumn::PrCount => {
-                runs.sort_by(|a, b| if asc { a.pr_count.cmp(&b.pr_count) } else { b.pr_count.cmp(&a.pr_count) });
+                runs.sort_by(|a, b| {
+                    if asc {
+                        a.pr_count.cmp(&b.pr_count)
+                    } else {
+                        b.pr_count.cmp(&a.pr_count)
+                    }
+                });
             }
             SortColumn::Cost => {
                 runs.sort_by(|a, b| {
                     let a_v = a.total_cost.unwrap_or(0.0);
                     let b_v = b.total_cost.unwrap_or(0.0);
-                    if asc { a_v.partial_cmp(&b_v).unwrap() } else { b_v.partial_cmp(&a_v).unwrap() }
+                    if asc {
+                        a_v.partial_cmp(&b_v).unwrap()
+                    } else {
+                        b_v.partial_cmp(&a_v).unwrap()
+                    }
                 });
             }
             SortColumn::Date => {
-                runs.sort_by(|a, b| if asc { a.id.cmp(&b.id) } else { b.id.cmp(&a.id) });
+                runs.sort_by(|a, b| {
+                    if asc {
+                        a.id.cmp(&b.id)
+                    } else {
+                        b.id.cmp(&a.id)
+                    }
+                });
             }
         }
         runs
@@ -58,7 +94,11 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
 
     let _sort_indicator = move |col| {
         if sort_column.get() == col {
-            if sort_asc.get() { " ^" } else { " v" }
+            if sort_asc.get() {
+                " ^"
+            } else {
+                " v"
+            }
         } else {
             ""
         }
@@ -66,7 +106,11 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
 
     let sort_arrow = move |col| {
         if sort_column.get() == col {
-            if sort_asc.get() { "^" } else { "v" }
+            if sort_asc.get() {
+                "^"
+            } else {
+                "v"
+            }
         } else {
             ""
         }

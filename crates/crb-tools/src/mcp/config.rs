@@ -43,16 +43,18 @@ mod tests {
 
     #[test]
     fn test_mcp_transport_type_serde() {
-        let http: McpTransportType = serde::Deserialize::deserialize(
-            serde::de::value::StrDeserializer::<serde::de::value::Error>::new("http"),
-        )
-        .unwrap();
+        let http: McpTransportType =
+            serde::Deserialize::deserialize(serde::de::value::StrDeserializer::<
+                serde::de::value::Error,
+            >::new("http"))
+            .unwrap();
         assert!(matches!(http, McpTransportType::Http));
 
-        let stdio: McpTransportType = serde::Deserialize::deserialize(
-            serde::de::value::StrDeserializer::<serde::de::value::Error>::new("stdio"),
-        )
-        .unwrap();
+        let stdio: McpTransportType =
+            serde::Deserialize::deserialize(serde::de::value::StrDeserializer::<
+                serde::de::value::Error,
+            >::new("stdio"))
+            .unwrap();
         assert!(matches!(stdio, McpTransportType::Stdio));
     }
 
@@ -85,7 +87,10 @@ enabled = true
         assert_eq!(config.servers.len(), 1);
         assert_eq!(config.servers[0].name, "context7");
         assert_eq!(config.servers[0].url, "https://mcp.context7.com/mcp");
-        assert!(matches!(config.servers[0].transport, McpTransportType::Http));
+        assert!(matches!(
+            config.servers[0].transport,
+            McpTransportType::Http
+        ));
         assert!(config.servers[0].enabled);
     }
 
@@ -99,7 +104,10 @@ transport = "stdio"
 enabled = true
 "#;
         let config: McpConfig = toml::from_str(toml_str).unwrap();
-        assert!(matches!(config.servers[0].transport, McpTransportType::Stdio));
+        assert!(matches!(
+            config.servers[0].transport,
+            McpTransportType::Stdio
+        ));
     }
 
     #[test]

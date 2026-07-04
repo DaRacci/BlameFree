@@ -10,8 +10,6 @@ use serde::Deserialize;
 
 use crate::Rule;
 
-// ── Frontmatter Types ────────────────────────────────────────────────────
-
 /// Intermediate deserialization target for YAML frontmatter.
 ///
 /// All fields are optional because the frontmatter may omit any of them; the
@@ -20,9 +18,11 @@ use crate::Rule;
 pub struct RuleMetadata {
     /// Human-readable description.
     pub description: Option<String>,
+
     /// Glob patterns (single string or array).  Defaults to empty.
     #[serde(default)]
     pub globs: Option<GlobsField>,
+
     /// If `true`, the rule always applies.  Defaults to `false` when a
     /// frontmatter block exists, but when there is *no* frontmatter the rule
     /// is treated as always-apply (see [`parse_rule_file`]).
@@ -36,11 +36,10 @@ pub struct RuleMetadata {
 pub enum GlobsField {
     /// `globs: "**/*.py"`
     Single(String),
+
     /// `globs: ["**/*.py", "**/*.pyi"]`
     Multiple(Vec<String>),
 }
-
-// ── Parser ───────────────────────────────────────────────────────────────
 
 /// Parse a rule from a markdown string with optional YAML frontmatter.
 ///
@@ -68,7 +67,7 @@ pub enum GlobsField {
 /// - The YAML between the `---` delimiters cannot be parsed.
 pub fn parse_rule_file(content: &str, source_file: &Path) -> anyhow::Result<Rule> {
     if !content.starts_with("---") {
-        // No frontmatter — treat as always-apply rule with empty metadata.
+        // No frontmatter, treat as always-apply rule with empty metadata.
         return Ok(Rule {
             description: None,
             globs: vec![],
@@ -92,7 +91,6 @@ pub fn parse_rule_file(content: &str, source_file: &Path) -> anyhow::Result<Rule
     let body = parts[2].trim().to_string();
     let metadata: RuleMetadata = serde_yaml::from_str(yaml_str)?;
 
-    // Convert GlobsField to Vec<String>
     let globs = match metadata.globs {
         Some(GlobsField::Single(s)) => vec![s],
         Some(GlobsField::Multiple(v)) => v,
@@ -107,8 +105,6 @@ pub fn parse_rule_file(content: &str, source_file: &Path) -> anyhow::Result<Rule
         source_file: source_file.to_path_buf(),
     })
 }
-
-// ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -132,7 +128,8 @@ mod tests {
 
     #[test]
     fn test_valid_frontmatter_multiple_globs() {
-        let content = "---\ndescription: TS Rule\nglobs:\n  - \"**/*.ts\"\n  - \"**/*.tsx\"\n---\nTS body.";
+        let content =
+            "---\ndescription: TS Rule\nglobs:\n  - \"**/*.ts\"\n  - \"**/*.tsx\"\n---\nTS body.";
         let rule = parse_rule_file(content, &source("ts.md")).unwrap();
         assert_eq!(rule.description.as_deref(), Some("TS Rule"));
         assert_eq!(rule.globs, vec!["**/*.ts", "**/*.tsx"]);
@@ -147,7 +144,10 @@ mod tests {
         assert!(rule.description.is_none());
         assert!(rule.globs.is_empty());
         assert!(rule.always_apply);
-        assert_eq!(rule.body, "Some plain markdown content.\n\nWith multiple lines.");
+        assert_eq!(
+            rule.body,
+            "Some plain markdown content.\n\nWith multiple lines."
+        );
     }
 
     #[test]
@@ -179,7 +179,8 @@ mod tests {
 
     #[test]
     fn test_always_apply_true_from_frontmatter() {
-        let content = "---\ndescription: Security\nalways_apply: true\n---\nCheck for OWASP top 10.";
+        let content =
+            "---\ndescription: Security\nalways_apply: true\n---\nCheck for OWASP top 10.";
         let rule = parse_rule_file(content, &source("security.md")).unwrap();
         assert!(rule.always_apply);
         assert_eq!(rule.body, "Check for OWASP top 10.");
@@ -188,7 +189,8 @@ mod tests {
     #[test]
     fn test_frontmatter_with_extra_fields() {
         // serde_yaml ignores unknown fields by default, so extra fields are OK.
-        let content = "---\ndescription: Extra\nglobs: \"*.py\"\npriority: high\ntags: [lint]\n---\nBody.";
+        let content =
+            "---\ndescription: Extra\nglobs: \"*.py\"\npriority: high\ntags: [lint]\n---\nBody.";
         let rule = parse_rule_file(content, &source("extra.md")).unwrap();
         assert_eq!(rule.description.as_deref(), Some("Extra"));
         assert_eq!(rule.globs, vec!["*.py"]);

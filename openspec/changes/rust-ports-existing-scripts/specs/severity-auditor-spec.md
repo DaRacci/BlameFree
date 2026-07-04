@@ -16,22 +16,22 @@ The system SHALL detect inflated severity labels by matching finding text and ev
 
 #### Scenario: Architecture nits match
 - GIVEN a finding with text `"SRP violation in UserService"`
-- WHEN `match_inflated_pattern()` is called
+- WHEN `has_inflated_pattern()` is called
 - THEN it returns `Some(InflatedCategory::ArchitectureNits)` (quantum -2)
 
 #### Scenario: Hypothetical/theoretical match
 - GIVEN a finding with text `"Could cause a performance issue"`
-- WHEN `match_inflated_pattern()` is called
+- WHEN `has_inflated_pattern()` is called
 - THEN it returns `Some(InflatedCategory::HypotheticalTheoretical)` (quantum -1)
 
 #### Scenario: Style nits match
 - GIVEN a finding with text `"Naming convention is inconsistent"`
-- WHEN `match_inflated_pattern()` is called
+- WHEN `has_inflated_pattern()` is called
 - THEN it returns `Some(InflatedCategory::StyleNits)` (quantum -3)
 
 #### Scenario: No match
 - GIVEN a finding with no inflated language
-- WHEN `match_inflated_pattern()` is called
+- WHEN `has_inflated_pattern()` is called
 - THEN it returns `None`
 
 ### Requirement: Never-Downgrade Protection
@@ -81,19 +81,19 @@ The system SHALL apply severity downgrades deterministically through a four-step
 #### Scenario: Full pipeline — architecture nit downgrade
 - GIVEN a finding with severity `High`, text `"SRP violation — should be refactored"`
 - WHEN `apply_severity_auditor()` is called
-- THEN severity drops to `Low` (High → -2 = Low)
+- THEN severity drops to `Low` (High -> -2 = Low)
 - AND `severity_audited = true`
 - AND `severity_audit_reason` starts with `"downgraded:"`
 
 #### Scenario: Full pipeline — hypothetical downgrade
 - GIVEN a finding with severity `High`, text `"Could cause a performance issue"`
 - WHEN `apply_severity_auditor()` is called
-- THEN severity drops to `Medium` (High → -1 = Medium)
+- THEN severity drops to `Medium` (High -> -1 = Medium)
 
 #### Scenario: Full pipeline — style nit downgrade
 - GIVEN a finding with severity `High`, text `"Naming convention is inconsistent"`
 - WHEN `apply_severity_auditor()` is called
-- THEN severity drops to `Low` (High → -3 = Low, clamped)
+- THEN severity drops to `Low` (High -> -3 = Low, clamped)
 
 #### Scenario: No upgrade
 - GIVEN a finding with severity `Low`

@@ -113,19 +113,13 @@ pub fn load_config(cli_config_path: Option<&Path>) -> WebUiConfig {
     if let Ok(xdg_home) = std::env::var("XDG_CONFIG_HOME") {
         let xdg_path = Path::new(&xdg_home).join("crb-webui/config.toml");
         if xdg_path.exists() {
-            tracing::info!(
-                "Loading config from XDG config: {}",
-                xdg_path.display()
-            );
+            tracing::info!("Loading config from XDG config: {}", xdg_path.display());
             return load_from_file(&xdg_path).unwrap_or_default();
         }
     } else if let Ok(home) = std::env::var("HOME") {
         let fallback_path = Path::new(&home).join(".config/crb-webui/config.toml");
         if fallback_path.exists() {
-            tracing::info!(
-                "Loading config from ~/.config: {}",
-                fallback_path.display()
-            );
+            tracing::info!("Loading config from ~/.config: {}", fallback_path.display());
             return load_from_file(&fallback_path).unwrap_or_default();
         }
     }

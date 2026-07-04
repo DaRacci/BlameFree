@@ -1,11 +1,7 @@
-use leptos::*;
+use leptos::{component, view, IntoView};
 
 #[component]
-pub fn ProgressBar(
-    value: u32,
-    max: u32,
-    label: String,
-) -> impl IntoView {
+pub fn ProgressBar(value: u32, max: u32, label: String) -> impl IntoView {
     let pct = move || -> f64 {
         if max > 0 {
             (value as f64 / max as f64 * 100.0).min(100.0)

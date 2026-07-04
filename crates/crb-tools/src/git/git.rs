@@ -3,13 +3,18 @@
 //! Provides a unified [`GitTool`] that wraps `git log`, `git diff`,
 //! `git show`, and `git status` for agent consumption.
 
+pub mod clean;
+pub mod diff;
+
 use std::fmt;
+use std::process::Command;
 use std::time::Duration;
 
 use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
+use tokio::task::spawn_blocking;
 
 /// Git operations the agent can perform.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -17,15 +22,13 @@ use serde::Deserialize;
 pub enum GitOperation {
     /// `git log --oneline -n 20`
     Log,
+
     /// `git diff base...head --no-color`
-    Diff {
-        base: String,
-        head: String,
-    },
+    Diff { base: String, head: String },
+
     /// `git show <ref> --no-color`
-    Show {
-        r#ref: String,
-    },
+    Show { r#ref: String },
+
     /// `git status --short`
     Status,
 }
@@ -42,8 +45,10 @@ pub struct GitArgs {
 pub enum GitToolError {
     /// Git command could not be spawned.
     CommandFailed(String),
+
     /// Git exited with non-zero exit code.
     NonZeroExit(i32, String),
+
     /// Operation exceeded timeout.
     TimeoutElapsed,
 }
@@ -67,6 +72,7 @@ impl std::error::Error for GitToolError {}
 pub struct GitTool {
     /// Repository root directory.
     pub repo_root: String,
+
     /// Per-invocation timeout.
     pub timeout: Duration,
 }
@@ -90,8 +96,9 @@ impl Tool for GitTool {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "Run git operations on the repository: log, diff, show, status.".to_string(),
-            parameters: serde_json::to_value(schemars::schema_for!(GitArgs)).unwrap(),
+            description: "Run git operations on the repository: log, diff, show, status."
+                .to_string(),
+            parameters: serde_json::to_value(schemars::schema_for!(GitArgs)).unwrap_or_default(),
         }
     }
 
@@ -99,7 +106,7 @@ impl Tool for GitTool {
         let git_args: Vec<&str> = match &args.operation {
             GitOperation::Log => vec!["log", "--oneline", "-n", "20"],
             GitOperation::Diff { base, head } => {
-                return (self as &GitTool).run_git_inner(base, head).await;
+                return self.run_git_inner(base, head).await;
             }
             GitOperation::Show { r#ref } => {
                 vec!["show", r#ref.as_str(), "--no-color"]
@@ -113,8 +120,8 @@ impl Tool for GitTool {
         let timeout = self.timeout;
 
         tokio::time::timeout(timeout, async move {
-            tokio::task::spawn_blocking(move || {
-                let output = std::process::Command::new("git")
+            spawn_blocking(move || {
+                let output = Command::new("git")
                     .args(["-C", &repo_root])
                     .args(&git_args_clone)
                     .output()
@@ -145,8 +152,8 @@ impl GitTool {
         let timeout = self.timeout;
 
         tokio::time::timeout(timeout, async move {
-            tokio::task::spawn_blocking(move || {
-                let output = std::process::Command::new("git")
+            spawn_blocking(move || {
+                let output = Command::new("git")
                     .args(["-C", &repo_root, "diff", &range, "--no-color"])
                     .output()
                     .map_err(|e| GitToolError::CommandFailed(e.to_string()))?;
@@ -171,7 +178,6 @@ impl GitTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
 
     fn init_test_repo(dir: &std::path::Path) {
         Command::new("git")
@@ -180,7 +186,13 @@ mod tests {
             .output()
             .unwrap();
         Command::new("git")
-            .args(["-C", dir.to_str().unwrap(), "config", "user.email", "test@test.com"])
+            .args([
+                "-C",
+                dir.to_str().unwrap(),
+                "config",
+                "user.email",
+                "test@test.com",
+            ])
             .output()
             .unwrap();
         Command::new("git")

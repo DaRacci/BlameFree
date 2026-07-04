@@ -8,28 +8,24 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
-use anyhow::Result;
+use anyhow::{Context, Result};
+use crb_agents::build_agent;
 use crb_agents::prompts::PromptLibrary;
-use crb_agents::{build_agent, Finding};
 use crb_consensus::{evaluate_pr_with_consensus, CacheBackend};
 use crb_dashboard::DashboardEvent;
 use crb_judge::{compute_metrics, run_judge};
-use crb_reporting::{GoldenCommentEntry, PrResult};
+use crb_reporting::PrResult;
 use crb_rules::RuleSet;
-use crb_utils::sanitize_filename;
+use crb_shared::finding::Finding;
+use crb_shared::sanitize_filename;
 use regex::Regex;
-use rig_core::agent::Agent;
-use rig_core::agent::PromptResponse;
+use rig_core::agent::{Agent, PromptResponse};
 use rig_core::client::ProviderClient;
-use rig_core::completion::Prompt;
-use rig_core::completion::Usage;
+use rig_core::completion::{Prompt, Usage};
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use rig_core::tool::Tool;
 use tokio::sync::broadcast;
 use tracing::{info, info_span};
-
-// ── Internal modules (re-declared so main.rs can reach them via crb_harness::*) ──
 
 pub mod cache;
 pub mod config;
@@ -43,32 +39,24 @@ pub use cache::RunHistoryEntry;
 pub use config::ReviewArgs;
 pub use cost::CostTracker;
 
-// =========================================================================
-// Public API types
-// =========================================================================
-
 /// Describes which kind of diff to review.
 pub enum ReviewMode {
     /// Review a commit range `base..head`.
     Commits { base: String, head: String },
+
     /// Review the current working tree (unstaged + staged).
     Working,
 }
 
-/// Parameters for a full PR review (library API entry point).
+/// Parameters for a full PR review.
 pub struct ReviewParams {
     pub diff: String,
     pub model: String,
     pub pr_title: String,
     pub roles: Vec<String>,
     pub max_findings: usize,
-    pub replay_dir: Option<PathBuf>,
     pub cache_dir: Option<PathBuf>,
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Diff Preprocessing: filtering and chunking
-// ═══════════════════════════════════════════════════════════════════════════
 
 /// File path patterns whose entire diff sections are always stripped.
 const FILTERED_FILE_PATTERNS: &[&str] = &[
@@ -443,10 +431,6 @@ pub fn preprocess_diff(raw_diff: &str) -> String {
     }
 }
 
-// =========================================================================
-// Public API
-// =========================================================================
-
 /// Entry point for reviewing a PR given its diff as a string.
 ///
 /// Builds agents for each role, runs them with the diff, and returns findings.
@@ -476,8 +460,6 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
             role,
             None,
             &prompt_lib,
-            None,
-            None,
             None,
             None,
             None,
@@ -537,8 +519,6 @@ pub async fn review_pr_with_prompt_lib(
             role,
             None,
             prompt_lib,
-            None,
-            None,
             None,
             None,
             None,
@@ -635,7 +615,6 @@ pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>
         pr_title: "review".to_string(),
         roles,
         max_findings: 20,
-        replay_dir: None,
         cache_dir: None,
     };
     review_pr_with_prompt_lib(params, &prompt_lib).await
@@ -846,6 +825,7 @@ where
 
 /// Run the original single-agent evaluation with finding collection.
 #[doc(hidden)]
+#[allow(trivial_casts)]
 pub async fn evaluate_pr_single_agent(
     pr: &GoldenCommentEntry,
     client: &rig_core::providers::openai::Client,
@@ -877,6 +857,7 @@ pub async fn evaluate_pr_single_agent(
         let rules_hash = rules_hash.clone();
         let preamble = rules_preamble.map(String::from);
         let p_lib = prompt_lib.clone();
+        #[allow(clippy::unnecessary_cast)]
         let cache_arc: Option<Arc<dyn CacheBackend>> =
             cache.clone().map(|c| c as Arc<dyn CacheBackend>);
         let ct = cost_tracker.clone();
@@ -946,8 +927,6 @@ pub async fn evaluate_pr_single_agent(
                 &role,
                 preamble.as_deref(),
                 &p_lib,
-                None, // template_engine
-                None, // agent_manifest
                 None, // template_vars
                 Some(&tool_preamble),
                 None, // workdir - not available in single-agent path
@@ -1028,8 +1007,7 @@ pub async fn evaluate_pr_single_agent(
     let jaccard_threshold = 0.12;
     for finding in &all_findings {
         for gc in &pr.comments {
-            // Step 1: Try Jaccard heuristic (no API call)
-            let score = crb_utils::jaccard_similarity(&finding.message, &gc.comment, false);
+            let score = jaccard_similarity(&finding.message, &gc.comment, false);
             if score >= jaccard_threshold {
                 tracing::info!(
                     "Jaccard match: finding='{}' golden='{}' score={:.2}",
@@ -1109,6 +1087,7 @@ pub async fn evaluate_pr_single_agent(
 
 /// Run the multi-agent consensus evaluation, merging linter findings.
 #[doc(hidden)]
+#[allow(trivial_casts)]
 pub async fn evaluate_pr_consensus(
     pr: &GoldenCommentEntry,
     client: &rig_core::providers::openai::Client,
@@ -1220,7 +1199,6 @@ pub async fn evaluate_pr_consensus(
             judge,
             rules_preamble,
             prompt_lib,
-            None,
             template_vars,
             &parsed_roles,
             max_findings,
@@ -1305,12 +1283,8 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
         return findings.to_vec();
     }
 
-    // Convert Finding -> serde_json::Map<String, Value> using helper
-    let maps: Vec<serde_json::Map<String, serde_json::Value>> =
-        findings.iter().map(crb_agents::finding_to_map).collect();
-
     // Step 1: semantic dedup
-    let deduped = crb_utils::semantic_dedup(maps);
+    let deduped = crb_shared::semantic_dedup(findings.to_vec());
 
     // Step 2: severity auditor
     let audited = crb_auditor::apply_severity_auditor(deduped);
@@ -1326,11 +1300,7 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
         }
     };
 
-    // Convert back to Finding using helper
     capped
-        .iter()
-        .filter_map(crb_agents::map_to_finding)
-        .collect()
 }
 
 /// Evaluate a single PR, optionally using consensus orchestration and linters.

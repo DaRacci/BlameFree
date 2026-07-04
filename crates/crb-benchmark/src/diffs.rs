@@ -66,7 +66,7 @@ pub fn run(benchmark_dir: &Path) -> Result<()> {
         let pr_numbers: Vec<u32> = refs_str
             .lines()
             .filter_map(|line| {
-                // Format: "N/merge" → extract N
+                // Format: "N/merge" -> extract N
                 line.split('/').next().and_then(|n| n.parse().ok())
             })
             .collect();
@@ -235,8 +235,7 @@ fn extract_diff_for_pr(
                 .output()?;
             if root_output.status.success() {
                 std::fs::write(&diff_path, &root_output.stdout)?;
-                let line_count =
-                    String::from_utf8_lossy(&root_output.stdout).lines().count();
+                let line_count = String::from_utf8_lossy(&root_output.stdout).lines().count();
                 info!(
                     "Extracted root diff for {} PR #{} ({} lines) -> {}",
                     repo_name,

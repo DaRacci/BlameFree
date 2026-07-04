@@ -813,7 +813,7 @@ crb-eval
 
 **Current flow:**
 ```rust
-load_datasets() → evaluate_prs() → write_report() → [--ci] validate()
+load_datasets() -> evaluate_prs() -> write_report() -> [--ci] validate()
 ```
 
 **Extended flow:**
@@ -1046,7 +1046,7 @@ output_per_1k = 0.0040
 
 1. **Kodus AI Eval System** — `evals/investigation/` in [kodustech/kodus-ai](https://github.com/kodustech/kodus-ai)
    - `recall-assertion.js` — recall/precision/fairness/fidelity metrics
-   - `extract-replay-from-trace.js` — Langfuse trace → replay dataset
+   - `extract-replay-from-trace.js` — Langfuse trace -> replay dataset
    - `promptfoo-recall.yaml` — promptfoo eval configuration
 2. **Existing Kodus Analysis** — `/data/workspace/projects/code-review-benchmark-research/research/kodus-ai-analysis.md`
 3. **Our Harness** — [/data/workspace/projects/review-harness/](/data/workspace/projects/review-harness/)

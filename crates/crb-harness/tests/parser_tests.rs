@@ -35,7 +35,7 @@ fn valid_json_exact_fields() {
 }
 
 // ---------------------------------------------------------------------------
-// JSON with field aliases (path→file, description→message, category→rule_code)
+// JSON with field aliases (path->file, description->message, category->rule_code)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -220,7 +220,9 @@ fn ten_findings() {
         .map(|i| {
             format!(
                 r#"{{"message": "Finding {}", "severity": "Low", "file": "f{}.rs", "line": {}}}"#,
-                i, i, i * 10
+                i,
+                i,
+                i * 10
             )
         })
         .collect();

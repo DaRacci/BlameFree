@@ -14,8 +14,8 @@ and observability.
 ```text
                          ┌─────────────────────┐
                          │      main.rs         │
-                         │  cache_dir → LlmCache│
-                         │  estimate_tokens →   │
+                         │  cache_dir -> LlmCache│
+                         │  estimate_tokens ->   │
                          │  CostTracker         │
                          └──────┬──────────────┘
                                 │ cache: Arc<dyn CacheBackend>
@@ -97,17 +97,17 @@ Agent.prompt(prompt)
   ▼
 OptimizedModel.prompt(prompt)
   ├──► ReplayLayer (if replay-dir set)
-  │     ├── replay file exists? → return cached response
-  │     └── no replay → pass through
+  │     ├── replay file exists? -> return cached response
+  │     └── no replay -> pass through
   │
   ├──► ObservabilityLayer (tracing spans per call)
   │
   ├──► CompressionLayer
-  │     └── compress prompt → pass compressed prompt
+  │     └── compress prompt -> pass compressed prompt
   │
   ├──► CacheLayer
-  │     ├── semantic cache hit? → return cached, record 0 tokens
-  │     └── no hit → pass through
+  │     ├── semantic cache hit? -> return cached, record 0 tokens
+  │     └── no hit -> pass through
   │
   ├──► PricingLayer
   │     └── compute cost from real token usage
@@ -118,11 +118,11 @@ OptimizedModel.prompt(prompt)
 The agent builder in `crb-consensus` changes from:
 
 ```rust
-// BEFORE: agent.prompt(&diff) → Manual caching, cost tracking
+// BEFORE: agent.prompt(&diff) -> Manual caching, cost tracking
 let agent = build_agent(&client, &model, &role, preamble, prompt_lib, tool_preamble);
 // ... caller checks cache, makes API call, saves cache, records cost ...
 
-// AFTER: agent.prompt(&diff) → Everything handled by tokudo
+// AFTER: agent.prompt(&diff) -> Everything handled by tokudo
 let agent = build_agent(&optimized_client, &model, &role, preamble, prompt_lib, tool_preamble);
 // agent.prompt(&diff) transparently caches, tracks cost, etc.
 ```
@@ -196,7 +196,7 @@ let pricing_config = PricingConfig::new()
 
 ## 4. Data Flow
 
-### 4.1 Agent Prompt → Tokudo Decorator → API/Cache → Response
+### 4.1 Agent Prompt -> Tokudo Decorator -> API/Cache -> Response
 
 ```text
 ┌──────────┐     ┌──────────────────┐     ┌──────────────┐
@@ -253,7 +253,7 @@ let pricing_config = PricingConfig::new()
 Current custom cache key:
 ```rust
 sha256("prompt_hash:diff_hash:model:role:rules_hash")
-→ "/agents/{sha256}.agent_SA_response.txt"
+-> "/agents/{sha256}.agent_SA_response.txt"
 ```
 
 Tokudo handles its own keying internally — we don't need to compute or pass

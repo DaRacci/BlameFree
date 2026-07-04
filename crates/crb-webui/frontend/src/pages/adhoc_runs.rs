@@ -1,6 +1,8 @@
-use crate::{api_url, AdhocRunSummary};
-use leptos::*;
-use leptos_router::*;
+use crate::api_url;
+use crb_webui_shared::adhoc::AdhocRunSummary;
+use leptos::{
+    component, create_local_resource, create_signal, view, IntoView, SignalGet, SignalSet,
+};
 
 #[component]
 pub fn AdhocRunsPage() -> impl IntoView {
@@ -11,9 +13,9 @@ pub fn AdhocRunsPage() -> impl IntoView {
     let _fetch = create_local_resource(
         move || (),
         move |_| {
-            let set_runs = set_runs.clone();
-            let set_loading = set_loading.clone();
-            let set_error = set_error.clone();
+            let set_runs = set_runs;
+            let set_loading = set_loading;
+            let set_error = set_error;
             async move {
                 set_loading.set(true);
                 set_error.set(None);
@@ -34,7 +36,8 @@ pub fn AdhocRunsPage() -> impl IntoView {
                         } else {
                             let status_code = resp.status();
                             let text = resp.text().await.unwrap_or_default();
-                            set_error.set(Some(format!("Server error ({}): {}", status_code, text)));
+                            set_error
+                                .set(Some(format!("Server error ({}): {}", status_code, text)));
                         }
                     }
                     Err(e) => {

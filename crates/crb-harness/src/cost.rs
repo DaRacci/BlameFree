@@ -34,13 +34,11 @@ pub struct CostTracker {
 
 #[derive(Debug, Clone, Default)]
 struct CostTrackerInner {
-    // ── Token counts from real Usage data ──────────────────────────────
     agent_tokens_in: usize,
     agent_tokens_out: usize,
     judge_tokens_in: usize,
     judge_tokens_out: usize,
 
-    // ── Extended token analytics ───────────────────────────────────────
     agent_cached_input_tokens: usize,
     agent_cache_creation_input_tokens: usize,
     agent_reasoning_tokens: usize,
@@ -50,11 +48,9 @@ struct CostTrackerInner {
     judge_reasoning_tokens: usize,
     judge_tool_use_prompt_tokens: usize,
 
-    // ── Call counts ────────────────────────────────────────────────────
     agent_call_count: usize,
     judge_call_count: usize,
 
-    // ── Cache stats ────────────────────────────────────────────────────
     agent_cache_hits: usize,
     agent_cache_misses: usize,
     judge_cache_hits: usize,
@@ -147,10 +143,12 @@ impl CostTracker {
             let judge_reasoning_rate = read_price_env("COST_JUDGE_REASONING_PER_1M", 0.28);
 
             // Cached tokens charged at discounted cache read rate
-            let agent_uncached_input =
-                inner.agent_tokens_in.saturating_sub(inner.agent_cached_input_tokens);
-            let judge_uncached_input =
-                inner.judge_tokens_in.saturating_sub(inner.judge_cached_input_tokens);
+            let agent_uncached_input = inner
+                .agent_tokens_in
+                .saturating_sub(inner.agent_cached_input_tokens);
+            let judge_uncached_input = inner
+                .judge_tokens_in
+                .saturating_sub(inner.judge_cached_input_tokens);
 
             let agent_cost = (agent_uncached_input as f64 * agent_input_rate / 1_000_000.0)
                 + (inner.agent_tokens_out as f64 * agent_output_rate / 1_000_000.0)
@@ -225,10 +223,12 @@ impl CostTracker {
             let judge_cache_read_rate = read_price_env("COST_JUDGE_CACHE_READ_PER_1M", 0.0028);
             let judge_reasoning_rate = read_price_env("COST_JUDGE_REASONING_PER_1M", 0.28);
             // Cached tokens charged at discounted cache read rate
-            let agent_uncached_input =
-                inner.agent_tokens_in.saturating_sub(inner.agent_cached_input_tokens);
-            let judge_uncached_input =
-                inner.judge_tokens_in.saturating_sub(inner.judge_cached_input_tokens);
+            let agent_uncached_input = inner
+                .agent_tokens_in
+                .saturating_sub(inner.agent_cached_input_tokens);
+            let judge_uncached_input = inner
+                .judge_tokens_in
+                .saturating_sub(inner.judge_cached_input_tokens);
 
             let agent_cost = (agent_uncached_input as f64 * agent_input_rate / 1_000_000.0)
                 + (inner.agent_tokens_out as f64 * agent_output_rate / 1_000_000.0)
@@ -343,9 +343,9 @@ mod tests {
         let usage2 = make_usage(200, 100, 20, 10, 6, 4);
         let usage3 = make_usage(30, 20, 5, 0, 1, 0);
 
-        tracker.record_agent(&usage1, true);   // cache hit
-        tracker.record_agent(&usage2, false);  // cache miss
-        tracker.record_judge(&usage3, true);    // cache hit
+        tracker.record_agent(&usage1, true); // cache hit
+        tracker.record_agent(&usage2, false); // cache miss
+        tracker.record_judge(&usage3, true); // cache hit
 
         let (total_in, total_out) = tracker.total_tokens();
         assert_eq!(total_in, 100 + 200 + 30);
@@ -418,7 +418,13 @@ mod tests {
         assert_eq!(summary.agent_tokens_in, 0);
         assert_eq!(summary.agent_call_count, 1);
         assert_eq!(summary.judge_call_count, 1);
-        assert!((summary.judge_cache_hit_rate - 1.0).abs() < 0.001, "Expected judge_cache_hit_rate ~1.0");
-        assert!((summary.agent_cache_hit_rate - 0.0).abs() < 0.001, "Expected agent_cache_hit_rate ~0.0");
+        assert!(
+            (summary.judge_cache_hit_rate - 1.0).abs() < 0.001,
+            "Expected judge_cache_hit_rate ~1.0"
+        );
+        assert!(
+            (summary.agent_cache_hit_rate - 0.0).abs() < 0.001,
+            "Expected agent_cache_hit_rate ~0.0"
+        );
     }
 }

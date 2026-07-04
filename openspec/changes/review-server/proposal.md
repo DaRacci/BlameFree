@@ -34,7 +34,7 @@ The architecture reuses the existing agent infrastructure (`crb-agents`, `crb-co
   - `GET /reviews` — list recent reviews with status
   - Repository context gathering (shallow clone, branch checkout, tech-stack detection, module mapping, CRG integration)
   - Template variable injection (`{repo}`, `{language}`, `{tech_stack}`, `{modules}`) into agent prompts
-  - In-memory review job store with lifecycle states: `pending` → `processing` → `complete | failed`
+  - In-memory review job store with lifecycle states: `pending` -> `processing` -> `complete | failed`
   - CLI flags for port, prompts dir, model, concurrency, rules dir
   - CORS support via `tower-http`
 

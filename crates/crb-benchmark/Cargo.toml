@@ -2,6 +2,7 @@
 name = "crb-benchmark"
 version = "0.1.0"
 edition = "2021"
+autolib = false
 
 [[bin]]
 name = "crb-benchmark"
@@ -22,9 +23,8 @@ crb-tools = { path = "../crb-tools" }
 crb-rules = { path = "../crb-rules" }
 crb-dashboard = { path = "../crb-dashboard" }
 crb-agents = { path = "../crb-agents" }
-crb-utils.path = "../crb-utils"
+crb-shared.path = "../crb-shared"
 clap = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
@@ -36,3 +36,6 @@ dotenvy = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+
+[lints]
+workspace = true

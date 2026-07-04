@@ -2,12 +2,43 @@
 resolver = "2"
 members = ["crates/*", "crates/crb-webui/frontend"]
 
+[workspace.lints.rust]
+trivial_casts = "deny"
+unsafe_code = "deny"
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+single_use_lifetimes = "warn"
+unused_crate_dependencies = "warn"
+unused_extern_crates = "warn"
+unused_import_braces = "warn"
+absolute-paths-not-starting-with-crate = "warn"
+variant-size-differences = "warn"
+
+[workspace.lints.clippy]
+cast_lossless = "deny"
+clone_on_ref_ptr = "deny"
+cognitive_complexity = "warn"
+expect_used = "deny"
+large_enum_variant = "deny"
+match_same_arms = "deny"
+panic = "deny"
+print_stdout = "deny"
+todo = "deny"
+too_many_arguments = "warn"
+too_many_lines = "warn"
+unimplemented = "deny"
+unwrap_used = "deny"
+wildcard_imports = "deny"
+redundant_closure = "deny"
+
+
 [workspace.dependencies]
 rig-core = "0.39"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
+serde_fields = "0.1"
 glob = "0.3"
 schemars = "0.8"
 anyhow = "1"
