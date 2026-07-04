@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 /// A single agent entry parsed from a markdown manifest file.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct AgentEntry {
     /// Human-readable role name (e.g. "Static Analysis").
     pub role_name: String,
@@ -42,6 +42,21 @@ pub struct AgentManifest {
     agents: HashMap<String, AgentEntry>,
     /// The abbreviation of the generalist agent (if any).
     generalist_abbreviation: Option<String>,
+}
+
+/// Split YAML frontmatter from a `.md` file.
+/// Returns `Some((yaml_str, body))` if the file starts with `---`,
+/// or `None` if no frontmatter is found.
+pub(crate) fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
+    let content = content.trim();
+    if !content.starts_with("---") {
+        return None;
+    }
+    let rest = &content[3..];
+    let end = rest.find("\n---")?;
+    let yaml = rest[..end].trim();
+    let body = rest[end + 4..].trim();
+    Some((yaml, body))
 }
 
 impl AgentManifest {
@@ -112,45 +127,14 @@ impl AgentManifest {
 
     /// Parse YAML frontmatter and markdown body from a `.md` file.
     fn parse_frontmatter(content: &str, path: &Path) -> anyhow::Result<(AgentEntry, String)> {
-        let trimmed = content.trim_start();
-
-        // Must start with `---`
-        if !trimmed.starts_with("---") {
-            anyhow::bail!(
+        let (yaml_str, body) = split_frontmatter(content).ok_or_else(|| {
+            anyhow::anyhow!(
                 "Agent file {} does not start with YAML frontmatter (`---`)",
                 path.display()
-            );
-        }
-
-        let after_first = &trimmed[3..];
-
-        // Find the closing `---`
-        let end = after_first
-            .find("\n---")
-            .or_else(|| after_first.find("\r\n---"))
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Agent file {} has opening `---` but no closing `---`",
-                    path.display()
-                )
-            })?;
-
-        let yaml_str = &after_first[..end];
-        let body_start = after_first[end..]
-            .strip_prefix("\n---")
-            .or_else(|| after_first[end..].strip_prefix("\r\n---"))
-            .unwrap_or("");
-
-        // Skip optional second newline after `---`
-        let body = body_start
-            .strip_prefix('\n')
-            .or_else(|| body_start.strip_prefix("\r\n"))
-            .unwrap_or(body_start)
-            .trim()
-            .to_string();
+            )
+        })?;
 
         // Parse YAML frontmatter
-        // serde_yaml doesn't handle null fields well, use a two-pass approach
         let mut entry: AgentEntry = serde_yaml::from_str(yaml_str).map_err(|e| {
             anyhow::anyhow!(
                 "Failed to parse YAML frontmatter in {}: {}",
@@ -159,7 +143,8 @@ impl AgentManifest {
             )
         })?;
 
-        entry.role_prompt = body;
+        let role_prompt = body.to_string();
+        entry.role_prompt = role_prompt.clone();
 
         if entry.role_abbreviation.is_empty() {
             anyhow::bail!(
@@ -168,7 +153,6 @@ impl AgentManifest {
             );
         }
 
-        let role_prompt = entry.role_prompt.clone();
         Ok((entry, role_prompt))
     }
 
@@ -290,7 +274,7 @@ mod tests {
         assert!(gen.generalist_agent);
         assert_eq!(
             gen.incompatible_with_roles,
-            vec!["SEC", "SA", "CL", "AR"]
+            vec!["SEC", "SA", "CL", "ARCH"]
         );
     }
 
@@ -441,5 +425,18 @@ Body"#,
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_split_frontmatter_valid() {
+        let content = "---\nkey: value\n---\n\nbody text";
+        let (yaml, body) = split_frontmatter(content).unwrap();
+        assert_eq!(yaml, "key: value");
+        assert_eq!(body, "body text");
+    }
+
+    #[test]
+    fn test_split_frontmatter_no_frontmatter() {
+        assert!(split_frontmatter("plain text").is_none());
     }
 }

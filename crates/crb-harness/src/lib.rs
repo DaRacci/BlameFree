@@ -17,6 +17,7 @@ use crb_dashboard::DashboardEvent;
 use crb_judge::{compute_metrics, run_judge};
 use crb_reporting::{GoldenCommentEntry, PrResult};
 use crb_rules::RuleSet;
+use crb_utils::sanitize_filename;
 use regex::Regex;
 use rig_core::agent::Agent;
 use rig_core::agent::PromptResponse;
@@ -576,8 +577,8 @@ pub async fn review_pr_with_prompt_lib(
 /// Review a diff by running `git diff` in the given `path`, then
 /// call `review_pr()` with the diff to get agent findings.
 ///
-/// - `ReviewMode::Commits { base, head }` → `git diff base..head`
-/// - `ReviewMode::Working`                → `git diff` (unstaged + staged)
+/// - `ReviewMode::Commits { base, head }` -> `git diff base..head`
+/// - `ReviewMode::Working`                -> `git diff` (unstaged + staged)
 ///
 /// Returns a vector of agent findings parsed from the LLM response.
 pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>> {
@@ -695,9 +696,9 @@ pub fn load_cached_diff(
 /// 2. JSON extraction from markdown fenced code blocks (```json ... ```).
 /// 3. Find any JSON array in the response.
 ///
-/// Before deserializing, field names are normalised (path→file,
-/// description→message, text→message, category→rule_code, component→file)
-/// and severity values are case-normalised ("high"→"High", "MEDIUM"→"Medium").
+/// Before deserializing, field names are normalised (path->file,
+/// description->message, text->message, category->rule_code, component->file)
+/// and severity values are case-normalised ("high"->"High", "MEDIUM"->"Medium").
 ///
 /// If all strategies fail, returns an empty `Vec` with a warning.
 pub fn parse_agent_findings(response: &str) -> Result<Vec<Finding>, String> {
@@ -740,7 +741,7 @@ pub fn parse_agent_findings(response: &str) -> Result<Vec<Finding>, String> {
                     }
                 }
 
-                // Normalise severity case: "high" → "High", "MEDIUM" → "Medium"
+                // Normalise severity case: "high" -> "High", "MEDIUM" -> "Medium"
                 if let Some(sev) = obj.get("severity").and_then(|s| s.as_str()) {
                     let normalised = match sev.to_lowercase().as_str() {
                         "high" => "High",
@@ -1028,9 +1029,8 @@ pub async fn evaluate_pr_single_agent(
     for finding in &all_findings {
         for gc in &pr.comments {
             // Step 1: Try Jaccard heuristic (no API call)
-            if let Some(score) =
-                crb_judge::jaccard_match(&finding.message, &gc.comment, jaccard_threshold)
-            {
+            let score = crb_utils::jaccard_similarity(&finding.message, &gc.comment, false);
+            if score >= jaccard_threshold {
                 tracing::info!(
                     "Jaccard match: finding='{}' golden='{}' score={:.2}",
                     &finding.message[..std::cmp::min(60, finding.message.len())],
@@ -1178,10 +1178,8 @@ pub async fn evaluate_pr_consensus(
     );
 
     // ── Convert reasoning_effort to additional_params ──────────────────
-    let additional_params = model_capabilities::reasoning_to_additional_params(
-        model,
-        reasoning_effort,
-    );
+    let additional_params =
+        model_capabilities::reasoning_to_additional_params(model, reasoning_effort);
     if additional_params.is_some() {
         info!(
             "Reasoning effort enabled: {:?}",
@@ -1196,12 +1194,17 @@ pub async fn evaluate_pr_consensus(
         let repo_name = crb_tools::language_detector::extract_repo_name(&pr.url);
         let lang_ref: &'static str = Box::leak(language.into_boxed_str());
         let repo_ref: &'static str = Box::leak(repo_name.into_boxed_str());
-        let map: HashMap<String, serde_json::Value> =
-            HashMap::from([
-                ("language".to_string(), serde_json::Value::String(lang_ref.to_string())),
-                ("repo".to_string(), serde_json::Value::String(repo_ref.to_string())),
-                ("role".to_string(), serde_json::Value::String(String::new())),
-            ]);
+        let map: HashMap<String, serde_json::Value> = HashMap::from([
+            (
+                "language".to_string(),
+                serde_json::Value::String(lang_ref.to_string()),
+            ),
+            (
+                "repo".to_string(),
+                serde_json::Value::String(repo_ref.to_string()),
+            ),
+            ("role".to_string(), serde_json::Value::String(String::new())),
+        ]);
         Some(&*Box::leak(Box::new(map)))
     };
 
@@ -1302,12 +1305,12 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
         return findings.to_vec();
     }
 
-    // Convert Finding → serde_json::Map<String, Value> using helper
+    // Convert Finding -> serde_json::Map<String, Value> using helper
     let maps: Vec<serde_json::Map<String, serde_json::Value>> =
         findings.iter().map(crb_agents::finding_to_map).collect();
 
     // Step 1: semantic dedup
-    let deduped = crb_aggregator::semantic_dedup(maps);
+    let deduped = crb_utils::semantic_dedup(maps);
 
     // Step 2: severity auditor
     let audited = crb_auditor::apply_severity_auditor(deduped);
@@ -1316,11 +1319,7 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
     let capped = {
         let max = 20;
         if audited.len() > max {
-            tracing::info!(
-                "capping {} findings to {} candidates",
-                audited.len(),
-                max
-            );
+            tracing::info!("capping {} findings to {} candidates", audited.len(), max);
             audited.into_iter().take(max).collect()
         } else {
             audited
@@ -1353,9 +1352,8 @@ pub async fn evaluate_pr_with_postprocessing(
     dashboard_tx: Option<&broadcast::Sender<DashboardEvent>>,
     reasoning_effort: Option<&str>,
 ) -> Result<PrResult> {
-    // ── Setup cache (optional) ────────────────────────────────────────────
     let cache: Option<Arc<crate::cache::LlmCache>> = if let Some(cache_dir) = cache_dir {
-        let pr_key = utils::sanitize_filename(&pr.pr_title);
+        let pr_key = sanitize_filename(&pr.pr_title);
         let c = Arc::new(
             crate::cache::LlmCache::new(cache_dir, &pr_key)
                 .expect("Failed to create LLM cache directory"),
@@ -1463,7 +1461,7 @@ pub async fn evaluate_pr_with_postprocessing(
     let rules_preamble = ruleset.map(|rs| rs.format_preamble(&[]));
 
     // ── Agent evaluation ──────────────────────────────────────────────────
-    let pr_key = utils::sanitize_filename(&pr.pr_title);
+    let pr_key = sanitize_filename(&pr.pr_title);
 
     // Send AgentStarted for each role
     if let Some(tx) = dashboard_tx {
@@ -1792,7 +1790,7 @@ pub fn print_terminal_summary(results: &[PrResult]) {
 /// compute average metrics, compare against thresholds, and exit with
 /// the appropriate code (0 = pass, 1 = fail).
 #[doc(hidden)]
-pub async fn run_validate(workspace_root: &std::path::Path, version: &str) -> Result<()> {
+pub async fn run_validate(workspace_root: &Path, version: &str) -> Result<()> {
     info!("Running validation against baseline v{version}");
 
     let baseline = crate::validation::load_baseline(workspace_root, version)?;
@@ -1862,23 +1860,5 @@ pub async fn run_validate(workspace_root: &std::path::Path, version: &str) -> Re
         Err(anyhow::anyhow!(
             "Validation FAILED - metrics exceed baseline thresholds"
         ))
-    }
-}
-
-// ── Internal utilities ─────────────────────────────────────────────────────
-
-/// Internal helper module for reporting utilities.
-pub mod utils {
-    /// Sanitize a string for use as a filename.
-    pub fn sanitize_filename(name: &str) -> String {
-        name.chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '-' || c == '_' {
-                    c
-                } else {
-                    '_'
-                }
-            })
-            .collect()
     }
 }

@@ -9,6 +9,7 @@ use crb_dashboard::DashboardEvent;
 use crb_judge::build_judge;
 use crb_reporting::{load_golden_datasets, write_report, GoldenCommentEntry};
 use crb_rules::RuleSet;
+use crb_utils::sanitize_filename;
 use rig_core::client::ProviderClient;
 use tokio::sync::broadcast;
 use tracing::{info, info_span};
@@ -88,7 +89,11 @@ enum Commands {
         #[arg(long, env = "MODEL", default_value = "deepseek/deepseek-v4-pro")]
         model: String,
         /// Model for the LLM judge.
-        #[arg(long, env = "JUDGE_MODEL", default_value = "deepseek/deepseek-v4-flash")]
+        #[arg(
+            long,
+            env = "JUDGE_MODEL",
+            default_value = "deepseek/deepseek-v4-flash"
+        )]
         judge_model: String,
         /// Maximum concurrent PR evaluations.
         #[arg(long, env = "CONCURRENCY", default_value_t = 4)]
@@ -227,9 +232,7 @@ fn main() -> Result<()> {
     if std::env::var("OPENAI_API_KEY").is_err() {
         if let Ok(key) = std::env::var("OPENROUTER_API_KEY") {
             std::env::set_var("OPENAI_API_KEY", key);
-            eprintln!(
-                "[dotenv] OPENAI_API_KEY not found - falling back to OPENROUTER_API_KEY"
-            );
+            eprintln!("[dotenv] OPENAI_API_KEY not found - falling back to OPENROUTER_API_KEY");
         }
     }
 
@@ -240,7 +243,10 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Scaffold { dataset_dir, benchmark_dir } => {
+        Commands::Scaffold {
+            dataset_dir,
+            benchmark_dir,
+        } => {
             scaffold::run(&dataset_dir, &benchmark_dir)?;
         }
         Commands::FetchDiffs { benchmark_dir } => {
@@ -252,22 +258,42 @@ fn main() -> Result<()> {
         Commands::List { dataset_dir } => {
             run_list(&dataset_dir)?;
         }
-        Commands::Clean { benchmark_dir, all, outputs, dry_run } => {
+        Commands::Clean {
+            benchmark_dir,
+            all,
+            outputs,
+            dry_run,
+        } => {
             run_clean(&benchmark_dir, all, outputs, dry_run)?;
         }
         Commands::CacheStats { cache_dir, json } => {
             run_cache_stats(&cache_dir, json)?;
         }
-        Commands::CachePrune { cache_dir, max_age, max_size, max_prs, dry_run, json } => {
+        Commands::CachePrune {
+            cache_dir,
+            max_age,
+            max_size,
+            max_prs,
+            dry_run,
+            json,
+        } => {
             run_cache_prune(&cache_dir, max_age, max_size, max_prs, dry_run, json)?;
         }
-        Commands::CacheScrub { cache_dir, dry_run, repair, json } => {
+        Commands::CacheScrub {
+            cache_dir,
+            dry_run,
+            repair,
+            json,
+        } => {
             run_cache_scrub(&cache_dir, dry_run, repair, json)?;
         }
         Commands::CacheBackup { cache_dir, output } => {
             run_cache_backup(&cache_dir, output)?;
         }
-        Commands::CacheRestore { backup_file, cache_dir } => {
+        Commands::CacheRestore {
+            backup_file,
+            cache_dir,
+        } => {
             run_cache_restore(&backup_file, &cache_dir)?;
         }
         Commands::CacheRebuild { cache_dir, dry_run } => {
@@ -360,7 +386,11 @@ fn run_list(dataset_dir: &PathBuf) -> Result<()> {
         repos.insert(repo_name.to_string());
     }
 
-    println!("\nTotal: {} PRs across {} repos", entries.len(), repos.len());
+    println!(
+        "\nTotal: {} PRs across {} repos",
+        entries.len(),
+        repos.len()
+    );
     Ok(())
 }
 
@@ -370,7 +400,10 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
 
     if worktrees_dir.exists() {
         if dry_run {
-            println!("[DRY RUN] Would remove worktrees from {}", worktrees_dir.display());
+            println!(
+                "[DRY RUN] Would remove worktrees from {}",
+                worktrees_dir.display()
+            );
         } else {
             // Remove each worktree using `git worktree remove --force`
             for entry in std::fs::read_dir(&worktrees_dir)? {
@@ -402,14 +435,20 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
             println!("Removed worktrees directory: {}", worktrees_dir.display());
         }
     } else {
-        println!("No worktrees directory found at {}", worktrees_dir.display());
+        println!(
+            "No worktrees directory found at {}",
+            worktrees_dir.display()
+        );
     }
 
     if all {
         let diffs_dir = benchmark_dir.join("diffs");
         if diffs_dir.exists() {
             if dry_run {
-                println!("[DRY RUN] Would remove diffs directory: {}", diffs_dir.display());
+                println!(
+                    "[DRY RUN] Would remove diffs directory: {}",
+                    diffs_dir.display()
+                );
             } else {
                 std::fs::remove_dir_all(&diffs_dir)?;
                 println!("Removed diffs directory: {}", diffs_dir.display());
@@ -423,7 +462,10 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
         let outputs_dir = benchmark_dir.join("outputs");
         if outputs_dir.exists() {
             if dry_run {
-                println!("[DRY RUN] Would remove outputs directory: {}", outputs_dir.display());
+                println!(
+                    "[DRY RUN] Would remove outputs directory: {}",
+                    outputs_dir.display()
+                );
             } else {
                 std::fs::remove_dir_all(&outputs_dir)?;
                 println!("Removed outputs directory: {}", outputs_dir.display());
@@ -436,7 +478,10 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
         let output_dir = benchmark_dir.join("output");
         if output_dir.exists() && output_dir != outputs_dir {
             if dry_run {
-                println!("[DRY RUN] Would remove output directory: {}", output_dir.display());
+                println!(
+                    "[DRY RUN] Would remove output directory: {}",
+                    output_dir.display()
+                );
             } else {
                 std::fs::remove_dir_all(&output_dir)?;
                 println!("Removed output directory: {}", output_dir.display());
@@ -459,37 +504,62 @@ fn run_cache_stats(cache_dir: &PathBuf, json: bool) -> Result<()> {
         println!("  Total size:       {} bytes", stats.total_size_bytes);
         println!();
         for pr in &stats.per_pr {
-            println!("  {}: {} entries, {} bytes", pr.pr_key, pr.entry_count, pr.total_size_bytes);
+            println!(
+                "  {}: {} entries, {} bytes",
+                pr.pr_key, pr.entry_count, pr.total_size_bytes
+            );
         }
     }
     Ok(())
 }
 
 /// Prune cache entries by age, size, or PR count.
-fn run_cache_prune(cache_dir: &PathBuf, max_age: Option<u64>, max_size: Option<u64>, max_prs: Option<usize>, dry_run: bool, json: bool) -> Result<()> {
-    let result = crb_harness::LlmCache::prune(cache_dir, max_age, max_size, max_prs, dry_run).map_err(|e| anyhow::anyhow!("{}", e))?;
+fn run_cache_prune(
+    cache_dir: &PathBuf,
+    max_age: Option<u64>,
+    max_size: Option<u64>,
+    max_prs: Option<usize>,
+    dry_run: bool,
+    json: bool,
+) -> Result<()> {
+    let result = crb_harness::LlmCache::prune(cache_dir, max_age, max_size, max_prs, dry_run)
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
     if json {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
-        if dry_run { print!("[DRY RUN] "); }
-        println!("Prune: {} entries removed from {} PRs, {} bytes freed ({} PRs kept)",
-            result.entries_removed, result.prs_removed, result.bytes_freed, result.prs_kept);
+        if dry_run {
+            print!("[DRY RUN] ");
+        }
+        println!(
+            "Prune: {} entries removed from {} PRs, {} bytes freed ({} PRs kept)",
+            result.entries_removed, result.prs_removed, result.bytes_freed, result.prs_kept
+        );
     }
     Ok(())
 }
 
 /// Scrub cache for stale entries, orphans, and corrupted indices.
 fn run_cache_scrub(cache_dir: &PathBuf, dry_run: bool, repair: bool, json: bool) -> Result<()> {
-    let result = crb_harness::LlmCache::scrub(cache_dir, dry_run, repair).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let result = crb_harness::LlmCache::scrub(cache_dir, dry_run, repair)
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
     if json {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
-        if dry_run { print!("[DRY RUN] "); }
-        println!("Scrub: scanned {} PR dirs, {} stale entries, {} orphans, {} corrupted indices",
-            result.pr_dirs_scanned, result.stale_entries_found, result.orphan_files_found, result.corrupted_indices_found);
+        if dry_run {
+            print!("[DRY RUN] ");
+        }
+        println!(
+            "Scrub: scanned {} PR dirs, {} stale entries, {} orphans, {} corrupted indices",
+            result.pr_dirs_scanned,
+            result.stale_entries_found,
+            result.orphan_files_found,
+            result.corrupted_indices_found
+        );
         if repair {
-            println!("  Repaired: {} indices rebuilt, {} stale removed, {} orphans removed",
-                result.indices_rebuilt, result.stale_entries_removed, result.orphan_files_removed);
+            println!(
+                "  Repaired: {} indices rebuilt, {} stale removed, {} orphans removed",
+                result.indices_rebuilt, result.stale_entries_removed, result.orphan_files_removed
+            );
         }
     }
     Ok(())
@@ -499,7 +569,10 @@ fn run_cache_scrub(cache_dir: &PathBuf, dry_run: bool, repair: bool, json: bool)
 fn run_cache_backup(cache_dir: &PathBuf, output: Option<PathBuf>) -> Result<()> {
     use std::time::SystemTime;
     use std::time::UNIX_EPOCH;
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     let output_path = output.unwrap_or_else(|| {
         let mut p = cache_dir.clone();
         p.push(format!("cache_backup_{}.tar.gz", ts));
@@ -513,14 +586,20 @@ fn run_cache_backup(cache_dir: &PathBuf, output: Option<PathBuf>) -> Result<()> 
 /// Restore cache from a tar.gz backup.
 fn run_cache_restore(backup_file: &PathBuf, cache_dir: &PathBuf) -> Result<()> {
     crb_harness::LlmCache::restore(cache_dir, backup_file).map_err(|e| anyhow::anyhow!("{}", e))?;
-    println!("Restored from {} to {}", backup_file.display(), cache_dir.display());
+    println!(
+        "Restored from {} to {}",
+        backup_file.display(),
+        cache_dir.display()
+    );
     Ok(())
 }
 
 /// Rebuild cache indices from raw data.
 fn run_cache_rebuild(cache_dir: &PathBuf, dry_run: bool) -> Result<()> {
     crb_harness::LlmCache::rebuild(cache_dir, dry_run).map_err(|e| anyhow::anyhow!("{}", e))?;
-    if dry_run { print!("[DRY RUN] "); }
+    if dry_run {
+        print!("[DRY RUN] ");
+    }
     println!("Cache rebuild completed");
     Ok(())
 }
@@ -553,16 +632,17 @@ async fn run_benchmark(
     auto_backup: bool,
     reasoning_effort: String,
 ) -> Result<()> {
-
     let output_dir = PathBuf::from(&output_dir);
     let dataset_dir = PathBuf::from(&dataset_dir);
     let benchmark_dir = PathBuf::from(&benchmark_dir);
 
-    // ── Auto-backup cache ──────────────────────────────────────────────────
     if auto_backup {
         use std::time::SystemTime;
         use std::time::UNIX_EPOCH;
-        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let backup_path = PathBuf::from(format!("cache_backup_{}.tar.gz", ts));
         match crb_harness::LlmCache::backup(&cache_dir, &backup_path) {
             Ok(()) => info!("Auto-backup created at {}", backup_path.display()),
@@ -571,26 +651,22 @@ async fn run_benchmark(
     }
 
     // ── --validate flag ────────────────────────────────────────────────────
-    let workspace_root = std::env::current_dir()
-        .context("Failed to determine current working directory")?;
+    let workspace_root =
+        std::env::current_dir().context("Failed to determine current working directory")?;
     if validate {
         return crb_harness::run_validate(&workspace_root, "5.14").await;
     }
 
-    let _span =
-        info_span!("harness", model = %model, concurrency = %concurrency).entered();
+    let _span = info_span!("harness", model = %model, concurrency = %concurrency).entered();
 
-    // ── Load datasets ─────────────────────────────────────────────────────
     info!("Loading golden datasets from: {}", dataset_dir.display());
     let all_prs = load_golden_datasets(&dataset_dir)?;
     info!("Loaded {} PR entries total", all_prs.len());
 
     // ── --pr-filter flag with exact PR number match ──────────────────────
     let all_prs = if let Some(ref filter) = pr_filter {
-        let filter_patterns: HashSet<String> = filter
-            .split(',')
-            .map(|s| s.trim().to_lowercase())
-            .collect();
+        let filter_patterns: HashSet<String> =
+            filter.split(',').map(|s| s.trim().to_lowercase()).collect();
 
         let available_urls: Vec<String> = all_prs.iter().map(|pr| pr.url.clone()).collect();
 
@@ -606,7 +682,9 @@ async fn run_benchmark(
                             let pr_tag = format!("/pull/{}", pr_num);
                             if let Some(pos) = url_lower.find(&pr_tag) {
                                 let after = &url_lower[pos + pr_tag.len()..];
-                                if after.is_empty() || !after.chars().next().unwrap().is_ascii_digit() {
+                                if after.is_empty()
+                                    || !after.chars().next().unwrap().is_ascii_digit()
+                                {
                                     if url_lower.contains(repo_part) {
                                         return true;
                                     }
@@ -667,7 +745,7 @@ async fn run_benchmark(
         all_prs
             .iter()
             .filter(|pr| {
-                let filename = crb_harness::utils::sanitize_filename(&pr.pr_title);
+                let filename = sanitize_filename(&pr.pr_title);
                 let exists = existing.contains(&format!("{filename}.json"));
                 if exists {
                     info!("Skipping already-evaluated PR: {}", pr.pr_title);
@@ -701,11 +779,7 @@ async fn run_benchmark(
     let linter_configs = if linter_config_path.exists() && !skip_linters {
         match crb_tools::load_linter_config(&linters_config) {
             Ok(configs) => {
-                info!(
-                    "Loaded {} linter(s) from {}",
-                    configs.len(),
-                    linters_config
-                );
+                info!("Loaded {} linter(s) from {}", configs.len(), linters_config);
                 Some(configs)
             }
             Err(e) => {
@@ -740,9 +814,8 @@ async fn run_benchmark(
     };
 
     // ── Prompt library ───────────────────────────────────────────────────
-    let prompt_lib = std::sync::Arc::new(
-        PromptLibrary::new().expect("Embedded prompts should be available"),
-    );
+    let prompt_lib =
+        std::sync::Arc::new(PromptLibrary::new().expect("Embedded prompts should be available"));
 
     // ── Cache directory ───────────────────────────────────────────────────
     let start_time = std::time::Instant::now();
@@ -932,8 +1005,7 @@ async fn run_benchmark(
 
     // ── --ci flag: validate and exit with proper code ─────────────────────
     if ci {
-        let metrics: Vec<crb_judge::Metrics> =
-            results.iter().map(|r| r.metrics.clone()).collect();
+        let metrics: Vec<crb_judge::Metrics> = results.iter().map(|r| r.metrics.clone()).collect();
         let (avg_precision, avg_recall, avg_f1) =
             crb_harness::validation::compute_average_metrics(&metrics);
         let baseline = crb_harness::validation::load_baseline(&workspace_root, "5.14")?;

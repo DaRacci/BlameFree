@@ -11,4 +11,3 @@ Dataset loading, result types, and output writing for the code review benchmark 
 - [`GoldenCommentEntry`](src/lib.rs) — A single PR entry: `pr_title`, `url`, `comments`
 - [`PrResult`](src/lib.rs) — Evaluation result for a PR: `pr_title`, `url`, `findings_count`, `golden_count`, `metrics`, `verdicts`, `cost`
 - [`CostSummary`](src/lib.rs) — Cost data: `agent_tokens_in/out`, `judge_tokens_in/out`, `total_usd`, `agent_cache_hit_rate`, `judge_cache_hit_rate`
-- [`sanitize_filename()`](src/lib.rs) — Utility to create filesystem-safe filenames from PR titles

@@ -51,7 +51,8 @@ crb-harness = { path = "../crb-harness" }
 crb-dashboard = { path = "../crb-dashboard" }
 crb-reporting = { path = "../crb-reporting" }
 crb-judge = { path = "../crb-judge" }
-crb-tools = { path = "../crb-tools" }
 crb-rules = { path = "../crb-rules" }
+crb-tools = { path = "../crb-tools" }
+crb-utils = { path = "../crb-utils" }
 crb-agents = { path = "../crb-agents" }
 rig-core = { workspace = true }

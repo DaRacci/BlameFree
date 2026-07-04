@@ -5,37 +5,12 @@
 
 use handlebars::Handlebars;
 use include_dir::{include_dir, Dir};
-use serde::Deserialize;
 use std::collections::HashMap;
+
+use crate::manifest::{split_frontmatter, AgentEntry};
 
 /// Embedded prompts directory (compiled into binary).
 static PROMPTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../prompts");
-
-/// Parsed agent configuration from YAML frontmatter.
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct AgentConfig {
-    #[serde(default)]
-    pub role_name: String,
-    #[serde(default)]
-    pub role_abbreviation: String,
-    #[serde(default)]
-    pub role_domain: String,
-    #[serde(default)]
-    pub role_anti_hallucination_rules: String,
-    #[serde(default)]
-    pub role_review_methodology: String,
-    #[serde(default)]
-    pub generalist_agent: bool,
-    #[serde(default)]
-    pub incompatible_with_roles: Vec<String>,
-}
-
-/// An agent entry: parsed config + the markdown body (role_prompt).
-#[derive(Debug, Clone)]
-pub struct AgentEntry {
-    pub config: AgentConfig,
-    pub role_prompt: String,
-}
 
 /// Embedded prompt library
 #[derive(Clone)]
@@ -83,17 +58,16 @@ impl PromptLibrary {
                 }
                 let content = file.contents_utf8().unwrap_or("");
                 if let Some((yaml_str, body)) = split_frontmatter(content) {
-                    let config: AgentConfig = serde_yaml::from_str(yaml_str).unwrap_or_default();
-                    if config.role_abbreviation.is_empty() {
+                    let mut entry: AgentEntry =
+                        serde_yaml::from_str(yaml_str).unwrap_or_default();
+                    if entry.role_abbreviation.is_empty() {
                         continue;
                     }
                     let clean_body = body.trim().to_string();
+                    entry.role_prompt = clean_body;
                     agents.insert(
-                        config.role_abbreviation.to_uppercase(),
-                        AgentEntry {
-                            config,
-                            role_prompt: clean_body,
-                        },
+                        entry.role_abbreviation.to_uppercase(),
+                        entry,
                     );
                 }
             }
@@ -126,9 +100,9 @@ impl PromptLibrary {
             .map(|e| e.role_prompt.as_str())
     }
 
-    /// Get the agent config for a role.
-    pub fn config(&self, role: &str) -> Option<&AgentConfig> {
-        self.agents.get(&role.to_uppercase()).map(|e| &e.config)
+    /// Get the agent entry for a role.
+    pub fn config(&self, role: &str) -> Option<&AgentEntry> {
+        self.agents.get(&role.to_uppercase())
     }
 
     /// Render a role's prompt through agent.hbs.
@@ -147,22 +121,22 @@ impl PromptLibrary {
         };
 
         let mut ctx = serde_json::Map::new();
-        ctx.insert("role_name".into(), entry.config.role_name.clone().into());
+        ctx.insert("role_name".into(), entry.role_name.clone().into());
         ctx.insert(
             "role_abbreviation".into(),
-            entry.config.role_abbreviation.clone().into(),
+            entry.role_abbreviation.clone().into(),
         );
         ctx.insert(
             "role_domain".into(),
-            entry.config.role_domain.clone().into(),
+            entry.role_domain.clone().into(),
         );
         ctx.insert(
             "role_anti_hallucination_rules".into(),
-            entry.config.role_anti_hallucination_rules.clone().into(),
+            entry.role_anti_hallucination_rules.clone().unwrap_or_default().into(),
         );
         ctx.insert(
             "role_review_methodology".into(),
-            entry.config.role_review_methodology.clone().into(),
+            entry.role_review_methodology.clone().unwrap_or_default().into(),
         );
         ctx.insert("role_prompt".into(), entry.role_prompt.clone().into());
 
@@ -201,37 +175,9 @@ impl PromptLibrary {
     }
 }
 
-/// Split YAML frontmatter from a .md file.
-/// Returns Some((yaml_str, body)) if the file starts with ---,
-/// or None if no frontmatter found.
-fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
-    let content = content.trim();
-    if !content.starts_with("---") {
-        return None;
-    }
-    let rest = &content[3..];
-    let end = rest.find("\n---")?;
-    let yaml = rest[..end].trim();
-    let body = rest[end + 4..].trim();
-    Some((yaml, body))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_split_frontmatter() {
-        let content = "---\nkey: value\n---\n\nbody text";
-        let (yaml, body) = split_frontmatter(content).unwrap();
-        assert_eq!(yaml, "key: value");
-        assert_eq!(body, "body text");
-    }
-
-    #[test]
-    fn test_no_frontmatter() {
-        assert!(split_frontmatter("plain text").is_none());
-    }
 
     #[test]
     fn test_prompt_library_loads() {

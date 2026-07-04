@@ -613,18 +613,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crb-aggregator"
-version = "0.1.0"
-dependencies = [
- "clap",
- "crb-agents",
- "once_cell",
- "regex",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "crb-auditor"
 version = "0.1.0"
 dependencies = [
@@ -649,6 +637,7 @@ dependencies = [
  "crb-reporting",
  "crb-rules",
  "crb-tools",
+ "crb-utils",
  "dotenvy",
  "regex",
  "rig-core",
@@ -669,6 +658,7 @@ dependencies = [
  "crb-dashboard",
  "crb-judge",
  "crb-reporting",
+ "crb-utils",
  "futures",
  "regex",
  "rig-core",
@@ -701,7 +691,6 @@ dependencies = [
  "anyhow",
  "clap",
  "crb-agents",
- "crb-aggregator",
  "crb-auditor",
  "crb-consensus",
  "crb-dashboard",
@@ -709,6 +698,7 @@ dependencies = [
  "crb-reporting",
  "crb-rules",
  "crb-tools",
+ "crb-utils",
  "dotenvy",
  "regex",
  "reqwest 0.12.28",
@@ -740,6 +730,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crb-judge",
+ "crb-utils",
  "serde",
  "serde_json",
  "tracing",
@@ -780,6 +771,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "crb-utils"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde_json",
+]
+
+[[package]]
 name = "crb-webui"
 version = "0.1.0"
 dependencies = [
@@ -794,6 +793,7 @@ dependencies = [
  "crb-reporting",
  "crb-rules",
  "crb-tools",
+ "crb-utils",
  "dotenvy",
  "futures",
  "hmac",

@@ -3,8 +3,7 @@
 //! Provides endpoints to submit a GitHub PR URL for ad-hoc review (read-only,
 //! no GitHub commenting), list previous ad-hoc reviews, and get their details.
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -12,10 +11,13 @@ use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
+use crb_utils::sanitize_filename;
 use serde::{Deserialize, Serialize};
 
-use crate::api::runs::{RunDetail, PrResultResponse, AggregateMetricsResponse, RunConfigResponse, MetricsJson, PrResultJson, VerdictJson, CostJson};
-use crate::harness;
+use crate::api::runs::{
+    AggregateMetricsResponse, CostJson, MetricsJson, PrResultJson, PrResultResponse,
+    RunConfigResponse, RunDetail, VerdictJson,
+};
 use crate::server::AppState;
 use rig_core::client::ProviderClient;
 
@@ -147,9 +149,7 @@ pub async fn start_adhoc_review(
 /// ── GET /api/adhoc/runs ─────────────────────────────────────────────────
 ///
 /// List all previous ad-hoc review runs.
-pub async fn list_adhoc_runs(
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+pub async fn list_adhoc_runs(State(state): State<AppState>) -> impl IntoResponse {
     let adhoc_dir = state.output_dir.join("adhoc");
     let mut runs: Vec<AdhocRunSummary> = Vec::new();
 
@@ -405,7 +405,9 @@ async fn fetch_pr_diff(
     let diff_client = reqwest::Client::new();
     let token = std::env::var("GITHUB_TOKEN").ok();
     let mut diff_req = diff_client
-        .get(format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"))
+        .get(format!(
+            "https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+        ))
         .header("Accept", "application/vnd.github.v3.diff")
         .header("User-Agent", "review-harness/1.0");
     if let Some(ref t) = token {
@@ -469,7 +471,7 @@ async fn run_adhoc_review_inner(
     };
 
     // ── Cache instance ────────────────────────────────────────────────
-    let pr_key = crb_harness::utils::sanitize_filename(pr_title);
+    let pr_key = sanitize_filename(pr_title);
     let cache: Arc<crb_harness::LlmCache> = Arc::new(
         crb_harness::LlmCache::new(&cache_dir, &pr_key)
             .expect("Failed to create LLM cache directory"),
@@ -554,11 +556,15 @@ async fn run_adhoc_review_inner(
             recall: result.metrics.recall,
             f1: result.metrics.f1,
         },
-        verdicts: result.verdicts.iter().map(|v| VerdictJson {
-            reasoning: v.reasoning.clone(),
-            match_: v.match_,
-            confidence: v.confidence,
-        }).collect(),
+        verdicts: result
+            .verdicts
+            .iter()
+            .map(|v| VerdictJson {
+                reasoning: v.reasoning.clone(),
+                match_: v.match_,
+                confidence: v.confidence,
+            })
+            .collect(),
         cost: result.cost.map(|c| CostJson {
             total_usd: c.total_usd,
             agent_tokens_in: c.agent_tokens_in as u64,
@@ -608,7 +614,10 @@ async fn run_adhoc_review_inner(
     });
 
     let summary_str = serde_json::to_string_pretty(&summary)?;
-    std::fs::write(output_subdir.join(crb_harness::paths::SUMMARY_FILE), &summary_str)?;
+    std::fs::write(
+        output_subdir.join(crb_harness::paths::SUMMARY_FILE),
+        &summary_str,
+    )?;
 
     tracing::info!(
         run_id = %run_id,
@@ -692,7 +701,10 @@ fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<AdhocRunSummary> {
             if fpath.extension().map_or(true, |e| e != "json") {
                 continue;
             }
-            if fpath.file_name().map_or(true, |n| n == crb_harness::paths::SUMMARY_FILE) {
+            if fpath
+                .file_name()
+                .map_or(true, |n| n == crb_harness::paths::SUMMARY_FILE)
+            {
                 continue;
             }
             if let Ok(content) = std::fs::read_to_string(&fpath) {

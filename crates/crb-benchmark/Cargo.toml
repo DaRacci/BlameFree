@@ -22,6 +22,7 @@ crb-tools = { path = "../crb-tools" }
 crb-rules = { path = "../crb-rules" }
 crb-dashboard = { path = "../crb-dashboard" }
 crb-agents = { path = "../crb-agents" }
+crb-utils.path = "../crb-utils"
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

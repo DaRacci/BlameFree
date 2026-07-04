@@ -19,10 +19,10 @@ crb-judge = { path = "../crb-judge" }
 crb-reporting = { path = "../crb-reporting" }
 crb-consensus = { path = "../crb-consensus" }
 crb-tools = { path = "../crb-tools" }
-crb-aggregator = { path = "../crb-aggregator" }
 crb-auditor = { path = "../crb-auditor" }
 crb-rules = { path = "../crb-rules" }
 crb-dashboard = { path = "../crb-dashboard" }
+crb-utils.path = "../crb-utils"
 rig-core = { workspace = true }
 tokio = { workspace = true }
 clap = { workspace = true }

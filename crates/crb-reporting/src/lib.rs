@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
+use crb_utils::sanitize_filename;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -116,7 +117,10 @@ pub fn load_golden_datasets(dataset_dir: &Path) -> Result<Vec<GoldenCommentEntry
     let mut entries = Vec::new();
 
     if !dataset_dir.exists() {
-        info!("Dataset directory does not exist, skipping: {}", dataset_dir.display());
+        info!(
+            "Dataset directory does not exist, skipping: {}",
+            dataset_dir.display()
+        );
         return Ok(entries);
     }
 
@@ -162,12 +166,4 @@ pub fn load_golden_datasets(dataset_dir: &Path) -> Result<Vec<GoldenCommentEntry
 #[derive(Debug, Clone, Deserialize)]
 struct DatasetFile {
     entries: Vec<GoldenCommentEntry>,
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-pub fn sanitize_filename(name: &str) -> String {
-    name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
-        .collect()
 }

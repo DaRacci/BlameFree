@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 crb-judge = { path = "../crb-judge" }
+crb-utils.path = "../crb-utils"
 anyhow = { workspace = true }
 tracing = { workspace = true }
 serde = { workspace = true }

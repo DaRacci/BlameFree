@@ -10,6 +10,7 @@ exp16_adaptive_agents = []
 
 [dependencies]
 crb-agents = { path = "../crb-agents" }
+crb-utils = { path = "../crb-utils" }
 crb-dashboard = { path = "../crb-dashboard" }
 crb-judge = { path = "../crb-judge" }
 crb-reporting = { path = "../crb-reporting" }
