@@ -596,15 +596,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crb-adapter"
-version = "0.1.0"
-dependencies = [
- "clap",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "crb-agents"
 version = "0.1.0"
 dependencies = [
