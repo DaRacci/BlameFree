@@ -192,10 +192,6 @@
   background: transparent;
 }
 
-.checkbox-label--disabled input[type="checkbox"] {
-  cursor: not-allowed;
-}
-
 .checkbox-label input[type="checkbox"] {
   appearance: none;
   width: 16px;
@@ -206,6 +202,10 @@
   cursor: pointer;
   flex-shrink: 0;
   transition: all var(--transition-fast);
+}
+
+.checkbox-label--disabled input[type="checkbox"] {
+  cursor: not-allowed;
 }
 
 .checkbox-label input[type="checkbox"]:checked {

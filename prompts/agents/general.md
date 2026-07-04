@@ -13,7 +13,7 @@ incompatible_with_roles:
   - "SEC"
   - "SA"
   - "CL"
-  - "AR"
+  - "ARCH"
 ---
 
 ## Static Analysis (GEN-SA)
