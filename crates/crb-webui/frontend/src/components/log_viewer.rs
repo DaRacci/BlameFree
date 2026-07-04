@@ -2,13 +2,13 @@ use leptos::*;
 use crate::{LogsListResponse, AgentLogResponse, api_url};
 
 /// Map a role abbreviation to a human-readable display name.
-fn role_display_name(role: &str) -> &'static str {
+fn role_display_name(role: &str) -> String {
     match role {
-        "SA" => "Security Auditor (SA)",
-        "CL" => "Code Logician (CL)",
-        "AR" | "ARCH" => "Architecture Reviewer (ARCH)",
-        "SEC" => "Security Evaluator (SEC)",
-        _ => role,
+        "SA" => "Security Auditor (SA)".to_string(),
+        "CL" => "Code Logician (CL)".to_string(),
+        "AR" | "ARCH" => "Architecture Reviewer (ARCH)".to_string(),
+        "SEC" => "Security Evaluator (SEC)".to_string(),
+        _ => role.to_string(),
     }
 }
 

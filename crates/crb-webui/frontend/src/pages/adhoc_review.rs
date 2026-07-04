@@ -385,6 +385,7 @@ pub fn AdhocReviewPage() -> impl IntoView {
                                 let role_infos_cloned = role_infos.clone();
                                 role_infos.iter().map(|role_info| {
                                     let abbr = role_info.abbreviation.clone();
+                                    let abbr_display = abbr.clone();
                                     let checked = is_role_selected(&abbr);
                                     let disabled = is_role_disabled(&abbr, &role_infos_cloned);
                                     let title = if disabled {
@@ -416,23 +417,22 @@ pub fn AdhocReviewPage() -> impl IntoView {
                                     } else {
                                         String::new()
                                     };
+                                    let label_class = if disabled {
+                                        "checkbox-label checkbox-label--disabled"
+                                    } else {
+                                        "checkbox-label"
+                                    };
                                     view! {
-                                        <label class=move || {
-                                            format!("checkbox-label{}",
-                                                if is_role_disabled(&abbr, &role_infos_cloned) { " checkbox-label--disabled" } else { "" }
-                                            )
-                                        }>
+                                        <label class=label_class>
                                             <input
                                                 type="checkbox"
                                                 checked=checked
                                                 disabled=disabled
                                                 on:click=move |_| {
-                                                    if !is_role_disabled(&abbr, &role_infos_cloned) {
-                                                        toggle_role(&abbr)
-                                                    }
+                                                    toggle_role(&abbr)
                                                 }
                                             />
-                                            <span title=title>{abbr.clone()}</span>
+                                            <span title=title>{abbr_display}</span>
                                         </label>
                                     }
                                 }).collect::<Vec<_>>()

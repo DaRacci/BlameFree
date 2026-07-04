@@ -6,13 +6,13 @@ use crate::components::agent_pane::AgentPane;
 use crate::components::progress_bar::ProgressBar;
 
 /// Map a role abbreviation to a human-readable display name.
-fn role_display_name(role: &str) -> &'static str {
+fn role_display_name(role: &str) -> String {
     match role {
-        "SA" => "Security Auditor (SA)",
-        "CL" => "Code Logician (CL)",
-        "AR" | "ARCH" => "Architecture Reviewer (ARCH)",
-        "SEC" => "Security Evaluator (SEC)",
-        _ => role,
+        "SA" => "Security Auditor (SA)".to_string(),
+        "CL" => "Code Logician (CL)".to_string(),
+        "AR" | "ARCH" => "Architecture Reviewer (ARCH)".to_string(),
+        "SEC" => "Security Evaluator (SEC)".to_string(),
+        _ => role.to_string(),
     }
 }
 
@@ -92,7 +92,8 @@ pub fn LivePage() -> impl IntoView {
         let url = api_url("/api/config");
         if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
             if let Ok(config) = resp.json::<AppConfig>().await {
-                set_available_roles.set(config.roles);
+                let role_abbrs: Vec<String> = config.roles.into_iter().map(|r| r.abbreviation).collect();
+                set_available_roles.set(role_abbrs);
             }
         }
     });

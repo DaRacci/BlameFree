@@ -201,18 +201,15 @@ pub fn NewRunPage() -> impl IntoView {
 
     let is_role_disabled = move |role_abbr: &str, role_infos: &Vec<RoleInfo>| -> bool {
         let selected = roles.get();
-        // If role is already selected, it shouldn't be disabled (user can deselect it)
         if selected.contains(&role_abbr.to_string()) {
             return false;
         }
         for s in &selected {
-            // Direct: does the selected role list `role_abbr` as incompatible?
             if let Some(info) = role_infos.iter().find(|r| r.abbreviation == *s) {
                 if info.incompatible_with_roles.contains(&role_abbr.to_string()) {
                     return true;
                 }
             }
-            // Reverse: does `role_abbr` list the selected role as incompatible?
             if let Some(info) = role_infos.iter().find(|r| r.abbreviation == role_abbr) {
                 if info.incompatible_with_roles.contains(s) {
                     return true;
@@ -412,7 +409,7 @@ pub fn NewRunPage() -> impl IntoView {
                                             let checked = roles.get().contains(&abbr);
                                             let disabled = is_role_disabled(&abbr, &role_infos_cloned);
                                             let title = if disabled {
-                                                let incompatible_with = role_infos_cloned.iter()
+                                                let incompatible_with: Vec<String> = role_infos_cloned.iter()
                                                     .filter(|ri| {
                                                         let selected = roles.get();
                                                         selected.contains(&ri.abbreviation)
@@ -428,24 +425,24 @@ pub fn NewRunPage() -> impl IntoView {
                                                             })
                                                             .flat_map(|ri| {
                                                                 let selected = roles.get();
-                                                                let s = ri.incompatible_with_roles.iter()
+                                                                ri.incompatible_with_roles.iter()
                                                                     .filter(|ir| selected.contains(ir))
                                                                     .cloned()
-                                                                    .collect::<Vec<_>>();
-                                                                s
+                                                                    .collect::<Vec<_>>()
                                                             })
                                                     )
-                                                    .collect::<Vec<_>>();
+                                                    .collect();
                                                 format!("Incompatible with: {}", incompatible_with.join(", "))
                                             } else {
                                                 String::new()
                                             };
+                                            let label_class = if disabled {
+                                                "checkbox-label checkbox-label--disabled"
+                                            } else {
+                                                "checkbox-label"
+                                            };
                                             view! {
-                                                <label class=move || {
-                                                    format!("checkbox-label{}",
-                                                        if is_role_disabled(&abbr, &role_infos_cloned) { " checkbox-label--disabled" } else { "" }
-                                                    )
-                                                }>
+                                                <label class=label_class>
                                                     <input
                                                         type="checkbox"
                                                         prop:checked=checked
@@ -453,9 +450,7 @@ pub fn NewRunPage() -> impl IntoView {
                                                         on:click={
                                                             let abbr_clone = abbr.clone();
                                                             move |_| {
-                                                                if !is_role_disabled(&abbr_clone, &role_infos_cloned) {
-                                                                    toggle_role(&abbr_clone)
-                                                                }
+                                                                toggle_role(&abbr_clone)
                                                             }
                                                         }
                                                     />
