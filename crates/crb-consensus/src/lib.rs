@@ -830,6 +830,8 @@ pub async fn judge_comment(
     judge_model: &str,
     cache: Option<Arc<dyn CacheBackend>>,
     judge_prompt_hash: &str,
+    judge_api_calls: &mut usize,
+    judge_cache_hits: &mut usize,
 ) -> MatchResult {
     // Step 1: pre-filter candidates by exact file + line match
     let file_matches: Vec<&Finding> = candidates
@@ -854,6 +856,7 @@ pub async fn judge_comment(
         if let Some(ref c) = cache {
             if let Some(cached_verdict) = c.lookup_judge_by_key(&judge_key) {
                 tracing::info!("CACHE HIT for judge (key={})", &judge_key[..12]);
+                *judge_cache_hits += 1;
                 if cached_verdict.match_ {
                     return MatchResult::TruePositive;
                 }
@@ -864,6 +867,7 @@ pub async fn judge_comment(
 
         // Cache miss — make the API call
         tracing::info!("CACHE MISS for judge (key={})", &judge_key[..12]);
+        *judge_api_calls += 1;
         match run_judge(judge, &golden.message_regex, &finding.message).await {
             Ok((verdict, _usage)) => {
                 // Write-through cache
@@ -969,8 +973,8 @@ pub async fn run_consensus(
 
     let mut true_positives: Vec<(GoldenComment, Finding)> = Vec::new();
     let mut false_negatives: Vec<GoldenComment> = Vec::new();
-    let judge_api_calls: usize = 0;
-    let judge_cache_hits: usize = 0;
+    let mut judge_api_calls: usize = 0;
+    let mut judge_cache_hits: usize = 0;
 
     // Step 2 & 3: match each golden with LLM → Jaccard pipeline
     for golden in &goldens {
@@ -981,6 +985,8 @@ pub async fn run_consensus(
             judge_model,
             cache.clone(),
             judge_prompt_hash,
+            &mut judge_api_calls,
+            &mut judge_cache_hits,
         )
         .await;
 
