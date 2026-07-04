@@ -17,6 +17,7 @@ use tower_http::trace::TraceLayer;
 use crate::auth::SessionStore;
 use crate::config::WebUiConfig;
 use crate::events::DashboardEvent;
+use crate::static_assets::StaticAssets;
 
 /// Shared application state.
 #[derive(Clone)]
@@ -25,8 +26,8 @@ pub struct AppState {
     pub output_dir: PathBuf,
     /// Directory containing datasets.
     pub dataset_dir: PathBuf,
-    /// Directory of the static frontend files.
-    pub static_dir: PathBuf,
+    /// Directory of the static frontend files. `None` uses embedded assets.
+    pub static_dir: Option<PathBuf>,
     /// Comma-separated list of available models.
     pub models: String,
     /// Path to the code-review-benchmark directory (must contain offline/).
@@ -76,7 +77,7 @@ impl AppState {
     pub fn new(
         output_dir: PathBuf,
         dataset_dir: PathBuf,
-        static_dir: PathBuf,
+        static_dir: Option<PathBuf>,
         models: String,
         benchmark_dir: Option<PathBuf>,
         config: WebUiConfig,
@@ -152,41 +153,80 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
 }
 
 /// Serve static files or fall back to index.html for SPA routing.
+///
+/// When `--static-dir` is set, serves from disk (dev mode).
+/// Otherwise, serves from assets embedded at build time via `rust-embed`.
 async fn static_or_index(
     State(state): State<AppState>,
     uri: Uri,
 ) -> Response {
-    let static_dir = state.static_dir.clone();
-    let file_path = static_dir.join(uri.path().trim_start_matches('/'));
+    let path = uri.path().trim_start_matches('/');
 
-    // Try to serve the file directly
-    if file_path.exists() && file_path.is_file() {
-        match tokio::fs::read(&file_path).await {
-            Ok(data) => {
-                // Determine content type from extension
-                let content_type = match file_path.extension().and_then(|e| e.to_str()) {
-                    Some("html") => "text/html; charset=utf-8",
-                    Some("js") => "application/javascript",
-                    Some("wasm") => "application/wasm",
-                    Some("css") => "text/css",
-                    Some("json") => "application/json",
-                    Some("png") => "image/png",
-                    Some("svg") => "image/svg+xml",
-                    Some("ico") => "image/x-icon",
-                    _ => "application/octet-stream",
-                };
-                return Response::builder()
-                    .header("Content-Type", content_type)
-                    .body(Body::from(data))
-                    .unwrap();
-            }
-            Err(_) => {
-                return StatusCode::NOT_FOUND.into_response();
+    // Try disk-based serving if a static directory is configured
+    if let Some(static_dir) = &state.static_dir {
+        let file_path = static_dir.join(path);
+
+        // If path is empty or points to a directory, serve index.html
+        if path.is_empty() || path.ends_with('/') || !file_path.extension().is_some() {
+            return serve_index_from_disk(static_dir).await;
+        }
+
+        // Try to serve the file directly from disk
+        if file_path.exists() && file_path.is_file() {
+            match tokio::fs::read(&file_path).await {
+                Ok(data) => {
+                    let content_type = mime_type_from_extension(file_path.extension().and_then(|e| e.to_str()));
+                    return Response::builder()
+                        .header("Content-Type", content_type)
+                        .body(Body::from(data))
+                        .unwrap();
+                }
+                Err(_) => {
+                    return StatusCode::NOT_FOUND.into_response();
+                }
             }
         }
+
+        // SPA fallback: serve index.html from disk
+        return serve_index_from_disk(static_dir).await;
     }
 
-    // SPA fallback: serve index.html
+    // Embedded asset serving (no --static-dir)
+    let asset_path = if path.is_empty() { "index.html" } else { path };
+
+    if let Some(asset) = StaticAssets::get(asset_path) {
+        let content_type = mime_type_from_extension(
+            std::path::Path::new(asset_path).extension().and_then(|e| e.to_str()),
+        );
+        return Response::builder()
+            .header("Content-Type", content_type)
+            .header("Content-Length", asset.data.len().to_string())
+            .body(Body::from(asset.data.to_vec()))
+            .unwrap();
+    }
+
+    // If the path has an extension and wasn't found, return 404
+    if std::path::Path::new(path).extension().is_some() {
+        return (StatusCode::NOT_FOUND, "Not found").into_response();
+    }
+
+    // SPA fallback: serve embedded index.html for any unrecognized path
+    if let Some(index) = StaticAssets::get("index.html") {
+        return Response::builder()
+            .header("Content-Type", "text/html; charset=utf-8")
+            .body(Body::from(index.data.to_vec()))
+            .unwrap();
+    }
+
+    (
+        StatusCode::NOT_FOUND,
+        "Frontend assets not found. Build the frontend or use --static-dir.".to_string(),
+    )
+        .into_response()
+}
+
+/// Serve index.html from a disk directory.
+async fn serve_index_from_disk(static_dir: &std::path::Path) -> Response {
     let index_path = static_dir.join("index.html");
     match tokio::fs::read(&index_path).await {
         Ok(data) => Response::builder()
@@ -196,10 +236,26 @@ async fn static_or_index(
         Err(_) => (
             StatusCode::NOT_FOUND,
             format!(
-                "Static directory '{}' not found. Build the frontend or set --static-dir.",
+                "Static directory '{}' not found or index.html missing. Build the frontend or set --static-dir.",
                 static_dir.display()
             ),
         )
             .into_response(),
+    }
+}
+
+/// Determine MIME type from a file extension.
+fn mime_type_from_extension(ext: Option<&str>) -> &'static str {
+    match ext {
+        Some("html") => "text/html; charset=utf-8",
+        Some("js") => "application/javascript",
+        Some("wasm") => "application/wasm",
+        Some("css") => "text/css",
+        Some("json") => "application/json",
+        Some("png") => "image/png",
+        Some("svg") => "image/svg+xml",
+        Some("ico") => "image/x-icon",
+        Some("txt") => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
     }
 }

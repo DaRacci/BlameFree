@@ -5,6 +5,7 @@ fn main() {
     println!("cargo::rerun-if-changed=frontend/src");
     println!("cargo::rerun-if-changed=frontend/Cargo.toml");
     println!("cargo::rerun-if-changed=frontend/index.html");
+    println!("cargo::rerun-if-changed=frontend/dist");
 
     let status = Command::new("trunk")
         .args(["build", "--release"])

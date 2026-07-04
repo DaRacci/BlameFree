@@ -31,6 +31,7 @@ toml = "0.8"
 futures = "0.3"
 regex = "1"
 dotenvy = "0.15"
+rust-embed = "8"
 
 # OAuth and session management
 oauth2 = { version = "4", features = ["reqwest"], optional = true }

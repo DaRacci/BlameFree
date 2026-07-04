@@ -21,6 +21,7 @@ mod config;
 mod events;
 mod harness;
 mod server;
+mod static_assets;
 
 /// CLI arguments for the web UI dashboard server.
 #[derive(Debug, Parser)]
@@ -39,8 +40,9 @@ pub struct CliArgs {
     pub dataset_dir: PathBuf,
 
     /// Directory of the static frontend files to serve.
-    #[arg(long, default_value = "crates/crb-webui/frontend/dist")]
-    pub static_dir: PathBuf,
+    /// If not set, frontend assets embedded at build time are used.
+    #[arg(long)]
+    pub static_dir: Option<PathBuf>,
 
     /// Comma-separated list of available models.
     #[arg(
