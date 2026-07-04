@@ -1,8 +1,8 @@
 [package]
 name = "crb-benchmark"
-version = "0.1.0"
-edition = "2021"
 autolib = false
+version.workspace = true
+edition.workspace = true
 
 [[bin]]
 name = "crb-benchmark"
@@ -16,26 +16,27 @@ path = "src/lib.rs"
 reduce-diff = ["crb-harness/reduce-diff"]
 
 [dependencies]
-crb-harness = { path = "../crb-harness" }
-crb-reporting = { path = "../crb-reporting" }
-crb-judge = { path = "../crb-judge" }
-crb-tools = { path = "../crb-tools" }
-crb-rules = { path = "../crb-rules" }
-crb-dashboard = { path = "../crb-dashboard" }
-crb-agents = { path = "../crb-agents" }
-crb-shared.path = "../crb-shared"
-clap = { workspace = true }
-serde_json = { workspace = true }
 anyhow = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
+clap = { workspace = true }
+crb-agents = { path = "../crb-agents" }
+crb-dashboard = { path = "../crb-dashboard" }
+crb-harness = { path = "../crb-harness" }
+crb-judge = { path = "../crb-judge" }
+crb-reporting = { path = "../crb-reporting" }
+crb-rules = { path = "../crb-rules" }
+crb-shared = { path = "../crb-shared" }
+crb-tools = { path = "../crb-tools" }
+dotenvy = { workspace = true }
 regex = { workspace = true }
 rig-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
-dotenvy = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

@@ -1,7 +1,7 @@
 [package]
 name = "crb-consensus"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [features]
 default = []
@@ -9,20 +9,20 @@ exp14_submit_finding = ["crb-agents/exp14_submit_finding"]
 exp16_adaptive_agents = []
 
 [dependencies]
+anyhow = { workspace = true }
 crb-agents = { path = "../crb-agents" }
-crb-shared = { path = "../crb-shared" }
 crb-dashboard = { path = "../crb-dashboard" }
 crb-judge = { path = "../crb-judge" }
 crb-reporting = { path = "../crb-reporting" }
+crb-shared = { path = "../crb-shared" }
+futures = { workspace = true }
+regex = { workspace = true }
 rig-core = { workspace = true }
-tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-regex = { workspace = true }
-anyhow = { workspace = true }
-tracing = { workspace = true }
 sha2 = { workspace = true }
-futures = "0.3"
+tokio = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

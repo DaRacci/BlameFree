@@ -8,7 +8,7 @@ datasets
 diffs
 output
 repos
-crates/crb-webui/frontend/dist
+crates/*/dist
 workspaces
 plans
 research

@@ -1,15 +1,14 @@
 [package]
 name = "crb-judge"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-rig-core = { workspace = true }
-serde = { workspace = true }
-schemars = { workspace = true }
-serde_json = { workspace = true }
 anyhow = { workspace = true }
+rig-core = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true
-

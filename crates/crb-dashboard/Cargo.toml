@@ -1,11 +1,11 @@
 [package]
 name = "crb-dashboard"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-ratatui = "0.28"
-crossterm = { version = "0.28", features = ["events"] }
+ratatui = { workspace = true }
+crossterm = { workspace = true, features = ["events"] }
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
 serde = { workspace = true }
 tracing = { workspace = true }

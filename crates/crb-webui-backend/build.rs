@@ -2,14 +2,14 @@ use std::process::Command;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo::rerun-if-changed=build.rs");
-    println!("cargo::rerun-if-changed=frontend/src");
-    println!("cargo::rerun-if-changed=frontend/Cargo.toml");
-    println!("cargo::rerun-if-changed=frontend/index.html");
-    println!("cargo::rerun-if-changed=frontend/dist");
+    println!("cargo::rerun-if-changed=../crb-webui-frontend/src");
+    println!("cargo::rerun-if-changed=../crb-webui-frontend/Cargo.toml");
+    println!("cargo::rerun-if-changed=../crb-webui-frontend/index.html");
+    println!("cargo::rerun-if-changed=../crb-webui-frontend/dist");
 
     let status = Command::new("trunk")
         .args(["build", "--release"])
-        .current_dir("frontend")
+        .current_dir("../crb-webui-frontend")
         .status()?;
 
     if !status.success() {

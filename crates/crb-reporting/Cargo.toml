@@ -1,15 +1,15 @@
 [package]
 name = "crb-reporting"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-crb-judge = { path = "../crb-judge" }
-crb-shared.path = "../crb-shared"
 anyhow = { workspace = true }
-tracing = { workspace = true }
+crb-judge = { path = "../crb-judge" }
+crb-shared = { path = "../crb-shared" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tracing = { workspace = true }
 
 [lints]
 workspace = true

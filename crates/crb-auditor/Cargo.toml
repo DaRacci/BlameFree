@@ -1,18 +1,21 @@
 [package]
 name = "crb-auditor"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [lib]
 name = "crb_auditor"
 path = "src/lib.rs"
 
 [dependencies]
-serde = { workspace = true }
-serde_json = { workspace = true }
-regex = { workspace = true }
+clap = { workspace = true }
+crb-agents = { path = "../crb-agents" }
 crb-tools = { path = "../crb-tools" }
 crb-shared = { path = "../crb-shared" }
+once_cell = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

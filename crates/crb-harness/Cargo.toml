@@ -1,7 +1,7 @@
 [package]
 name = "crb-harness"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [[bin]]
 name = "crb-harness"
@@ -14,29 +14,29 @@ exp14_template_vars = ["crb-tools/exp14_template_vars"]
 exp16_adaptive_agents = ["crb-consensus/exp16_adaptive_agents"]
 
 [dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
 crb-agents = { path = "../crb-agents" }
+crb-auditor = { path = "../crb-auditor" }
+crb-consensus = { path = "../crb-consensus" }
+crb-dashboard = { path = "../crb-dashboard" }
 crb-judge = { path = "../crb-judge" }
 crb-reporting = { path = "../crb-reporting" }
-crb-consensus = { path = "../crb-consensus" }
-crb-tools = { path = "../crb-tools" }
-crb-auditor = { path = "../crb-auditor" }
 crb-rules = { path = "../crb-rules" }
-crb-dashboard = { path = "../crb-dashboard" }
-crb-shared.path = "../crb-shared"
+crb-shared = { path = "../crb-shared" }
+crb-tools = { path = "../crb-tools" }
+dotenvy = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
 rig-core = { workspace = true }
-tokio = { workspace = true }
-clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-anyhow = { workspace = true }
+sha2 = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-dotenvy = { workspace = true }
-tempfile = "3"
-regex = { workspace = true }
-sha2 = { workspace = true }
-toml = "0.8"
-reqwest = { workspace = true, features = ["blocking"] }
 
 [lints]
 workspace = true

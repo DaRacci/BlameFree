@@ -1,0 +1,53 @@
+[package]
+name = "crb-webui"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "crb-webui"
+path = "src/main.rs"
+
+[features]
+default = ["reduce-diff", "oauth2", "exp16_adaptive_agents", "exp14_template_vars"]
+reduce-diff = ["crb-harness/reduce-diff"]
+oauth2 = ["dep:oauth2", "dep:reqwest"]
+exp14_template_vars = ["crb-harness/exp14_template_vars"]
+exp16_adaptive_agents = ["crb-harness/exp16_adaptive_agents"]
+
+[dependencies]
+anyhow = { workspace = true }
+axum = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+crb-agents = { path = "../crb-agents" }
+crb-dashboard = { path = "../crb-dashboard" }
+crb-harness = { path = "../crb-harness" }
+crb-judge = { path = "../crb-judge" }
+crb-reporting = { path = "../crb-reporting" }
+crb-rules = { path = "../crb-rules" }
+crb-shared = { path = "../crb-shared" }
+crb-tools = { path = "../crb-tools" }
+crb-webui-shared = { path = "../crb-webui-shared" }
+dotenvy = { workspace = true }
+futures = { workspace = true }
+hmac = { workspace = true }
+oauth2 = { workspace = true, optional = true }
+octocrab = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true, optional = true }
+rig-core = { workspace = true }
+rust-embed = { workspace = true }
+rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-stream = { workspace = true, features = ["sync"] }
+toml = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "fs", "trace"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+uuid = { workspace = true }
+
+[lints]
+workspace = true
