@@ -1,7 +1,7 @@
 use crate::components::role_selector::RoleSelector;
 use crate::AppConfig;
-use crb_webui_shared::config::RoleInfo;
 use crb_webui_shared::adhoc::{AdhocReviewResponse, GithubPrListItem};
+use crb_webui_shared::config::RoleInfo;
 use leptos::{
     component, create_signal, event_target_value, spawn_local, view, IntoView, SignalGet,
     SignalGetUntracked, SignalSet, SignalUpdate,
@@ -29,7 +29,7 @@ async fn fetch_repo_prs(owner: &str, repo: &str) -> Result<Vec<GithubPrListItem>
 pub fn AdhocReviewPage() -> impl IntoView {
     let (owner, set_owner) = create_signal(String::new());
     let (repo, set_repo) = create_signal(String::new());
-    let (model, set_model) = create_signal("deepseek/deepseek-v4-flash".to_string());
+    let (model, set_model) = create_signal(String::new());
     let (selected_roles, set_selected_roles) = create_signal::<Vec<String>>(Vec::new());
     let (available_roles, set_available_roles) = create_signal::<Vec<RoleInfo>>(Vec::new());
     let (loading, set_loading) = create_signal(false);
@@ -50,6 +50,10 @@ pub fn AdhocReviewPage() -> impl IntoView {
         let url = "/api/config";
         if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
             if let Ok(config) = resp.json::<AppConfig>().await {
+                // Set default model from server config, or fallback
+                if let Some(first) = config.models.first() {
+                    set_model.set(first.clone());
+                }
                 set_available_roles.set(config.roles);
             }
         }

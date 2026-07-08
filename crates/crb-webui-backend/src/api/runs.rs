@@ -16,6 +16,7 @@ use crate::server::{ActiveRun, AppState};
 pub use crb_shared::CostJson;
 pub use crb_shared::RunDetail;
 pub use crb_shared::RunSummary;
+pub use crb_shared::DEFAULT_MODEL;
 pub use crb_shared::{
     AgentLogResponse, LogsListResponse, PrAgentEntry, PrAgentsResponse, PrDetailResponse,
     PrLogsEntry,
@@ -116,7 +117,7 @@ fn deserialize_roles<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D
 }
 
 fn default_judge_model() -> String {
-    "deepseek/deepseek-v4-flash".to_string()
+    DEFAULT_MODEL.to_string()
 }
 
 fn default_dataset_dir() -> String {

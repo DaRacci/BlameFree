@@ -12,6 +12,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use crb_shared::sanitize_filename;
+use crb_shared::DEFAULT_MODEL;
 use serde::{Deserialize, Serialize};
 
 use crate::api::runs::{
@@ -32,7 +33,7 @@ pub struct AdhocReviewRequest {
 }
 
 fn default_adhoc_model() -> String {
-    "deepseek/deepseek-v4-flash".to_string()
+    DEFAULT_MODEL.to_string()
 }
 
 fn default_adhoc_roles() -> Vec<String> {

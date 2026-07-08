@@ -1,3 +1,9 @@
+/// Default model for ad-hoc and judge review tasks.
+pub const DEFAULT_MODEL: &str = "deepseek/deepseek-v4-flash";
+
+/// Default model for benchmark/harness reviews (often a larger model).
+pub const DEFAULT_MODEL_PRO: &str = "deepseek/deepseek-v4-pro";
+
 pub mod deduplicate;
 pub mod finding;
 pub mod jaccard;

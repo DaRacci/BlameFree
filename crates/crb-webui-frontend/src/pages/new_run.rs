@@ -1,5 +1,6 @@
 use crate::components::role_selector::RoleSelector;
 use crate::{AppConfig, NewRunRequest, NewRunResponse};
+use crb_shared::{DEFAULT_MODEL, DEFAULT_MODEL_PRO};
 use crb_webui_shared::config::{DatasetInfo, PrEntry, ReasoningEffortsResponse};
 use leptos::{
     component, create_local_resource, create_signal, event_target_value, spawn_local, view,
@@ -304,7 +305,7 @@ pub fn NewRunPage() -> impl IntoView {
                                     let models = if let Some(ref c) = cfg {
                                         c.models.clone()
                                     } else {
-                                        vec!["deepseek/deepseek-v4-flash".into(), "deepseek/deepseek-v4-pro".into()]
+                                        vec![DEFAULT_MODEL.into(), DEFAULT_MODEL_PRO.into()]
                                     };
                                     models.into_iter().map(|m| {
                                         let is_selected = model.get() == m;
