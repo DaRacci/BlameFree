@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::Result;
+use crb_reporting::golden::load_golden_datasets;
 use regex::Regex;
 use tracing::{info, warn};
 
@@ -14,7 +15,7 @@ use tracing::{info, warn};
 ///   {benchmark_dir}/diffs/                          - pre-extracted per-PR diffs
 ///   {benchmark_dir}/worktrees/{owner}_{repo}_{pr}/  - persistent per-PR worktrees
 pub fn run(dataset_dir: &Path, benchmark_dir: &Path) -> Result<()> {
-    let entries = crb_reporting::load_golden_datasets(dataset_dir)?;
+    let entries = load_golden_datasets(dataset_dir)?;
 
     let base_repos_dir = benchmark_dir.join("base-repos");
     create_dir_all(&base_repos_dir)?;

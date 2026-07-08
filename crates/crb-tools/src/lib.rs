@@ -217,6 +217,7 @@ mod tests {
         assert_eq!(tool.timeout, Duration::from_secs(60));
     }
 
+    #[test]
     fn test_linter_error_from_io() {
         let io_err = std::io::Error::new(std::io::ErrorKind::Other, "oops");
         let linter_err: LinterError = io_err.into();

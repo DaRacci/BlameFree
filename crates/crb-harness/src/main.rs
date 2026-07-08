@@ -1,6 +1,30 @@
+use std::env;
+
 use anyhow::Result;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
+
+#[derive(Debug, Clone, Parser)]
+pub enum Cli {
+    /// Review a git diff (working tree or commit range)
+    Review {
+        /// Commit range to review (format: base..head, e.g. "HEAD~3..HEAD")
+        #[arg(long)]
+        pub commits: Option<String>,
+
+        /// Review working tree changes (unstaged + staged)
+        #[arg(long, conflicts_with = "commits")]
+        pub working: bool,
+
+        /// Path to the git repository
+        #[arg(long, default_value = ".")]
+        pub path: PathBuf,
+
+        /// Model to use for agent reviews (e.g. gpt-4o, claude-sonnet-4-20250514, deepseek/deepseek-v4-flash).
+        #[arg(long, env = "MODEL", default_value = "deepseek/deepseek-v4-pro")]
+        pub model: String,
+    },
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -9,9 +33,9 @@ async fn main() -> Result<()> {
         Err(e) => eprintln!("[dotenv] No .env file loaded: {e}"),
     }
 
-    if std::env::var("OPENAI_API_KEY").is_err() {
-        if let Ok(key) = std::env::var("OPENROUTER_API_KEY") {
-            std::env::set_var("OPENAI_API_KEY", key);
+    if env::var("OPENAI_API_KEY").is_err() {
+        if let Ok(key) = env::var("OPENROUTER_API_KEY") {
+            env::set_var("OPENAI_API_KEY", key);
             eprintln!("[dotenv] OPENAI_API_KEY not found - falling back to OPENROUTER_API_KEY");
         }
     }
@@ -20,10 +44,10 @@ async fn main() -> Result<()> {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let cli = crb_harness::config::Cli::parse();
+    let cli = Cli::parse();
 
     match cli {
-        crb_harness::config::Cli::Review(args) => run_review(args).await,
+        Cli::Review(args) => run_review(args).await,
     }
 }
 

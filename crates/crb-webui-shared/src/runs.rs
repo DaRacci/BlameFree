@@ -191,25 +191,6 @@ pub struct PrAgentEntry {
     pub has_reasoning: bool,
 }
 
-/// Response from POST /api/runs/:id/replay
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReplayStartResponse {
-    pub run_id: String,
-    pub status: String,
-    pub cache_available: bool,
-}
-
-/// Response from GET /api/runs/:id/replay/status
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReplayStatusResponse {
-    pub run_id: String,
-    pub status: String,
-    pub progress_pct: u32,
-    pub completed_prs: u32,
-    pub total_prs: u32,
-    pub message: String,
-}
-
 /// Detailed per-PR response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrDetailResponse {

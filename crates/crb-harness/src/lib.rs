@@ -5,19 +5,27 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use crb_agents::build_agent;
 use crb_agents::prompts::PromptLibrary;
+use crb_auditor::apply_severity_auditor;
 use crb_consensus::{evaluate_pr_with_consensus, CacheBackend};
 use crb_dashboard::DashboardEvent;
 use crb_judge::{compute_metrics, run_judge};
+use crb_reporting::golden::GoldenCommentEntry;
 use crb_reporting::PrResult;
 use crb_rules::RuleSet;
+use crb_shared::deduplicate::semantic_dedup;
 use crb_shared::finding::Finding;
+use crb_shared::jaccard::jaccard_similarity;
 use crb_shared::sanitize_filename;
+use crb_tools::create_linter_tool;
+use crb_tools::linters::config::LinterConfig;
+use crb_tools::linters::tool::LinterArgs;
 use regex::Regex;
 use rig_core::agent::{Agent, PromptResponse};
 use rig_core::client::ProviderClient;
@@ -28,7 +36,6 @@ use tokio::sync::broadcast;
 use tracing::{info, info_span};
 
 pub mod cache;
-pub mod config;
 pub mod cost;
 pub mod model_capabilities;
 pub mod paths;
@@ -36,7 +43,6 @@ pub mod validation;
 
 pub use cache::LlmCache;
 pub use cache::RunHistoryEntry;
-pub use config::ReviewArgs;
 pub use cost::CostTracker;
 
 /// Describes which kind of diff to review.
@@ -437,7 +443,7 @@ pub fn preprocess_diff(raw_diff: &str) -> String {
 pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
     // Create OpenAI client from env
     let client = rig_core::providers::openai::Client::from_env()
-        .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
+        .map_err(|e| anyhow!("Failed to create OpenAI client: {e}"))?;
 
     // Parse roles
     let prompt_lib =
@@ -499,7 +505,7 @@ pub async fn review_pr_with_prompt_lib(
 ) -> Result<Vec<Finding>> {
     // Create OpenAI client from env
     let client = rig_core::providers::openai::Client::from_env()
-        .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
+        .map_err(|e| anyhow!("Failed to create OpenAI client: {e}"))?;
 
     // Parse roles
     let roles: Vec<&str> = if params.roles.is_empty() {
@@ -561,25 +567,23 @@ pub async fn review_pr_with_prompt_lib(
 /// - `ReviewMode::Working`                -> `git diff` (unstaged + staged)
 ///
 /// Returns a vector of agent findings parsed from the LLM response.
-pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>> {
+pub async fn review_diff(args: ReviewArgs) -> Result<Vec<Finding>> {
     let diff = match args.commits {
         Some(ref range) => {
-            // Format: "base..head"
-            let output = std::process::Command::new("git")
+            let output = Command::new("git")
                 .arg("diff")
                 .arg(range)
                 .current_dir(&args.path)
                 .output()
-                .map_err(|e| anyhow::anyhow!("Failed to run git diff: {e}"))?;
+                .map_err(|e| anyhow!("Failed to run git diff: {e}"))?;
             String::from_utf8_lossy(&output.stdout).to_string()
         }
         None => {
-            // Working tree: unstaged + staged
-            let output = std::process::Command::new("git")
+            let output = Command::new("git")
                 .arg("diff")
                 .current_dir(&args.path)
                 .output()
-                .map_err(|e| anyhow::anyhow!("Failed to run git diff: {e}"))?;
+                .map_err(|e| anyhow!("Failed to run git diff: {e}"))?;
             String::from_utf8_lossy(&output.stdout).to_string()
         }
     };
@@ -598,7 +602,6 @@ pub async fn review_diff(args: crate::config::ReviewArgs) -> Result<Vec<Finding>
     // Preprocess: filter noise files and chunk oversized diffs
     let diff = crate::preprocess_diff(&diff);
 
-    // ── Load prompt library ───────────────────────────────────────────
     let prompt_lib =
         crb_agents::prompts::PromptLibrary::new().expect("Embedded prompts should be available");
 
@@ -683,7 +686,7 @@ pub fn load_cached_diff(
 pub fn parse_agent_findings(response: &str) -> Result<Vec<Finding>, String> {
     // Log raw response first for debugging
     let preview_len = std::cmp::min(500, response.len());
-    tracing::info!(
+    info!(
         "Agent raw response (first 500 chars): {}",
         &response[..preview_len]
     );
@@ -883,7 +886,7 @@ pub async fn evaluate_pr_single_agent(
                 if let Some((cached_response, cached_usage)) =
                     c.lookup_agent_by_key_with_usage(&agent_cache_key)
                 {
-                    tracing::info!(
+                    info!(
                         "CACHE HIT for agent role={} (key={})",
                         role,
                         &agent_cache_key[..12]
@@ -909,7 +912,7 @@ pub async fn evaluate_pr_single_agent(
                     return result;
                 }
             }
-            tracing::info!(
+            info!(
                 "CACHE MISS for agent role={} (key={})",
                 role,
                 &agent_cache_key[..12]
@@ -1009,7 +1012,7 @@ pub async fn evaluate_pr_single_agent(
         for gc in &pr.comments {
             let score = jaccard_similarity(&finding.message, &gc.comment, false);
             if score >= jaccard_threshold {
-                tracing::info!(
+                info!(
                     "Jaccard match: finding='{}' golden='{}' score={:.2}",
                     &finding.message[..std::cmp::min(60, finding.message.len())],
                     &gc.comment[..std::cmp::min(60, gc.comment.len())],
@@ -1046,7 +1049,7 @@ pub async fn evaluate_pr_single_agent(
             // Check judge cache first
             if let Some(ref c) = cache {
                 if let Some(cached_verdict) = c.lookup_judge_by_key(&judge_key) {
-                    tracing::info!("CACHE HIT for judge (key={})", &judge_key[..12]);
+                    info!("CACHE HIT for judge (key={})", &judge_key[..12]);
                     cost_tracker.record_judge_empty(true);
                     verdicts.push(cached_verdict);
                     continue;
@@ -1054,7 +1057,7 @@ pub async fn evaluate_pr_single_agent(
             }
 
             // Cache miss - make API call
-            tracing::info!("CACHE MISS for judge (key={})", &judge_key[..12]);
+            info!("CACHE MISS for judge (key={})", &judge_key[..12]);
             match with_retry(
                 || run_judge(judge, &gc.comment, &finding.message),
                 3,    // max_retries
@@ -1215,7 +1218,6 @@ pub async fn evaluate_pr_consensus(
         )
         .await?;
 
-    // ── Record real token usage from consensus pipeline ────────────────
     let role_count = parsed_roles.len();
     if role_count > 0 {
         let per_agent = Usage {
@@ -1283,17 +1285,12 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
         return findings.to_vec();
     }
 
-    // Step 1: semantic dedup
-    let deduped = crb_shared::semantic_dedup(findings.to_vec());
-
-    // Step 2: severity auditor
-    let audited = crb_auditor::apply_severity_auditor(deduped);
-
-    // Step 3: candidate cap
+    let deduped = semantic_dedup(findings.to_vec());
+    let audited = apply_severity_auditor(deduped);
     let capped = {
         let max = 20;
         if audited.len() > max {
-            tracing::info!("capping {} findings to {} candidates", audited.len(), max);
+            info!("capping {} findings to {} candidates", audited.len(), max);
             audited.into_iter().take(max).collect()
         } else {
             audited
@@ -1311,7 +1308,7 @@ pub async fn evaluate_pr_with_postprocessing(
     model: &str,
     judge: &Agent<ResponsesCompletionModel>,
     benchmark_dir: &Path,
-    linter_configs: Option<&std::collections::HashMap<String, crb_tools::LinterConfig>>,
+    linter_configs: Option<&HashMap<String, LinterConfig>>,
     skip_consensus: bool,
     linters_only: bool,
     ruleset: Option<&RuleSet>,
@@ -1339,10 +1336,8 @@ pub async fn evaluate_pr_with_postprocessing(
         None
     };
 
-    // ── Cost tracker ──────────────────────────────────────────────────────
     let cost_tracker = Arc::new(crate::cost::CostTracker::new());
 
-    // ── Diff loading ──────────────────────────────────────────────────────
     // Strategy: try persistent worktree first (gives full file context),
     // then fall back to cached diff only.
     let (diff, pr_repo_dir): (String, Option<std::path::PathBuf>) = match extract_pr_info(&pr.url) {
@@ -1378,10 +1373,8 @@ pub async fn evaluate_pr_with_postprocessing(
         info!("Loaded diff ({} bytes) for PR: {}", diff.len(), pr.pr_title);
     }
 
-    // ── Preprocess diff: filter noise + chunk oversized files ──────────
     let diff = crate::preprocess_diff(&diff);
 
-    // ── Linters ───────────────────────────────────────────────────────────
     let mut linter_findings: Vec<Finding> = Vec::new();
     if let Some(configs) = linter_configs {
         let host_repo_path = pr_repo_dir
@@ -1390,8 +1383,8 @@ pub async fn evaluate_pr_with_postprocessing(
             .unwrap_or_else(|| benchmark_dir.to_string_lossy().to_string());
         let mut linter_set = tokio::task::JoinSet::new();
         for (_name, lconfig) in configs {
-            let tool = crb_tools::create_linter_tool(lconfig);
-            let args = crb_tools::LinterArgs {
+            let tool = create_linter_tool(lconfig);
+            let args = LinterArgs {
                 repo_path: host_repo_path.clone(),
             };
             linter_set.spawn(async move {
@@ -1504,13 +1497,8 @@ pub async fn evaluate_pr_with_postprocessing(
         }
     }
 
-    // ── Judge evaluation ──────────────────────────────────────────────────
-    // (if not already done by consensus path)
-    let final_verdicts = verdicts;
+    let metrics = compute_metrics(&verdicts, pr.comments.len());
 
-    let metrics = compute_metrics(&final_verdicts, pr.comments.len());
-
-    // ── Send PrCompleted event ───────────────────────────────────────────
     if let Some(tx) = dashboard_tx {
         let tokens = cost_tracker.total_tokens();
         let total_tokens = tokens.0 + tokens.1;
@@ -1522,18 +1510,17 @@ pub async fn evaluate_pr_with_postprocessing(
             cost: cost_usd,
             total_tokens,
             agent_calls: total_agent_calls,
-            findings_count: final_verdicts.len(),
+            findings_count: verdicts.len(),
         });
     }
 
-    // ── Write metadata.json ─────────────────────────────────────────────
     let metadata = serde_json::json!({
         "pr_title": pr.pr_title,
         "url": pr.url,
         "model": model,
         "skip_consensus": skip_consensus,
         "timestamp": format!("{:?}", std::time::SystemTime::now()),
-        "findings_count": final_verdicts.len(),
+        "findings_count": verdicts.len(),
         "golden_count": pr.comments.len(),
         "metrics": {
             "true_positives": metrics.true_positives,
@@ -1553,10 +1540,10 @@ pub async fn evaluate_pr_with_postprocessing(
     Ok(PrResult {
         pr_title: pr.pr_title.clone(),
         url: pr.url.clone(),
-        findings_count: final_verdicts.len(),
+        findings_count: verdicts.len(),
         golden_count: pr.comments.len(),
         metrics,
-        verdicts: final_verdicts,
+        verdicts,
         cost: Some(cost_tracker.to_summary()),
     })
 }
@@ -1573,7 +1560,7 @@ fn append_run_history(cache_dir: &Path, entry: &RunHistoryEntry) -> Result<()> {
     };
     runs.push(entry.clone());
     std::fs::write(&path, serde_json::to_string_pretty(&runs)?)?;
-    tracing::info!("Appended run history to: {}", path.display());
+    info!("Appended run history to: {}", path.display());
     Ok(())
 }
 
@@ -1827,7 +1814,7 @@ pub async fn run_validate(workspace_root: &Path, version: &str) -> Result<()> {
         info!("Validation PASSED - all metrics within baseline thresholds");
         Ok(())
     } else {
-        Err(anyhow::anyhow!(
+        Err(anyhow!(
             "Validation FAILED - metrics exceed baseline thresholds"
         ))
     }

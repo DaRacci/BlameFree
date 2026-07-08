@@ -41,9 +41,6 @@ pub struct AppState {
     /// Active (running) benchmark runs.
     pub active_runs: Arc<RwLock<HashMap<String, ActiveRun>>>,
 
-    /// Active replay operations.
-    pub replays: Arc<RwLock<HashMap<String, ReplayState>>>,
-
     /// Web UI configuration (includes optional OAuth).
     pub config: WebUiConfig,
 
@@ -98,7 +95,6 @@ impl AppState {
             models,
             benchmark_dir,
             active_runs: Arc::new(RwLock::new(HashMap::new())),
-            replays: Arc::new(RwLock::new(HashMap::new())),
             config,
             session_store,
             octocrab,

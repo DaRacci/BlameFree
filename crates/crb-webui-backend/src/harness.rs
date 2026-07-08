@@ -17,6 +17,9 @@ use crb_reporting::{load_golden_datasets, write_report, PrResult};
 use crb_rules::RuleSet;
 use rig_core::client::ProviderClient;
 use tokio::sync::{broadcast, RwLock};
+use tracing::error;
+use tracing::info;
+use tracing::warn;
 
 use crate::api::BenchmarkConfig;
 use crate::events::AggregateMetrics;
@@ -47,7 +50,7 @@ pub async fn run_harness(
     let output_subdir = output_dir.join(run_id);
     let cache_dir = output_dir.join(crb_harness::paths::CACHE_DIR_NAME);
 
-    tracing::info!(
+    info!(
         run_id = %run_id,
         output_dir = %output_subdir.display(),
         dataset = %dataset_dir.display(),
@@ -56,23 +59,19 @@ pub async fn run_harness(
         "Starting harness run via library"
     );
 
-    // ── OpenAI client ────────────────────────────────────────────────────────
     let client = rig_core::providers::openai::Client::from_env()
         .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
 
-    // ── Judge agent ──────────────────────────────────────────────────────────
     let judge = build_judge(&client, &config.judge_model);
 
-    // ── Prompt library (embedded at compile time) ───────────────────────────────
     let prompts_dir = Path::new(&config.prompts_dir);
     let prompt_lib = Arc::new(PromptLibrary::new().expect("Embedded prompts should be available"));
 
-    // ── Rule loading ─────────────────────────────────────────────────────────
     let ruleset = {
         let rules_dir = Path::new(".crb/rules/");
         match RuleSet::load_from_dir(rules_dir) {
             Ok(rs) => {
-                tracing::info!(
+                info!(
                     "Loaded {} rules from {}",
                     rs.rules.len() + rs.always_rules.len(),
                     rules_dir.display()
@@ -80,22 +79,21 @@ pub async fn run_harness(
                 Some(rs)
             }
             Err(e) => {
-                tracing::warn!("Failed to load rules from {}: {e}", rules_dir.display());
+                warn!("Failed to load rules from {}: {e}", rules_dir.display());
                 None
             }
         }
     };
 
-    // ── Linter config ────────────────────────────────────────────────────────
     let linter_config_path = Path::new("linters.toml");
     let linter_configs = if linter_config_path.exists() && !config.skip_linters {
         match crb_tools::load_linter_config("linters.toml") {
             Ok(configs) => {
-                tracing::info!("Loaded {} linter(s) from linters.toml", configs.len());
+                info!("Loaded {} linter(s) from linters.toml", configs.len());
                 Some(configs)
             }
             Err(e) => {
-                tracing::warn!("Failed to load linter config: {e}. Linters disabled.");
+                warn!("Failed to load linter config: {e}. Linters disabled.");
                 None
             }
         }
@@ -103,18 +101,16 @@ pub async fn run_harness(
         None
     };
 
-    // ── Load dataset ─────────────────────────────────────────────────────────
-    tracing::info!("Loading golden datasets from: {}", dataset_dir.display());
+    info!("Loading golden datasets from: {}", dataset_dir.display());
     let all_prs = match load_golden_datasets(dataset_dir) {
         Ok(prs) => prs,
         Err(e) => {
-            tracing::error!("Failed to load dataset: {e}");
+            error!("Failed to load dataset: {e}");
             return Err(e.context("Failed to load golden datasets"));
         }
     };
-    tracing::info!("Loaded {} PR entries total", all_prs.len());
+    info!("Loaded {} PR entries total", all_prs.len());
 
-    // ── PR filter ─────────────────────────────────────────────────────────────
     use std::collections::HashSet;
     let filtered_prs: Vec<crb_reporting::GoldenCommentEntry> =
         if let Some(ref filter) = config.pr_filter {
@@ -161,7 +157,7 @@ pub async fn run_harness(
                 .collect();
 
             if filtered.is_empty() {
-                tracing::warn!(
+                warn!(
                     "--pr-filter \"{}\" matched no PRs. Available URLs:\n  {}",
                     filter,
                     available_urls.join("\n  ")
@@ -172,10 +168,10 @@ pub async fn run_harness(
             all_prs
         };
 
-    tracing::info!("After PR filter: {} PR(s) to evaluate", filtered_prs.len());
+    info!("After PR filter: {} PR(s) to evaluate", filtered_prs.len());
 
     if filtered_prs.is_empty() {
-        tracing::warn!("No PRs to evaluate");
+        warn!("No PRs to evaluate");
         let _ = webui_tx.send(DashboardEvent::RunFinished {
             total_prs: 0,
             aggregated: AggregateMetrics::default(),
@@ -188,7 +184,6 @@ pub async fn run_harness(
 
     let total_prs = filtered_prs.len();
 
-    // ── Event bridge: harness -> web UI ─────────────────────────────────────
     // The library emits `crb_dashboard::DashboardEvent`; we convert and
     // forward to the SSE broadcast channel.
     let (harness_tx, mut harness_rx) = broadcast::channel::<HarnessEvent>(256);
@@ -203,7 +198,7 @@ pub async fn run_harness(
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!("Harness event bridge lagged by {} messages", n);
+                    warn!("Harness event bridge lagged by {} messages", n);
                     continue;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
@@ -215,21 +210,18 @@ pub async fn run_harness(
 
     let dashboard_tx: Option<broadcast::Sender<HarnessEvent>> = Some(harness_tx);
 
-    // ── Benchmark directory ──────────────────────────────────────────────────
     // If no explicit benchmark_dir was passed, default to the `benchmark/`
     // subdirectory, which is the standard project convention (contains
     // base-repos/, diffs/, worktrees/).
     let bench_dir = benchmark_dir.unwrap_or_else(|| {
-        tracing::warn!("No --benchmark-dir set; defaulting to 'benchmark/' directory");
+        warn!("No --benchmark-dir set; defaulting to 'benchmark/' directory");
         Path::new("benchmark")
     });
 
-    // ── Concurrency ───────────────────────────────────────────────────────────
     let sem = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
     let mut set = tokio::task::JoinSet::new();
     let start_time = std::time::Instant::now();
 
-    // ── Conditional cache directory setup ─────────────────────────────────────
     let cache_dir_opt: Option<PathBuf> = if config.use_cache {
         let cd = cache_dir.clone();
         std::fs::create_dir_all(&cd)?;
@@ -282,7 +274,6 @@ pub async fn run_harness(
         });
     }
 
-    // ── Collect results ───────────────────────────────────────────────────────
     let mut results: Vec<PrResult> = Vec::new();
     let mut total_cost = 0.0f64;
     let mut total_tokens = 0usize;
@@ -295,7 +286,7 @@ pub async fn run_harness(
     while let Some(res) = set.join_next().await {
         match res {
             Ok(Ok(result)) => {
-                tracing::info!("Completed: {}", result.pr_title);
+                info!("Completed: {}", result.pr_title);
                 completed_prs += 1;
 
                 // Accumulate totals
@@ -331,17 +322,16 @@ pub async fn run_harness(
                 });
             }
             Ok(Err(e)) => {
-                tracing::error!("PR evaluation failed: {e}");
+                error!("PR evaluation failed: {e}");
             }
             Err(e) => {
-                tracing::error!("Join error: {e}");
+                error!("Join error: {e}");
             }
         }
     }
 
     let elapsed = start_time.elapsed();
 
-    // ── Compute aggregate metrics ────────────────────────────────────────────
     let avg_precision = if total_tp + total_fp > 0 {
         total_tp as f64 / (total_tp + total_fp) as f64
     } else {
@@ -358,7 +348,6 @@ pub async fn run_harness(
         0.0
     };
 
-    // Mark run as finished
     {
         let mut runs = active_runs.write().await;
         if let Some(run) = runs.get_mut(run_id) {
@@ -367,7 +356,7 @@ pub async fn run_harness(
         }
     }
 
-    tracing::info!(
+    info!(
         run_id = %run_id,
         prs_completed = completed_prs,
         prs_total = total_prs,
@@ -376,13 +365,11 @@ pub async fn run_harness(
         "Harness run finished"
     );
 
-    // ── Write per-PR result files ────────────────────────────────────────────
     std::fs::create_dir_all(&output_subdir)?;
     if let Err(e) = write_report(&results, &output_subdir) {
-        tracing::error!("Failed to write per-PR results: {e}");
+        error!("Failed to write per-PR results: {e}");
     }
 
-    // ── Write _summary.json ──────────────────────────────────────────────────
     if let Err(e) = crb_harness::write_summary(
         &output_subdir,
         &config.model,
@@ -390,10 +377,9 @@ pub async fn run_harness(
         &results,
         elapsed,
     ) {
-        tracing::error!("Failed to write summary: {e}");
+        error!("Failed to write summary: {e}");
     }
 
-    // ── Send RunFinished event ───────────────────────────────────────────────
     let _ = webui_tx.send(DashboardEvent::RunFinished {
         total_prs: results.len(),
         aggregated: AggregateMetrics {
@@ -409,7 +395,6 @@ pub async fn run_harness(
         total_agent_calls,
     });
 
-    // ── Terminal summary ─────────────────────────────────────────────────────
     crb_harness::print_terminal_summary(&results);
 
     Ok(())
@@ -470,125 +455,4 @@ fn convert_harness_event(event: HarnessEvent) -> Option<DashboardEvent> {
             total_agent_calls,
         }),
     }
-}
-
-/// Run a replay of a previous run using existing cached LLM responses.
-///
-/// This is called by POST /api/runs/:id/replay. It re-runs the evaluation
-/// with the existing cache directory so that cached responses are used
-/// instead of making new API calls.  Results are written to `output_subdir`.
-#[allow(clippy::too_many_arguments)]
-pub async fn run_replay_via_library(
-    run_id: &str,
-    model: &str,
-    dataset_dir: &str,
-    roles: &str,
-    cache_dir: &PathBuf,
-    output_subdir: &PathBuf,
-    state: &AppState,
-) -> anyhow::Result<()> {
-    let dataset_path = Path::new(dataset_dir);
-
-    tracing::info!(
-        run_id = %run_id,
-        model = %model,
-        dataset = %dataset_dir,
-        roles = %roles,
-        cache_dir = %cache_dir.display(),
-        output = %output_subdir.display(),
-        "Starting replay via library"
-    );
-
-    let client = rig_core::providers::openai::Client::from_env()
-        .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
-
-    let judge = build_judge(&client, model);
-
-    // Use a default prompt library (built-in prompts)
-    let prompt_lib = Arc::new(PromptLibrary::new().expect("Embedded prompts should be available"));
-
-    // No rules or linters for replay
-    let ruleset: Option<RuleSet> = None;
-    let linter_configs: Option<std::collections::HashMap<String, crb_tools::LinterConfig>> = None;
-    let max_findings = 20;
-    let skip_consensus = false;
-
-    // ── Load dataset ─────────────────────────────────────────────────────────
-    tracing::info!("Loading golden datasets from: {}", dataset_path.display());
-    let all_prs = match load_golden_datasets(dataset_path) {
-        Ok(prs) => prs,
-        Err(e) => {
-            tracing::error!("Failed to load dataset: {e}");
-            return Err(e.context("Failed to load golden datasets"));
-        }
-    };
-    tracing::info!("Loaded {} PR entries total", all_prs.len());
-
-    if all_prs.is_empty() {
-        return Ok(());
-    }
-
-    let _total_prs = all_prs.len();
-
-    std::fs::create_dir_all(output_subdir)?;
-
-    // ── Evaluate each PR with existing cache ────────────────────────────────
-    let bench_dir = state
-        .benchmark_dir
-        .clone()
-        .unwrap_or_else(|| Path::new(".").to_path_buf());
-
-    let mut results = Vec::new();
-    let start_time = std::time::Instant::now();
-
-    for pr in &all_prs {
-        let result = crb_harness::evaluate_pr_with_postprocessing(
-            pr,
-            &client,
-            model,
-            &judge,
-            &bench_dir,
-            linter_configs.as_ref(),
-            skip_consensus,
-            false, // linters_only
-            ruleset.as_ref(),
-            prompt_lib.as_ref(),
-            roles,
-            max_findings,
-            Some(cache_dir),
-            None, // No dashboard tx for replay
-            None, // reasoning_effort disabled for replay
-        )
-        .await;
-
-        match result {
-            Ok(result) => {
-                tracing::info!("Replayed: {}", result.pr_title);
-                results.push(result);
-            }
-            Err(e) => {
-                tracing::error!("Replay failed for PR {}: {e}", pr.pr_title);
-            }
-        }
-    }
-
-    let elapsed = start_time.elapsed();
-
-    // ── Write results ────────────────────────────────────────────────────────
-    if let Err(e) = write_report(&results, output_subdir) {
-        tracing::error!("Failed to write replay results: {e}");
-    }
-
-    if let Err(e) = crb_harness::write_summary(output_subdir, model, model, &results, elapsed) {
-        tracing::error!("Failed to write replay summary: {e}");
-    }
-
-    tracing::info!(
-        run_id = %run_id,
-        prs = results.len(),
-        elapsed_secs = elapsed.as_secs_f64(),
-        "Replay finished"
-    );
-
-    Ok(())
 }

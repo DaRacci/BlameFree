@@ -14,13 +14,11 @@ fn review_params_default_roles_when_empty() {
         pr_title: "Test PR".to_string(),
         roles: vec![],
         max_findings: 20,
-        replay_dir: None,
         cache_dir: None,
     };
     assert_eq!(params.diff, "some diff");
     assert_eq!(params.model, "test-model");
     assert!(params.roles.is_empty());
-    assert!(params.replay_dir.is_none());
     assert!(params.cache_dir.is_none());
 }
 
@@ -32,7 +30,6 @@ fn review_params_custom_roles() {
         pr_title: "t".to_string(),
         roles: vec!["SA".to_string(), "SEC".to_string()],
         max_findings: 10,
-        replay_dir: None,
         cache_dir: None,
     };
     assert_eq!(params.roles.len(), 2);
