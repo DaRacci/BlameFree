@@ -85,16 +85,14 @@ pub enum DashboardEvent {
     RunFinished { total_prs: usize },
 }
 
-/// Map a role abbreviation to a human-readable display name.
-#[deprecated(note = "Use RoleInfo::display_name() instead, which is more robust and configurable.")]
-fn role_display_name(role: &str) -> String {
-    match role {
-        "SA" => "Security Auditor (SA)".to_string(),
-        "CL" => "Code Logician (CL)".to_string(),
-        "AR" | "ARCH" => "Architecture Reviewer (ARCH)".to_string(),
-        "SEC" => "Security Evaluator (SEC)".to_string(),
-        _ => role.to_string(),
-    }
+/// Deterministic HSL color from a role abbreviation — no hardcoded color map.
+/// Each role gets a unique hue via a simple hash of its abbreviation bytes.
+pub fn role_color(role: &str) -> String {
+    let hash: u32 = role
+        .bytes()
+        .fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+    let hue = hash % 360;
+    format!("hsl({hue}, 65%, 55%)")
 }
 
 async fn fetch_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T, String> {

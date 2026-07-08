@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::role_color;
+use crb_webui_shared::config::RoleInfo;
 use crb_webui_shared::runs::{AgentLogResponse, PrAgentEntry, PrAgentsResponse};
 use leptos::{
     component, create_local_resource, create_signal, view, DynAttrs, IntoView, SignalGet, SignalSet,
@@ -20,6 +22,27 @@ pub fn PrDetailPage() -> impl IntoView {
     let (agent_logs, set_agent_logs) =
         create_signal::<HashMap<String, AgentLogResponse>>(HashMap::new());
     let (logs_loading, set_logs_loading) = create_signal(false);
+
+    let (role_info_map, set_role_info_map) =
+        create_signal::<HashMap<String, RoleInfo>>(HashMap::new());
+
+    // Fetch available role info on mount for display-name lookups
+    {
+        let set_map = set_role_info_map;
+        wasm_bindgen_futures::spawn_local(async move {
+            let url = "/api/config";
+            if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
+                if let Ok(config) = resp.json::<crate::AppConfig>().await {
+                    let map: HashMap<String, RoleInfo> = config
+                        .roles
+                        .into_iter()
+                        .map(|r| (r.abbreviation.clone(), r))
+                        .collect();
+                    set_map.set(map);
+                }
+            }
+        });
+    }
 
     let fetch_pr = move || {
         let rid = run_id();
@@ -97,26 +120,6 @@ pub fn PrDetailPage() -> impl IntoView {
             async move {}
         },
     );
-
-    let role_display = |role: &str| -> &'static str {
-        match role {
-            "SA" => "Security Auditor (SA)",
-            "CL" => "Code Logician (CL)",
-            "AR" | "ARCH" => "Architecture Reviewer (ARCH)",
-            "SEC" => "Security Evaluator (SEC)",
-            _ => "Unknown Agent",
-        }
-    };
-
-    let role_color = |role: &str| -> &'static str {
-        match role {
-            "SA" => "#3b82f6",
-            "CL" => "#22c55e",
-            "AR" | "ARCH" => "#f59e0b",
-            "SEC" => "#ef4444",
-            _ => "#8b5cf6",
-        }
-    };
 
     view! {
         <div class="pr-detail-page">
@@ -210,7 +213,11 @@ pub fn PrDetailPage() -> impl IntoView {
                             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 16px;">
                                 {agents_list.iter().map(|agent| {
                                     let role = agent.role.clone();
-                                    let role_display_name = role_display(&role);
+                                    let role_map = role_info_map.get();
+                                    let role_display_name = role_map
+                                        .get(&role)
+                                        .map(|ri| ri.display_name())
+                                        .unwrap_or_else(|| role.clone());
                                     let color = role_color(&role);
                                     let log = logs.get(&role);
 

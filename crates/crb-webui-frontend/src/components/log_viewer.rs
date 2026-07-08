@@ -1,4 +1,3 @@
-use crate::role_display_name;
 use crb_webui_shared::runs::{AgentLogResponse, LogsListResponse};
 use leptos::{component, create_signal, view, IntoView, SignalGet, SignalSet};
 use log::error;
@@ -98,7 +97,7 @@ pub fn LogViewer(logs: LogsListResponse, run_id: String) -> impl IntoView {
                                         style="margin: 0.25rem 0;"
                                     >
                                         <summary style=style_agent_header>
-                                            {role_display_name(&agent_name.clone())}
+                                            {agent.display_name()}
                                         </summary>
                                         <div style=style_agent_body>
                                             {move || {

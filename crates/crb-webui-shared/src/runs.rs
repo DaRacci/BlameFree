@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::config::RoleInfo;
+
 /// Summary of a past benchmark run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunSummary {
@@ -157,7 +159,7 @@ pub struct LogsListResponse {
 pub struct PrLogsEntry {
     pub pr_key: String,
     pub pr_title: String,
-    pub agents: Vec<String>,
+    pub agents: Vec<RoleInfo>,
 }
 
 /// Response from GET /api/runs/:id/logs/:pr_key/:role

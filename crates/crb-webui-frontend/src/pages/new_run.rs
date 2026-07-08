@@ -1,5 +1,5 @@
 use crate::components::role_selector::RoleSelector;
-use crate::{AppConfig, NewRunRequest, NewRunResponse, RoleInfo};
+use crate::{AppConfig, NewRunRequest, NewRunResponse};
 use crb_webui_shared::config::{DatasetInfo, PrEntry, ReasoningEffortsResponse};
 use leptos::{
     component, create_local_resource, create_signal, event_target_value, spawn_local, view,
@@ -350,18 +350,9 @@ pub fn NewRunPage() -> impl IntoView {
                     <div class="form-section__fields">
                         {move || {
                             let cfg = config.get();
-                            let role_infos: Vec<RoleInfo> = if let Some(ref c) = cfg {
-                                c.roles.clone()
-                            } else {
-                                vec![
-                                    RoleInfo { name: "Architect".into(), abbreviation: "ARCH".to_string(), incompatible_with_roles: vec![] },
-                                    RoleInfo { name: "Code Linter".into(), abbreviation: "CL".to_string(), incompatible_with_roles: vec![] },
-                                    RoleInfo { name: "General Reviewer".into(), abbreviation: "GEN".to_string(), incompatible_with_roles: vec!["SA".to_string(), "CL".to_string(), "ARCH".to_string(), "SEC".to_string()] },
-                                    RoleInfo { name: "Security Auditor".into(), abbreviation: "SA".to_string(), incompatible_with_roles: vec![] },
-                                    RoleInfo { name: "Security Specialist".into(), abbreviation: "SEC".to_string(), incompatible_with_roles: vec![] },
-                                ]
-                            };
-                            view! {
+                            if let Some(ref c) = cfg {
+                                let role_infos = c.roles.clone();
+                                view! {
                                 <div class="form-field">
                                     <label class="form-field__label">"Roles / Agents"</label>
                                     <div class="checkbox-group">
@@ -369,6 +360,9 @@ pub fn NewRunPage() -> impl IntoView {
                                     </div>
                                     <p class="form-field__helper">"Select at least one role for this run."</p>
                                 </div>
+                                }.into_view()
+                            } else {
+                                view! { <span></span> }.into_view()
                             }
                         }}
                     </div>
@@ -581,47 +575,7 @@ async fn get_config() -> Result<AppConfig, String> {
         .map_err(|e| format!("Network error: {}", e))?;
 
     if !response.ok() {
-        return Ok(AppConfig {
-            models: vec![
-                "deepseek/deepseek-v4-flash".into(),
-                "deepseek/deepseek-v4-pro".into(),
-            ],
-            datasets: vec!["swir-bench".into(), "code-review-bench".into()],
-            roles: vec![
-                RoleInfo {
-                    name: "Architect".into(),
-                    abbreviation: "ARCH".to_string(),
-                    incompatible_with_roles: vec![],
-                },
-                RoleInfo {
-                    name: "Code Linter".into(),
-                    abbreviation: "CL".to_string(),
-                    incompatible_with_roles: vec![],
-                },
-                RoleInfo {
-                    name: "General Reviewer".into(),
-                    abbreviation: "GEN".to_string(),
-                    incompatible_with_roles: vec![
-                        "SA".to_string(),
-                        "CL".to_string(),
-                        "ARCH".to_string(),
-                        "SEC".to_string(),
-                    ],
-                },
-                RoleInfo {
-                    name: "Security Auditor".into(),
-                    abbreviation: "SA".to_string(),
-                    incompatible_with_roles: vec![],
-                },
-                RoleInfo {
-                    name: "Security Specialist".into(),
-                    abbreviation: "SEC".to_string(),
-                    incompatible_with_roles: vec![],
-                },
-            ],
-            reduce_diff_enabled: false,
-            auth_enabled: false,
-        });
+        return Err(format!("Server returned {}", response.status()));
     }
 
     let data: AppConfig = response

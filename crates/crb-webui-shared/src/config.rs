@@ -3,9 +3,18 @@ use serde::{Deserialize, Serialize};
 /// Information about an available role/agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoleInfo {
+    pub name: String,
+
     pub abbreviation: String,
+
     #[serde(default)]
     pub incompatible_with_roles: Vec<String>,
+}
+
+impl RoleInfo {
+    pub fn display_name(&self) -> String {
+        format!("{} ({})", self.name, self.abbreviation)
+    }
 }
 
 /// Per-dataset config loaded from dataset.toml

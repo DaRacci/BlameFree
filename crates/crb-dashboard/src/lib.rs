@@ -197,30 +197,42 @@ impl AgentPane {
 
 /// Full dashboard state, updated by events from the harness.
 pub struct Dashboard {
-    /// One pane per agent role (SA, CL, AR, SEC).
+    /// One pane per agent role.
     pub agent_panes: Vec<AgentPane>,
+
     /// Total number of PRs in the run.
     pub total_prs: usize,
+
     /// Number of PRs completed so far.
     pub completed_prs: usize,
+
     /// The PR currently being evaluated (if any).
     pub current_pr: Option<String>,
+
     /// Running total cost in USD.
     pub total_cost: f64,
+
     /// Running total tokens.
     pub total_tokens: usize,
+
     /// Running total agent calls.
     pub total_agent_calls: usize,
+
     /// Summary lines from completed PRs.
     pub pr_summaries: Vec<String>,
+
     /// Aggregate metrics accumulated so far.
     pub aggregated: AggregateMetrics,
+
     /// When the dashboard started.
     pub start_time: Instant,
+
     /// Channel to receive events from the harness.
     pub rx: mpsc::Receiver<DashboardEvent>,
+
     /// Whether the run is finished.
     pub finished: bool,
+
     /// Number of PRs that have been processed (for progress display).
     pub completed_pr_keys: Vec<String>,
 }

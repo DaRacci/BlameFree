@@ -13,11 +13,13 @@ use serde::{Deserialize, Serialize};
 use crate::harness;
 use crate::server::{ActiveRun, AppState};
 
-pub use crb_shared::RunSummary;
-
-pub use crb_shared::RunDetail;
-
 pub use crb_shared::CostJson;
+pub use crb_shared::RunDetail;
+pub use crb_shared::RunSummary;
+pub use crb_shared::{
+    AgentLogResponse, LogsListResponse, PrAgentEntry, PrAgentsResponse, PrDetailResponse,
+    PrLogsEntry,
+};
 
 /// A single PR result as it appears in the JSON files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,16 +45,6 @@ pub struct PrResultJson {
     #[serde(default)]
     pub agent_responses: Vec<String>,
 }
-
-pub use crb_shared::PrResult;
-
-pub use crb_shared::MetricsJson;
-
-pub use crb_shared::VerdictJson;
-
-pub use crb_shared::AggregateMetrics;
-
-pub use crb_shared::RunConfig;
 
 /// Configuration for starting a new benchmark run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,10 +131,12 @@ fn default_max_findings() -> usize {
     20
 }
 
+#[deprecated("TODO")]
 fn default_prompts_dir() -> String {
     "prompts/builtin".to_string()
 }
 
+#[deprecated("TODO")]
 fn default_roles() -> String {
     "SA,CL,AR,SEC".to_string()
 }
@@ -154,11 +148,6 @@ pub struct StartRunResponse {
     pub status: String,
     pub total_prs: usize,
 }
-
-pub use crb_shared::{
-    AgentLogResponse, LogsListResponse, PrAgentEntry, PrAgentsResponse, PrDetailResponse,
-    PrLogsEntry,
-};
 
 /// GET /api/runs — list all benchmark runs (both completed and active).
 pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {

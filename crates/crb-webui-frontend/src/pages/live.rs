@@ -1,7 +1,8 @@
 use crate::components::agent_pane::AgentPane;
 use crate::components::progress_bar::ProgressBar;
 use crate::sse;
-use crate::{role_display_name, AppConfig, DashboardEvent};
+use crate::{AppConfig, DashboardEvent};
+use crb_webui_shared::config::RoleInfo;
 use leptos::{
     component, create_signal, spawn_local, view, IntoView, ReadSignal, SignalGet,
     SignalGetUntracked, SignalSet, SignalUpdate, WriteSignal,
@@ -64,7 +65,8 @@ pub fn LivePage() -> impl IntoView {
     let (role_current_pr, set_role_current_pr) =
         create_signal::<HashMap<String, String>>(HashMap::new());
 
-    let (available_roles, set_available_roles) = create_signal::<Vec<String>>(Vec::new());
+    let (available_role_infos, set_available_role_infos) =
+        create_signal::<Vec<RoleInfo>>(Vec::new());
 
     let (progress_done, set_progress_done) = create_signal(0usize);
     let (progress_total, set_progress_total) = create_signal(0usize);
@@ -76,9 +78,7 @@ pub fn LivePage() -> impl IntoView {
         let url = "/api/config";
         if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
             if let Ok(config) = resp.json::<AppConfig>().await {
-                let role_abbrs: Vec<String> =
-                    config.roles.into_iter().map(|r| r.abbreviation).collect();
-                set_available_roles.set(role_abbrs);
+                set_available_role_infos.set(config.roles);
             }
         }
     });
@@ -93,10 +93,10 @@ pub fn LivePage() -> impl IntoView {
         let set_total = set_progress_total;
         let set_stat = set_status;
         let set_conn = set_connected;
-        // Read signals needed for handle_event
+
         let role_pr = role_current_pr;
         let state_pr = pr_states;
-        let roles = available_roles;
+        let roles = available_role_infos;
 
         spawn_local(async move {
             if id.is_empty() {
@@ -295,17 +295,24 @@ pub fn LivePage() -> impl IntoView {
                             {move || {
                                 let pr_state = active_pr_state();
                                 let sel_key = selected_pr.get().unwrap_or_default();
-                                let roles = available_roles.get();
+                                let roles = available_role_infos.get();
+                                let role_lookup: HashMap<&str, &RoleInfo> = roles
+                                    .iter()
+                                    .map(|ri| (ri.abbreviation.as_str(), ri))
+                                    .collect();
                                 if let Some(state) = pr_state {
-                                    roles.iter().map(|role| {
-                                        let agent_ref = state.agents.get(role);
+                                    roles.iter().map(|ri| {
+                                        let agent_ref = state.agents.get(&ri.abbreviation);
                                         let status_val = agent_ref.map(|a| a.status.clone()).unwrap_or_else(|| "pending".into());
                                         let resp_val = agent_ref.and_then(|a| {
                                             if a.response.is_empty() { None } else { Some(a.response.clone()) }
                                         });
                                         let pr_key = sel_key.clone();
-                                        let role_name = role.clone();
-                                        let display_name = role_display_name(&role_name);
+                                        let role_name = ri.abbreviation.clone();
+                                        let display_name = role_lookup
+                                            .get(ri.abbreviation.as_str())
+                                            .map(|ri| ri.display_name())
+                                            .unwrap_or_else(|| role_name.clone());
                                         view! {
                                             <AgentPane
                                                 name=display_name
@@ -356,14 +363,16 @@ fn handle_event(
     set_done: &WriteSignal<usize>,
     set_total: &WriteSignal<usize>,
     set_stat: &WriteSignal<String>,
-    roles: &[String],
+    roles: &[RoleInfo],
 ) {
     match ev {
         DashboardEvent::AgentStarted { pr_key, role } => {
             // Ensure PR state exists
             set_states.update(|states| {
                 if !states.contains_key(&pr_key) {
-                    states.insert(pr_key.clone(), PrState::new(roles));
+                    let role_abbrs: Vec<String> =
+                        roles.iter().map(|r| r.abbreviation.clone()).collect();
+                    states.insert(pr_key.clone(), PrState::new(&role_abbrs));
                 }
                 if let Some(pr) = states.get_mut(&pr_key) {
                     // Dynamically add agent if it doesn't exist yet (roles may have been
@@ -454,7 +463,9 @@ fn handle_event(
                 // Ensure this PR is tracked
                 set_states.update(|states| {
                     if !states.contains_key(&pr_key) {
-                        states.insert(pr_key.clone(), PrState::new(roles));
+                        let role_abbrs: Vec<String> =
+                            roles.iter().map(|r| r.abbreviation.clone()).collect();
+                        states.insert(pr_key.clone(), PrState::new(&role_abbrs));
                     }
                 });
                 set_order.update(|order| {

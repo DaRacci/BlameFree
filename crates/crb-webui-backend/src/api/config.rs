@@ -60,6 +60,7 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
                     let config = lib.config(abbr);
                     RoleInfo {
                         abbreviation: abbr.to_string(),
+                        name: abbr.to_string(),
                         incompatible_with_roles: config
                             .map(|c| c.incompatible_with_roles.clone())
                             .unwrap_or_default(),
@@ -73,14 +74,17 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
             vec![
                 RoleInfo {
                     abbreviation: "ARCH".to_string(),
+                    name: "Architecture".to_string(),
                     incompatible_with_roles: vec![],
                 },
                 RoleInfo {
                     abbreviation: "CL".to_string(),
+                    name: "Code Logician".to_string(),
                     incompatible_with_roles: vec![],
                 },
                 RoleInfo {
                     abbreviation: "GEN".to_string(),
+                    name: "General".to_string(),
                     incompatible_with_roles: vec![
                         "SA".to_string(),
                         "CL".to_string(),
@@ -90,10 +94,12 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
                 },
                 RoleInfo {
                     abbreviation: "SA".to_string(),
+                    name: "Security Auditor".to_string(),
                     incompatible_with_roles: vec![],
                 },
                 RoleInfo {
                     abbreviation: "SEC".to_string(),
+                    name: "Security Evaluator".to_string(),
                     incompatible_with_roles: vec![],
                 },
             ]
