@@ -366,7 +366,7 @@ pub fn AdhocReviewPage() -> impl IntoView {
                         <div class="checkbox-group">
                             {move || {
                                 let roles = available_roles.get();
-                                view! { <RoleSelector available_roles=roles selected_roles=set_selected_roles /> }
+                                view! { <RoleSelector available_roles=roles selected_roles=selected_roles set_selected_roles=set_selected_roles /> }
                             }}
                         </div>
                         <p class="form-field__helper">"Select at least one role for this review."</p>

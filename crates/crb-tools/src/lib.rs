@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn test_linter_error_from_io() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::Other, "oops");
+        let io_err = std::io::Error::other("oops");
         let linter_err: LinterError = io_err.into();
         match linter_err {
             LinterError::SubprocessFailed(_) => {}
@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn test_git_error_from_io() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::Other, "oops");
+        let io_err = std::io::Error::other("oops");
         let git_err: GitError = io_err.into();
         match git_err {
             GitError::CommandFailed(_) => {}

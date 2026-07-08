@@ -35,7 +35,9 @@ use rig_core::tool::Tool;
 use tokio::sync::broadcast;
 use tracing::{info, info_span};
 
+pub use crate::config::ReviewArgs;
 pub mod cache;
+pub mod config;
 pub mod cost;
 pub mod model_capabilities;
 pub mod paths;

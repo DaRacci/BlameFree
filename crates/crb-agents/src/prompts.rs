@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn test_prompt_library_loads() {
         let lib = PromptLibrary::new().expect("Should load from embedded");
-        assert!(lib.roles().len() >= 1);
+        assert!(!lib.roles().is_empty());
         assert!(lib.get("SA").is_some() || lib.get("GEN").is_some());
     }
 }

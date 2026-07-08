@@ -357,7 +357,7 @@ pub fn NewRunPage() -> impl IntoView {
                                 <div class="form-field">
                                     <label class="form-field__label">"Roles / Agents"</label>
                                     <div class="checkbox-group">
-                                        <RoleSelector available_roles=role_infos selected_roles=set_roles />
+                                        <RoleSelector available_roles=role_infos selected_roles=roles set_selected_roles=set_roles />
                                     </div>
                                     <p class="form-field__helper">"Select at least one role for this run."</p>
                                 </div>

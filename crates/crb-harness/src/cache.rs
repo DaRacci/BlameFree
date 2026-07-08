@@ -376,7 +376,10 @@ impl LlmCache {
         }
 
         // Update index
-        self.update_index(cache_key, format!("agents/{cache_key}.agent_{role}_response.txt"))?;
+        self.update_index(
+            cache_key,
+            format!("agents/{cache_key}.agent_{role}_response.txt"),
+        )?;
         Ok(())
     }
 
@@ -451,13 +454,10 @@ impl LlmCache {
         std::fs::write(&prompt_path, prompt)?;
         std::fs::write(&response_path, response)?;
 
-        self.update_index(cache_key, format!("context/{cache_key}.context_response.txt"))?;
-        Ok(())
-    }
-
-    /// Insert or update a cache entry in the index and persist immediately.
-    fn update_index(&self, cache_key: &str, file_path: String) -> Result<()> {
-        self.update_index(cache_key, format!("context/{cache_key}.context_response.txt"))?;
+        self.update_index(
+            cache_key,
+            format!("context/{cache_key}.context_response.txt"),
+        )?;
         Ok(())
     }
 
