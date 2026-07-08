@@ -39,6 +39,7 @@ use std::time::Duration;
 
 use crb_shared::finding::Finding;
 pub use grep::GrepTool;
+pub use linters::config::load_linter_config;
 pub use list_dir::ListDirTool;
 
 use crate::budget::ToolCallBudget;

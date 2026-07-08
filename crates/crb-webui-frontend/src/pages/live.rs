@@ -246,8 +246,6 @@ pub fn LivePage() -> impl IntoView {
                                     view! { <span></span> }.into_view()
                                 }
                             }}
-                        </div>
-
                         <div class="pr-selector">
                             <div class="pr-selector__tabs">
                                 <span class="pr-selector__label">"PR:"</span>

@@ -1,5 +1,7 @@
 pub mod golden;
 
+pub use golden::{load_golden_datasets, GoldenCommentEntry};
+
 use std::path::Path;
 
 use anyhow::Result;
