@@ -7,6 +7,7 @@ pub enum Severity {
     High = 1,
     Medium = 2,
     Low = 3,
+    Info = 4,
 }
 
 impl Severity {
@@ -27,12 +28,13 @@ impl Severity {
 
     /// Shift severity by `quantum` (negative = downgrade), clamped to valid range.
     pub fn apply_quantum(&self, quantum: i32) -> Self {
-        let new_val = ((*self as i32) - quantum).clamp(0, 3) as u8;
+        let new_val = ((*self as i32) - quantum).clamp(0, 4) as u8;
         match new_val {
             0 => Severity::Critical,
             1 => Severity::High,
             2 => Severity::Medium,
-            _ => Severity::Low,
+            3 => Severity::Low,
+            _ => Severity::Info,
         }
     }
 }
@@ -51,10 +53,13 @@ mod tests {
     #[test]
     fn test_compute_new_severity() {
         assert_eq!(compute_new_severity("high", -2), "low");
-        assert_eq!(compute_new_severity("medium", -2), "low");
+        assert_eq!(compute_new_severity("medium", -2), "info");
         assert_eq!(compute_new_severity("critical", -2), "medium");
         assert_eq!(compute_new_severity("high", -1), "medium");
-        assert_eq!(compute_new_severity("low", -1), "low");
-        assert_eq!(compute_new_severity("high", -3), "low");
+        assert_eq!(compute_new_severity("low", -1), "info");
+        assert_eq!(compute_new_severity("high", -3), "info");
+        assert_eq!(compute_new_severity("info", -1), "info");
+        assert_eq!(compute_new_severity("info", 0), "info");
+        assert_eq!(compute_new_severity("low", -2), "info");
     }
 }

@@ -22,6 +22,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::Finding;
+use crb_shared::severity::Severity;
 
 /// Thread-safe in-memory collector that accumulates submitted findings.
 ///
@@ -102,19 +103,23 @@ pub struct SubmitFindingResponse {
     pub warnings: Vec<String>,
 }
 
-/// Normalize a severity string to capitalized form.
+/// Normalize a severity string to capitalized form using the shared [`Severity`] enum.
 fn normalize_severity(raw: &str) -> Result<String, String> {
-    match raw.to_lowercase().as_str() {
-        "critical" => Ok("Critical".to_string()),
-        "high" => Ok("High".to_string()),
-        "medium" => Ok("Medium".to_string()),
-        "low" => Ok("Low".to_string()),
-        "info" | "informational" => Ok("Info".to_string()),
-        other => Err(format!(
-            "Invalid severity '{}'. Must be one of: critical, high, medium, low, info",
-            other
-        )),
-    }
+    let lowered = raw.to_lowercase();
+    // Handle "informational" alias for "info"
+    let input = match lowered.as_str() {
+        "informational" => "info",
+        other => other,
+    };
+    // Use serde directly for strict validation (Severity::from_str falls back to Medium)
+    serde_json::from_str::<Severity>(&format!("\"{input}\""))
+        .map(|s| format!("{:?}", s))
+        .map_err(|_| {
+            format!(
+                "Invalid severity '{}'. Must be one of: critical, high, medium, low, info",
+                raw
+            )
+        })
 }
 
 /// Normalize a confidence string.

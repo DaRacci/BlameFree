@@ -1,4 +1,5 @@
 use crate::components::agent_pane::AgentPane;
+use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crate::sse;
 use crate::{AppConfig, DashboardEvent};
@@ -232,27 +233,14 @@ pub fn LivePage() -> impl IntoView {
                     }.into_view()
                 } else {
                     view! {
-                        <div class="content-grid content-grid--metrics">
-                            <div class="metric-card">
-                                <p class="metric-card__label">"Progress"</p>
-                                <p class="metric-card__value">{format!("{}/{}", done(), total())}</p>
-                            </div>
-                            <div class="metric-card">
-                                <p class="metric-card__label">"Status"</p>
-                                <p class="metric-card__value">{status.get().clone()}</p>
-                            </div>
-                            <div class="metric-card">
-                                <p class="metric-card__label">"Completed"</p>
-                                <p class="metric-card__value">{format!("{}%", pct())}</p>
-                            </div>
+                            <MetricsCard value={format!("{}/{}", done(), total())} label="Progress" />
+                            <MetricsCard value={status.get().clone()} label="Status" />
+                            <MetricsCard value={format!("{}%", pct())} label="Completed" />
                             {move || {
                                 let t = total();
                                 if t > 0 {
                                     view! {
-                                        <div class="metric-card">
-                                            <p class="metric-card__label">"Active PRs"</p>
-                                            <p class="metric-card__value">{format!("{}", pr_order.get().len())}</p>
-                                        </div>
+                                        <MetricsCard value={format!("{}", pr_order.get().len())} label="Active PRs" />
                                     }.into_view()
                                 } else {
                                     view! { <span></span> }.into_view()

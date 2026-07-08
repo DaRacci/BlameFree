@@ -1,3 +1,4 @@
+use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crb_webui_shared::runs::{PrResult, RunDetail};
 use leptos::{
@@ -137,51 +138,21 @@ pub fn RunDetailPage() -> impl IntoView {
                             {move || {
                                 if let Some(ref agg) = detail_clone.aggregate {
                                     view! {
-                                        <div class="metric-card">
-                                            <p class="metric-card__label">"F1 Score"</p>
-                                            <p class="metric-card__value" style="color: var(--accent-blue, #58a6ff);">{format!("{:.3}", agg.avg_f1)}</p>
-                                        </div>
-                                        <div class="metric-card">
-                                            <p class="metric-card__label">"Precision"</p>
-                                            <p class="metric-card__value" style="color: var(--accent-green, #3fb950);">{format!("{:.3}", agg.avg_precision)}</p>
-                                        </div>
-                                        <div class="metric-card">
-                                            <p class="metric-card__label">"Recall"</p>
-                                            <p class="metric-card__value" style="color: var(--accent-orange, #f0883e);">{format!("{:.3}", agg.avg_recall)}</p>
-                                        </div>
-                                        <div class="metric-card">
-                                            <p class="metric-card__label">"Total Cost"</p>
-                                            <p class="metric-card__value">{format!("${:.4}", agg.total_cost)}</p>
-                                        </div>
-                                        <div class="metric-card">
-                                            <p class="metric-card__label">"Duration"</p>
-                                            <p class="metric-card__value">{format!("{:.0}s", agg.duration_secs)}</p>
-                                        </div>
+                                        <MetricsCard value={format!("{:.3}", agg.avg_f1)} label="F1 Score" value_style={Some("color: var(--accent-blue, #58a6ff);")} />
+                                        <MetricsCard value={format!("{:.3}", agg.avg_precision)} label="Precision" value_style={Some("color: var(--accent-green, #3fb950);")} />
+                                        <MetricsCard value={format!("{:.3}", agg.avg_recall)} label="Recall" value_style={Some("color: var(--accent-orange, #f0883e);")} />
+                                        <MetricsCard value={format!("${:.4}", agg.total_cost)} label="Total Cost" />
+                                        <MetricsCard value={format!("{:.0}s", agg.duration_secs)} label="Duration" />
                                     }.into_view()
                                 } else {
                                     let cost_str = detail_clone.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into());
                                     let dur_str = detail_clone.duration_secs.map(|d| format!("{:.0}s", d)).unwrap_or_else(|| "-".into());
                                     view! {
-                                        <div class="metric-card">
-                                            <p class="metric-card__label">"F1 Score"</p>
-                                            <p class="metric-card__value">"-"</p>
-                                        </div>
-                                        <div class="metric-card">
-                                            <p class="metric-card__label">"Precision"</p>
-                                            <p class="metric-card__value">"-"</p>
-                                        </div>
-                                        <div class="metric-card">
-                                            <p class="metric-card__label">"Recall"</p>
-                                            <p class="metric-card__value">"-"</p>
-                                        </div>
-                                        <div class="metric-card">
-                                            <p class="metric-card__label">"Total Cost"</p>
-                                            <p class="metric-card__value">{cost_str}</p>
-                                        </div>
-                                        <div class="metric-card">
-                                            <p class="metric-card__label">"Duration"</p>
-                                            <p class="metric-card__value">{dur_str}</p>
-                                        </div>
+                                        <MetricsCard value={"-"} label="F1 Score" />
+                                        <MetricsCard value={"-"} label="Precision" />
+                                        <MetricsCard value={"-"} label="Recall" />
+                                        <MetricsCard value={cost_str} label="Total Cost" />
+                                        <MetricsCard value={dur_str} label="Duration" />
                                     }.into_view()
                                 }
                             }}

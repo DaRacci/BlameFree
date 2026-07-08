@@ -5,6 +5,7 @@ use leptos::{
 };
 use std::time::Duration;
 
+use crate::components::metrics_card::MetricsCard;
 use crate::fetch_json;
 
 const API_RUNS_URL: &str = "/api/runs";
@@ -165,18 +166,9 @@ pub fn HomePage() -> impl IntoView {
 
                     view! {
                         <div class="content-grid content-grid--metrics">
-                            <div class="metric-card">
-                                <p class="metric-card__label">"Total Runs"</p>
-                                <p class="metric-card__value">{total_runs.to_string()}</p>
-                            </div>
-                            <div class="metric-card">
-                                <p class="metric-card__label">"Avg F1"</p>
-                                <p class="metric-card__value">{format!("{:.2}", avg_f1)}</p>
-                            </div>
-                            <div class="metric-card">
-                                <p class="metric-card__label">"PRs Reviewed"</p>
-                                <p class="metric-card__value">{total_prs.to_string()}</p>
-                            </div>
+                            <MetricsCard value={total_runs.to_string()} label="Total Runs" />
+                            <MetricsCard value={format!("{:.2}", avg_f1)} label="Avg F1" />
+                            <MetricsCard value={total_prs.to_string()} label="PRs Reviewed" />
                         </div>
 
                         <div class="quick-actions">
