@@ -64,9 +64,6 @@ pub struct BenchmarkConfig {
     #[serde(default = "default_max_findings")]
     pub max_findings: usize,
 
-    #[serde(default = "default_prompts_dir")]
-    pub prompts_dir: String,
-
     pub cache_dir: Option<String>,
 
     #[serde(default = "default_roles", deserialize_with = "deserialize_roles")]
@@ -132,12 +129,7 @@ fn default_max_findings() -> usize {
     20
 }
 
-#[deprecated("TODO")]
-fn default_prompts_dir() -> String {
-    "prompts/builtin".to_string()
-}
-
-#[deprecated("TODO")]
+#[deprecated(note = "TODO")]
 fn default_roles() -> String {
     "SA,CL,AR,SEC".to_string()
 }

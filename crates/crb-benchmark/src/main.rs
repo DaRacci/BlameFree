@@ -380,7 +380,6 @@ fn main() -> Result<()> {
                 skip_consensus,
                 linters_config,
                 skip_rules,
-                prompts_dir,
                 validate,
                 ci,
                 roles,
