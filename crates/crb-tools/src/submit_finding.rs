@@ -23,8 +23,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::Finding;
 
-// ── Collector ──────────────────────────────────────────────────────────────
-
 /// Thread-safe in-memory collector that accumulates submitted findings.
 ///
 /// Designed to be shared across multiple agent tool instances via `Arc<Mutex<..>>`.
@@ -64,8 +62,6 @@ impl SubmitFindingCollector {
     }
 }
 
-// ── Tool Input ────────────────────────────────────────────────────────────
-
 /// Arguments accepted by [`SubmitFindingTool`].
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SubmitFindingArgs {
@@ -93,8 +89,6 @@ pub struct SubmitFindingArgs {
     pub found_by: Option<String>,
 }
 
-// ── Tool Response ──────────────────────────────────────────────────────────
-
 /// Structured response returned by [`SubmitFindingTool`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubmitFindingResponse {
@@ -107,8 +101,6 @@ pub struct SubmitFindingResponse {
     /// Non-blocking quality warnings.
     pub warnings: Vec<String>,
 }
-
-// ── Severity normalization ────────────────────────────────────────────────
 
 /// Normalize a severity string to capitalized form.
 fn normalize_severity(raw: &str) -> Result<String, String> {
@@ -149,8 +141,6 @@ fn normalize_found_by(raw: &str) -> Result<String, String> {
     }
 }
 
-// ── Error Type ─────────────────────────────────────────────────────────────
-
 /// Errors from the submit-finding tool.
 #[derive(Debug)]
 pub enum SubmitFindingError {
@@ -167,8 +157,6 @@ impl std::fmt::Display for SubmitFindingError {
 }
 
 impl std::error::Error for SubmitFindingError {}
-
-// ── Tool Implementation ───────────────────────────────────────────────────
 
 /// A [`rig::Tool`] that allows agents to submit findings with structured validation.
 ///
@@ -192,12 +180,10 @@ impl SubmitFindingTool {
         let mut errors: Vec<String> = Vec::new();
         let mut warnings: Vec<String> = Vec::new();
 
-        // ── Required fields ─────────────────────────────────────────────
         if args.message.trim().is_empty() {
             errors.push("'message' is required and must not be empty".to_string());
         }
 
-        // ── Severity normalization ─────────────────────────────────────
         let severity = match normalize_severity(&args.severity) {
             Ok(s) => s,
             Err(e) => {
@@ -206,7 +192,6 @@ impl SubmitFindingTool {
             }
         };
 
-        // ── Confidence normalization ───────────────────────────────────
         let _confidence = match &args.confidence {
             Some(raw) => match normalize_confidence(raw) {
                 Ok(c) => Some(c),
@@ -218,7 +203,6 @@ impl SubmitFindingTool {
             None => None,
         };
 
-        // ── Found_by normalization ─────────────────────────────────────
         let _found_by = match &args.found_by {
             Some(raw) => match normalize_found_by(raw) {
                 Ok(f) => Some(f),
@@ -230,7 +214,7 @@ impl SubmitFindingTool {
             None => None,
         };
 
-        // ── Quality warnings ───────────────────────────────────────────
+        // Quality warnings
         if args.line.is_none() {
             warnings.push(
                 "Finding has no line number — consider providing a specific line".to_string(),
@@ -254,7 +238,7 @@ impl SubmitFindingTool {
             return (None, errors, warnings);
         }
 
-        // ── Build Finding ──────────────────────────────────────────────
+        // Build Finding
         let finding = Finding {
             file: args.file,
             line: args.line,

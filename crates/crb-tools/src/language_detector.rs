@@ -35,8 +35,6 @@ pub struct LanguageInfo {
     pub framework_hints: Vec<String>,
 }
 
-// ── Extension-to-language mapping ─────────────────────────────────────────────
-
 /// Map of file extension (without dot) to language name.
 fn extension_to_language() -> HashMap<&'static str, &'static str> {
     let mut map = HashMap::new();
@@ -131,8 +129,6 @@ fn extension_to_language() -> HashMap<&'static str, &'static str> {
     map
 }
 
-// ── Framework hints ───────────────────────────────────────────────────────────
-
 /// Map of file/directory patterns to framework hints.
 fn framework_patterns() -> Vec<(&'static str, &'static str)> {
     vec![
@@ -166,8 +162,6 @@ fn framework_patterns() -> Vec<(&'static str, &'static str)> {
         ("Jenkinsfile", "Jenkins"),
     ]
 }
-
-// ── Diff parsing ──────────────────────────────────────────────────────────────
 
 /// Extract the file path from a `diff --git a/path b/path` header line.
 ///
@@ -207,8 +201,6 @@ fn extract_extension(path: &str) -> Option<&str> {
         None
     }
 }
-
-// ── Public API ────────────────────────────────────────────────────────────────
 
 /// Detect language information from a git diff string.
 ///

@@ -52,25 +52,19 @@ impl PrState {
     }
 }
 
-// ─── LivePage Component ────────────────────────────────────────────────────
-
 #[component]
 pub fn LivePage() -> impl IntoView {
     let params = use_params_map();
     let run_id = move || params.get().get("id").cloned().unwrap_or_default();
 
-    // ─── Reactive state ──────────────────────────────────────────────
     let (pr_states, set_pr_states) = create_signal::<HashMap<String, PrState>>(HashMap::new());
     let (pr_order, set_pr_order) = create_signal::<Vec<String>>(Vec::new());
     let (selected_pr, set_selected_pr) = create_signal::<Option<String>>(None);
-    // Track which PR each role is currently working on (for AgentChunk/AgentFinished which lack pr_key)
     let (role_current_pr, set_role_current_pr) =
         create_signal::<HashMap<String, String>>(HashMap::new());
 
-    // Available roles fetched from the server
     let (available_roles, set_available_roles) = create_signal::<Vec<String>>(Vec::new());
 
-    // ─── Overall progress ─────────────────────────────────────────────
     let (progress_done, set_progress_done) = create_signal(0usize);
     let (progress_total, set_progress_total) = create_signal(0usize);
     let (status, set_status) = create_signal::<String>("connecting".into());
@@ -88,7 +82,6 @@ pub fn LivePage() -> impl IntoView {
         }
     });
 
-    // ─── SSE connection ───────────────────────────────────────────────
     {
         let id = run_id();
         let set_states = set_pr_states;
@@ -148,8 +141,6 @@ pub fn LivePage() -> impl IntoView {
         });
     };
 
-    // ─── Derived signals ──────────────────────────────────────────────
-
     // The currently selected PR - auto-select first on initial data
     let _pr_list = move || {
         let order = pr_order.get();
@@ -190,7 +181,6 @@ pub fn LivePage() -> impl IntoView {
 
     view! {
         <div class="live-view-page">
-            // ─── Page Header ──────────────────────────────────────────
             <div class="page-header">
                 <div class="page-header__title">
                     <span class="live-header__dot" style="width: 10px; height: 10px; border-radius: 50%; background: var(--accent-red, #f85149); display: inline-block;"></span>
@@ -211,7 +201,6 @@ pub fn LivePage() -> impl IntoView {
                 </div>
             </div>
 
-            // ─── Status / Content ─────────────────────────────────────
             {move || {
                 let s = status.get();
                 if s == "connecting" {
@@ -242,7 +231,6 @@ pub fn LivePage() -> impl IntoView {
                     }.into_view()
                 } else {
                     view! {
-                        // ─── Metrics ─────────────────────────────────
                         <div class="content-grid content-grid--metrics">
                             <div class="metric-card">
                                 <p class="metric-card__label">"Progress"</p>
@@ -271,7 +259,6 @@ pub fn LivePage() -> impl IntoView {
                             }}
                         </div>
 
-                        // ─── PR Selector ──────────────────────────────
                         <div class="pr-selector">
                             <div class="pr-selector__tabs">
                                 <span class="pr-selector__label">"PR:"</span>
@@ -303,7 +290,6 @@ pub fn LivePage() -> impl IntoView {
                             </div>
                         </div>
 
-                        // ─── Agent Panes for Selected PR ──────────────
                         <div class="content-grid content-grid--agent-panes" style="margin-top: var(--spacing-lg, 16px);">
                             {move || {
                                 let pr_state = active_pr_state();

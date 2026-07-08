@@ -93,21 +93,22 @@ use tokio::sync::mpsc;
 
 pub mod render;
 
-// ── Event types ──────────────────────────────────────────────────────────────
-
 /// Events sent from the harness to the dashboard task.
 #[derive(Debug, Clone, Serialize)]
 pub enum DashboardEvent {
     /// An agent has started its review for a given PR.
     AgentStarted { pr_key: String, role: String },
+
     /// A chunk of streaming response text from an agent.
     AgentChunk { role: String, chunk: String },
+
     /// An agent has finished its review.
     AgentFinished {
         role: String,
         findings: usize,
         success: bool,
     },
+
     /// A single PR has been fully evaluated.
     PrCompleted {
         pr_key: String,
@@ -117,6 +118,7 @@ pub enum DashboardEvent {
         agent_calls: usize,
         findings_count: usize,
     },
+
     /// The entire run has finished.
     RunFinished {
         total_prs: usize,
@@ -130,18 +132,21 @@ pub enum DashboardEvent {
 /// Aggregate metrics across all PRs.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AggregateMetrics {
-    #[serde(rename = "total_tp")]
+    #[serde(alias = "total_tp")]
     pub true_positives: usize,
-    #[serde(rename = "total_fp")]
+
+    #[serde(alias = "total_fp")]
     pub false_positives: usize,
-    #[serde(rename = "total_fn")]
+
+    #[serde(alias = "total_fn")]
     pub false_negatives: usize,
+
     pub precision: f64,
+
     pub recall: f64,
+
     pub f1: f64,
 }
-
-// ── Agent pane state ─────────────────────────────────────────────────────────
 
 /// Status of a single agent pane.
 #[derive(Debug, Clone)]
@@ -189,7 +194,6 @@ impl AgentPane {
     }
 }
 
-// ── Dashboard state ──────────────────────────────────────────────────────────
 
 /// Full dashboard state, updated by events from the harness.
 pub struct Dashboard {

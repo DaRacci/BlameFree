@@ -164,7 +164,6 @@ pub fn HomePage() -> impl IntoView {
                     merged.truncate(10);
 
                     view! {
-                        // ─── Summary Metrics ──────────────────────────
                         <div class="content-grid content-grid--metrics">
                             <div class="metric-card">
                                 <p class="metric-card__label">"Total Runs"</p>
@@ -180,7 +179,6 @@ pub fn HomePage() -> impl IntoView {
                             </div>
                         </div>
 
-                        // ─── Quick Actions ────────────────────────────
                         <div class="quick-actions">
                             <a href="/new" class="btn btn--primary btn--lg quick-actions__btn">
                                 "New Benchmark"
@@ -190,7 +188,6 @@ pub fn HomePage() -> impl IntoView {
                             </a>
                         </div>
 
-                        // ─── Running Reviews ──────────────────────────
                         {if has_any_active {
                             view! {
                                 <div class="section-header">

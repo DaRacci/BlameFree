@@ -341,9 +341,7 @@ pub async fn list_repo_prs(
     Json(prs).into_response()
 }
 
-// ─── Internal helpers ─────────────────────────────────────────────────────
-
-/// Parse a GitHub PR URL into (owner, repo, pr_number)
+// Parse a GitHub PR URL into (owner, repo, pr_number)
 fn parse_github_url(url: &str) -> Option<(String, String, u32)> {
     let re = regex::Regex::new(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)$").ok()?;
     let caps = re.captures(url)?;
@@ -416,7 +414,6 @@ async fn run_adhoc_review_inner(
         "Starting ad-hoc review"
     );
 
-    // ── Setup clients ────────────────────────────────────────────────────
     let client = rig_core::providers::openai::Client::from_env()
         .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
 
@@ -426,9 +423,6 @@ async fn run_adhoc_review_inner(
     let prompt_lib = Arc::new(
         crb_agents::prompts::PromptLibrary::new().expect("Embedded prompts should be available"),
     );
-
-    // ── Create cache directory ────────────────────────────────────────
-    std::fs::create_dir_all(&cache_dir)?;
 
     // ── Create a GoldenCommentEntry with empty comments ────────────────
     // (no golden data to compare against — just running agents on the diff)
@@ -441,17 +435,14 @@ async fn run_adhoc_review_inner(
         comments: vec![],
     };
 
-    // ── Cache instance ────────────────────────────────────────────────
     let pr_key = sanitize_filename(pr_title);
     let cache: Arc<crb_harness::LlmCache> = Arc::new(
         crb_harness::LlmCache::new(&cache_dir, &pr_key)
             .expect("Failed to create LLM cache directory"),
     );
 
-    // ── Cost tracker ──────────────────────────────────────────────────
     let cost_tracker = Arc::new(crb_harness::CostTracker::new());
 
-    // ── Preprocess diff ───────────────────────────────────────────────
     let diff = crb_harness::preprocess_diff(diff);
 
     if diff.is_empty() {
@@ -460,8 +451,6 @@ async fn run_adhoc_review_inner(
 
     // ── Rules preamble (none) ─────────────────────────────────────────
     let rules_preamble: Option<String> = None;
-
-    // ── Agent evaluation (consensus pipeline) ─────────────────────────
     tracing::info!(
         "Running ad-hoc review with roles={}, model={}",
         roles,
@@ -497,7 +486,6 @@ async fn run_adhoc_review_inner(
     let cost_summary = cost_tracker.to_summary();
     let total_cost = cost_summary.total_usd;
 
-    // ── Build PrResult ────────────────────────────────────────────────
     use crb_reporting::PrResult;
     let result = PrResult {
         pr_title: pr_title.to_string(),
@@ -509,7 +497,6 @@ async fn run_adhoc_review_inner(
         cost: Some(cost_summary),
     };
 
-    // ── Write output ──────────────────────────────────────────────────
     std::fs::create_dir_all(&output_subdir)?;
 
     // Write per-PR result as JSON

@@ -683,7 +683,6 @@ async fn run_benchmark(
         }
     }
 
-    // ── --validate flag ────────────────────────────────────────────────────
     let workspace_root =
         env::current_dir().context("Failed to determine current working directory")?;
     if validate {

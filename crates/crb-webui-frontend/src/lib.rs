@@ -38,8 +38,10 @@ pub struct NewRunResponse {
 pub struct AppConfig {
     #[serde(default)]
     pub models: Vec<String>,
+
     #[serde(default)]
     pub datasets: Vec<String>,
+
     #[serde(default)]
     pub roles: Vec<RoleInfo>,
 
@@ -52,20 +54,16 @@ pub struct AppConfig {
     pub auth_enabled: bool,
 }
 
-/// Uses the same tagged-enum format (`event`/`data`) as the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "event", content = "data")]
+#[serde(rename_all = "snake_case", tag = "event", content = "data")]
 pub enum DashboardEvent {
     /// An agent has started its review for a given PR.
-    #[serde(rename = "agent_started")]
     AgentStarted { pr_key: String, role: String },
 
     /// A chunk of streaming response text from an agent.
-    #[serde(rename = "agent_chunk")]
     AgentChunk { role: String, chunk: String },
 
     /// An agent has finished its review.
-    #[serde(rename = "agent_finished")]
     AgentFinished {
         role: String,
         findings: usize,
@@ -73,11 +71,9 @@ pub enum DashboardEvent {
     },
 
     /// A single PR has been fully evaluated.
-    #[serde(rename = "pr_completed")]
     PrCompleted { pr_key: String },
 
     /// Progress update during a run.
-    #[serde(rename = "run_progress")]
     RunProgress {
         completed_prs: usize,
         total_prs: usize,
@@ -85,7 +81,6 @@ pub enum DashboardEvent {
     },
 
     /// The entire run has finished.
-    #[serde(rename = "run_finished")]
     RunFinished { total_prs: usize },
 }
 

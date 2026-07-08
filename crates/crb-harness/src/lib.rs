@@ -554,7 +554,6 @@ pub async fn review_pr_with_prompt_lib(
         }
     }
 
-    // ── Post-process with candidate cap + severity auditor ──────────────
     all_findings = post_process_findings(&all_findings);
 
     Ok(all_findings)
@@ -843,7 +842,7 @@ pub async fn evaluate_pr_single_agent(
     dashboard_tx: Option<&broadcast::Sender<DashboardEvent>>,
     additional_params: Option<serde_json::Value>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
-    // ── Pre-compute content-addressed cache key components ──────────────
+    // Pre-compute content-addressed cache key components
     let diff_hash = crate::cache::LlmCache::sha256(diff);
     let rules_hash = crate::cache::LlmCache::sha256(rules_preamble.unwrap_or(""));
     let judge_prompt_hash = crate::cache::LlmCache::sha256(crb_judge::JUDGE_PROMPT);

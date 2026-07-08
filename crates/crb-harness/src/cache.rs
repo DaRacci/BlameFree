@@ -252,16 +252,12 @@ impl LlmCache {
         self.index.lock().map(|ix| ix.entries.len()).unwrap_or(0)
     }
 
-    // ── SHA256 helpers ───────────────────────────────────────────────────
-
     /// Compute a SHA256 hex digest of the input string.
     pub fn sha256(input: &str) -> String {
         let mut hasher = Sha256::new();
         hasher.update(input.as_bytes());
         format!("{:x}", hasher.finalize())
     }
-
-    // ── Index persistence ────────────────────────────────────────────────
 
     fn index_path(&self) -> PathBuf {
         self.dir.join(crate::paths::INDEX_FILE)
@@ -275,8 +271,6 @@ impl LlmCache {
         format!("{}.{:09}", dur.as_secs(), dur.subsec_nanos())
     }
 
-    // ── Agent reasoning cache ────────────────────────────────────────────
-
     /// Save agent reasoning/thinking text to cache.
     pub fn save_agent_reasoning(&self, cache_key: &str, role: &str, reasoning: &str) -> Result<()> {
         let reasoning_path = self
@@ -287,7 +281,7 @@ impl LlmCache {
         Ok(())
     }
 
-    // ── Agent cache ───────────────────────────────────────────────────────
+    // ── Legacy methods (for backwards compatibility) ───────────────────────
 
     /// Compute a content-addressed cache key for an agent LLM call.
     pub fn compute_agent_key(
@@ -403,8 +397,6 @@ impl LlmCache {
         Ok(())
     }
 
-    // ── Judge cache ───────────────────────────────────────────────────────
-
     /// Compute a content-addressed cache key for a judge LLM call.
     pub fn compute_judge_key(
         judge_prompt_hash: &str,
@@ -457,8 +449,6 @@ impl LlmCache {
         Ok(())
     }
 
-    // ── Context gatherer cache ───────────────────────────────────────────
-
     /// Compute a content-addressed cache key for a context gatherer LLM call.
     pub fn compute_context_key(
         gatherer_prompt_hash: &str,
@@ -494,6 +484,13 @@ impl LlmCache {
         std::fs::write(&prompt_path, prompt)?;
         std::fs::write(&response_path, response)?;
 
+        // Update index
+        self.update_index(cache_key, format!("context/{cache_key}.context_response.txt"))?;
+        Ok(())
+    }
+
+    /// Insert or update a cache entry in the index and persist immediately.
+    fn update_index(&self, cache_key: &str, file_path: String) -> Result<()> {
         let mut index = self
             .index
             .lock()
@@ -564,8 +561,6 @@ impl LlmCache {
     pub fn is_active(&self) -> bool {
         true
     }
-
-    // ── Cache management methods ───────────────────────────────────────
 
     /// Gather statistics across all PR directories under `base_dir`.
     ///
@@ -688,7 +683,6 @@ impl LlmCache {
             pr_dirs.push((name_str.to_string(), pr_dir, newest));
         }
 
-        // ── max-prs filter ──────────────────────────────────────────────
         if let Some(max) = max_prs {
             if pr_dirs.len() > max {
                 // Sort by newest entry (descending), keep first `max`
@@ -714,7 +708,6 @@ impl LlmCache {
             result.prs_kept = pr_dirs.len();
         }
 
-        // ── max-age filter ──────────────────────────────────────────────
         if let Some(days) = max_age_days {
             let cutoff = Duration::from_secs(days * 86400);
             let now = SystemTime::now();
@@ -775,7 +768,6 @@ impl LlmCache {
             }
         }
 
-        // ── max-size filter ─────────────────────────────────────────────
         if let Some(max_size) = max_size_bytes {
             for (_pr_key, pr_dir, _newest) in &pr_dirs {
                 let current_size = dir_size(pr_dir).unwrap_or(0);

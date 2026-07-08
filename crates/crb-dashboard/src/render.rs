@@ -21,7 +21,6 @@ pub fn render_dashboard(frame: &mut Frame, dash: &Dashboard) {
 
     let summary_height = std::cmp::min(dash.pr_summaries.len() + 2, 10) as u16;
 
-    // ── Layout ───────────────────────────────────────────────────────
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -31,13 +30,10 @@ pub fn render_dashboard(frame: &mut Frame, dash: &Dashboard) {
         ])
         .split(area);
 
-    // ── Progress bar ────────────────────────────────────────────────
     render_progress_bar(frame, chunks[0], dash);
 
-    // ── Agent panes ─────────────────────────────────────────────────
     render_agent_panes(frame, chunks[1], dash);
 
-    // ── PR summaries ────────────────────────────────────────────────
     render_pr_summaries(frame, chunks[2], dash);
 }
 

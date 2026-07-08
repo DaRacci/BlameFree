@@ -142,8 +142,6 @@ fn extract_last_assistant_text(history: &[Message]) -> Option<String> {
     None
 }
 
-// ── Cache key computation ──────────────────────────────────────────────────
-
 /// Compute a SHA256 hex digest of the input string.
 pub fn sha256_hex(input: &str) -> String {
     let mut hasher = Sha256::new();
