@@ -149,9 +149,9 @@ See `crates/crb-agents/src/lib.rs` for `Finding`, `Candidate`, and `Severity` ty
 
 ### Regex Compilation
 
-Use `once_cell::sync::Lazy<Vec<Regex>>` for pattern lists that are compiled once at module init:
+Use `LazyLock<Vec<Regex>>` for pattern lists that are compiled once at module init:
 - Extract-function patterns: 5 regexes compiled once.
-- Table-row heading pattern: one `Lazy<Regex>`.
+- Table-row heading pattern: one `LazyLock<Regex>`.
 - Table-row field pattern: one `Lazy<Regex>`.
 - Agent-code pattern: one `Lazy<Regex>`.
 - Bullet/prose patterns: one `Lazy<Regex>` per variant.
@@ -174,9 +174,9 @@ pub struct ProtectionCategory {
 }
 ```
 
-Static instances (compiled once via `once_cell::sync::Lazy`):
-- `INFLATED_CATEGORIES: Lazy<Vec<InflatedCategory>>` — 3 categories (architecture_nits, hypothetical_theoretical, style_nits).
-- `NEVER_DOWNGRADE_CATEGORIES: Lazy<Vec<ProtectionCategory>>` — 3 categories (security_vulns, data_integrity, correctness_bugs).
+Static instances (compiled once via `LazyLock`):
+- `INFLATED_CATEGORIES: LazyLock<Vec<InflatedCategory>>` — 3 categories (architecture_nits, hypothetical_theoretical, style_nits).
+- `NEVER_DOWNGRADE_CATEGORIES: LazyLock<Vec<ProtectionCategory>>` — 3 categories (security_vulns, data_integrity, correctness_bugs).
 
 ### Functions
 
@@ -232,11 +232,11 @@ Generate human-readable report:
 ||----------|--------|-----------|
 || Language | Rust | Same language as harness; zero overhead integration; no subprocess |
 || Crate structure | Separate crates (crb-aggregator, crb-auditor) | Independently publishable, testable, and usable as library or CLI |
-|| Regex crate | `regex` | Standard, well-optimised; compiled patterns via `once_cell::sync::Lazy` |
+|| Regex crate | `regex` | Standard, well-optimised; compiled patterns via `LazyLock` |
 || JSON parsing | `serde_json` | Already a dependency; matches existing `Finding` serde derives |
 || Module boundary | Pure functions, no I/O | File I/O stays in main.rs; modules are testable in isolation |
 || Dedup strategy | Group-key then Jaccard | Matches Python exactly; O(n²) Jaccard only for remaining ungrouped |
 || Severity type | `enum Severity` in `crb-agents` | Strongly-typed, cross-crate shared; no magic strings |
-|| Compile-once patterns | `once_cell::sync::Lazy<Vec<Regex>>` | Pattern list grows rarely; negligible memory cost |
+|| Compile-once patterns | `LazyLock<Vec<Regex>>` | Pattern list grows rarely; negligible memory cost |
 || parse_report order | table -> bullet -> JSON | Matches Python; table format is the primary Phase 4 format |
 || NEVER_DOWNGRADE priority | Highest | Security/integrity/correctness patterns must always win |

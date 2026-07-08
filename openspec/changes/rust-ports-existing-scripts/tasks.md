@@ -24,9 +24,9 @@
 - [x] Error handling: return descriptive errors for malformed reports, partial parse results
 
 ### Regex Compilation
-- [x] Define `once_cell::sync::Lazy<Regex>` for: heading pattern, table-row field pattern, agent-code pattern
-- [x] Define `once_cell::sync::Lazy<Vec<Regex>>` for: extract-function patterns
-- [x] Define `once_cell::sync::Lazy<Regex>` for each bullet/prose variant pattern
+- [x] Define `LazyLock<Regex>` for: heading pattern, table-row field pattern, agent-code pattern
+- [x] Define `LazyLock<Vec<Regex>>` for: extract-function patterns
+- [x] Define `LazyLock<Regex>` for each bullet/prose variant pattern
 
 ## Module: `crb-auditor` crate
 

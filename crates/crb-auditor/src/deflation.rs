@@ -1,6 +1,6 @@
 use crb_shared::pattern::{has_pattern, make_pattern_list, PatternProvider};
 use regex::Regex;
-use std::sync::LazyLock as Lazy;
+use std::sync::LazyLock;
 
 /// A protected category that should never be downgraded.
 #[derive(Debug)]
@@ -20,7 +20,7 @@ impl PatternProvider for ProtectionCategory {
     }
 }
 
-static NEVER_DOWNGRADE_CATEGORIES: Lazy<Vec<ProtectionCategory>> = Lazy::new(|| {
+static NEVER_DOWNGRADE_CATEGORIES: LazyLock<Vec<ProtectionCategory>> = LazyLock::new(|| {
     vec![
         ProtectionCategory {
             name: "security_vulns",
@@ -80,8 +80,8 @@ static NEVER_DOWNGRADE_CATEGORIES: Lazy<Vec<ProtectionCategory>> = Lazy::new(|| 
     ]
 });
 
-static NEVER_DOWNGRADE_RE: Lazy<Vec<(&'static str, &'static str, Regex)>> =
-    Lazy::new(|| make_pattern_list(NEVER_DOWNGRADE_CATEGORIES.as_ref()));
+static NEVER_DOWNGRADE_RE: LazyLock<Vec<(&'static str, &'static str, Regex)>> =
+    LazyLock::new(|| make_pattern_list(NEVER_DOWNGRADE_CATEGORIES.as_ref()));
 
 /// Check if a finding matches any NEVER_DOWNGRADE pattern.
 ///

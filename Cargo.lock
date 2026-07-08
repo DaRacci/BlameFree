@@ -631,7 +631,6 @@ dependencies = [
  "crb-agents",
  "crb-shared",
  "crb-tools",
- "once_cell",
  "regex",
  "serde",
  "serde_json",
