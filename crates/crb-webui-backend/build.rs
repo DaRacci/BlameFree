@@ -5,7 +5,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo::rerun-if-changed=../crb-webui-frontend/src");
     println!("cargo::rerun-if-changed=../crb-webui-frontend/Cargo.toml");
     println!("cargo::rerun-if-changed=../crb-webui-frontend/index.html");
-    println!("cargo::rerun-if-changed=../crb-webui-frontend/dist");
 
     let status = Command::new("trunk")
         .args(["build", "--release"])

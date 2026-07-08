@@ -11,7 +11,6 @@
 //!   ready-to-use [`RigCoreMcpTool`] instances.
 //! - A SHA256 result cache wraps each tool's output for idempotent calls.
 
-use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;

@@ -97,7 +97,7 @@ pub fn NewRunPage() -> impl IntoView {
         fetch_prs(new_ds);
     };
 
-    let fetch_config = create_local_resource(
+    let _fetch_config = create_local_resource(
         || (),
         move |_| {
             let set_config = set_config;

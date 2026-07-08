@@ -12,9 +12,11 @@ pub enum DashboardEvent {
     /// An agent has started its review for a given PR.
     #[serde(rename = "agent_started")]
     AgentStarted { pr_key: String, role: String },
+
     /// A chunk of streaming response text from an agent.
     #[serde(rename = "agent_chunk")]
     AgentChunk { role: String, chunk: String },
+
     /// An agent has finished its review.
     #[serde(rename = "agent_finished")]
     AgentFinished {
@@ -22,6 +24,7 @@ pub enum DashboardEvent {
         findings: usize,
         success: bool,
     },
+
     /// A single PR has been fully evaluated.
     #[serde(rename = "pr_completed")]
     PrCompleted {
@@ -32,6 +35,7 @@ pub enum DashboardEvent {
         agent_calls: usize,
         findings_count: usize,
     },
+
     /// Progress update during a run.
     #[serde(rename = "run_progress")]
     RunProgress {
@@ -41,6 +45,7 @@ pub enum DashboardEvent {
         total_cost: f64,
         current_pr: Option<String>,
     },
+
     /// The entire run has finished.
     #[serde(rename = "run_finished")]
     RunFinished {

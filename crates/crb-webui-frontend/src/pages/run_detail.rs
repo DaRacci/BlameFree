@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 use crate::api_url;
 use crate::components::progress_bar::ProgressBar;

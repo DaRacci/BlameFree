@@ -61,10 +61,13 @@ pub struct RunHistoryEntry {
 struct CacheEntry {
     /// Relative path from the PR cache directory to the cached file.
     file_path: String,
+
     /// Unix epoch timestamp with nanosecond precision (seconds.nanoseconds).
     timestamp: String,
+
     /// Model name used for this interaction.
     model: String,
+
     /// Optional token count (set if the provider reports it).
     tokens_used: Option<u32>,
 }
@@ -124,10 +127,13 @@ pub struct PrCacheStats {
 pub struct GlobalCacheStats {
     /// Number of PR directories found.
     pub pr_count: usize,
+
     /// Total entries across all PR indices.
     pub total_entries: usize,
+
     /// Total byte size across all PR cache directories.
     pub total_size_bytes: u64,
+
     /// Per-PR breakdown of cache stats.
     pub per_pr: Vec<PrCacheStats>,
 }
@@ -137,10 +143,13 @@ pub struct GlobalCacheStats {
 pub struct PruneResult {
     /// Number of PR directories completely removed.
     pub prs_removed: usize,
+
     /// Total entries removed across all PRs.
     pub entries_removed: usize,
+
     /// Total bytes freed by removing entries/files.
     pub bytes_freed: u64,
+
     /// Number of PR directories kept after pruning.
     pub prs_kept: usize,
 }
@@ -150,16 +159,22 @@ pub struct PruneResult {
 pub struct ScrubResult {
     /// Number of PR directories scanned.
     pub pr_dirs_scanned: usize,
+
     /// Stale entries found (files missing from disk).
     pub stale_entries_found: usize,
+
     /// Orphan files found (on disk but not in index).
     pub orphan_files_found: usize,
+
     /// Corrupted index files found.
     pub corrupted_indices_found: usize,
+
     /// Indices rebuilt from filesystem scan.
     pub indices_rebuilt: usize,
+
     /// Stale entries that were removed (if repair mode).
     pub stale_entries_removed: usize,
+
     /// Orphan files that were removed (if repair mode).
     pub orphan_files_removed: usize,
 }
