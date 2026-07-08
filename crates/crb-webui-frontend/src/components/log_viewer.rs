@@ -1,4 +1,4 @@
-use crate::{api_url, role_display_name};
+use crate::role_display_name;
 use crb_webui_shared::runs::{AgentLogResponse, LogsListResponse};
 use leptos::{component, create_signal, view, IntoView, SignalGet, SignalSet};
 use log::error;
@@ -46,8 +46,8 @@ pub fn LogViewer(logs: LogsListResponse, run_id: String) -> impl IntoView {
                             {format!("PR #{} - {}", pr_key, pr_title)}
                         </summary>
                         <div style=style_pr_body>
-                            {agents.iter().map(move |agent_name| {
-                                let agent_name = agent_name.clone();
+                            {agents.iter().map(move |agent| {
+                                let agent_name = agent.abbreviation.clone();
                                 let run_id_for_fetch = run_id_clone.clone();
                                 let pr_key_for_fetch = pr_key.clone();
                                 let role_for_fetch = agent_name.clone();
@@ -66,7 +66,7 @@ pub fn LogViewer(logs: LogsListResponse, run_id: String) -> impl IntoView {
                                         let set_fetch = set_fetching;
                                         let set_fetched = set_fetched;
                                         wasm_bindgen_futures::spawn_local(async move {
-                                            let url = api_url(&format!("/api/runs/{}/logs/{}/{}", run_id, pr_key, role));
+                                            let url = format!("/api/runs/{}/logs/{}/{}", run_id, pr_key, role);
                                             let resp = gloo_net::http::Request::get(&url).send().await;
                                             match resp {
                                                 Ok(r) if r.ok() => {

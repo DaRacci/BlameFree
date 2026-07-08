@@ -1,4 +1,3 @@
-use crate::api_url;
 use crb_webui_shared::admin::LogsResponse;
 use futures::channel::mpsc;
 use futures::StreamExt;
@@ -27,7 +26,7 @@ pub fn AdminPage() -> impl IntoView {
     // Number of live-streamed lines received
     let (live_line_count, set_live_line_count) = create_signal(0usize);
 
-    let logs_url = api_url("/api/admin/logs");
+    let logs_url = "/api/admin/logs";
     spawn_local(async move {
         match gloo_net::http::Request::get(&logs_url).send().await {
             Ok(resp) => {
@@ -59,7 +58,7 @@ pub fn AdminPage() -> impl IntoView {
         set_loading.set(false);
     });
 
-    let stream_url = api_url("/api/admin/logs/stream");
+    let stream_url = "/api/admin/logs/stream";
     let sse_logs = set_logs;
     let sse_lines = set_live_line_count;
     let sse_conn = set_connection_status;

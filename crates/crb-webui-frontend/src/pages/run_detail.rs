@@ -1,5 +1,3 @@
-
-use crate::api_url;
 use crate::components::progress_bar::ProgressBar;
 use crb_webui_shared::runs::{PrResult, RunDetail};
 use leptos::{
@@ -283,7 +281,7 @@ pub fn RunDetailPage() -> impl IntoView {
 }
 
 async fn get_run_detail(id: &str) -> Result<RunDetail, String> {
-    let url = api_url(&format!("/api/runs/{}", id));
+    let url = format!("/api/runs/{}", id);
     let response = gloo_net::http::Request::get(&url)
         .send()
         .await

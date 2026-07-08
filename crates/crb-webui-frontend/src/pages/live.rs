@@ -1,6 +1,6 @@
 use crate::components::agent_pane::AgentPane;
 use crate::components::progress_bar::ProgressBar;
-use crate::{api_url, role_display_name, AppConfig, DashboardEvent};
+use crate::{role_display_name, AppConfig, DashboardEvent};
 use leptos::{
     component, create_signal, spawn_local, view, IntoView, ReadSignal, SignalGet,
     SignalGetUntracked, SignalSet, SignalUpdate, WriteSignal,
@@ -78,7 +78,7 @@ pub fn LivePage() -> impl IntoView {
 
     // Fetch available roles on mount
     spawn_local(async move {
-        let url = api_url("/api/config");
+        let url = "/api/config";
         if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
             if let Ok(config) = resp.json::<AppConfig>().await {
                 let role_abbrs: Vec<String> =
@@ -110,7 +110,7 @@ pub fn LivePage() -> impl IntoView {
                 return;
             }
 
-            let url = api_url(&format!("/api/runs/{}/live", id));
+            let url = format!("/api/runs/{}/live", id);
 
             match connect_sse(&url).await {
                 Ok(mut rx) => {

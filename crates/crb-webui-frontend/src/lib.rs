@@ -89,12 +89,6 @@ pub enum DashboardEvent {
     RunFinished { total_prs: usize },
 }
 
-#[deprecated(note = "Very useless function.")]
-pub fn api_url(path: &str) -> String {
-    // Use a relative URL so it works regardless of port/proxy
-    path.to_string()
-}
-
 /// Map a role abbreviation to a human-readable display name.
 #[deprecated(note = "Use RoleInfo::display_name() instead, which is more robust and configurable.")]
 fn role_display_name(role: &str) -> String {

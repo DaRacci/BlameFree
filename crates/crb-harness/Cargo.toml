@@ -6,16 +6,17 @@ edition.workspace = true
 [[bin]]
 name = "crb-harness"
 path = "src/main.rs"
+required-features = ["binary"]
 
 [features]
 default = ["reduce-diff"]
+binary = ["clap", "dotenvy", "tracing-subscriber"]
 reduce-diff = []
 exp14_template_vars = ["crb-tools/exp14_template_vars"]
 exp16_adaptive_agents = ["crb-consensus/exp16_adaptive_agents"]
 
 [dependencies]
 anyhow = { workspace = true }
-clap = { workspace = true }
 crb-agents = { path = "../crb-agents" }
 crb-auditor = { path = "../crb-auditor" }
 crb-consensus = { path = "../crb-consensus" }
@@ -25,18 +26,22 @@ crb-reporting = { path = "../crb-reporting" }
 crb-rules = { path = "../crb-rules" }
 crb-shared = { path = "../crb-shared" }
 crb-tools = { path = "../crb-tools" }
-dotenvy = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 rig-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-tempfile = { workspace = true }
 tokio = { workspace = true }
-toml = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+# Binary dependencies
+clap = { workspace = true, optional = true }
+dotenvy = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

@@ -1,4 +1,3 @@
-use crate::api_url;
 use crb_webui_shared::adhoc::AdhocRunSummary;
 use leptos::{
     component, create_local_resource, create_signal, view, IntoView, SignalGet, SignalSet,
@@ -19,10 +18,7 @@ pub fn AdhocRunsPage() -> impl IntoView {
             async move {
                 set_loading.set(true);
                 set_error.set(None);
-                match gloo_net::http::Request::get(&api_url("/api/adhoc/runs"))
-                    .send()
-                    .await
-                {
+                match gloo_net::http::Request::get("/api/adhoc/runs").send().await {
                     Ok(resp) => {
                         if resp.ok() {
                             match resp.json::<Vec<AdhocRunSummary>>().await {

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crate::api_url;
 use crb_webui_shared::runs::{AgentLogResponse, PrAgentEntry, PrAgentsResponse};
 use leptos::{
     component, create_local_resource, create_signal, view, DynAttrs, IntoView, SignalGet, SignalSet,
@@ -39,7 +38,7 @@ pub fn PrDetailPage() -> impl IntoView {
         let set_logs = set_agent_logs;
         let set_logs_loading = set_logs_loading;
         wasm_bindgen_futures::spawn_local(async move {
-            let url = api_url(&format!("/api/runs/{}/prs/{}", rid_clone, pk_clone));
+            let url = format!("/api/runs/{}/prs/{}", rid_clone, pk_clone);
             match gloo_net::http::Request::get(&url).send().await {
                 Ok(r) if r.ok() => match r.json::<PrAgentsResponse>().await {
                     Ok(pr) => {
@@ -60,8 +59,7 @@ pub fn PrDetailPage() -> impl IntoView {
                         wasm_bindgen_futures::spawn_local(async move {
                             let mut results = HashMap::new();
                             for role in &roles {
-                                let log_url =
-                                    api_url(&format!("/api/runs/{}/logs/{}/{}", rid2, pk2, role));
+                                let log_url = format!("/api/runs/{}/logs/{}/{}", rid2, pk2, role);
                                 if let Ok(resp) =
                                     gloo_net::http::Request::get(&log_url).send().await
                                 {

@@ -1,4 +1,4 @@
-use crate::{api_url, AppConfig, NewRunRequest, NewRunResponse, RoleInfo};
+use crate::{AppConfig, NewRunRequest, NewRunResponse, RoleInfo};
 use crb_webui_shared::config::{DatasetInfo, PrEntry, ReasoningEffortsResponse};
 use leptos::{
     component, create_local_resource, create_signal, event_target_value, spawn_local, view,
@@ -661,7 +661,7 @@ pub fn NewRunPage() -> impl IntoView {
 }
 
 async fn get_config() -> Result<AppConfig, String> {
-    let url = api_url("/api/config");
+    let url = "/api/config";
     let response = gloo_net::http::Request::get(&url)
         .send()
         .await
@@ -715,7 +715,7 @@ async fn get_config() -> Result<AppConfig, String> {
 }
 
 async fn create_run(req: NewRunRequest) -> Result<NewRunResponse, String> {
-    let url = api_url("/api/runs");
+    let url = "/api/runs";
     let body = serde_json::to_string(&req).map_err(|e| format!("Serialize error: {e}"))?;
 
     let response = gloo_net::http::Request::post(&url)
@@ -740,7 +740,7 @@ async fn create_run(req: NewRunRequest) -> Result<NewRunResponse, String> {
 }
 
 async fn get_datasets() -> Result<Vec<DatasetInfo>, String> {
-    let url = api_url("/api/config/datasets");
+    let url = "/api/config/datasets";
     let response = gloo_net::http::Request::get(&url)
         .send()
         .await
@@ -759,7 +759,7 @@ async fn get_datasets() -> Result<Vec<DatasetInfo>, String> {
 }
 
 async fn get_dataset_prs(id: &str) -> Result<Vec<PrEntry>, String> {
-    let url = api_url(&format!("/api/datasets/{}/prs", id));
+    let url = format!("/api/datasets/{}/prs", id);
     let response = gloo_net::http::Request::get(&url)
         .send()
         .await
@@ -778,7 +778,7 @@ async fn get_dataset_prs(id: &str) -> Result<Vec<PrEntry>, String> {
 }
 
 async fn get_reasoning_efforts() -> Result<Vec<String>, String> {
-    let url = api_url("/api/config/reasoning-efforts");
+    let url = "/api/config/reasoning-efforts";
     let response = gloo_net::http::Request::get(&url)
         .send()
         .await

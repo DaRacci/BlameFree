@@ -627,7 +627,6 @@ dependencies = [
 name = "crb-auditor"
 version = "0.1.0"
 dependencies = [
- "clap",
  "crb-agents",
  "crb-shared",
  "crb-tools",
@@ -718,7 +717,6 @@ dependencies = [
  "sha2",
  "tempfile",
  "tokio",
- "toml",
  "tracing",
  "tracing-subscriber",
 ]

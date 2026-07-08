@@ -8,7 +8,6 @@ name = "crb_auditor"
 path = "src/lib.rs"
 
 [dependencies]
-clap = { workspace = true }
 crb-agents = { path = "../crb-agents" }
 crb-tools = { path = "../crb-tools" }
 crb-shared = { path = "../crb-shared" }

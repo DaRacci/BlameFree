@@ -1,11 +1,14 @@
-use crate::{api_url, AppConfig, RoleInfo};
+use crate::{AppConfig, RoleInfo};
 use crb_webui_shared::adhoc::{AdhocReviewResponse, GithubPrListItem};
-use leptos::*;
+use leptos::{
+    component, create_signal, event_target_value, spawn_local, view, IntoView, SignalGet,
+    SignalGetUntracked, SignalSet, SignalUpdate, SignalWith,
+};
 use leptos_router::*;
 
 /// Fetch open PRs for a given owner/repo via the backend proxy.
 async fn fetch_repo_prs(owner: &str, repo: &str) -> Result<Vec<GithubPrListItem>, String> {
-    let url = api_url(&format!("/api/adhoc/prs/{}/{}", owner, repo));
+    let url = format!("/api/adhoc/prs/{}/{}", owner, repo);
     let resp = gloo_net::http::Request::get(&url)
         .send()
         .await
@@ -42,7 +45,7 @@ pub fn AdhocReviewPage() -> impl IntoView {
 
     // Fetch available roles from the server on mount
     spawn_local(async move {
-        let url = api_url("/api/config");
+        let url = "/api/config";
         if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
             if let Ok(config) = resp.json::<AppConfig>().await {
                 set_available_roles.set(config.roles);
@@ -175,7 +178,7 @@ pub fn AdhocReviewPage() -> impl IntoView {
         });
 
         spawn_local(async move {
-            let req = gloo_net::http::Request::post(&api_url("/api/adhoc/review"))
+            let req = gloo_net::http::Request::post("/api/adhoc/review")
                 .header("Content-Type", "application/json");
             let resp = match req.body(body.to_string()) {
                 Ok(r) => r.send().await,
