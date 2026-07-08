@@ -1,8 +1,10 @@
-use crate::{AppConfig, RoleInfo};
+use crate::components::role_selector::RoleSelector;
+use crate::AppConfig;
+use crb_webui_shared::config::RoleInfo;
 use crb_webui_shared::adhoc::{AdhocReviewResponse, GithubPrListItem};
 use leptos::{
     component, create_signal, event_target_value, spawn_local, view, IntoView, SignalGet,
-    SignalGetUntracked, SignalSet, SignalUpdate, SignalWith,
+    SignalGetUntracked, SignalSet, SignalUpdate,
 };
 use leptos_router::*;
 
@@ -53,45 +55,6 @@ pub fn AdhocReviewPage() -> impl IntoView {
         }
     });
 
-    let is_role_disabled = move |role_abbr: &str, role_infos: &Vec<RoleInfo>| -> bool {
-        let selected = selected_roles.get();
-        if selected.contains(&role_abbr.to_string()) {
-            return false;
-        }
-        for s in &selected {
-            if let Some(info) = role_infos.iter().find(|r| r.abbreviation == *s) {
-                if info
-                    .incompatible_with_roles
-                    .contains(&role_abbr.to_string())
-                {
-                    return true;
-                }
-            }
-            if let Some(info) = role_infos.iter().find(|r| r.abbreviation == role_abbr) {
-                if info.incompatible_with_roles.contains(s) {
-                    return true;
-                }
-            }
-        }
-        false
-    };
-
-    let toggle_role = move |role: &str| {
-        let role = role.to_string();
-        set_selected_roles.update(|roles| {
-            if let Some(pos) = roles.iter().position(|r| r == &role) {
-                roles.remove(pos);
-            } else {
-                roles.push(role);
-            }
-        });
-    };
-
-    let is_role_selected = move |role: &str| -> bool {
-        selected_roles.with(|roles| roles.contains(&role.to_string()))
-    };
-
-    // Load open PRs from the backend proxy
     let load_prs = move |_| {
         let owner_val = owner.get_untracked();
         let repo_val = repo.get_untracked();
@@ -398,61 +361,8 @@ pub fn AdhocReviewPage() -> impl IntoView {
                         <label class="form-field__label">"Roles / Agents"</label>
                         <div class="checkbox-group">
                             {move || {
-                                let role_infos = available_roles.get();
-                                let role_infos_cloned = role_infos.clone();
-                                role_infos.iter().map(|role_info| {
-                                    let abbr = role_info.abbreviation.clone();
-                                    let abbr_display = abbr.clone();
-                                    let checked = is_role_selected(&abbr);
-                                    let disabled = is_role_disabled(&abbr, &role_infos_cloned);
-                                    let title = if disabled {
-                                        let incompatible_with = role_infos_cloned.iter()
-                                            .filter(|ri| {
-                                                let selected = selected_roles.get();
-                                                selected.contains(&ri.abbreviation)
-                                                    && ri.incompatible_with_roles.contains(&abbr)
-                                            })
-                                            .map(|ri| ri.abbreviation.clone())
-                                            .chain(
-                                                role_infos_cloned.iter()
-                                                    .filter(|ri| {
-                                                        let selected = selected_roles.get();
-                                                        ri.abbreviation == abbr
-                                                            && selected.iter().any(|s| ri.incompatible_with_roles.contains(s))
-                                                    })
-                                                    .flat_map(|ri| {
-                                                        let selected = selected_roles.get();
-                                                        let s = ri.incompatible_with_roles.iter()
-                                                            .filter(|ir| selected.contains(ir))
-                                                            .cloned()
-                                                            .collect::<Vec<_>>();
-                                                        s
-                                                    })
-                                            )
-                                            .collect::<Vec<_>>();
-                                        format!("Incompatible with: {}", incompatible_with.join(", "))
-                                    } else {
-                                        String::new()
-                                    };
-                                    let label_class = if disabled {
-                                        "checkbox-label checkbox-label--disabled"
-                                    } else {
-                                        "checkbox-label"
-                                    };
-                                    view! {
-                                        <label class=label_class>
-                                            <input
-                                                type="checkbox"
-                                                checked=checked
-                                                disabled=disabled
-                                                on:click=move |_| {
-                                                    toggle_role(&abbr)
-                                                }
-                                            />
-                                            <span title=title>{abbr_display}</span>
-                                        </label>
-                                    }
-                                }).collect::<Vec<_>>()
+                                let roles = available_roles.get();
+                                view! { <RoleSelector available_roles=roles selected_roles=set_selected_roles /> }
                             }}
                         </div>
                         <p class="form-field__helper">"Select at least one role for this review."</p>

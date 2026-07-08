@@ -41,6 +41,41 @@ static RE_CODEBLOCK_JSON: LazyLock<Regex> =
 #[allow(clippy::unwrap_used)]
 static RE_JSON_ARRAY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[[\s\S]*\]").unwrap());
 
+/// Attempt to parse findings from an agent response using a 3-strategy
+/// fallback:
+///
+/// 1. Direct JSON parse of the full response
+/// 2. Extract JSON from markdown code blocks via [`RE_CODEBLOCK_JSON`]
+/// 3. Find any JSON array via [`RE_JSON_ARRAY`]
+///
+/// If `context` is non-empty, a warning is logged with that context on
+/// failure (e.g. `"CACHED"`, `""` for silent failure).
+fn parse_findings_from_response(response: &str, role: &Role, context: &str) -> Vec<Finding> {
+    serde_json::from_str(response).unwrap_or_else(|_| {
+        if let Some(caps) = RE_CODEBLOCK_JSON.captures(response) {
+            #[allow(clippy::unwrap_used)]
+            let inner = caps.get(1).unwrap().as_str().trim();
+            if let Ok(f) = serde_json::from_str::<Vec<Finding>>(inner) {
+                return f;
+            }
+        }
+        if let Some(m) = RE_JSON_ARRAY.find(response) {
+            if let Ok(f) = serde_json::from_str::<Vec<Finding>>(m.as_str()) {
+                return f;
+            }
+        }
+        if !context.is_empty() {
+            tracing::warn!(
+                "Failed to parse {} findings for role {:?}. Response (truncated): {}",
+                context,
+                role,
+                &response[..std::cmp::min(200, response.len())],
+            );
+        }
+        Vec::new()
+    })
+}
+
 /// A [`PromptHook`] that skips tool calls with budget nudge messages when the
 /// agent is approaching its turn limit.
 ///
@@ -117,8 +152,6 @@ Output your JSON findings directly."
     }
 }
 
-// ── MaxTurnsError recovery ────────────────────────────────────────────────
-
 /// Try to extract the last assistant text message from a chat history.
 ///
 /// When [`PromptError::MaxTurnsError`] fires, the agent's accumulated
@@ -191,8 +224,6 @@ pub fn compute_context_cache_key(
         gatherer_prompt_hash, diff_hash, repo_state_hash, model_name
     ))
 }
-
-// ── Cache backend trait ──────────────────────────────────────────────────────
 
 /// Interface for caching LLM interactions (prompts, responses, judge calls).
 ///
@@ -270,9 +301,8 @@ pub trait CacheBackend: Send + Sync {
 
 /// The role of a reviewer agent.
 ///
-/// This is a dynamic newtype around a string abbreviation (e.g. "SA", "CL",
-/// "AR", "SEC", "GEN").  Valid values are loaded at runtime from the agent
-/// manifest (`prompts/agents/*.md`).
+/// This is a dynamic newtype around a string abbreviation.
+/// Valid values are loaded at runtime from the agent manifest (`prompts/agents/*.md`).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Role(pub String);
 
@@ -492,30 +522,7 @@ pub async fn run_reviewers(
                     tracing::info!("Agent cached response (first 500 chars): {}", &response[..preview_len]);
 
                     let mut findings: Vec<Finding> =
-                        serde_json::from_str(&response).unwrap_or_else(|_| {
-                            // Strategy 2: Extract JSON from markdown code blocks
-                            let re = &RE_CODEBLOCK_JSON;
-                            if let Some(caps) = re.captures(&response) {
-                                #[allow(clippy::unwrap_used)]
-                                let inner = caps.get(1).unwrap().as_str().trim();
-                                if let Ok(f) = serde_json::from_str::<Vec<Finding>>(inner) {
-                                    return f;
-                                }
-                            }
-                            // Strategy 3: Find any JSON array in the response
-                            let array_re = &RE_JSON_ARRAY;
-                            if let Some(m) = array_re.find(&response) {
-                                if let Ok(f) = serde_json::from_str::<Vec<Finding>>(m.as_str()) {
-                                    return f;
-                                }
-                            }
-                            tracing::warn!(
-                                "Failed to parse CACHED findings for role {:?}. Response (truncated): {}",
-                                role,
-                                &response[..std::cmp::min(200, response.len())],
-                            );
-                            Vec::new()
-                        });
+                        parse_findings_from_response(&response, &role, "CACHED");
                     if findings.len() > max_findings {
                         tracing::warn!(
                             "Role {:?} produced {} findings (cached), capping at {}",
@@ -635,32 +642,8 @@ pub async fn run_reviewers(
                 let preview_len = std::cmp::min(500, response.len());
                 tracing::info!("Agent raw response (first 500 chars): {}", &response[..preview_len]);
 
-                // Strategy 1: Try direct JSON array parse
                 let mut findings: Vec<Finding> =
-                    serde_json::from_str(&response).unwrap_or_else(|_| {
-                        // Strategy 2: Extract JSON from markdown code blocks
-                        let re = &RE_CODEBLOCK_JSON;
-                        if let Some(caps) = re.captures(&response) {
-                            #[allow(clippy::unwrap_used)]
-                            let inner = caps.get(1).unwrap().as_str().trim();
-                            if let Ok(f) = serde_json::from_str::<Vec<Finding>>(inner) {
-                                return f;
-                            }
-                        }
-                        // Strategy 3: Find any JSON array in the response
-                        let array_re = &RE_JSON_ARRAY;
-                        if let Some(m) = array_re.find(&response) {
-                            if let Ok(f) = serde_json::from_str::<Vec<Finding>>(m.as_str()) {
-                                return f;
-                            }
-                        }
-                        tracing::warn!(
-                            "Failed to parse findings for role {:?}. Raw response (truncated): {}",
-                            role,
-                            &response[..std::cmp::min(200, response.len())],
-                        );
-                        Vec::new()
-                    });
+                    parse_findings_from_response(&response, &role, "");
                 if findings.len() > max_findings {
                     tracing::warn!(
                         "Role {:?} produced {} findings, capping at {}",
@@ -696,28 +679,7 @@ pub async fn run_reviewers(
 
                             // Attempt to parse findings from the recovered text
                             let mut findings: Vec<Finding> =
-                                serde_json::from_str(&text).unwrap_or_else(|_| {
-                                    let re =
-                                        &RE_CODEBLOCK_JSON;
-                                    if let Some(caps) = re.captures(&text) {
-                                        #[allow(clippy::unwrap_used)]
-                                        let inner = caps.get(1).unwrap().as_str().trim();
-                                        if let Ok(f) =
-                                            serde_json::from_str::<Vec<Finding>>(inner)
-                                        {
-                                            return f;
-                                        }
-                                    }
-                                    let array_re = &RE_JSON_ARRAY;
-                                    if let Some(m) = array_re.find(&text) {
-                                        if let Ok(f) =
-                                            serde_json::from_str::<Vec<Finding>>(m.as_str())
-                                        {
-                                            return f;
-                                        }
-                                    }
-                                    Vec::new()
-                                });
+                                parse_findings_from_response(&text, &role, "");
                             if findings.len() > max_findings {
                                 findings.truncate(max_findings);
                             }

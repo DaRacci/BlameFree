@@ -300,10 +300,7 @@ impl LlmCache {
     /// Look up a cached agent response by cache key.
     /// Returns `Some(response_text)` on hit, `None` on miss.
     pub fn lookup_agent(&self, cache_key: &str) -> Option<String> {
-        let index = self.index.lock().ok()?;
-        let entry = index.entries.get(cache_key)?;
-        let response_path = self.dir.join(&entry.file_path);
-        std::fs::read_to_string(&response_path).ok()
+        self.lookup_entry(cache_key)
     }
 
     /// Look up a cached agent response by cache key, also returning usage if available.
@@ -379,21 +376,7 @@ impl LlmCache {
         }
 
         // Update index
-        let mut index = self
-            .index
-            .lock()
-            .map_err(|e| format!("cache index lock: {e}"))?;
-        index.entries.insert(
-            cache_key.to_string(),
-            CacheEntry {
-                file_path: format!("agents/{cache_key}.agent_{role}_response.txt"),
-                timestamp: Self::now(),
-                model: String::new(), // model is part of the cache key, not stored separately
-                tokens_used: None,
-            },
-        );
-        // Persist immediately
-        index.save(&self.index_path());
+        self.update_index(cache_key, format!("agents/{cache_key}.agent_{role}_response.txt"))?;
         Ok(())
     }
 
@@ -432,20 +415,7 @@ impl LlmCache {
         std::fs::write(&verdict_path, verdict_json)?;
 
         // Update index
-        let mut index = self
-            .index
-            .lock()
-            .map_err(|e| format!("cache index lock: {e}"))?;
-        index.entries.insert(
-            cache_key.to_string(),
-            CacheEntry {
-                file_path: format!("judge/{cache_key}.json"),
-                timestamp: Self::now(),
-                model: String::new(),
-                tokens_used: None,
-            },
-        );
-        index.save(&self.index_path());
+        self.update_index(cache_key, format!("judge/{cache_key}.json"))?;
         Ok(())
     }
 
@@ -464,10 +434,7 @@ impl LlmCache {
 
     /// Look up a cached context gatherer response by cache key.
     pub fn lookup_context(&self, cache_key: &str) -> Option<String> {
-        let index = self.index.lock().ok()?;
-        let entry = index.entries.get(cache_key)?;
-        let response_path = self.dir.join(&entry.file_path);
-        std::fs::read_to_string(&response_path).ok()
+        self.lookup_entry(cache_key)
     }
 
     /// Save a context gatherer prompt+response with its cache key.
@@ -484,7 +451,12 @@ impl LlmCache {
         std::fs::write(&prompt_path, prompt)?;
         std::fs::write(&response_path, response)?;
 
-        // Update index
+        self.update_index(cache_key, format!("context/{cache_key}.context_response.txt"))?;
+        Ok(())
+    }
+
+    /// Insert or update a cache entry in the index and persist immediately.
+    fn update_index(&self, cache_key: &str, file_path: String) -> Result<()> {
         self.update_index(cache_key, format!("context/{cache_key}.context_response.txt"))?;
         Ok(())
     }
@@ -498,7 +470,7 @@ impl LlmCache {
         index.entries.insert(
             cache_key.to_string(),
             CacheEntry {
-                file_path: format!("context/{cache_key}.context_response.txt"),
+                file_path,
                 timestamp: Self::now(),
                 model: String::new(),
                 tokens_used: None,
@@ -506,6 +478,14 @@ impl LlmCache {
         );
         index.save(&self.index_path());
         Ok(())
+    }
+
+    /// Look up a cached entry by cache key and return the file content as a string.
+    fn lookup_entry(&self, cache_key: &str) -> Option<String> {
+        let index = self.index.lock().ok()?;
+        let entry = index.entries.get(cache_key)?;
+        let response_path = self.dir.join(&entry.file_path);
+        std::fs::read_to_string(&response_path).ok()
     }
 
     // ── Legacy methods (for backwards compatibility) ───────────────────────

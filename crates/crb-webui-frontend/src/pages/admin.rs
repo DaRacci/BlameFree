@@ -1,10 +1,7 @@
+use crate::sse;
 use crb_webui_shared::admin::LogsResponse;
-use futures::channel::mpsc;
 use futures::StreamExt;
 use leptos::*;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
-use web_sys::MessageEvent;
 
 /// Admin page component.
 ///
@@ -63,7 +60,7 @@ pub fn AdminPage() -> impl IntoView {
     let sse_lines = set_live_line_count;
     let sse_conn = set_connection_status;
     spawn_local(async move {
-        match connect_sse(&stream_url, sse_conn).await {
+        match sse::connect_sse_with_status(&stream_url, sse_conn).await {
             Ok(mut rx) => {
                 while let Some(line) = rx.next().await {
                     sse_logs.update(|s| {
@@ -186,51 +183,3 @@ pub fn AdminPage() -> impl IntoView {
     }
 }
 
-/// Connect to an SSE endpoint and return a channel receiver that yields
-/// event data strings as they arrive.
-async fn connect_sse(
-    url: &str,
-    set_connected: WriteSignal<String>,
-) -> Result<mpsc::UnboundedReceiver<String>, String> {
-    let (tx, rx) = mpsc::unbounded();
-
-    let es = web_sys::EventSource::new(url)
-        .map_err(|e| format!("Failed to construct EventSource: {:?}", e))?;
-
-    // onopen — connection established
-    let on_open = set_connected;
-    let open_closure = Closure::wrap(Box::new(move || {
-        on_open.set("connected".into());
-    }) as Box<dyn FnMut()>);
-    es.set_onopen(Some(open_closure.as_ref().unchecked_ref()));
-    open_closure.forget();
-
-    // onmessage — new event received
-    let tx_clone = tx.clone();
-    let msg_closure = Closure::wrap(Box::new(move |event: MessageEvent| {
-        if let Some(text) = event.data().as_string() {
-            let _ = tx_clone.unbounded_send(text);
-        } else {
-            log::warn!("SSE message with non-string data");
-        }
-    }) as Box<dyn FnMut(MessageEvent)>);
-    es.set_onmessage(Some(msg_closure.as_ref().unchecked_ref()));
-    msg_closure.forget();
-
-    // onerror — connection lost or error
-    let on_err = set_connected;
-    let es_for_err = es.clone();
-    let err_closure = Closure::wrap(Box::new(move || {
-        // EventSource auto-reconnects, but we update the status
-        // readyState: 0=CONNECTING, 1=OPEN, 2=CLOSED
-        if es_for_err.ready_state() == 2 {
-            on_err.set("disconnected".into());
-        } else {
-            on_err.set("connecting".into());
-        }
-    }) as Box<dyn FnMut()>);
-    es.set_onerror(Some(err_closure.as_ref().unchecked_ref()));
-    err_closure.forget();
-
-    Ok(rx)
-}

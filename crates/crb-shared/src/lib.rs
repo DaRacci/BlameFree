@@ -1,6 +1,7 @@
 pub mod deduplicate;
 pub mod finding;
 pub mod jaccard;
+pub mod metrics;
 pub mod pattern;
 pub mod severity;
 

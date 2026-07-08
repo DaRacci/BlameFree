@@ -1,10 +1,10 @@
-use std::{io, process::Command, time::Duration};
-
 use rig_core::{completion::ToolDefinition, tool::Tool};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::error::GitError;
+
+use super::runner::run_git_command;
 
 /// Arguments for [`GitCleanTool`].
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -34,28 +34,6 @@ impl Tool for GitCleanTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let repo_path = args.repo_path;
-
-        let result = tokio::time::timeout(Duration::from_secs(60), async {
-            tokio::task::spawn_blocking(move || {
-                Command::new("git")
-                    .args(["-C", &repo_path, "clean", "-fdx"])
-                    .output()
-            })
-            .await
-            .map_err(|join_err| GitError::CommandFailed(io::Error::other(join_err.to_string())))?
-            .map_err(GitError::CommandFailed)
-        })
-        .await
-        .map_err(|_| GitError::TimeoutElapsed)??;
-
-        if result.status.success() {
-            Ok(String::from_utf8_lossy(&result.stdout).to_string())
-        } else {
-            Err(GitError::NonZeroExit(
-                result.status.code().unwrap_or(-1),
-                String::from_utf8_lossy(&result.stderr).to_string(),
-            ))
-        }
+        run_git_command(&args.repo_path, &["clean", "-fdx"]).await
     }
 }

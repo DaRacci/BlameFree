@@ -15,6 +15,7 @@ use crb_dashboard::DashboardEvent as HarnessEvent;
 use crb_judge::build_judge;
 use crb_reporting::{load_golden_datasets, write_report, PrResult};
 use crb_rules::RuleSet;
+use crb_shared::metrics::MetricsOutput;
 use rig_core::client::ProviderClient;
 use tokio::sync::{broadcast, RwLock};
 use tracing::error;
@@ -332,21 +333,11 @@ pub async fn run_harness(
 
     let elapsed = start_time.elapsed();
 
-    let avg_precision = if total_tp + total_fp > 0 {
-        total_tp as f64 / (total_tp + total_fp) as f64
-    } else {
-        0.0
-    };
-    let avg_recall = if total_tp + total_fn > 0 {
-        total_tp as f64 / (total_tp + total_fn) as f64
-    } else {
-        0.0
-    };
-    let avg_f1 = if (avg_precision + avg_recall) > 0.0 {
-        2.0 * avg_precision * avg_recall / (avg_precision + avg_recall)
-    } else {
-        0.0
-    };
+    let MetricsOutput {
+        precision: avg_precision,
+        recall: avg_recall,
+        f1: avg_f1,
+    } = crb_shared::metrics::compute_aggregate_metrics(total_tp, total_fp, total_fn);
 
     {
         let mut runs = active_runs.write().await;

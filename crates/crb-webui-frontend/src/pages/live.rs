@@ -1,5 +1,6 @@
 use crate::components::agent_pane::AgentPane;
 use crate::components::progress_bar::ProgressBar;
+use crate::sse;
 use crate::{role_display_name, AppConfig, DashboardEvent};
 use leptos::{
     component, create_signal, spawn_local, view, IntoView, ReadSignal, SignalGet,
@@ -105,7 +106,7 @@ pub fn LivePage() -> impl IntoView {
 
             let url = format!("/api/runs/{}/live", id);
 
-            match connect_sse(&url).await {
+            match sse::connect_sse(&url).await {
                 Ok(mut rx) => {
                     set_conn.set(true);
                     set_stat.update(|s| *s = "running".into());
@@ -482,32 +483,4 @@ fn handle_event(
             set_stat.update(|s| *s = "complete".into());
         }
     }
-}
-
-// ─── SSE connection via web_sys::EventSource ──────────────────────────────────
-
-use futures::channel::mpsc;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
-use web_sys::MessageEvent;
-
-async fn connect_sse(url: &str) -> Result<mpsc::UnboundedReceiver<String>, String> {
-    let (tx, rx) = mpsc::unbounded();
-
-    let es = web_sys::EventSource::new(url)
-        .map_err(|e| format!("Failed to construct EventSource: {:?}", e))?;
-
-    let tx_clone = tx.clone();
-    let closure = Closure::wrap(Box::new(move |event: MessageEvent| {
-        if let Some(text) = event.data().as_string() {
-            let _ = tx_clone.unbounded_send(text);
-        } else {
-            log::warn!("SSE message with non-string data");
-        }
-    }) as Box<dyn FnMut(MessageEvent)>);
-
-    es.set_onmessage(Some(closure.as_ref().unchecked_ref()));
-    closure.forget();
-
-    Ok(rx)
 }

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 mod app;
 pub mod components;
 pub mod pages;
+pub mod sse;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewRunRequest {
