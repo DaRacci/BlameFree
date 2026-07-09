@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::harness;
 use crate::server::{ActiveRun, AppState};
+use crb_webui_shared::config::RoleInfo;
+use rustls::pki_types::UnixTime;
 
 pub use crb_shared::CostJson;
 pub use crb_shared::RunDetail;
@@ -218,7 +220,8 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 /// Format a Unix timestamp seconds as an RFC 3339 string.
-fn format_timestamp(secs: u64) -> String {
+fn format_timestamp(time: UnixTime) -> String {
+    let secs = time.as_secs();
     chrono::DateTime::from_timestamp(secs as i64, 0)
         .map(|dt| dt.to_rfc3339())
         .unwrap_or_else(|| "unknown".to_string())
@@ -682,10 +685,7 @@ pub async fn start_run(
     let (tx, _rx) = tokio::sync::broadcast::channel::<crate::events::DashboardEvent>(1024);
 
     let active_run = ActiveRun {
-        created_at: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs(),
+        created_at: UnixTime::now(),
         config: config.clone(),
         tx: tx.clone(),
         completed_prs: 0,
@@ -764,7 +764,7 @@ fn count_prs_in_dataset(dataset_dir: &Path) -> usize {
 // ── Log viewing handlers ────────────────────────────────────────────────────
 
 /// Scan a PR cache directory for agent log files and return deduplicated roles.
-fn scan_agent_roles(pr_cache_dir: &Path) -> Vec<String> {
+fn scan_agent_roles(pr_cache_dir: &Path) -> Vec<RoleInfo> {
     use std::collections::BTreeSet;
     let mut roles = BTreeSet::new();
 
@@ -803,7 +803,14 @@ fn scan_agent_roles(pr_cache_dir: &Path) -> Vec<String> {
         }
     }
 
-    roles.into_iter().collect()
+    roles
+        .into_iter()
+        .map(|abbr| RoleInfo {
+            abbreviation: abbr.clone(),
+            name: abbr,
+            incompatible_with_roles: vec![],
+        })
+        .collect()
 }
 
 /// Try to read an agent log file, returning the contents lossy-decoded.
@@ -1100,11 +1107,14 @@ pub async fn get_pr_agents(
             // For each role, check which log files exist
             let mut entries: Vec<PrAgentEntry> = Vec::new();
             for role in roles {
-                let has_prompt = read_agent_log_file(cd, &pr_key, &role, "prompt").is_some();
-                let has_response = read_agent_log_file(cd, &pr_key, &role, "response").is_some();
-                let has_reasoning = read_agent_log_file(cd, &pr_key, &role, "reasoning").is_some();
+                let has_prompt =
+                    read_agent_log_file(cd, &pr_key, &role.abbreviation, "prompt").is_some();
+                let has_response =
+                    read_agent_log_file(cd, &pr_key, &role.abbreviation, "response").is_some();
+                let has_reasoning =
+                    read_agent_log_file(cd, &pr_key, &role.abbreviation, "reasoning").is_some();
                 entries.push(PrAgentEntry {
-                    role,
+                    role: role.abbreviation,
                     has_prompt,
                     has_response,
                     has_reasoning,
