@@ -215,14 +215,31 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../prompts/agents")
     }
 
-    #[test]
-    fn test_load_manifest_from_real_files() {
+    /// Load the manifest from the real agents directory, or skip the test
+    /// if the directory doesn't exist (e.g. in CI without prompts checked out).
+    fn load_manifest_or_skip() -> Option<AgentManifest> {
         let dir = test_agents_dir();
         if !dir.exists() {
             eprintln!("Skipping: agents directory not found at {:?}", dir);
-            return;
+            return None;
         }
-        let manifest = AgentManifest::load_from_dir(&dir).unwrap();
+        Some(AgentManifest::load_from_dir(&dir).unwrap())
+    }
+
+    /// Unwrap a manifest loaded by [`load_manifest_or_skip`], or return early
+    /// from the enclosing test if the manifest directory was not found.
+    macro_rules! manifest_or_return {
+        () => {
+            match load_manifest_or_skip() {
+                Some(m) => m,
+                None => return,
+            }
+        };
+    }
+
+    #[test]
+    fn test_load_manifest_from_real_files() {
+        let manifest = manifest_or_return!();
         assert!(manifest.has("SA"));
         assert!(manifest.has("CL"));
         assert!(manifest.has("ARCH"));
@@ -236,12 +253,7 @@ mod tests {
 
     #[test]
     fn test_load_manifest_abbreviations() {
-        let dir = test_agents_dir();
-        if !dir.exists() {
-            eprintln!("Skipping: agents directory not found at {:?}", dir);
-            return;
-        }
-        let manifest = AgentManifest::load_from_dir(&dir).unwrap();
+        let manifest = manifest_or_return!();
         let abbrs = manifest.all_abbreviations();
         assert!(abbrs.contains(&"SA"));
         assert!(abbrs.contains(&"CL"));
@@ -252,12 +264,7 @@ mod tests {
 
     #[test]
     fn test_get_sa_entry() {
-        let dir = test_agents_dir();
-        if !dir.exists() {
-            eprintln!("Skipping: agents directory not found at {:?}", dir);
-            return;
-        }
-        let manifest = AgentManifest::load_from_dir(&dir).unwrap();
+        let manifest = manifest_or_return!();
         let sa = manifest.get("SA").unwrap();
         assert_eq!(sa.role_name, "Static Analysis");
         assert_eq!(sa.role_abbreviation, "SA");
@@ -266,12 +273,7 @@ mod tests {
 
     #[test]
     fn test_get_gen_entry() {
-        let dir = test_agents_dir();
-        if !dir.exists() {
-            eprintln!("Skipping: agents directory not found at {:?}", dir);
-            return;
-        }
-        let manifest = AgentManifest::load_from_dir(&dir).unwrap();
+        let manifest = manifest_or_return!();
         let gen = manifest.generalist().unwrap();
         assert_eq!(gen.role_name, "General");
         assert_eq!(gen.role_abbreviation, "GEN");
@@ -281,12 +283,7 @@ mod tests {
 
     #[test]
     fn test_incompatible_with() {
-        let dir = test_agents_dir();
-        if !dir.exists() {
-            eprintln!("Skipping: agents directory not found at {:?}", dir);
-            return;
-        }
-        let manifest = AgentManifest::load_from_dir(&dir).unwrap();
+        let manifest = manifest_or_return!();
         let incompatible = manifest.incompatible_with("GEN");
         assert_eq!(incompatible.len(), 4);
         assert!(incompatible.contains(&"SEC"));
@@ -294,12 +291,7 @@ mod tests {
 
     #[test]
     fn test_get_case_insensitive() {
-        let dir = test_agents_dir();
-        if !dir.exists() {
-            eprintln!("Skipping: agents directory not found at {:?}", dir);
-            return;
-        }
-        let manifest = AgentManifest::load_from_dir(&dir).unwrap();
+        let manifest = manifest_or_return!();
         assert!(manifest.get("sa").is_some());
         assert!(manifest.get("Sa").is_some());
         assert!(manifest.get("gen").is_some());
@@ -307,12 +299,7 @@ mod tests {
 
     #[test]
     fn test_get_unknown_role() {
-        let dir = test_agents_dir();
-        if !dir.exists() {
-            eprintln!("Skipping: agents directory not found at {:?}", dir);
-            return;
-        }
-        let manifest = AgentManifest::load_from_dir(&dir).unwrap();
+        let manifest = manifest_or_return!();
         assert!(manifest.get("UNKNOWN").is_none());
     }
 

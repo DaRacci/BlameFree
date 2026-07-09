@@ -4,7 +4,7 @@ use crb_webui_shared::adhoc::{AdhocReviewResponse, GithubPrListItem};
 use crb_webui_shared::config::RoleInfo;
 use leptos::{
     component, create_signal, event_target_value, spawn_local, view, IntoView, SignalGet,
-    SignalGetUntracked, SignalSet, SignalUpdate,
+    SignalGetUntracked, SignalSet,
 };
 use leptos_router::*;
 

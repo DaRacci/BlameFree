@@ -34,6 +34,7 @@ hmac = { workspace = true }
 oauth2 = { workspace = true, optional = true }
 octocrab = { workspace = true }
 rand = { workspace = true }
+regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
 rig-core = { workspace = true }
 rust-embed = { workspace = true }

@@ -8,6 +8,7 @@ regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
+crb-webui-shared = { path = "../crb-webui-shared" }
 
 [lints]
 workspace = true

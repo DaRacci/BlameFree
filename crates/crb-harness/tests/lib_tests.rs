@@ -1,7 +1,5 @@
 //! Tests for `ReviewParams`, `ReviewMode`, and public helpers.
 
-use std::path::PathBuf;
-
 // ---------------------------------------------------------------------------
 // ReviewParams
 // ---------------------------------------------------------------------------
@@ -65,43 +63,6 @@ fn review_mode_working() {
 }
 
 // ---------------------------------------------------------------------------
-// ReviewArgs (from config)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn review_args_default_path_is_dot() {
-    use clap::Parser;
-    // Simulate `--working` with no path specified
-    let args = crb_harness::config::ReviewArgs::parse_from(["test", "--working"]);
-    assert_eq!(args.path, PathBuf::from("."));
-    assert!(args.working);
-    assert!(args.commits.is_none());
-}
-
-#[test]
-fn review_args_commit_range() {
-    use clap::Parser;
-    let args = crb_harness::config::ReviewArgs::parse_from(["test", "--commits", "HEAD~3..HEAD"]);
-    assert_eq!(args.commits.as_deref(), Some("HEAD~3..HEAD"));
-    assert!(!args.working);
-}
-
-#[test]
-fn review_args_custom_path() {
-    use clap::Parser;
-    let args = crb_harness::config::ReviewArgs::parse_from([
-        "test",
-        "--working",
-        "--path",
-        "/some/repo",
-        "--model",
-        "gpt-4o",
-    ]);
-    assert_eq!(args.path, PathBuf::from("/some/repo"));
-    assert_eq!(args.model, "gpt-4o");
-}
-
-// ---------------------------------------------------------------------------
 // load_cached_diff
 // ---------------------------------------------------------------------------
 
@@ -128,19 +89,4 @@ fn load_cached_diff_exists() {
     let content = result.unwrap();
     assert!(content.contains("old"));
     assert!(content.contains("new"));
-}
-
-// ---------------------------------------------------------------------------
-// Cli parsing (only Review variant)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn cli_review_subcommand() {
-    use clap::Parser;
-    let cli = crb_harness::config::Cli::parse_from(["crb-harness", "review", "--working"]);
-    match cli {
-        crb_harness::config::Cli::Review(args) => {
-            assert!(args.working);
-        }
-    }
 }

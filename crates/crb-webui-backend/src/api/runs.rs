@@ -21,6 +21,7 @@ pub use crb_shared::{
     AgentLogResponse, LogsListResponse, PrAgentEntry, PrAgentsResponse, PrDetailResponse,
     PrLogsEntry,
 };
+pub use crb_shared::{AggregateMetrics, MetricsJson, PrResult, RunConfig, VerdictJson};
 
 /// A single PR result as it appears in the JSON files.
 #[derive(Debug, Clone, Serialize, Deserialize)]

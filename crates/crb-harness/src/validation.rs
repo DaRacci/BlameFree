@@ -11,8 +11,10 @@ use crb_judge::Metrics;
 pub struct Baseline {
     /// Version label (e.g. "5.14").
     pub version: String,
+
     /// Expected metric values at this version.
     pub expected: ExpectedMetrics,
+
     /// Allowed deltas (absolute deviation) for each metric.
     pub thresholds: MetricThresholds,
 }

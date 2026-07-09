@@ -25,3 +25,43 @@ pub struct ReviewArgs {
     )]
     pub model: String,
 }
+
+#[cfg(test)]
+#[cfg(feature = "binary")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn review_args_default_path_is_dot() {
+        use clap::Parser;
+        // Simulate `--working` with no path specified
+        let args = crb_harness::config::ReviewArgs::parse_from(["test", "--working"]);
+        assert_eq!(args.path, PathBuf::from("."));
+        assert!(args.working);
+        assert!(args.commits.is_none());
+    }
+
+    #[test]
+    fn review_args_commit_range() {
+        use clap::Parser;
+        let args =
+            crb_harness::config::ReviewArgs::parse_from(["test", "--commits", "HEAD~3..HEAD"]);
+        assert_eq!(args.commits.as_deref(), Some("HEAD~3..HEAD"));
+        assert!(!args.working);
+    }
+
+    #[test]
+    fn review_args_custom_path() {
+        use clap::Parser;
+        let args = crb_harness::config::ReviewArgs::parse_from([
+            "test",
+            "--working",
+            "--path",
+            "/some/repo",
+            "--model",
+            "gpt-4o",
+        ]);
+        assert_eq!(args.path, PathBuf::from("/some/repo"));
+        assert_eq!(args.model, "gpt-4o");
+    }
+}

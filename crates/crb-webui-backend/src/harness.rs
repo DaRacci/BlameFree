@@ -65,7 +65,6 @@ pub async fn run_harness(
 
     let judge = build_judge(&client, &config.judge_model);
 
-    let prompts_dir = Path::new(&config.prompts_dir);
     let prompt_lib = Arc::new(PromptLibrary::new().expect("Embedded prompts should be available"));
 
     let ruleset = {

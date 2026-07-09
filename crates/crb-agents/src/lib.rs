@@ -18,6 +18,70 @@ pub use crate::manifest::AgentManifest;
 
 use crate::prompts::PromptLibrary;
 
+/// Apply the four standard filesystem tools (read_file, shell, grep, list_dir) to a builder,
+/// all scoped to the given working directory.  The builder must be parameterized over
+/// [`ResponsesCompletionModel`].
+///
+/// This is a macro rather than a function because Rig's `AgentBuilder` changes its generic
+/// `ToolState` type on every `.tool()` call, making it impossible to abstract across tool
+/// counts in a function signature without boxing.
+macro_rules! add_workdir_tools {
+    ($builder:expr, $wd:expr) => {
+        $builder
+            .tool(crb_tools::read_file::ReadFileTool {
+                repo_root: $wd.clone(),
+                ..Default::default()
+            })
+            .tool(crb_tools::shell::ShellTool {
+                work_dir: $wd.clone(),
+                ..Default::default()
+            })
+            .tool(crb_tools::grep::GrepTool {
+                workdir: $wd.clone(),
+            })
+            .tool(crb_tools::list_dir::ListDirTool { workdir: $wd })
+    };
+}
+
+/// Build an agent with the four default filesystem tools (read_file, shell, grep, list_dir)
+/// registered, scoped to the given working directory.
+fn build_agent_with_tools(
+    client: &openai::Client,
+    model: &str,
+    full_preamble: &str,
+    wd: &str,
+    additional_params: &Option<serde_json::Value>,
+) -> Agent<ResponsesCompletionModel> {
+    let wd = wd.to_string();
+    let mut builder = add_workdir_tools!(
+        client.agent(model).preamble(full_preamble),
+        wd
+    )
+    .default_max_turns(6)
+    .temperature(0.3);
+    if let Some(ref params) = additional_params {
+        builder = builder.additional_params(params.clone());
+    }
+    builder.build()
+}
+
+/// Build an agent with no filesystem tools registered.
+fn build_agent_simple(
+    client: &openai::Client,
+    model: &str,
+    full_preamble: &str,
+    additional_params: &Option<serde_json::Value>,
+) -> Agent<ResponsesCompletionModel> {
+    let mut builder = client
+        .agent(model)
+        .preamble(full_preamble)
+        .temperature(0.3);
+    if let Some(ref params) = additional_params {
+        builder = builder.additional_params(params.clone());
+    }
+    builder.build()
+}
+
 /// Build a rig agent for the given role using the embedded prompt library.
 ///
 /// The role's preamble is resolved through the [`PromptLibrary`], which loads
@@ -38,7 +102,7 @@ use crate::prompts::PromptLibrary;
 /// `read_file`, `grep`, `terminal`, and `list_dir` - all scoped to the given
 /// working directory (typically the PR worktree checkout).  If `workdir` is
 /// `None`, no tools are registered and the agent operates on the diff text alone.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments)]
 pub fn build_agent(
     client: &openai::Client,
     model: &str,
@@ -67,10 +131,6 @@ pub fn build_agent(
         }
     }
 
-    // Build agent with tools.
-    // Note: AgentBuilder's ToolState generic changes when .tool() is called
-    // (NoToolConfig -> WithBuilderTools), so each tool combination needs its
-    // own builder chain.
     #[cfg(feature = "exp14_submit_finding")]
     {
         let has_wd = workdir.is_some();
@@ -80,52 +140,26 @@ pub fn build_agent(
             (true, true) => {
                 let wd = workdir.unwrap().to_string();
                 let submit_tool = submit_finding::SubmitFindingTool::new(collector.unwrap());
-                let mut builder = client
-                    .agent(model)
-                    .preamble(&full_preamble)
-                    .tool(crb_tools::read_file::ReadFileTool {
-                        repo_root: wd.clone(),
-                        ..Default::default()
-                    })
-                    .tool(crb_tools::shell::ShellTool {
-                        work_dir: wd.clone(),
-                        ..Default::default()
-                    })
-                    .tool(crb_tools::grep::GrepTool {
-                        workdir: wd.clone(),
-                    })
-                    .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
-                    .tool(submit_tool)
-                    .default_max_turns(6)
-                    .temperature(0.3);
+                let mut builder = add_workdir_tools!(
+                    client.agent(model).preamble(&full_preamble),
+                    wd
+                )
+                .tool(submit_tool)
+                .default_max_turns(6)
+                .temperature(0.3);
                 if let Some(ref params) = additional_params {
                     builder = builder.additional_params(params.clone());
                 }
                 builder.build()
             }
             (true, false) => {
-                let wd = workdir.unwrap().to_string();
-                let mut builder = client
-                    .agent(model)
-                    .preamble(&full_preamble)
-                    .tool(crb_tools::read_file::ReadFileTool {
-                        repo_root: wd.clone(),
-                        ..Default::default()
-                    })
-                    .tool(crb_tools::shell::ShellTool {
-                        work_dir: wd.clone(),
-                        ..Default::default()
-                    })
-                    .tool(crb_tools::grep::GrepTool {
-                        workdir: wd.clone(),
-                    })
-                    .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
-                    .default_max_turns(6)
-                    .temperature(0.3);
-                if let Some(ref params) = additional_params {
-                    builder = builder.additional_params(params.clone());
-                }
-                builder.build()
+                build_agent_with_tools(
+                    client,
+                    model,
+                    &full_preamble,
+                    workdir.unwrap(),
+                    &additional_params,
+                )
             }
             (false, true) => {
                 let submit_tool = submit_finding::SubmitFindingTool::new(collector.unwrap());
@@ -140,14 +174,7 @@ pub fn build_agent(
                 builder.build()
             }
             (false, false) => {
-                let mut builder = client
-                    .agent(model)
-                    .preamble(&full_preamble)
-                    .temperature(0.3);
-                if let Some(ref params) = additional_params {
-                    builder = builder.additional_params(params.clone());
-                }
-                builder.build()
+                build_agent_simple(client, model, &full_preamble, &additional_params)
             }
         }
     }
@@ -155,37 +182,9 @@ pub fn build_agent(
     #[cfg(not(feature = "exp14_submit_finding"))]
     {
         if let Some(wd) = workdir {
-            let wd = wd.to_string();
-            let mut builder = client
-                .agent(model)
-                .preamble(&full_preamble)
-                .tool(crb_tools::read_file::ReadFileTool {
-                    repo_root: wd.clone(),
-                    ..Default::default()
-                })
-                .tool(crb_tools::shell::ShellTool {
-                    work_dir: wd.clone(),
-                    ..Default::default()
-                })
-                .tool(crb_tools::grep::GrepTool {
-                    workdir: wd.clone(),
-                })
-                .tool(crb_tools::list_dir::ListDirTool { workdir: wd })
-                .default_max_turns(6)
-                .temperature(0.3);
-            if let Some(ref params) = additional_params {
-                builder = builder.additional_params(params.clone());
-            }
-            builder.build()
+            build_agent_with_tools(client, model, &full_preamble, wd, &additional_params)
         } else {
-            let mut builder = client
-                .agent(model)
-                .preamble(&full_preamble)
-                .temperature(0.3);
-            if let Some(ref params) = additional_params {
-                builder = builder.additional_params(params.clone());
-            }
-            builder.build()
+            build_agent_simple(client, model, &full_preamble, &additional_params)
         }
     }
 }

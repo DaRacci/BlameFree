@@ -8,6 +8,26 @@ use handlebars::Handlebars;
 use serde_json::Value;
 use std::collections::HashMap;
 
+/// Register a simple Handlebars helper whose implementation only needs
+/// the [`handlebars::Helper`] and [`handlebars::Output`] arguments.
+macro_rules! register_simple_helper {
+    ($registry:expr, $name:expr, |$h:ident, $out:ident| $body:expr) => {
+        $registry.register_helper(
+            $name,
+            Box::new(
+                |$h: &handlebars::Helper,
+                 _: &handlebars::Handlebars,
+                 _: &handlebars::Context,
+                 _: &mut handlebars::RenderContext,
+                 $out: &mut dyn handlebars::Output|
+                 -> handlebars::HelperResult {
+                    $body
+                },
+            ),
+        );
+    };
+}
+
 /// Create a shared Handlebars registry with common settings and helpers.
 ///
 /// All call sites that need a Handlebars instance should use this factory
@@ -24,59 +44,29 @@ pub(crate) fn new_handlebars_registry() -> Handlebars<'static> {
     // equals signs, and apostrophes that must be passed through raw.
     registry.register_escape_fn(handlebars::no_escape);
 
-    registry.register_helper(
-        "lowercase",
-        Box::new(
-            |h: &handlebars::Helper,
-             _: &handlebars::Handlebars,
-             _: &handlebars::Context,
-             _: &mut handlebars::RenderContext,
-             out: &mut dyn handlebars::Output|
-             -> handlebars::HelperResult {
-                let param = h.param(0).and_then(|v| v.value().as_str()).unwrap_or("");
-                out.write(&param.to_lowercase())?;
-                Ok(())
-            },
-        ),
-    );
+    register_simple_helper!(registry, "lowercase", |h, out| {
+        let param = h.param(0).and_then(|v| v.value().as_str()).unwrap_or("");
+        out.write(&param.to_lowercase())?;
+        Ok(())
+    });
 
-    registry.register_helper(
-        "uppercase",
-        Box::new(
-            |h: &handlebars::Helper,
-             _: &handlebars::Handlebars,
-             _: &handlebars::Context,
-             _: &mut handlebars::RenderContext,
-             out: &mut dyn handlebars::Output|
-             -> handlebars::HelperResult {
-                let param = h.param(0).and_then(|v| v.value().as_str()).unwrap_or("");
-                out.write(&param.to_uppercase())?;
-                Ok(())
-            },
-        ),
-    );
+    register_simple_helper!(registry, "uppercase", |h, out| {
+        let param = h.param(0).and_then(|v| v.value().as_str()).unwrap_or("");
+        out.write(&param.to_uppercase())?;
+        Ok(())
+    });
 
     // Register 'join' helper for arrays
-    registry.register_helper(
-        "join",
-        Box::new(
-            |h: &handlebars::Helper,
-             _: &handlebars::Handlebars,
-             _: &handlebars::Context,
-             _: &mut handlebars::RenderContext,
-             out: &mut dyn handlebars::Output|
-             -> handlebars::HelperResult {
-                let items = h
-                    .param(0)
-                    .and_then(|v| v.value().as_array())
-                    .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
-                    .unwrap_or_default();
-                let separator = h.param(1).and_then(|v| v.value().as_str()).unwrap_or(", ");
-                out.write(&items.join(separator))?;
-                Ok(())
-            },
-        ),
-    );
+    register_simple_helper!(registry, "join", |h, out| {
+        let items = h
+            .param(0)
+            .and_then(|v| v.value().as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+            .unwrap_or_default();
+        let separator = h.param(1).and_then(|v| v.value().as_str()).unwrap_or(", ");
+        out.write(&items.join(separator))?;
+        Ok(())
+    });
 
     registry
 }
