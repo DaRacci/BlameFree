@@ -77,6 +77,15 @@ pub fn load_linter_config(path: &str) -> Result<HashMap<String, LinterConfig>, C
 mod tests {
     use super::*;
 
+    fn load_temp_config(filename: &str, content: &str) -> Result<HashMap<String, LinterConfig>, ConfigError> {
+        let dir = std::env::temp_dir();
+        let path = dir.join(filename);
+        std::fs::write(&path, content).expect("failed to write temp config");
+        let result = load_linter_config(path.to_str().unwrap());
+        std::fs::remove_file(&path).ok();
+        result
+    }
+
     #[test]
     fn test_load_linter_config_file_not_found() {
         let result = load_linter_config("/nonexistent/path/linters.toml");
@@ -89,12 +98,7 @@ mod tests {
 
     #[test]
     fn test_load_linter_config_invalid_toml() {
-        // Write a temp file with invalid TOML and load it
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_invalid_linters.toml");
-        std::fs::write(&path, "not toml = [[[").expect("failed to write temp config");
-        let result = load_linter_config(path.to_str().unwrap());
-        std::fs::remove_file(&path).ok();
+        let result = load_temp_config("test_invalid_linters.toml", "not toml = [[[");
         assert!(result.is_err());
         match result.unwrap_err() {
             ConfigError::ParseError(_) => {}
@@ -104,8 +108,6 @@ mod tests {
 
     #[test]
     fn test_load_linter_config_validation_empty_cmd() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_empty_cmd_linters.toml");
         let toml_content = r#"
 [linters.test]
 name = "test"
@@ -114,9 +116,7 @@ timeout_secs = 60
 output_format = "json"
 optional = false
 "#;
-        std::fs::write(&path, toml_content).expect("failed to write temp config");
-        let result = load_linter_config(path.to_str().unwrap());
-        std::fs::remove_file(&path).ok();
+        let result = load_temp_config("test_empty_cmd_linters.toml", toml_content);
         assert!(result.is_err());
         match result.unwrap_err() {
             ConfigError::ValidationError(msg) => {
@@ -128,8 +128,6 @@ optional = false
 
     #[test]
     fn test_load_linter_config_validation_bad_format() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_bad_format_linters.toml");
         let toml_content = r#"
 [linters.test]
 name = "test"
@@ -138,9 +136,7 @@ timeout_secs = 60
 output_format = "yaml"
 optional = false
 "#;
-        std::fs::write(&path, toml_content).expect("failed to write temp config");
-        let result = load_linter_config(path.to_str().unwrap());
-        std::fs::remove_file(&path).ok();
+        let result = load_temp_config("test_bad_format_linters.toml", toml_content);
         assert!(result.is_err());
         match result.unwrap_err() {
             ConfigError::ValidationError(msg) => {
@@ -152,8 +148,6 @@ optional = false
 
     #[test]
     fn test_load_linter_config_valid() {
-        let dir = std::env::temp_dir();
-        let path = dir.join("test_valid_linters.toml");
         let toml_content = r#"
 [linters.ruff]
 name = "ruff"
@@ -169,9 +163,7 @@ timeout_secs = 90
 output_format = "json"
 optional = true
 "#;
-        std::fs::write(&path, toml_content).expect("failed to write temp config");
-        let result = load_linter_config(path.to_str().unwrap());
-        std::fs::remove_file(&path).ok();
+        let result = load_temp_config("test_valid_linters.toml", toml_content);
         assert!(result.is_ok());
         let configs = result.unwrap();
         assert_eq!(configs.len(), 2);

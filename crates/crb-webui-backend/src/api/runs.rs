@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use axum::response::Response;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +25,48 @@ pub use crb_shared::{
     PrLogsEntry,
 };
 pub use crb_shared::{AggregateMetrics, MetricsJson, PrResult, RunConfig, VerdictJson};
+
+/// Helper to build a JSON error response with a given status code and message.
+pub fn err_json(status: StatusCode, msg: impl std::fmt::Display) -> Response {
+    (status, Json(serde_json::json!({"error": msg.to_string()}))).into_response()
+}
+
+/// Helper to return a `NotFound` response.
+pub fn not_found(msg: impl std::fmt::Display) -> Response {
+    err_json(StatusCode::NOT_FOUND, msg)
+}
+
+/// Helper to return a `500` response.
+pub fn internal_err(msg: impl std::fmt::Display) -> Response {
+    err_json(StatusCode::INTERNAL_SERVER_ERROR, msg)
+}
+
+/// Iterate over `.json` files in a directory, yielding (file_path, file_name) pairs.
+/// Skips files whose name starts with `_` and the summary file.
+pub fn iter_json_files(
+    dir: &std::path::Path,
+) -> impl Iterator<Item = (std::path::PathBuf, String)> {
+    let iter: Box<dyn Iterator<Item = _>> = if let Ok(entries) = std::fs::read_dir(dir) {
+        Box::new(entries.flatten().filter_map(|entry| {
+            let path = entry.path();
+            if path.extension().map_or(true, |e| e != "json") {
+                return None;
+            }
+            let fname = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            if fname.starts_with('_') || fname == crb_harness::paths::SUMMARY_FILE {
+                return None;
+            }
+            Some((path, fname))
+        }))
+    } else {
+        Box::new(std::iter::empty())
+    };
+    iter
+}
 
 /// A single PR result as it appears in the JSON files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,13 +188,13 @@ pub struct StartRunResponse {
     pub total_prs: usize,
 }
 
-/// GET /api/runs — list all benchmark runs (both completed and active).
+/// GET /api/runs
+/// list all benchmark runs, including active and completed runs.
 pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
     tracing::info!("GET /api/runs");
     let output_dir = state.output_dir.clone();
     let mut runs: Vec<RunSummary> = Vec::new();
 
-    // 1) Read completed runs from disk
     if output_dir.exists() {
         let entries = match std::fs::read_dir(&output_dir) {
             Ok(entries) => entries,
@@ -220,6 +263,7 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 /// Format a Unix timestamp seconds as an RFC 3339 string.
+#[deprecated(note = "TODO: use UnixTime or chrono::DateTime directly")]
 fn format_timestamp(time: UnixTime) -> String {
     let secs = time.as_secs();
     chrono::DateTime::from_timestamp(secs as i64, 0)
@@ -228,6 +272,7 @@ fn format_timestamp(time: UnixTime) -> String {
 }
 
 /// Compute duration from the newest and oldest file timestamps in a directory.
+#[deprecated(note = "TODO: use chrono or std::fs::metadata directly")]
 fn compute_duration_from_timestamps(path: &Path) -> f64 {
     use std::fs;
     let mut oldest = f64::MAX;
@@ -477,22 +522,14 @@ pub async fn get_run(
 
     if !run_path.exists() || !run_path.is_dir() {
         tracing::error!("Run directory not found: {}", run_path.display());
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": format!("Run not found: {}", id)})),
-        )
-            .into_response();
+        return not_found(format!("Run not found: {}", id));
     }
 
     let entries = match std::fs::read_dir(&run_path) {
         Ok(entries) => entries,
         Err(e) => {
             tracing::error!("Failed to read run dir {}: {}", run_path.display(), e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": e.to_string()})),
-            )
-                .into_response();
+            return internal_err(e.to_string());
         }
     };
 
@@ -1180,39 +1217,19 @@ pub async fn get_pr_detail(
 
     let run_path = state.output_dir.join(&id);
     if !run_path.exists() || !run_path.is_dir() {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": format!("Run not found: {}", id) })),
-        )
-            .into_response();
+        return not_found(format!("Run not found: {id}"));
     }
 
     // Find the matching PR result file — pr_key could be a filename fragment or PR number
     let entries = match std::fs::read_dir(&run_path) {
         Ok(e) => e,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({"error": "Cannot read run directory"})),
-            )
-                .into_response()
-        }
+        Err(_) => return internal_err("Cannot read run directory"),
     };
 
+    use crate::api::runs::iter_json_files;
+
     let pr_key_lower = pr_key.to_lowercase();
-    for entry in entries.flatten() {
-        let file_path = entry.path();
-        if file_path.extension().map_or(true, |e| e != "json") {
-            continue;
-        }
-        let fname = file_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        if fname == crb_harness::paths::SUMMARY_FILE || fname.starts_with("candidates") {
-            continue;
-        }
+    for (file_path, fname) in iter_json_files(&run_path) {
 
         // Match by filename containing pr_key, or by PR number extracted from URL
         let content = match std::fs::read_to_string(&file_path) {
@@ -1262,9 +1279,5 @@ pub async fn get_pr_detail(
         }
     }
 
-    (
-        StatusCode::NOT_FOUND,
-        Json(serde_json::json!({"error": format!("PR not found: {}", pr_key) })),
-    )
-        .into_response()
+    not_found(format!("PR not found: {pr_key}"))
 }

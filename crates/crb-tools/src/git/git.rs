@@ -7,14 +7,15 @@ pub mod clean;
 pub mod diff;
 
 use std::fmt;
-use std::process::Command;
 use std::time::Duration;
 
 use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use tokio::task::spawn_blocking;
+
+use super::runner::run_git_command;
+use crate::error::GitError;
 
 /// Git operations the agent can perform.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -65,6 +66,16 @@ impl fmt::Display for GitToolError {
 
 impl std::error::Error for GitToolError {}
 
+impl From<GitError> for GitToolError {
+    fn from(e: GitError) -> Self {
+        match e {
+            GitError::CommandFailed(io_err) => Self::CommandFailed(io_err.to_string()),
+            GitError::NonZeroExit(code, msg) => Self::NonZeroExit(code, msg),
+            GitError::TimeoutElapsed => Self::TimeoutElapsed,
+        }
+    }
+}
+
 /// Tool that provides git operations for the agent.
 ///
 /// Supports log, diff, show, and status operations with path-safety
@@ -103,81 +114,36 @@ impl Tool for GitTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let git_args: Vec<&str> = match &args.operation {
-            GitOperation::Log => vec!["log", "--oneline", "-n", "20"],
+        match &args.operation {
+            GitOperation::Log => {
+                run_git_command(&self.repo_root, &["log", "--oneline", "-n", "20"])
+                    .await
+                    .map_err(GitToolError::from)
+            }
             GitOperation::Diff { base, head } => {
-                return self.run_git_inner(base, head).await;
+                let range = format!("{}...{}", base, head);
+                run_git_command(&self.repo_root, &["diff", &range, "--no-color"])
+                    .await
+                    .map_err(GitToolError::from)
             }
             GitOperation::Show { r#ref } => {
-                vec!["show", r#ref.as_str(), "--no-color"]
+                run_git_command(&self.repo_root, &["show", r#ref.as_str(), "--no-color"])
+                    .await
+                    .map_err(GitToolError::from)
             }
-            GitOperation::Status => vec!["status", "--short"],
-        };
-
-        // For simple operations, run inside timeout
-        let git_args_clone: Vec<String> = git_args.iter().map(|s| s.to_string()).collect();
-        let repo_root = self.repo_root.clone();
-        let timeout = self.timeout;
-
-        tokio::time::timeout(timeout, async move {
-            spawn_blocking(move || {
-                let output = Command::new("git")
-                    .args(["-C", &repo_root])
-                    .args(&git_args_clone)
-                    .output()
-                    .map_err(|e| GitToolError::CommandFailed(e.to_string()))?;
-
-                if output.status.success() {
-                    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-                } else {
-                    Err(GitToolError::NonZeroExit(
-                        output.status.code().unwrap_or(-1),
-                        String::from_utf8_lossy(&output.stderr).to_string(),
-                    ))
-                }
-            })
-            .await
-            .map_err(|e| GitToolError::CommandFailed(e.to_string()))?
-        })
-        .await
-        .map_err(|_| GitToolError::TimeoutElapsed)?
-    }
-}
-
-// Separate impl for the Diff variant which is more complex
-impl GitTool {
-    async fn run_git_inner(&self, base: &str, head: &str) -> Result<String, GitToolError> {
-        let range = format!("{}...{}", base, head);
-        let repo_root = self.repo_root.clone();
-        let timeout = self.timeout;
-
-        tokio::time::timeout(timeout, async move {
-            spawn_blocking(move || {
-                let output = Command::new("git")
-                    .args(["-C", &repo_root, "diff", &range, "--no-color"])
-                    .output()
-                    .map_err(|e| GitToolError::CommandFailed(e.to_string()))?;
-
-                if output.status.success() {
-                    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-                } else {
-                    Err(GitToolError::NonZeroExit(
-                        output.status.code().unwrap_or(-1),
-                        String::from_utf8_lossy(&output.stderr).to_string(),
-                    ))
-                }
-            })
-            .await
-            .map_err(|e| GitToolError::CommandFailed(e.to_string()))?
-        })
-        .await
-        .map_err(|_| GitToolError::TimeoutElapsed)?
+            GitOperation::Status => {
+                run_git_command(&self.repo_root, &["status", "--short"])
+                    .await
+                    .map_err(GitToolError::from)
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
 
     fn init_test_repo(dir: &std::path::Path) {
         Command::new("git")
@@ -210,6 +176,13 @@ mod tests {
             .unwrap();
     }
 
+    fn make_git_tool(repo_root: &std::path::Path) -> GitTool {
+        GitTool {
+            repo_root: repo_root.to_string_lossy().to_string(),
+            timeout: Duration::from_secs(10),
+        }
+    }
+
     #[test]
     fn test_git_error_display() {
         let err = GitToolError::TimeoutElapsed;
@@ -224,10 +197,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         init_test_repo(dir.path());
 
-        let tool = GitTool {
-            repo_root: dir.path().to_string_lossy().to_string(),
-            timeout: Duration::from_secs(10),
-        };
+        let tool = make_git_tool(dir.path());
 
         let result = tool
             .call(GitArgs {
@@ -244,10 +214,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         init_test_repo(dir.path());
 
-        let tool = GitTool {
-            repo_root: dir.path().to_string_lossy().to_string(),
-            timeout: Duration::from_secs(10),
-        };
+        let tool = make_git_tool(dir.path());
 
         let result = tool
             .call(GitArgs {

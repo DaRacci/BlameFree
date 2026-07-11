@@ -45,34 +45,29 @@ pub use list_dir::ListDirTool;
 use crate::budget::ToolCallBudget;
 use crate::error::LinterError;
 
-/// Create a [`LinterTool`] for ruff from its configuration.
-pub fn create_ruff_tool(config: &LinterConfig) -> LinterTool {
+/// Internal helper to create a [`LinterTool`] from a [`LinterConfig`] and a parser function.
+fn create_linter_tool_inner(config: &LinterConfig, parser: fn(&str) -> Result<Vec<Finding>, LinterError>) -> LinterTool {
     LinterTool {
         name: config.name.clone(),
         cmd: config.cmd.clone(),
-        parser: parse_ruff_output,
+        parser,
         timeout: Duration::from_secs(config.timeout_secs.unwrap_or(60)),
     }
+}
+
+/// Create a [`LinterTool`] for ruff from its configuration.
+pub fn create_ruff_tool(config: &LinterConfig) -> LinterTool {
+    create_linter_tool_inner(config, parse_ruff_output)
 }
 
 /// Create a [`LinterTool`] for ESLint from its configuration.
 pub fn create_eslint_tool(config: &LinterConfig) -> LinterTool {
-    LinterTool {
-        name: config.name.clone(),
-        cmd: config.cmd.clone(),
-        parser: parse_eslint_output,
-        timeout: Duration::from_secs(config.timeout_secs.unwrap_or(60)),
-    }
+    create_linter_tool_inner(config, parse_eslint_output)
 }
 
 /// Create a [`LinterTool`] for `go vet` from its configuration.
 pub fn create_govet_tool(config: &LinterConfig) -> LinterTool {
-    LinterTool {
-        name: config.name.clone(),
-        cmd: config.cmd.clone(),
-        parser: parse_govet_output,
-        timeout: Duration::from_secs(config.timeout_secs.unwrap_or(60)),
-    }
+    create_linter_tool_inner(config, parse_govet_output)
 }
 
 /// Create a [`LinterTool`] from configuration, selecting the parser based on
@@ -82,12 +77,7 @@ pub fn create_linter_tool(config: &LinterConfig) -> LinterTool {
         OutputFormat::Json => parse_ruff_output,
         OutputFormat::Text => parse_govet_output,
     };
-    LinterTool {
-        name: config.name.clone(),
-        cmd: config.cmd.clone(),
-        parser,
-        timeout: Duration::from_secs(config.timeout_secs.unwrap_or(60)),
-    }
+    create_linter_tool_inner(config, parser)
 }
 
 /// Check if a binary is available on `$PATH`.

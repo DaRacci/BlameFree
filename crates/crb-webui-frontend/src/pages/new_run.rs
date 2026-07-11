@@ -1,7 +1,7 @@
 use crate::components::role_selector::RoleSelector;
 use crate::{AppConfig, NewRunRequest, NewRunResponse};
 use crb_shared::{DEFAULT_MODEL, DEFAULT_MODEL_PRO};
-use crb_webui_shared::config::{DatasetInfo, PrEntry, ReasoningEffortsResponse};
+use crb_webui_shared::config::{DatasetInfo, PrEntry};
 use leptos::{
     component, create_local_resource, create_signal, event_target_value, spawn_local, view,
     IntoView, SignalGet, SignalSet, SignalUpdate,
@@ -521,7 +521,7 @@ pub fn NewRunPage() -> impl IntoView {
                                             let val = level.clone();
                                             let label = level[..1].to_uppercase() + &level[1..];
                                             let is_selected = match &current {
-                                                Some(ref s) if s == &val => true,
+                                                Some(s) if s == &val => true,
                                                 None if val == "medium" => true,
                                                 _ => false,
                                             };
@@ -569,22 +569,7 @@ pub fn NewRunPage() -> impl IntoView {
 }
 
 async fn get_config() -> Result<AppConfig, String> {
-    let url = "/api/config";
-    let response = gloo_net::http::Request::get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.ok() {
-        return Err(format!("Server returned {}", response.status()));
-    }
-
-    let data: AppConfig = response
-        .json()
-        .await
-        .map_err(|e| format!("Parse error: {}", e))?;
-
-    Ok(data)
+    crate::fetch_json("/api/config").await
 }
 
 async fn create_run(req: NewRunRequest) -> Result<NewRunResponse, String> {
@@ -613,58 +598,20 @@ async fn create_run(req: NewRunRequest) -> Result<NewRunResponse, String> {
 }
 
 async fn get_datasets() -> Result<Vec<DatasetInfo>, String> {
-    let url = "/api/config/datasets";
-    let response = gloo_net::http::Request::get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {e}"))?;
-
-    if !response.ok() {
-        return Ok(Vec::new());
-    }
-
-    let data: Vec<DatasetInfo> = response
-        .json()
-        .await
-        .map_err(|e| format!("Parse error: {e}"))?;
-
+    let data: Vec<DatasetInfo> = crate::fetch_json("/api/config/datasets").await?;
     Ok(data)
 }
 
 async fn get_dataset_prs(id: &str) -> Result<Vec<PrEntry>, String> {
     let url = format!("/api/datasets/{}/prs", id);
-    let response = gloo_net::http::Request::get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {e}"))?;
-
-    if !response.ok() {
-        return Ok(Vec::new());
-    }
-
-    let data: Vec<PrEntry> = response
-        .json()
-        .await
-        .map_err(|e| format!("Parse error: {e}"))?;
-
-    Ok(data)
+    crate::fetch_json(&url).await
 }
 
 async fn get_reasoning_efforts() -> Result<Vec<String>, String> {
-    let url = "/api/config/reasoning-efforts";
-    let response = gloo_net::http::Request::get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {e}"))?;
-
-    if !response.ok() {
-        return Err(format!("Server returned {}", response.status()));
+    #[derive(serde::Deserialize)]
+    struct Wrapper {
+        levels: Vec<String>,
     }
-
-    let data: ReasoningEffortsResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Parse error: {e}"))?;
-
-    Ok(data.levels)
+    let wrapper: Wrapper = crate::fetch_json("/api/config/reasoning-efforts").await?;
+    Ok(wrapper.levels)
 }

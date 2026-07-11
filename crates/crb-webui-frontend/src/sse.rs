@@ -4,6 +4,16 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::MessageEvent;
 
+/// Create an EventSource and an unbounded channel pair.
+fn new_event_source(
+    url: &str,
+) -> Result<(web_sys::EventSource, mpsc::UnboundedSender<String>, mpsc::UnboundedReceiver<String>), String> {
+    let (tx, rx) = mpsc::unbounded();
+    let es = web_sys::EventSource::new(url)
+        .map_err(|e| format!("Failed to construct EventSource: {:?}", e))?;
+    Ok((es, tx, rx))
+}
+
 /// Connect to an SSE endpoint and return a channel receiver that yields
 /// event data strings as they arrive.
 ///
@@ -13,13 +23,8 @@ use web_sys::MessageEvent;
 pub async fn connect_sse(
     url: &str,
 ) -> Result<mpsc::UnboundedReceiver<String>, String> {
-    let (tx, rx) = mpsc::unbounded();
-
-    let es = web_sys::EventSource::new(url)
-        .map_err(|e| format!("Failed to construct EventSource: {:?}", e))?;
-
+    let (es, tx, rx) = new_event_source(url)?;
     attach_onmessage(&es, tx);
-
     Ok(rx)
 }
 
@@ -32,10 +37,7 @@ pub async fn connect_sse_with_status(
     url: &str,
     set_connected: WriteSignal<String>,
 ) -> Result<mpsc::UnboundedReceiver<String>, String> {
-    let (tx, rx) = mpsc::unbounded();
-
-    let es = web_sys::EventSource::new(url)
-        .map_err(|e| format!("Failed to construct EventSource: {:?}", e))?;
+    let (es, tx, rx) = new_event_source(url)?;
 
     // onopen — connection established
     let on_open = set_connected.clone();

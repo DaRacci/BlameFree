@@ -246,38 +246,52 @@ fn build_oauth_client(config: &OAuthConfig, provider: &str) -> Result<BasicClien
 
 // ─── Provider User Info Fetching ─────────────────────────────────────────────
 
+/// Fetch JSON from an OAuth provider endpoint, checking for success and
+/// returning the parsed `serde_json::Value`.
+async fn fetch_oauth_json(
+    url: &str,
+    access_token: &str,
+    provider_name: &str,
+) -> Result<serde_json::Value, (StatusCode, String)> {
+    let http_client = HttpClient::new();
+    let resp = http_client
+        .get(url)
+        .header("Authorization", format!("Bearer {access_token}"))
+        .header("User-Agent", "crb-webui/0.1.0")
+        .send()
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::BAD_GATEWAY,
+                format!("Failed to fetch {provider_name} user: {e}"),
+            )
+        })?;
+
+    if !resp.status().is_success() {
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            format!("{provider_name} API returned {}", resp.status()),
+        ));
+    }
+
+    resp.json().await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("Failed to parse {provider_name} response: {e}"),
+        )
+    })
+}
+
 /// Fetch the authenticated user's profile from the OAuth provider.
 async fn fetch_user(provider: &str, access_token: &str) -> Result<AuthUser, (StatusCode, String)> {
-    let http_client = HttpClient::new();
-
     match provider {
         "github" => {
-            let resp = http_client
-                .get("https://api.github.com/user")
-                .header("Authorization", format!("Bearer {access_token}"))
-                .header("User-Agent", "crb-webui/0.1.0")
-                .send()
-                .await
-                .map_err(|e| {
-                    (
-                        StatusCode::BAD_GATEWAY,
-                        format!("Failed to fetch GitHub user: {e}"),
-                    )
-                })?;
-
-            if !resp.status().is_success() {
-                return Err((
-                    StatusCode::BAD_GATEWAY,
-                    format!("GitHub API returned {}", resp.status()),
-                ));
-            }
-
-            let body: serde_json::Value = resp.json().await.map_err(|e| {
-                (
-                    StatusCode::BAD_GATEWAY,
-                    format!("Failed to parse GitHub response: {e}"),
-                )
-            })?;
+            let body = fetch_oauth_json(
+                "https://api.github.com/user",
+                access_token,
+                "GitHub",
+            )
+            .await?;
 
             Ok(AuthUser {
                 id: body["id"].to_string(),
@@ -288,31 +302,12 @@ async fn fetch_user(provider: &str, access_token: &str) -> Result<AuthUser, (Sta
             })
         }
         "google" => {
-            let resp = http_client
-                .get("https://www.googleapis.com/oauth2/v2/userinfo")
-                .header("Authorization", format!("Bearer {access_token}"))
-                .send()
-                .await
-                .map_err(|e| {
-                    (
-                        StatusCode::BAD_GATEWAY,
-                        format!("Failed to fetch Google user: {e}"),
-                    )
-                })?;
-
-            if !resp.status().is_success() {
-                return Err((
-                    StatusCode::BAD_GATEWAY,
-                    format!("Google API returned {}", resp.status()),
-                ));
-            }
-
-            let body: serde_json::Value = resp.json().await.map_err(|e| {
-                (
-                    StatusCode::BAD_GATEWAY,
-                    format!("Failed to parse Google response: {e}"),
-                )
-            })?;
+            let body = fetch_oauth_json(
+                "https://www.googleapis.com/oauth2/v2/userinfo",
+                access_token,
+                "Google",
+            )
+            .await?;
 
             Ok(AuthUser {
                 id: body["id"].to_string(),
@@ -323,31 +318,12 @@ async fn fetch_user(provider: &str, access_token: &str) -> Result<AuthUser, (Sta
             })
         }
         "gitlab" => {
-            let resp = http_client
-                .get("https://gitlab.com/api/v4/user")
-                .header("Authorization", format!("Bearer {access_token}"))
-                .send()
-                .await
-                .map_err(|e| {
-                    (
-                        StatusCode::BAD_GATEWAY,
-                        format!("Failed to fetch GitLab user: {e}"),
-                    )
-                })?;
-
-            if !resp.status().is_success() {
-                return Err((
-                    StatusCode::BAD_GATEWAY,
-                    format!("GitLab API returned {}", resp.status()),
-                ));
-            }
-
-            let body: serde_json::Value = resp.json().await.map_err(|e| {
-                (
-                    StatusCode::BAD_GATEWAY,
-                    format!("Failed to parse GitLab response: {e}"),
-                )
-            })?;
+            let body = fetch_oauth_json(
+                "https://gitlab.com/api/v4/user",
+                access_token,
+                "GitLab",
+            )
+            .await?;
 
             Ok(AuthUser {
                 id: body["id"].to_string(),

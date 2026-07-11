@@ -1,13 +1,6 @@
-//! Web UI Dashboard for the code review benchmark harness.
-//!
-//! Provides a browser-based GUI with:
-//! - Past run history with metrics
-//! - Live agent monitoring via SSE
-//! - Benchmark launcher
-//! - Per-PR result viewer
-
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 use std::{env, fs};
 
 use anyhow::{anyhow, Result};
@@ -67,11 +60,13 @@ pub struct CliArgs {
     pub config: Option<PathBuf>,
 }
 
-static CANDIDATES: &[&Path] = &[
-    Path::new("/var/log/crb/webui.log"),
-    Path::new("/tmp/crb-webui.log"),
-    Path::new("./output/server.log"),
-];
+static CANDIDATES: LazyLock<Vec<&'static Path>> = LazyLock::new(|| {
+    vec![
+        Path::new("/var/log/crb/webui.log"),
+        Path::new("/tmp/crb-webui.log"),
+        Path::new("./output/server.log"),
+    ]
+});
 
 /// Auto-detect a writable log file path when `--log-file` is not provided.
 ///
@@ -81,7 +76,7 @@ fn resolve_log_path(custom: Option<PathBuf>) -> PathBuf {
         return path;
     }
 
-    for candidate in CANDIDATES {
+    for candidate in CANDIDATES.iter() {
         if let Some(parent) = candidate.parent() {
             let _ = fs::create_dir_all(parent);
         }

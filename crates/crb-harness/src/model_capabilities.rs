@@ -114,24 +114,15 @@ static REASONING_MODEL_IDS: OnceLock<Option<HashSet<String>>> = OnceLock::new();
 /// not yet initialised in async context).
 static USING_FALLBACK: OnceLock<bool> = OnceLock::new();
 
-/// Warm the model capabilities cache by querying the OpenRouter API.
-///
-/// Call this at server startup (before any concurrent agent tasks run)
-/// to avoid fallback heuristics. Safe to call multiple times — subsequent
-/// calls are no-ops.
-///
-/// Uses async reqwest so it's safe inside a tokio runtime.
-pub async fn warm_model_cache() {
-    // Already initialised — nothing to do
-    if REASONING_MODEL_IDS.get().is_some() {
-        return;
-    }
-
-    match fetch_reasoning_models_async().await {
+/// Set the reasoning model cache from a fetch result.
+/// Both async and blocking warm functions delegate to this helper.
+fn set_reasoning_cache(result: Result<HashSet<String>, String>, info_suffix: &str) {
+    match result {
         Ok(ids) => {
             tracing::info!(
                 count = ids.len(),
-                "OpenRouter models API: reasoning-capable models discovered"
+                "OpenRouter models API: reasoning-capable models discovered{}",
+                info_suffix
             );
             let _ = REASONING_MODEL_IDS.set(Some(ids));
             let _ = USING_FALLBACK.set(false);
@@ -145,6 +136,22 @@ pub async fn warm_model_cache() {
             let _ = USING_FALLBACK.set(true);
         }
     }
+}
+
+/// Warm the model capabilities cache by querying the OpenRouter API.
+///
+/// Call this at server startup (before any concurrent agent tasks run)
+/// to avoid fallback heuristics. Safe to call multiple times — subsequent
+/// calls are no-ops.
+///
+/// Uses async reqwest so it's safe inside a tokio runtime.
+pub async fn warm_model_cache() {
+    // Already initialised — nothing to do
+    if REASONING_MODEL_IDS.get().is_some() {
+        return;
+    }
+
+    set_reasoning_cache(fetch_reasoning_models_async().await, "");
 }
 
 /// Async HTTP call to fetch the list of reasoning-capable model IDs.
@@ -183,24 +190,7 @@ pub fn warm_model_cache_blocking() {
         return;
     }
 
-    match fetch_reasoning_models_blocking() {
-        Ok(ids) => {
-            tracing::info!(
-                count = ids.len(),
-                "OpenRouter models API: reasoning-capable models discovered (blocking)"
-            );
-            let _ = REASONING_MODEL_IDS.set(Some(ids));
-            let _ = USING_FALLBACK.set(false);
-        }
-        Err(e) => {
-            tracing::warn!(
-                "OpenRouter model API unreachable ({}); using fallback heuristic",
-                e
-            );
-            let _ = REASONING_MODEL_IDS.set(None);
-            let _ = USING_FALLBACK.set(true);
-        }
-    }
+    set_reasoning_cache(fetch_reasoning_models_blocking(), " (blocking)");
 }
 
 /// Blocking HTTP call — must NOT be called from within a tokio async context.

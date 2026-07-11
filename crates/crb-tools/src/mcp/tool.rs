@@ -72,6 +72,21 @@ impl HttpTransport {
             timeout,
         }
     }
+
+    /// Check a JSON-RPC response body for an error field, returning
+    /// [`KernelError::ToolFailed`] if one is present.
+    fn check_json_rpc_error(body: &Value) -> Result<(), rig_compose::registry::KernelError> {
+        if let Some(error) = body.get("error") {
+            let msg = error
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown MCP error");
+            return Err(rig_compose::registry::KernelError::ToolFailed(
+                msg.to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -109,16 +124,7 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
             ))
         })?;
 
-        // Check for JSON-RPC error
-        if let Some(error) = body.get("error") {
-            let msg = error
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("unknown MCP error");
-            return Err(rig_compose::registry::KernelError::ToolFailed(
-                msg.to_string(),
-            ));
-        }
+        Self::check_json_rpc_error(&body)?;
 
         // Extract tool schemas from result.tools
         let tools = body
@@ -208,16 +214,7 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
             ))
         })?;
 
-        // Check for JSON-RPC error
-        if let Some(error) = body.get("error") {
-            let msg = error
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("unknown MCP error");
-            return Err(rig_compose::registry::KernelError::ToolFailed(
-                msg.to_string(),
-            ));
-        }
+        Self::check_json_rpc_error(&body)?;
 
         // Extract result
         let result = body.get("result").cloned().unwrap_or(Value::Null);

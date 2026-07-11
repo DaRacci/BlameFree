@@ -253,19 +253,5 @@ pub fn RunDetailPage() -> impl IntoView {
 
 async fn get_run_detail(id: &str) -> Result<RunDetail, String> {
     let url = format!("/api/runs/{}", id);
-    let response = gloo_net::http::Request::get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.ok() {
-        return Err(format!("Server returned {}", response.status()));
-    }
-
-    let data: RunDetail = response
-        .json()
-        .await
-        .map_err(|e| format!("Parse error: {}", e))?;
-
-    Ok(data)
+    crate::fetch_json(&url).await
 }

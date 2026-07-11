@@ -163,6 +163,27 @@ impl RuleSet {
 mod tests {
     use super::*;
 
+    /// Create a temporary directory with a single rule file and load the
+    /// ruleset from it. Returns the `TempDir` (keeps it alive) and the
+    /// loaded `RuleSet`.
+    fn with_rule_file(name: &str, frontmatter_globs: &str, body: &str) -> (tempfile::TempDir, RuleSet) {
+        let dir = tempfile::tempdir().unwrap();
+        let content = format!("---\ndescription: {}\nglobs: \"{}\"\n---\n{}", name, frontmatter_globs, body);
+        std::fs::write(dir.path().join(name), content).unwrap();
+        let rs = RuleSet::load_from_dir(dir.path()).unwrap();
+        (dir, rs)
+    }
+
+    /// Create a temporary directory with a single always-apply rule file and
+    /// load the ruleset from it.
+    fn with_always_rule(description: &str, body: &str) -> (tempfile::TempDir, RuleSet) {
+        let dir = tempfile::tempdir().unwrap();
+        let content = format!("---\ndescription: {}\nalways_apply: true\n---\n{}", description, body);
+        std::fs::write(dir.path().join("always.md"), content).unwrap();
+        let rs = RuleSet::load_from_dir(dir.path()).unwrap();
+        (dir, rs)
+    }
+
     #[test]
     fn test_load_from_nonexistent_dir_returns_empty() {
         let dir = Path::new("/tmp/nonexistent-rules-dir-12345");
@@ -182,17 +203,13 @@ mod tests {
     #[test]
     fn test_load_rules_from_directory() {
         let dir = tempfile::tempdir().unwrap();
-        let rule1_path = dir.path().join("python-standards.md");
-        let rule2_path = dir.path().join("security.md");
-
         std::fs::write(
-            &rule1_path,
+            dir.path().join("python-standards.md"),
             "---\ndescription: Python Standards\nglobs: \"**/*.py\"\n---\nUse type hints.",
         )
         .unwrap();
-
         std::fs::write(
-            &rule2_path,
+            dir.path().join("security.md"),
             "---\ndescription: Security\nalways_apply: true\n---\nCheck for SQL injection.",
         )
         .unwrap();
@@ -205,38 +222,18 @@ mod tests {
 
     #[test]
     fn test_matching_includes_always_rules() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("always.md"),
-            "---\ndescription: Always\nalways_apply: true\n---\nAlways-on rule.",
-        )
-        .unwrap();
-        std::fs::write(
-            dir.path().join("py.md"),
-            "---\ndescription: Py\nglobs: \"**/*.py\"\n---\nPython rule.",
-        )
-        .unwrap();
-
-        let rs = RuleSet::load_from_dir(dir.path()).unwrap();
+        let (_dir, rs) = with_always_rule("Always", "Always-on rule.");
         let matched = rs.matching(&[PathBuf::from("src/main.rs")]);
-        // Always-apply rule is included even though .rs doesn't match py.md
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].description.as_deref(), Some("Always"));
     }
 
     #[test]
     fn test_matching_globs() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("py.md"),
-            "---\ndescription: Py\nglobs: \"**/*.py\"\n---\nPython rule.",
-        )
-        .unwrap();
-
-        let rs = RuleSet::load_from_dir(dir.path()).unwrap();
+        let (_dir, rs) = with_rule_file("py.md", "**/*.py", "Python rule.");
         let matched = rs.matching(&[PathBuf::from("src/main.py"), PathBuf::from("README.md")]);
         assert_eq!(matched.len(), 1);
-        assert_eq!(matched[0].description.as_deref(), Some("Py"));
+        assert_eq!(matched[0].description.as_deref(), Some("py.md"));
     }
 
     #[test]
@@ -247,7 +244,6 @@ mod tests {
             "---\ndescription: TS\nglobs:\n  - \"**/*.ts\"\n  - \"**/*.tsx\"\n---\nTS rule.",
         )
         .unwrap();
-
         let rs = RuleSet::load_from_dir(dir.path()).unwrap();
         let matched = rs.matching(&[PathBuf::from("src/components.tsx")]);
         assert_eq!(matched.len(), 1);
@@ -255,42 +251,21 @@ mod tests {
 
     #[test]
     fn test_matching_no_match_returns_empty() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("py.md"),
-            "---\ndescription: Py\nglobs: \"**/*.py\"\n---\nPython rule.",
-        )
-        .unwrap();
-
-        let rs = RuleSet::load_from_dir(dir.path()).unwrap();
+        let (_dir, rs) = with_rule_file("py.md", "**/*.py", "Python rule.");
         let matched = rs.matching(&[PathBuf::from("main.rs")]);
         assert!(matched.is_empty());
     }
 
     #[test]
     fn test_format_preamble_empty_when_no_match() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("py.md"),
-            "---\ndescription: Py\nglobs: \"**/*.py\"\n---\nPython rule.",
-        )
-        .unwrap();
-
-        let rs = RuleSet::load_from_dir(dir.path()).unwrap();
+        let (_dir, rs) = with_rule_file("py.md", "**/*.py", "Python rule.");
         let preamble = rs.format_preamble(&[PathBuf::from("main.rs")]);
         assert!(preamble.is_empty());
     }
 
     #[test]
     fn test_format_preamble_with_matched_rules() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("always.md"),
-            "---\ndescription: Always\nalways_apply: true\n---\nAlways-on content.",
-        )
-        .unwrap();
-
-        let rs = RuleSet::load_from_dir(dir.path()).unwrap();
+        let (_dir, rs) = with_always_rule("Always", "Always-on content.");
         let preamble = rs.format_preamble(&[PathBuf::from("any.py")]);
         assert!(!preamble.is_empty());
         assert!(preamble.contains("## Applicable Project Rules"));

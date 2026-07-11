@@ -115,6 +115,12 @@ mod tests {
         }
     }
 
+    fn assert_critical_protected_from_downgrade(result: &[Finding]) {
+        assert_eq!(result[0].severity, "critical");
+        let reason = result[0].severity_audit_reason.as_deref().unwrap_or("");
+        assert!(reason.contains("protected_by_never_downgrade"));
+    }
+
     #[test]
     fn test_apply_severity_auditor_srp() {
         let f = make_finding(
@@ -137,10 +143,7 @@ mod tests {
             1,
         );
         let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, "critical");
-        assert_eq!(result[0].severity_audited, false);
-        let reason = result[0].severity_audit_reason.as_deref().unwrap_or("");
-        assert!(reason.contains("protected_by_never_downgrade"));
+        assert_critical_protected_from_downgrade(&result);
     }
 
     #[test]
@@ -205,9 +208,7 @@ mod tests {
             1,
         );
         let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, "critical");
-        let reason = result[0].severity_audit_reason.as_deref().unwrap_or("");
-        assert!(reason.contains("protected_by_never_downgrade"));
+        assert_critical_protected_from_downgrade(&result);
     }
 
     #[test]

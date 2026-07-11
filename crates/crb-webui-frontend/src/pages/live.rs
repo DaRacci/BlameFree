@@ -337,6 +337,26 @@ pub fn LivePage() -> impl IntoView {
     }
 }
 
+/// Look up the PR key for a given role and update agent state within that PR.
+/// Helper that avoids duplicating the `role_current_pr` → `set_states` lookup chain.
+fn with_role_pr(
+    role_current_pr: &ReadSignal<HashMap<String, String>>,
+    set_states: &WriteSignal<HashMap<String, PrState>>,
+    role: &str,
+    f: impl FnOnce(&mut PerAgentState),
+) {
+    let pr_key = role_current_pr.get().get(role).cloned();
+    if let Some(key) = pr_key {
+        set_states.update(|states| {
+            if let Some(pr) = states.get_mut(&key) {
+                if let Some(agent) = pr.agents.get_mut(role) {
+                    f(agent);
+                }
+            }
+        });
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_event(
     ev: DashboardEvent,
@@ -385,7 +405,7 @@ fn handle_event(
             // currently selected PR is already completed.
             set_selected.update(|sel| match sel {
                 None => *sel = Some(pr_key.clone()),
-                Some(ref current) => {
+                Some(current) => {
                     let should_switch = pr_states
                         .get()
                         .get(current)
@@ -399,17 +419,9 @@ fn handle_event(
         }
 
         DashboardEvent::AgentChunk { role, chunk } => {
-            // Look up the PR this role is currently working on
-            let pr_key = role_current_pr.get().get(&role).cloned();
-            if let Some(key) = pr_key {
-                set_states.update(|states| {
-                    if let Some(pr) = states.get_mut(&key) {
-                        if let Some(agent) = pr.agents.get_mut(&role) {
-                            agent.response.push_str(&chunk);
-                        }
-                    }
-                });
-            }
+            with_role_pr(role_current_pr, set_states, &role, |agent| {
+                agent.response.push_str(&chunk);
+            });
         }
 
         DashboardEvent::AgentFinished {
@@ -417,19 +429,14 @@ fn handle_event(
             findings,
             success,
         } => {
-            let pr_key = role_current_pr.get().get(&role).cloned();
-            if let Some(key) = pr_key {
+            with_role_pr(role_current_pr, set_states, &role, |agent| {
+                agent.status = if success { "done".into() } else { "failed".into() };
+                agent.findings = Some(findings);
+            });
+            // Check if all agents for this PR are done
+            if let Some(pr_key) = role_current_pr.get().get(&role).cloned() {
                 set_states.update(|states| {
-                    if let Some(pr) = states.get_mut(&key) {
-                        if let Some(agent) = pr.agents.get_mut(&role) {
-                            agent.status = if success {
-                                "done".into()
-                            } else {
-                                "failed".into()
-                            };
-                            agent.findings = Some(findings);
-                        }
-                        // Check if all agents for this PR are done
+                    if let Some(pr) = states.get_mut(&pr_key) {
                         if pr.all_completed() {
                             pr.completed = true;
                         }

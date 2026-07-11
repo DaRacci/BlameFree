@@ -59,7 +59,7 @@ fn build_agent_with_tools(
     )
     .default_max_turns(6)
     .temperature(0.3);
-    if let Some(ref params) = additional_params {
+    if let Some(params) = additional_params {
         builder = builder.additional_params(params.clone());
     }
     builder.build()
@@ -76,7 +76,7 @@ fn build_agent_simple(
         .agent(model)
         .preamble(full_preamble)
         .temperature(0.3);
-    if let Some(ref params) = additional_params {
+    if let Some(params) = additional_params {
         builder = builder.additional_params(params.clone());
     }
     builder.build()
@@ -147,7 +147,7 @@ pub fn build_agent(
                 .tool(submit_tool)
                 .default_max_turns(6)
                 .temperature(0.3);
-                if let Some(ref params) = additional_params {
+                if let Some(params) = additional_params {
                     builder = builder.additional_params(params.clone());
                 }
                 builder.build()
@@ -168,7 +168,7 @@ pub fn build_agent(
                     .preamble(&full_preamble)
                     .tool(submit_tool)
                     .temperature(0.3);
-                if let Some(ref params) = additional_params {
+                if let Some(params) = additional_params {
                     builder = builder.additional_params(params.clone());
                 }
                 builder.build()

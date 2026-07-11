@@ -133,33 +133,7 @@ impl CostTracker {
     /// where prices are per-token (derived from per-1M-token rates).
     pub fn total_cost_usd(&self) -> f64 {
         if let Ok(inner) = self.inner.lock() {
-            let agent_input_rate = read_price_env("COST_AGENT_INPUT_PER_1M", 0.14);
-            let agent_output_rate = read_price_env("COST_AGENT_OUTPUT_PER_1M", 0.28);
-            let agent_cache_read_rate = read_price_env("COST_AGENT_CACHE_READ_PER_1M", 0.0028);
-            let agent_reasoning_rate = read_price_env("COST_AGENT_REASONING_PER_1M", 0.28);
-            let judge_input_rate = read_price_env("COST_JUDGE_INPUT_PER_1M", 0.14);
-            let judge_output_rate = read_price_env("COST_JUDGE_OUTPUT_PER_1M", 0.28);
-            let judge_cache_read_rate = read_price_env("COST_JUDGE_CACHE_READ_PER_1M", 0.0028);
-            let judge_reasoning_rate = read_price_env("COST_JUDGE_REASONING_PER_1M", 0.28);
-
-            // Cached tokens charged at discounted cache read rate
-            let agent_uncached_input = inner
-                .agent_tokens_in
-                .saturating_sub(inner.agent_cached_input_tokens);
-            let judge_uncached_input = inner
-                .judge_tokens_in
-                .saturating_sub(inner.judge_cached_input_tokens);
-
-            let agent_cost = (agent_uncached_input as f64 * agent_input_rate / 1_000_000.0)
-                + (inner.agent_tokens_out as f64 * agent_output_rate / 1_000_000.0)
-                + (inner.agent_cached_input_tokens as f64 * agent_cache_read_rate / 1_000_000.0)
-                + (inner.agent_reasoning_tokens as f64 * agent_reasoning_rate / 1_000_000.0);
-            let judge_cost = (judge_uncached_input as f64 * judge_input_rate / 1_000_000.0)
-                + (inner.judge_tokens_out as f64 * judge_output_rate / 1_000_000.0)
-                + (inner.judge_cached_input_tokens as f64 * judge_cache_read_rate / 1_000_000.0)
-                + (inner.judge_reasoning_tokens as f64 * judge_reasoning_rate / 1_000_000.0);
-
-            agent_cost + judge_cost
+            compute_cost(&inner)
         } else {
             0.0
         }
@@ -214,30 +188,8 @@ impl CostTracker {
             let judge_total = inner.judge_cache_hits + inner.judge_cache_misses;
 
             // Compute cost inline (avoid calling total_cost_usd which tries to re-lock the Mutex)
-            let agent_input_rate = read_price_env("COST_AGENT_INPUT_PER_1M", 0.14);
-            let agent_output_rate = read_price_env("COST_AGENT_OUTPUT_PER_1M", 0.28);
-            let agent_cache_read_rate = read_price_env("COST_AGENT_CACHE_READ_PER_1M", 0.0028);
-            let agent_reasoning_rate = read_price_env("COST_AGENT_REASONING_PER_1M", 0.28);
-            let judge_input_rate = read_price_env("COST_JUDGE_INPUT_PER_1M", 0.14);
-            let judge_output_rate = read_price_env("COST_JUDGE_OUTPUT_PER_1M", 0.28);
-            let judge_cache_read_rate = read_price_env("COST_JUDGE_CACHE_READ_PER_1M", 0.0028);
-            let judge_reasoning_rate = read_price_env("COST_JUDGE_REASONING_PER_1M", 0.28);
-            // Cached tokens charged at discounted cache read rate
-            let agent_uncached_input = inner
-                .agent_tokens_in
-                .saturating_sub(inner.agent_cached_input_tokens);
-            let judge_uncached_input = inner
-                .judge_tokens_in
-                .saturating_sub(inner.judge_cached_input_tokens);
-
-            let agent_cost = (agent_uncached_input as f64 * agent_input_rate / 1_000_000.0)
-                + (inner.agent_tokens_out as f64 * agent_output_rate / 1_000_000.0)
-                + (inner.agent_cached_input_tokens as f64 * agent_cache_read_rate / 1_000_000.0)
-                + (inner.agent_reasoning_tokens as f64 * agent_reasoning_rate / 1_000_000.0);
-            let judge_cost = (judge_uncached_input as f64 * judge_input_rate / 1_000_000.0)
-                + (inner.judge_tokens_out as f64 * judge_output_rate / 1_000_000.0)
-                + (inner.judge_cached_input_tokens as f64 * judge_cache_read_rate / 1_000_000.0)
-                + (inner.judge_reasoning_tokens as f64 * judge_reasoning_rate / 1_000_000.0);
+            let agent_cost = compute_cost(&inner);
+            let judge_cost = 0.0; // compute_cost already returns total
 
             CostSummary {
                 agent_tokens_in: inner.agent_tokens_in,
@@ -294,6 +246,39 @@ impl Default for CostTracker {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Compute the USD cost from the given inner state using env-configured pricing rates.
+///
+/// Pricing rates are read from environment variables (see module docs for defaults).
+fn compute_cost(inner: &CostTrackerInner) -> f64 {
+    let agent_input_rate = read_price_env("COST_AGENT_INPUT_PER_1M", 0.14);
+    let agent_output_rate = read_price_env("COST_AGENT_OUTPUT_PER_1M", 0.28);
+    let agent_cache_read_rate = read_price_env("COST_AGENT_CACHE_READ_PER_1M", 0.0028);
+    let agent_reasoning_rate = read_price_env("COST_AGENT_REASONING_PER_1M", 0.28);
+    let judge_input_rate = read_price_env("COST_JUDGE_INPUT_PER_1M", 0.14);
+    let judge_output_rate = read_price_env("COST_JUDGE_OUTPUT_PER_1M", 0.28);
+    let judge_cache_read_rate = read_price_env("COST_JUDGE_CACHE_READ_PER_1M", 0.0028);
+    let judge_reasoning_rate = read_price_env("COST_JUDGE_REASONING_PER_1M", 0.28);
+
+    // Cached tokens charged at discounted cache read rate
+    let agent_uncached_input = inner
+        .agent_tokens_in
+        .saturating_sub(inner.agent_cached_input_tokens);
+    let judge_uncached_input = inner
+        .judge_tokens_in
+        .saturating_sub(inner.judge_cached_input_tokens);
+
+    let agent_cost = (agent_uncached_input as f64 * agent_input_rate / 1_000_000.0)
+        + (inner.agent_tokens_out as f64 * agent_output_rate / 1_000_000.0)
+        + (inner.agent_cached_input_tokens as f64 * agent_cache_read_rate / 1_000_000.0)
+        + (inner.agent_reasoning_tokens as f64 * agent_reasoning_rate / 1_000_000.0);
+    let judge_cost = (judge_uncached_input as f64 * judge_input_rate / 1_000_000.0)
+        + (inner.judge_tokens_out as f64 * judge_output_rate / 1_000_000.0)
+        + (inner.judge_cached_input_tokens as f64 * judge_cache_read_rate / 1_000_000.0)
+        + (inner.judge_reasoning_tokens as f64 * judge_reasoning_rate / 1_000_000.0);
+
+    agent_cost + judge_cost
 }
 
 /// Read a `f64` environment variable, returning `default` if unset or invalid.

@@ -246,9 +246,9 @@ mod tests {
         assert!(manifest.has("SEC"));
         assert!(manifest.has("GEN"));
 
-        let gen = manifest.generalist().unwrap();
-        assert_eq!(gen.role_abbreviation, "GEN");
-        assert!(gen.generalist_agent);
+        let _gen = manifest.generalist().unwrap();
+        assert_eq!(_gen.role_abbreviation, "GEN");
+        assert!(_gen.generalist_agent);
     }
 
     #[test]
@@ -274,11 +274,14 @@ mod tests {
     #[test]
     fn test_get_gen_entry() {
         let manifest = manifest_or_return!();
-        let gen = manifest.generalist().unwrap();
-        assert_eq!(gen.role_name, "General");
-        assert_eq!(gen.role_abbreviation, "GEN");
-        assert!(gen.generalist_agent);
-        assert_eq!(gen.incompatible_with_roles, vec!["SEC", "SA", "CL", "ARCH"]);
+        let _gen = manifest.generalist().unwrap();
+        assert_eq!(_gen.role_name, "General");
+        assert_eq!(_gen.role_abbreviation, "GEN");
+        assert!(_gen.generalist_agent);
+        assert_eq!(
+            _gen.incompatible_with_roles,
+            vec!["SEC", "SA", "CL", "ARCH"]
+        );
     }
 
     #[test]
@@ -361,10 +364,12 @@ Body"#,
 
         let result = AgentManifest::load_from_dir(&dir);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("No agent with `generalist_agent: true`"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No agent with `generalist_agent: true`")
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

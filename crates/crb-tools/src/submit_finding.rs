@@ -359,6 +359,20 @@ mod tests {
         SubmitFindingTool::new(Arc::new(Mutex::new(SubmitFindingCollector::new())))
     }
 
+    fn default_test_args() -> SubmitFindingArgs {
+        SubmitFindingArgs {
+            file: None,
+            line: Some(1),
+            message: "test".to_string(),
+            severity: "medium".to_string(),
+            rule_code: None,
+            evidence: Some("detailed evidence text here".to_string()),
+            path_trace: None,
+            confidence: None,
+            found_by: None,
+        }
+    }
+
     #[tokio::test]
     async fn test_submit_valid_finding() {
         let tool = make_tool();
@@ -408,15 +422,9 @@ mod tests {
     async fn test_invalid_severity() {
         let tool = make_tool();
         let args = SubmitFindingArgs {
-            file: None,
-            line: Some(1),
-            message: "A bug".to_string(),
             severity: "super-critical".to_string(),
-            rule_code: None,
-            evidence: Some("evidence here".to_string()),
-            path_trace: None,
-            confidence: None,
-            found_by: None,
+            message: "A bug".to_string(),
+            ..default_test_args()
         };
         let resp = tool.call(args).await.unwrap();
         assert!(!resp.accepted);
@@ -436,15 +444,8 @@ mod tests {
             ("INFO", "Info"),
         ] {
             let args = SubmitFindingArgs {
-                file: None,
-                line: Some(1),
-                message: "test finding".to_string(),
                 severity: input.to_string(),
-                rule_code: None,
-                evidence: Some("detailed evidence text here".to_string()),
-                path_trace: None,
-                confidence: None,
-                found_by: None,
+                ..default_test_args()
             };
             let resp = tool.call(args).await.unwrap();
             assert!(resp.accepted, "Failed for severity '{}'", input);
@@ -461,15 +462,8 @@ mod tests {
             ("Uncertain", "UNCERTAIN"),
         ] {
             let args = SubmitFindingArgs {
-                file: None,
-                line: Some(1),
-                message: "test".to_string(),
-                severity: "medium".to_string(),
-                rule_code: None,
-                evidence: Some("detailed evidence text here".to_string()),
-                path_trace: None,
                 confidence: Some(input.to_string()),
-                found_by: None,
+                ..default_test_args()
             };
             let resp = tool.call(args).await.unwrap();
             assert!(resp.accepted, "Failed for confidence '{}'", input);
@@ -480,15 +474,8 @@ mod tests {
     async fn test_invalid_confidence() {
         let tool = make_tool();
         let args = SubmitFindingArgs {
-            file: None,
-            line: Some(1),
-            message: "test".to_string(),
-            severity: "medium".to_string(),
-            rule_code: None,
-            evidence: Some("detailed evidence text here".to_string()),
-            path_trace: None,
             confidence: Some("maybe".to_string()),
-            found_by: None,
+            ..default_test_args()
         };
         let resp = tool.call(args).await.unwrap();
         assert!(!resp.accepted);
@@ -500,15 +487,8 @@ mod tests {
         let tool = make_tool();
         for role in &["SA", "CL", "AR", "SEC", "GEN"] {
             let args = SubmitFindingArgs {
-                file: None,
-                line: Some(1),
-                message: "test".to_string(),
-                severity: "medium".to_string(),
-                rule_code: None,
-                evidence: Some("detailed evidence text here".to_string()),
-                path_trace: None,
-                confidence: None,
                 found_by: Some(role.to_string()),
+                ..default_test_args()
             };
             let resp = tool.call(args).await.unwrap();
             assert!(resp.accepted, "Failed for found_by '{}'", role);
@@ -519,15 +499,8 @@ mod tests {
     async fn test_invalid_found_by() {
         let tool = make_tool();
         let args = SubmitFindingArgs {
-            file: None,
-            line: Some(1),
-            message: "test".to_string(),
-            severity: "medium".to_string(),
-            rule_code: None,
-            evidence: Some("detailed evidence text here".to_string()),
-            path_trace: None,
-            confidence: None,
             found_by: Some("QA".to_string()),
+            ..default_test_args()
         };
         let resp = tool.call(args).await.unwrap();
         assert!(!resp.accepted);
@@ -542,11 +515,7 @@ mod tests {
             line: None,
             message: "A bug".to_string(),
             severity: "high".to_string(),
-            rule_code: None,
-            evidence: Some("detailed evidence".to_string()),
-            path_trace: None,
-            confidence: None,
-            found_by: None,
+            ..default_test_args()
         };
         let resp = tool.call(args).await.unwrap();
         assert!(resp.accepted);
@@ -558,15 +527,8 @@ mod tests {
     async fn test_quality_warnings_short_evidence() {
         let tool = make_tool();
         let args = SubmitFindingArgs {
-            file: None,
-            line: Some(1),
-            message: "A bug".to_string(),
-            severity: "high".to_string(),
-            rule_code: None,
             evidence: Some("short".to_string()),
-            path_trace: None,
-            confidence: None,
-            found_by: None,
+            ..default_test_args()
         };
         let resp = tool.call(args).await.unwrap();
         assert!(resp.accepted);

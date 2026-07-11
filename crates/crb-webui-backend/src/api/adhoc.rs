@@ -125,7 +125,7 @@ pub async fn start_adhoc_review(
         .into_response()
 }
 
-/// ── GET /api/adhoc/runs ─────────────────────────────────────────────────
+// ── GET /api/adhoc/runs ─────────────────────────────────────────────────
 ///
 /// List all previous ad-hoc review runs.
 pub async fn list_adhoc_runs(State(state): State<AppState>) -> impl IntoResponse {
@@ -183,37 +183,41 @@ pub async fn get_adhoc_run(
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok());
 
-    let model = summary_data
-        .as_ref()
-        .and_then(|s| s.get("model"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_string();
+    // Helper: extract a string field from summary_data
+    let summary_str = |key: &str, default: &str| -> String {
+        summary_data
+            .as_ref()
+            .and_then(|s| s.get(key))
+            .and_then(|v| v.as_str())
+            .unwrap_or(default)
+            .to_string()
+    };
+    // Helper: extract a f64 field from summary_data
+    let summary_f64 = |key: &str, default: f64| -> f64 {
+        summary_data
+            .as_ref()
+            .and_then(|s| s.get(key))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(default)
+    };
 
+    let model = summary_str("model", "unknown");
     let roles: Vec<String> = summary_data
         .as_ref()
         .and_then(|s| s.get("roles"))
         .and_then(|v| v.as_str())
         .map(|s| s.split(',').map(|r| r.trim().to_string()).collect())
         .unwrap_or_default();
-
-    let status = summary_data
-        .as_ref()
-        .and_then(|s| s.get("status"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    let duration_secs = summary_data
+    let status = summary_str("status", "unknown");
+    let duration_secs = match summary_data
         .as_ref()
         .and_then(|s| s.get("duration_secs"))
-        .and_then(|v| v.as_f64());
-
-    let total_cost = summary_data
-        .as_ref()
-        .and_then(|s| s.get("total_cost_usd"))
         .and_then(|v| v.as_f64())
-        .unwrap_or(0.0);
+    {
+        Some(v) => Some(v),
+        None => None,
+    };
+    let total_cost = summary_f64("total_cost_usd", 0.0);
 
     // Read per-PR result files
     let mut results: Vec<PrResult> = Vec::new();
@@ -229,41 +233,25 @@ pub async fn get_adhoc_run(
         duration_secs: duration_secs.unwrap_or(0.0),
     };
 
-    if let Ok(entries) = std::fs::read_dir(&run_dir) {
-        for entry in entries.flatten() {
-            let file_path = entry.path();
-            if file_path.extension().map_or(true, |e| e != "json") {
-                continue;
-            }
-            let file_name = file_path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
+    for (file_path, fname) in crate::api::runs::iter_json_files(&run_dir) {
+        if let Ok(content) = std::fs::read_to_string(&file_path) {
+            if let Ok(pr_json) = serde_json::from_str::<PrResultJson>(&content) {
+                let metrics = &pr_json.metrics;
+                results.push(PrResult {
+                    pr_number: 0,
+                    pr_key: fname.trim_end_matches(".json").to_string(),
+                    title: pr_json.pr_title,
+                    f1: Some(metrics.f1),
+                    precision: Some(metrics.precision),
+                    recall: Some(metrics.recall),
+                    cost: pr_json.cost.as_ref().map(|c| c.total_usd),
+                    status: Some("done".to_string()),
+                    has_agents: false,
+                });
 
-            if file_name == crb_harness::paths::SUMMARY_FILE {
-                continue;
-            }
-
-            if let Ok(content) = std::fs::read_to_string(&file_path) {
-                if let Ok(pr_json) = serde_json::from_str::<PrResultJson>(&content) {
-                    let metrics = &pr_json.metrics;
-                    results.push(PrResult {
-                        pr_number: 0,
-                        pr_key: file_name.trim_end_matches(".json").to_string(),
-                        title: pr_json.pr_title,
-                        f1: Some(metrics.f1),
-                        precision: Some(metrics.precision),
-                        recall: Some(metrics.recall),
-                        cost: pr_json.cost.as_ref().map(|c| c.total_usd),
-                        status: Some("done".to_string()),
-                        has_agents: false,
-                    });
-
-                    aggregate_metrics.total_tp += metrics.true_positives;
-                    aggregate_metrics.total_fp += metrics.false_positives;
-                    aggregate_metrics.total_fn += metrics.false_negatives;
-                }
+                aggregate_metrics.total_tp += metrics.true_positives;
+                aggregate_metrics.total_fp += metrics.false_positives;
+                aggregate_metrics.total_fn += metrics.false_negatives;
             }
         }
     }

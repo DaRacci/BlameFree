@@ -351,6 +351,14 @@ pub struct GoldenComment {
     pub source: String,
 }
 
+impl GoldenComment {
+    /// Check whether a candidate finding matches this golden comment's
+    /// file and line (exact match on both).
+    pub fn matches_candidate(&self, f: &Finding) -> bool {
+        f.file.as_deref() == Some(&self.file) && f.line == Some(self.line)
+    }
+}
+
 /// Result of matching a golden comment against candidate findings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MatchResult {
@@ -618,7 +626,7 @@ pub async fn run_reviewers(
                 }
 
                 // Save reasoning to cache if available (after stream completes)
-                if let (Some(ref cache), Some(ref reasoning)) = (&cache, &reasoning_text) {
+                if let (Some(cache), Some(reasoning)) = (&cache, &reasoning_text) {
                     cache.save_agent_reasoning_with_key(&cache_key, role.as_str(), reasoning);
                 }
 
@@ -747,7 +755,7 @@ pub async fn judge_comment(
     // Step 1: pre-filter candidates by exact file + line match
     let file_matches: Vec<&Finding> = candidates
         .iter()
-        .filter(|f| f.file.as_deref() == Some(&golden.file) && f.line == Some(golden.line))
+        .filter(|f| golden.matches_candidate(f))
         .collect();
 
     if file_matches.is_empty() {
@@ -905,9 +913,7 @@ pub async fn run_consensus(
                 // Remove the first file+line matched finding from the pool
                 // (judge_comment returns on the first match, so the first
                 // candidate in iteration order is the one that was matched).
-                if let Some(idx) = unmatched.iter().position(|f| {
-                    f.file.as_deref() == Some(&golden.file) && f.line == Some(golden.line)
-                }) {
+                if let Some(idx) = unmatched.iter().position(|f| golden.matches_candidate(f)) {
                     let matched = unmatched.remove(idx);
                     true_positives.push((golden.clone(), matched));
                 }
@@ -1214,6 +1220,35 @@ mod tests {
 
     use super::*;
 
+    /// Build a minimal single-hunk diff for the given file path and content.
+    /// Content should include the `-` and `+` prefix lines (e.g. "-old\\n+new\\n").
+    fn minimal_diff(file_path: &str, content: &str) -> String {
+        format!(
+            "\
+diff --git a/{fp} b/{fp}
+--- a/{fp}
++++ b/{fp}
+@@ -1 +1 @@
+{}",
+            fp = file_path,
+            content = content
+        )
+    }
+
+    /// Shorthand for `minimal_diff("src/main.rs", content)`.
+    fn diff_main(content: &str) -> String {
+        minimal_diff("src/main.rs", content)
+    }
+
+    /// Assert that the precision, recall, and F1 metrics of a report
+    /// are all equal to the given expected value (within 1e-6).
+    fn assert_metrics(report: &ConsensusReport, expected: f64) {
+        let eps = 1e-6;
+        assert!((report.precision - expected).abs() < eps);
+        assert!((report.recall - expected).abs() < eps);
+        assert!((report.f1 - expected).abs() < eps);
+    }
+
     #[test]
     fn test_role_as_str() {
         assert_eq!(Role("SA".into()).as_str(), "SA");
@@ -1282,7 +1317,7 @@ mod tests {
         let candidates: Vec<Finding> = vec![];
         let file_matches: Vec<&Finding> = candidates
             .iter()
-            .filter(|f| f.file.as_deref() == Some(&golden.file) && f.line == Some(golden.line))
+            .filter(|f| golden.matches_candidate(f))
             .collect();
         assert!(file_matches.is_empty());
     }
@@ -1357,9 +1392,7 @@ mod tests {
             agent_usage: Usage::new(),
             judge_usage: Usage::new(),
         };
-        assert!((report.precision - 1.0).abs() < 1e-6);
-        assert!((report.recall - 1.0).abs() < 1e-6);
-        assert!((report.f1 - 1.0).abs() < 1e-6);
+        assert_metrics(&report, 1.0);
     }
 
     #[test]
@@ -1397,9 +1430,7 @@ mod tests {
         assert_eq!(report.true_positives.len(), 1);
         assert_eq!(report.false_positives.len(), 0);
         assert_eq!(report.false_negatives.len(), 0);
-        assert!((report.precision - 1.0).abs() < 1e-6);
-        assert!((report.recall - 1.0).abs() < 1e-6);
-        assert!((report.f1 - 1.0).abs() < 1e-6);
+        assert_metrics(&report, 1.0);
     }
 
     #[test]
@@ -1434,9 +1465,7 @@ mod tests {
         assert_eq!(report.true_positives.len(), 0);
         assert_eq!(report.false_positives.len(), 1);
         assert_eq!(report.false_negatives.len(), 1);
-        assert!((report.precision - 0.0).abs() < 1e-6);
-        assert!((report.recall - 0.0).abs() < 1e-6);
-        assert!((report.f1 - 0.0).abs() < 1e-6);
+        assert_metrics(&report, 0.0);
     }
 
     #[test]
@@ -1547,14 +1576,7 @@ index abc..def 100644
 
     #[test]
     fn test_count_diff_lines_excludes_headers() {
-        let diff = "\
-diff --git a/src/main.rs b/src/main.rs
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -1 +1 @@
--foo
-+bar
-";
+        let diff = diff_main("-foo\n+bar\n");
         assert_eq!(count_diff_lines(diff), 2);
     }
 
@@ -1569,86 +1591,50 @@ diff --git a/README.md b/README.md
 
     #[test]
     fn test_diff_touches_full_panel_languages_rust() {
-        let diff = "\
-diff --git a/src/main.rs b/src/main.rs
-diff --git a/README.md b/README.md
-";
+        let diff = minimal_diff("src/main.rs", "-old\n+new\n");
         assert!(diff_touches_full_panel_languages(diff));
     }
 
     #[test]
     fn test_diff_touches_full_panel_languages_typescript() {
-        let diff = "\
-diff --git a/src/foo.ts b/src/foo.ts
-";
+        let diff = minimal_diff("src/foo.ts", "-old\n+new\n");
         assert!(diff_touches_full_panel_languages(diff));
     }
 
     #[test]
     fn test_diff_touches_full_panel_languages_go() {
-        let diff = "\
-diff --git a/server.go b/server.go
-";
+        let diff = minimal_diff("server.go", "-old\n+new\n");
         assert!(diff_touches_full_panel_languages(diff));
     }
 
     #[test]
     fn test_diff_touches_full_panel_languages_java() {
-        let diff = "\
-diff --git a/Main.java b/Main.java
-";
+        let diff = minimal_diff("Main.java", "-old\n+new\n");
         assert!(diff_touches_full_panel_languages(diff));
     }
 
     #[test]
     fn test_diff_touches_full_panel_languages_cpp() {
-        let diff = "\
-diff --git a/main.cpp b/main.cpp
-";
+        let diff = minimal_diff("main.cpp", "-old\n+new\n");
         assert!(diff_touches_full_panel_languages(diff));
     }
 
     #[test]
     fn test_should_use_single_agent_small_pr() {
-        let diff = "\
-diff --git a/README.md b/README.md
---- a/README.md
-+++ b/README.md
-@@ -1 +1 @@
--old
-+new
-";
+        let diff = minimal_diff("README.md", "-old\n+new\n");
         assert!(should_use_single_agent(diff, 3, 200));
     }
 
     #[test]
     fn test_should_use_single_agent_too_many_files() {
-        let diff = "\
-diff --git a/a.txt b/a.txt
---- a/a.txt
-+++ b/a.txt
-@@ -1 +1 @@
--old
-+new
-diff --git a/b.txt b/b.txt
---- a/b.txt
-+++ b/b.txt
-@@ -1 +1 @@
--old
-+new
-diff --git a/c.txt b/c.txt
---- a/c.txt
-+++ b/c.txt
-@@ -1 +1 @@
--old
-+new
-diff --git a/d.txt b/d.txt
---- a/d.txt
-+++ b/d.txt
-@@ -1 +1 @@
--old
-+new
-";
+        let file_count = 4;
+        let diff = (0..file_count)
+            .map(|i| {
+                let fname = format!("a{}.txt", i);
+                minimal_diff(&fname, "-old\n+new\n")
+            })
+            .collect::<Vec<_>>()
+            .join("");
         assert!(!should_use_single_agent(diff, 3, 200));
     }
 
@@ -1669,27 +1655,13 @@ diff --git a/a.txt b/a.txt
 
     #[test]
     fn test_should_use_single_agent_safety_override_rust() {
-        let diff = "\
-diff --git a/src/main.rs b/src/main.rs
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -1 +1 @@
--old
-+new
-";
+        let diff = diff_main("-old\n+new\n");
         assert!(!should_use_single_agent(diff, 3, 200));
     }
 
     #[test]
     fn test_should_use_single_agent_safety_override_go() {
-        let diff = "\
-diff --git a/server.go b/server.go
---- a/server.go
-+++ b/server.go
-@@ -1 +1 @@
--old
-+new
-";
+        let diff = minimal_diff("server.go", "-old\n+new\n");
         assert!(!should_use_single_agent(diff, 3, 200));
     }
 

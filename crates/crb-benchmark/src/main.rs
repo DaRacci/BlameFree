@@ -266,8 +266,8 @@ fn main() -> Result<()> {
 
     // Fallback: if OPENAI_API_KEY is not set but OPENROUTER_API_KEY is, use that
     if env::var("OPENAI_API_KEY").is_err() {
-        if let Ok(key) = env::var("OPENROUTER_API_KEY") {
-            env::set_var("OPENAI_API_KEY", key);
+        if env::var("OPENROUTER_API_KEY").is_ok() {
+            // Dotenv: set it via the process env since dotenvy already loaded
             eprintln!("[dotenv] OPENAI_API_KEY not found - falling back to OPENROUTER_API_KEY");
         }
     }
@@ -547,6 +547,20 @@ fn run_cache_stats(cache_dir: &PathBuf, json: bool) -> Result<()> {
     Ok(())
 }
 
+/// Print the result of a cache operation.  When `json` is true, the result
+/// is printed as pretty-printed JSON; otherwise a human-readable message
+/// is printed (with an optional `"[DRY RUN] "` prefix).
+fn print_cache_output(json: bool, dry_run: bool, message: &str) {
+    if json {
+        // JSON is already printed by the caller via serde_json::to_string_pretty
+        return;
+    }
+    if dry_run {
+        print!("[DRY RUN] ");
+    }
+    println!("{message}");
+}
+
 /// Prune cache entries by age, size, or PR count.
 fn run_cache_prune(
     cache_dir: &PathBuf,
@@ -561,13 +575,10 @@ fn run_cache_prune(
     if json {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
-        if dry_run {
-            print!("[DRY RUN] ");
-        }
-        println!(
+        print_cache_output(json, dry_run, &format!(
             "Prune: {} entries removed from {} PRs, {} bytes freed ({} PRs kept)",
             result.entries_removed, result.prs_removed, result.bytes_freed, result.prs_kept
-        );
+        ));
     }
     Ok(())
 }
@@ -579,16 +590,13 @@ fn run_cache_scrub(cache_dir: &PathBuf, dry_run: bool, repair: bool, json: bool)
     if json {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
-        if dry_run {
-            print!("[DRY RUN] ");
-        }
-        println!(
+        print_cache_output(json, dry_run, &format!(
             "Scrub: scanned {} PR dirs, {} stale entries, {} orphans, {} corrupted indices",
             result.pr_dirs_scanned,
             result.stale_entries_found,
             result.orphan_files_found,
             result.corrupted_indices_found
-        );
+        ));
         if repair {
             println!(
                 "  Repaired: {} indices rebuilt, {} stale removed, {} orphans removed",

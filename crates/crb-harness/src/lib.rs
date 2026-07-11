@@ -439,6 +439,57 @@ pub fn preprocess_diff(raw_diff: &str) -> String {
     }
 }
 
+/// Run the shared agent loop for a set of roles, collecting findings.
+async fn run_agent_roles(
+    client: &rig_core::providers::openai::Client,
+    model: &str,
+    diff: &str,
+    roles: &[&str],
+    max_findings: usize,
+    prompt_lib: &PromptLibrary,
+) -> Vec<Finding> {
+    let mut all_findings = Vec::new();
+
+    for &role in roles {
+        // Build agent with embedded prompt library
+        let agent = build_agent(
+            client,
+            model,
+            role,
+            None,
+            prompt_lib,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        // Call agent with the diff - get real token usage via extended_details
+        match agent.prompt(diff).extended_details().await {
+            Ok(resp) => {
+                let response = resp.output;
+                let _usage = resp.usage;
+                match parse_agent_findings(&response) {
+                    Ok(mut findings) => {
+                        if findings.len() > max_findings {
+                            findings.truncate(max_findings);
+                        }
+                        all_findings.append(&mut findings);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to parse agent response for role {}: {}", role, e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Agent call failed for role {}: {}", role, e);
+            }
+        }
+    }
+
+    all_findings
+}
+
 /// Entry point for reviewing a PR given its diff as a string.
 ///
 /// Builds agents for each role, runs them with the diff, and returns findings.
@@ -457,47 +508,17 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
         params.roles.iter().map(|r| r.as_str()).collect()
     };
 
-    let diff = params.diff;
-    let mut all_findings = Vec::new();
+    let findings = run_agent_roles(
+        &client,
+        &params.model,
+        &params.diff,
+        &roles,
+        params.max_findings,
+        &prompt_lib,
+    )
+    .await;
 
-    for &role in &roles {
-        // Build agent with embedded prompt library
-        let agent = build_agent(
-            &client,
-            &params.model,
-            role,
-            None,
-            &prompt_lib,
-            None,
-            None,
-            None,
-            None,
-        );
-
-        // Call agent with the diff - get real token usage via extended_details
-        match agent.prompt(&diff).extended_details().await {
-            Ok(resp) => {
-                let response = resp.output;
-                let _usage = resp.usage;
-                match parse_agent_findings(&response) {
-                    Ok(mut findings) => {
-                        if findings.len() > params.max_findings {
-                            findings.truncate(params.max_findings);
-                        }
-                        all_findings.append(&mut findings);
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to parse agent response for role {}: {}", role, e);
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::warn!("Agent call failed for role {}: {}", role, e);
-            }
-        }
-    }
-
-    Ok(all_findings)
+    Ok(findings)
 }
 
 /// Like `review_pr` but accepts a [`PromptLibrary`] for custom prompts.
@@ -516,45 +537,15 @@ pub async fn review_pr_with_prompt_lib(
         params.roles.iter().map(|r| r.as_str()).collect()
     };
 
-    let diff = params.diff;
-    let mut all_findings = Vec::new();
-
-    for &role in &roles {
-        // Build agent with loaded prompts (no template engine)
-        let agent = build_agent(
-            &client,
-            &params.model,
-            role,
-            None,
-            prompt_lib,
-            None,
-            None,
-            None,
-            None,
-        );
-
-        // Call agent with the diff
-        match agent.prompt(&diff).extended_details().await {
-            Ok(resp) => {
-                let response = resp.output;
-                let _usage = resp.usage;
-                match parse_agent_findings(&response) {
-                    Ok(mut findings) => {
-                        if findings.len() > params.max_findings {
-                            findings.truncate(params.max_findings);
-                        }
-                        all_findings.append(&mut findings);
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to parse agent response for role {}: {}", role, e);
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::warn!("Agent call failed for role {}: {}", role, e);
-            }
-        }
-    }
+    let mut all_findings = run_agent_roles(
+        &client,
+        &params.model,
+        &params.diff,
+        &roles,
+        params.max_findings,
+        prompt_lib,
+    )
+    .await;
 
     all_findings = post_process_findings(&all_findings);
 

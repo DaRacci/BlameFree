@@ -207,6 +207,65 @@ pub fn dir_size(path: &Path) -> std::io::Result<u64> {
     Ok(total)
 }
 
+/// Iterate over PR subdirectories in a cache base directory, skipping
+/// hidden/underscore-prefixed entries and non-directories.
+///
+/// Returns `(pr_key, pr_dir)` pairs.
+pub fn collect_pr_dirs(base_dir: &Path) -> std::io::Result<Vec<(String, PathBuf)>> {
+    let mut dirs = Vec::new();
+    let read_dir = std::fs::read_dir(base_dir)?;
+    for entry in read_dir {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with('_') || name_str.starts_with('.') {
+            continue;
+        }
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        dirs.push((name_str.to_string(), entry.path()));
+    }
+    Ok(dirs)
+}
+
+/// Load a cache index from a PR directory. Returns `None` if the index is
+/// missing or unparseable.
+fn load_cache_index(pr_dir: &Path) -> Option<(CacheIndex, String)> {
+    let index_path = pr_dir.join(crate::paths::INDEX_FILE);
+    let content = std::fs::read_to_string(&index_path).ok()?;
+    let idx: CacheIndex = serde_json::from_str(&content).ok()?;
+    Some((idx, content))
+}
+
+/// Iterate all files in the standard cache subdirectories (agents/, judge/, context/)
+/// under a PR directory, yielding `(subdir_name, filename, rel_path)` for each file found.
+fn iter_subdir_files(pr_dir: &Path) -> Vec<(String, String, String)> {
+    let mut files = Vec::new();
+    let subdirs = ["agents", "judge", "context"];
+    for subdir_name in &subdirs {
+        let subdir = pr_dir.join(subdir_name);
+        if !subdir.exists() {
+            continue;
+        }
+        if let Ok(read_subdir) = std::fs::read_dir(&subdir) {
+            for file_entry in read_subdir {
+                let file_entry = match file_entry {
+                    Ok(f) => f,
+                    Err(_) => continue,
+                };
+                if !file_entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                    continue;
+                }
+                let fname = file_entry.file_name().to_string_lossy().to_string();
+                let rel_path = format!("{}/{}", subdir_name, fname);
+                files.push((subdir_name.to_string(), fname, rel_path));
+            }
+        }
+    }
+    files
+}
+
 /// Thread-safe content-addressed cache for LLM interactions.
 ///
 /// Each PR gets its own directory with an `index.json` tracking all cached
@@ -553,22 +612,10 @@ impl LlmCache {
         let mut total_size_bytes = 0u64;
         let mut pr_count = 0usize;
 
-        let read_dir = std::fs::read_dir(base_dir)
+        let dirs = collect_pr_dirs(base_dir)
             .map_err(|e| format!("cannot read cache dir {}: {}", base_dir.display(), e))?;
 
-        for entry in read_dir {
-            let entry = entry?;
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with('_') || name_str.starts_with('.') {
-                continue;
-            }
-            if !entry.file_type()?.is_dir() {
-                continue;
-            }
-
-            let pr_key = name_str.to_string();
-            let pr_dir = entry.path();
+        for (pr_key, pr_dir) in &dirs {
             let index_path = pr_dir.join(crate::paths::INDEX_FILE);
 
             let (entry_count, oldest, newest) = match std::fs::read_to_string(&index_path) {
@@ -592,7 +639,7 @@ impl LlmCache {
             pr_count += 1;
 
             per_pr.push(PrCacheStats {
-                pr_key,
+                pr_key: pr_key.clone(),
                 entry_count,
                 total_size_bytes: size,
                 oldest_entry: oldest,
@@ -632,23 +679,14 @@ impl LlmCache {
             bytes_freed: 0,
             prs_kept: 0,
         };
+        let index_path = base_dir.join(crate::paths::INDEX_FILE);
 
         // Collect all PR directories
         let mut pr_dirs: Vec<(String, PathBuf, Option<String>)> = Vec::new();
-        let read_dir = std::fs::read_dir(base_dir)
+        let dirs = collect_pr_dirs(base_dir)
             .map_err(|e| format!("cannot read cache dir {}: {}", base_dir.display(), e))?;
 
-        for entry in read_dir {
-            let entry = entry?;
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with('_') || name_str.starts_with('.') {
-                continue;
-            }
-            if !entry.file_type()?.is_dir() {
-                continue;
-            }
-            let pr_dir = entry.path();
+        for (pr_key, pr_dir) in &dirs {
             let index_path = pr_dir.join(crate::paths::INDEX_FILE);
 
             // Find the newest entry timestamp for this PR
@@ -660,7 +698,7 @@ impl LlmCache {
                         .and_then(|idx| idx.entries.values().map(|e| &e.timestamp).max().cloned())
                 });
 
-            pr_dirs.push((name_str.to_string(), pr_dir, newest));
+            pr_dirs.push((pr_key.clone(), pr_dir.clone(), newest));
         }
 
         if let Some(max) = max_prs {
@@ -693,14 +731,9 @@ impl LlmCache {
             let now = SystemTime::now();
 
             for (_pr_key, pr_dir, _newest) in &pr_dirs {
-                let index_path = pr_dir.join(crate::paths::INDEX_FILE);
-                let content = match std::fs::read_to_string(&index_path) {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                };
-                let mut idx: CacheIndex = match serde_json::from_str(&content) {
-                    Ok(i) => i,
-                    Err(_) => continue,
+                let (mut idx, content) = match load_cache_index(pr_dir) {
+                    Some(result) => result,
+                    None => continue,
                 };
 
                 let before = idx.entries.len();
@@ -754,14 +787,9 @@ impl LlmCache {
                 if current_size <= max_size {
                     continue;
                 }
-                let index_path = pr_dir.join(crate::paths::INDEX_FILE);
-                let content = match std::fs::read_to_string(&index_path) {
-                    Ok(c) => c,
-                    Err(_) => continue,
-                };
-                let mut idx: CacheIndex = match serde_json::from_str(&content) {
-                    Ok(i) => i,
-                    Err(_) => continue,
+                let (mut idx, _content) = match load_cache_index(pr_dir) {
+                    Some(result) => result,
+                    None => continue,
                 };
 
                 // Collect entries sorted by timestamp (oldest first)
@@ -910,31 +938,16 @@ impl LlmCache {
 
             // ── Check for orphan files (on disk but not in index) ──
             let mut orphan_files = Vec::new();
-            let subdirs = ["agents", "judge", "context"];
-            for subdir_name in &subdirs {
-                let subdir = pr_dir.join(subdir_name);
-                if !subdir.exists() {
-                    continue;
-                }
-                if let Ok(read_subdir) = std::fs::read_dir(&subdir) {
-                    for file_entry in read_subdir {
-                        let file_entry = file_entry?;
-                        if !file_entry.file_type()?.is_file() {
-                            continue;
-                        }
-                        // Extract cache key from filename (everything before first '.')
-                        // Companion files (prompts, usage) share the same key prefix
-                        let fname = file_entry.file_name().to_string_lossy().to_string();
-                        let file_key = fname.split('.').next().unwrap_or(&fname).to_string();
-                        let rel_path = format!("{}/{}", subdir_name, fname);
-                        // Check if this file is referenced in any entry, or if its
-                        // cache key matches any indexed entry (companion file)
-                        let is_indexed = idx.entries.contains_key(&file_key)
-                            || idx.entries.values().any(|e| e.file_path == rel_path);
-                        if !is_indexed {
-                            orphan_files.push(rel_path);
-                        }
-                    }
+            for (_subdir_name, fname, rel_path) in iter_subdir_files(pr_dir.as_path()) {
+                // Extract cache key from filename (everything before first '.')
+                // Companion files (prompts, usage) share the same key prefix
+                let file_key = fname.split('.').next().unwrap_or(&fname).to_string();
+                // Check if this file is referenced in any entry, or if its
+                // cache key matches any indexed entry (companion file)
+                let is_indexed = idx.entries.contains_key(&file_key)
+                    || idx.entries.values().any(|e| e.file_path == rel_path);
+                if !is_indexed {
+                    orphan_files.push(rel_path);
                 }
             }
 
@@ -953,41 +966,22 @@ impl LlmCache {
             // ── Rebuild index from filesystem if needed ──
             if needs_rebuild && !dry_run {
                 let mut new_idx = CacheIndex::new();
-                let subdirs = ["agents", "judge", "context"];
-                for subdir_name in &subdirs {
-                    let subdir = pr_dir.join(subdir_name);
-                    if !subdir.exists() {
-                        continue;
-                    }
-                    if let Ok(read_subdir) = std::fs::read_dir(&subdir) {
-                        for file_entry in read_subdir {
-                            let file_entry = match file_entry {
-                                Ok(f) => f,
-                                Err(_) => continue,
-                            };
-                            if !file_entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                                continue;
-                            }
-                            let fname = file_entry.file_name().to_string_lossy().to_string();
-                            let rel_path = format!("{}/{}", subdir_name, fname);
+                for (_subdir_name, fname, rel_path) in iter_subdir_files(pr_dir.as_path()) {
+                    // Extract a cache key from the filename
+                    // Filenames look like: {cache_key}.agent_SA_response.txt
+                    // or {cache_key}.json, or {cache_key}.context_response.txt
+                    let cache_key = fname.split('.').next().unwrap_or(&fname).to_string();
 
-                            // Extract a cache key from the filename
-                            // Filenames look like: {cache_key}.agent_SA_response.txt
-                            // or {cache_key}.json, or {cache_key}.context_response.txt
-                            let cache_key = fname.split('.').next().unwrap_or(&fname).to_string();
-
-                            if !new_idx.entries.contains_key(&cache_key) {
-                                new_idx.entries.insert(
-                                    cache_key,
-                                    CacheEntry {
-                                        file_path: rel_path,
-                                        timestamp: LlmCache::now(),
-                                        model: String::new(),
-                                        tokens_used: None,
-                                    },
-                                );
-                            }
-                        }
+                    if !new_idx.entries.contains_key(&cache_key) {
+                        new_idx.entries.insert(
+                            cache_key,
+                            CacheEntry {
+                                file_path: rel_path,
+                                timestamp: LlmCache::now(),
+                                model: String::new(),
+                                tokens_used: None,
+                            },
+                        );
                     }
                 }
                 idx = new_idx;
@@ -1052,30 +1046,15 @@ impl LlmCache {
     /// This is experimental and primarily useful for testing or migrating
     /// key schemas.
     pub fn rebuild(base_dir: &Path, dry_run: bool) -> Result<()> {
-        let read_dir = std::fs::read_dir(base_dir)
+        let dirs = collect_pr_dirs(base_dir)
             .map_err(|e| format!("cannot read cache dir {}: {}", base_dir.display(), e))?;
 
-        for entry in read_dir {
-            let entry = entry?;
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with('_') || name_str.starts_with('.') {
-                continue;
-            }
-            if !entry.file_type()?.is_dir() {
-                continue;
-            }
-
-            let pr_dir = entry.path();
+        for (_pr_key, pr_dir) in &dirs {
+            let (mut idx, _content) = match load_cache_index(pr_dir) {
+                Some(result) => result,
+                None => continue,
+            };
             let index_path = pr_dir.join(crate::paths::INDEX_FILE);
-            let content = match std::fs::read_to_string(&index_path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-            let mut idx: CacheIndex = match serde_json::from_str(&content) {
-                Ok(i) => i,
-                Err(_) => continue,
-            };
 
             let mut new_entries = HashMap::new();
             for (old_key, entry_meta) in &idx.entries {
@@ -1587,16 +1566,19 @@ mod tests {
         assert!(idx.entries.contains_key(&key2));
     }
 
+    /// Helper: create a temporary cache with one agent entry for testing.
+    fn setup_test_cache() -> (tempfile::TempDir, String) {
+        let base = tempfile::tempdir().unwrap();
+        let cache = LlmCache::new(base.path(), "test-pr").unwrap();
+        let key = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
+        cache.save_agent_cached(&key, "SA", "p", "r").unwrap();
+        drop(cache);
+        (base, key)
+    }
+
     #[test]
     fn test_cache_scrub_orphans() {
-        let base = tempfile::tempdir().unwrap();
-
-        // Create a PR with one entry
-        {
-            let cache = LlmCache::new(base.path(), "test-pr").unwrap();
-            let key = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
-            cache.save_agent_cached(&key, "SA", "p", "r").unwrap();
-        }
+        let (base, _key) = setup_test_cache();
 
         // Inject an orphan file
         let orphan_path = base
@@ -1618,15 +1600,7 @@ mod tests {
 
     #[test]
     fn test_cache_scrub_repair() {
-        let base = tempfile::tempdir().unwrap();
-
-        // Create a PR with one entry
-        let key;
-        {
-            let cache = LlmCache::new(base.path(), "test-pr").unwrap();
-            key = LlmCache::compute_agent_key("a", "b", "m", "SA", "r");
-            cache.save_agent_cached(&key, "SA", "p", "r").unwrap();
-        }
+        let (base, key) = setup_test_cache();
 
         // Inject an orphan file
         let orphan_path = base
