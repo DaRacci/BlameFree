@@ -9,7 +9,14 @@ regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
+sha2 = { workspace = true }
+rig-core = { workspace = true }
+crb-judge = { path = "../crb-judge" }
 crb-webui-shared = { path = "../crb-webui-shared" }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

@@ -13,6 +13,9 @@ use std::time::Duration;
 
 use anyhow::Result;
 use crb_reporting::golden::GoldenCommentEntry;
+use crb_shared::cache::{
+    compute_agent_cache_key, compute_judge_cache_key,
+};
 use crb_shared::finding::Finding;
 use crb_shared::jaccard::jaccard_similarity;
 use regex::Regex;
@@ -24,7 +27,6 @@ use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use rig_core::streaming::StreamingPrompt;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tokio::task::JoinSet;
 
 use crb_agents::build_agent;
@@ -174,130 +176,6 @@ fn extract_last_assistant_text(history: &[Message]) -> Option<String> {
     }
     None
 }
-
-/// Compute a SHA256 hex digest of the input string.
-pub fn sha256_hex(input: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(input.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
-
-/// Compute a content-addressed cache key for an agent LLM call.
-///
-/// Components (all SHA256 hex digests or plain strings) are concatenated
-/// and hashed again to produce a single deterministic key.
-pub fn compute_agent_cache_key(
-    prompt_hash: &str,
-    diff_hash: &str,
-    model_name: &str,
-    role: &str,
-    rules_hash: &str,
-) -> String {
-    sha256_hex(&format!(
-        "{}:{}:{}:{}:{}",
-        prompt_hash, diff_hash, model_name, role, rules_hash
-    ))
-}
-
-/// Compute a content-addressed cache key for a judge LLM call.
-pub fn compute_judge_cache_key(
-    judge_prompt_hash: &str,
-    finding_message: &str,
-    golden_comment: &str,
-    judge_model: &str,
-) -> String {
-    sha256_hex(&format!(
-        "{}:{}:{}:{}",
-        judge_prompt_hash, finding_message, golden_comment, judge_model
-    ))
-}
-
-/// Compute a content-addressed cache key for a context gatherer LLM call.
-pub fn compute_context_cache_key(
-    gatherer_prompt_hash: &str,
-    diff_hash: &str,
-    repo_state_hash: &str,
-    model_name: &str,
-) -> String {
-    sha256_hex(&format!(
-        "{}:{}:{}:{}",
-        gatherer_prompt_hash, diff_hash, repo_state_hash, model_name
-    ))
-}
-
-/// Interface for caching LLM interactions (prompts, responses, judge calls).
-///
-/// This is a trait so that the harness can inject its own cache implementation
-/// without creating a circular dependency between `crb-consensus` and
-/// `crb-harness`.
-pub trait CacheBackend: Send + Sync {
-    /// Save an agent prompt+response pair for the given role.
-    fn save_agent(&self, role: &str, prompt: &str, response: &str);
-
-    /// Append a judge call entry (golden comment, finding message, verdict JSON).
-    fn save_judge(&self, golden: &str, finding: &str, verdict_json: &str);
-
-    // ── Content-addressed caching methods ─────────────────────────────
-
-    /// Look up a cached agent response by its content-addressed key.
-    /// Returns `Some(response_text)` on cache hit, `None` on miss.
-    fn lookup_agent_by_key(&self, _cache_key: &str) -> Option<String> {
-        None
-    }
-
-    /// Look up a cached agent response by its content-addressed key,
-    /// also returning the saved API usage data if available.
-    /// Returns `Some((response_text, Option<usage>))` on cache hit.
-    fn lookup_agent_by_key_with_usage(&self, _cache_key: &str) -> Option<(String, Option<Usage>)> {
-        // Default: just return response with no usage
-        self.lookup_agent_by_key(_cache_key)
-            .map(|resp| (resp, None))
-    }
-
-    /// Look up a cached judge verdict by its content-addressed key.
-    /// Returns `Some(JudgeVerdict)` on cache hit, `None` on miss.
-    fn lookup_judge_by_key(&self, _cache_key: &str) -> Option<JudgeVerdict> {
-        None
-    }
-
-    /// Save an agent prompt+response pair with a content-addressed cache key.
-    fn save_agent_with_key(&self, _cache_key: &str, _role: &str, _prompt: &str, _response: &str) {}
-
-    /// Save an agent prompt+response pair with a content-addressed cache key,
-    /// including the API usage data.
-    fn save_agent_with_key_and_usage(
-        &self,
-        _cache_key: &str,
-        _role: &str,
-        _prompt: &str,
-        _response: &str,
-        _usage: &Usage,
-    ) {
-    }
-
-    /// Save agent reasoning/thinking text with a content-addressed cache key.
-    fn save_agent_reasoning_with_key(&self, _cache_key: &str, _role: &str, _reasoning: &str) {}
-
-    /// Save a judge verdict with a content-addressed cache key.
-    fn save_judge_with_key(
-        &self,
-        _cache_key: &str,
-        _golden: &str,
-        _finding: &str,
-        _verdict_json: &str,
-    ) {
-    }
-
-    /// Look up a cached context gatherer response by its content-addressed key.
-    fn lookup_context_by_key(&self, _cache_key: &str) -> Option<String> {
-        None
-    }
-
-    /// Save a context gatherer prompt+response pair with a content-addressed cache key.
-    fn save_context_with_key(&self, _cache_key: &str, _prompt: &str, _response: &str) {}
-}
-
-// ── Types ────────────────────────────────────────────────────────────────────
 
 /// The role of a reviewer agent.
 ///

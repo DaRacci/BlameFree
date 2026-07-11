@@ -889,7 +889,7 @@ fn resolve_cache_dir(output_dir: &Path, _run_id: &str) -> Option<PathBuf> {
     let base_dir = output_dir.parent().unwrap_or(Path::new("."));
     let candidates = [
         // New layout: output/_cache/ (flat, shared across runs)
-        output_dir.join(crb_harness::paths::CACHE_DIR_NAME),
+        output_dir.join(crb_shared::cache::paths::CACHE_DIR_NAME),
         // Legacy layouts (backward compat):
         output_dir.join(_run_id).join("cache"),
         base_dir.join("cache").join(_run_id),

@@ -393,7 +393,7 @@ async fn run_adhoc_review_inner(
     roles: &str,
 ) -> anyhow::Result<()> {
     let output_subdir = state.output_dir.join("adhoc").join(run_id);
-    let cache_dir = output_subdir.join(crb_harness::paths::CACHE_DIR_NAME);
+    let cache_dir = output_subdir.join(crb_shared::cache::paths::CACHE_DIR_NAME);
 
     tracing::info!(
         run_id = %run_id,

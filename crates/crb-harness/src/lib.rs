@@ -13,7 +13,8 @@ use anyhow::{Context, Result, anyhow};
 use crb_agents::build_agent;
 use crb_agents::prompts::PromptLibrary;
 use crb_auditor::apply_severity_auditor;
-use crb_consensus::{CacheBackend, evaluate_pr_with_consensus};
+use crb_consensus::evaluate_pr_with_consensus;
+use crb_shared::cache::CacheBackend;
 use crb_types::RunEvent;
 use crb_judge::{compute_metrics, run_judge};
 use crb_reporting::PrResult;
@@ -36,7 +37,6 @@ use tokio::sync::broadcast;
 use tracing::{info, info_span};
 
 pub use crate::config::ReviewArgs;
-pub mod cache;
 pub mod config;
 pub mod cost;
 pub mod model_capabilities;
@@ -828,9 +828,9 @@ pub async fn evaluate_pr_single_agent(
     additional_params: Option<serde_json::Value>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // Pre-compute content-addressed cache key components
-    let diff_hash = crate::cache::LlmCache::sha256(diff);
-    let rules_hash = crate::cache::LlmCache::sha256(rules_preamble.unwrap_or(""));
-    let judge_prompt_hash = crate::cache::LlmCache::sha256(crb_judge::JUDGE_PROMPT);
+    let diff_hash = crb_shared::cache::sha256_hex(diff);
+    let rules_hash = crb_shared::cache::sha256_hex(rules_preamble.unwrap_or(""));
+    let judge_prompt_hash = crb_shared::cache::sha256_hex(crb_judge::JUDGE_PROMPT);
     let judge_model = ""; // We don't have judge_model here; it's baked into the judge Agent
 
     let mut agent_set = tokio::task::JoinSet::new();
@@ -856,8 +856,8 @@ pub async fn evaluate_pr_single_agent(
             let _guard = span.enter();
 
             // Compute agent cache key
-            let prompt_hash = crate::cache::LlmCache::sha256(p_lib.get(&role).unwrap_or(""));
-            let agent_cache_key = crate::cache::LlmCache::compute_agent_key(
+            let prompt_hash = crb_shared::cache::sha256_hex(p_lib.get(&role).unwrap_or(""));
+            let agent_cache_key = crb_shared::cache::compute_agent_cache_key(
                 &prompt_hash,
                 &diff_hash,
                 &model,
@@ -1023,7 +1023,7 @@ pub async fn evaluate_pr_single_agent(
             }
 
             // Compute judge cache key
-            let judge_key = crate::cache::LlmCache::compute_judge_key(
+            let judge_key = crb_shared::cache::compute_judge_cache_key(
                 &judge_prompt_hash,
                 &finding.message,
                 &gc.comment,
@@ -1125,10 +1125,10 @@ pub async fn evaluate_pr_consensus(
 
     // ── Pre-compute content-addressed cache key components ──────────────
     let first_role = parsed_roles.first().copied().unwrap_or("SA");
-    let prompt_hash = crate::cache::LlmCache::sha256(prompt_lib.get(first_role).unwrap_or(""));
-    let rules_hash = crate::cache::LlmCache::sha256(rules_preamble.unwrap_or(""));
-    let judge_prompt_hash = crate::cache::LlmCache::sha256(crb_judge::JUDGE_PROMPT);
-    let diff_hash = crate::cache::LlmCache::sha256(diff);
+    let prompt_hash = crb_shared::cache::sha256_hex(prompt_lib.get(first_role).unwrap_or(""));
+    let rules_hash = crb_shared::cache::sha256_hex(rules_preamble.unwrap_or(""));
+    let judge_prompt_hash = crb_shared::cache::sha256_hex(crb_judge::JUDGE_PROMPT);
+    let diff_hash = crb_shared::cache::sha256_hex(diff);
     let judge_model = "";
 
     // Compute tool preamble only when workdir is provided

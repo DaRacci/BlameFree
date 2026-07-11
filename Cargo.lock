@@ -640,16 +640,8 @@ dependencies = [
  "rig-core",
  "serde",
  "serde_json",
- "sha2",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "crb-dashboard"
-version = "0.1.0"
-dependencies = [
- "crb-types",
 ]
 
 [[package]]
@@ -673,7 +665,6 @@ dependencies = [
  "rig-core",
  "serde",
  "serde_json",
- "sha2",
  "tempfile",
  "tokio",
  "tracing",
@@ -720,11 +711,16 @@ dependencies = [
 name = "crb-shared"
 version = "0.1.0"
 dependencies = [
+ "crb-judge",
  "crb-webui-shared",
  "regex",
+ "rig-core",
  "schemars 0.8.22",
  "serde",
  "serde_json",
+ "sha2",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]

@@ -9,26 +9,14 @@
 //! * `*_FILE` — names of well-known files (e.g. `"_summary.json"`)
 //! * `*_DEFAULT` — default values for CLI args or config fallbacks
 
-/// Cache storage directory (flat, shared across runs).
-pub const CACHE_DIR_NAME: &str = "_cache";
-
-/// Agents sub-directory inside a PR's cache folder.
-pub const AGENTS_DIR: &str = "agents";
-
-/// Judge sub-directory inside a PR's cache folder.
-pub const JUDGE_DIR: &str = "judge";
-
-/// Context sub-directory inside a PR's cache folder.
-pub const CONTEXT_DIR: &str = "context";
+// NOTE: Cache-specific path constants (CACHE_DIR_NAME, AGENTS_DIR, JUDGE_DIR,
+// CONTEXT_DIR, INDEX_FILE) have been moved to crb-shared::cache::paths.
 
 /// Aggregate summary for a run.
 pub const SUMMARY_FILE: &str = "_summary.json";
 
 /// Append-only run-history log.
 pub const RUNS_FILE: &str = "_runs.json";
-
-/// Per-PR cache index.
-pub const INDEX_FILE: &str = "index.json";
 
 /// Default output directory name.
 pub const OUTPUT_DIR_DEFAULT: &str = "output";
