@@ -4,6 +4,7 @@
 //! Exactly one file must declare `generalist_agent: true`.
 //! The markdown body after the frontmatter becomes `role_prompt`.
 
+use anyhow::{Result, anyhow, bail};
 use serde::Deserialize;
 use serde_fields::SerdeField;
 use std::collections::{HashMap, HashSet};
@@ -79,7 +80,7 @@ impl AgentManifest {
     /// - Any `.md` file cannot be read or parsed.
     /// - Zero or more than one file has `generalist_agent: true`.
     /// - Duplicate `role_abbreviation` values are found.
-    pub fn load_from_dir(dir: &Path) -> anyhow::Result<Self> {
+    pub fn load_from_dir(dir: &Path) -> Result<Self> {
         let mut agents: HashMap<String, AgentEntry> = HashMap::new();
         let mut generalist_count = 0u32;
         let mut generalist_abbreviation: Option<String> = None;
@@ -95,7 +96,7 @@ impl AgentManifest {
 
                 let abbr = entry.role_abbreviation.to_uppercase();
                 if !seen_abbreviations.insert(abbr.clone()) {
-                    anyhow::bail!(
+                    bail!(
                         "Duplicate role_abbreviation '{}' in {}",
                         abbr,
                         path.display()
@@ -112,12 +113,12 @@ impl AgentManifest {
         }
 
         match generalist_count {
-            0 => anyhow::bail!(
+            0 => bail!(
                 "No agent with `generalist_agent: true` found in {}",
                 dir.display()
             ),
             1 => {} // OK
-            n => anyhow::bail!(
+            n => bail!(
                 "Expected exactly one `generalist_agent: true`, found {} in {}",
                 n,
                 dir.display()
@@ -131,17 +132,16 @@ impl AgentManifest {
     }
 
     /// Parse YAML frontmatter and markdown body from a `.md` file.
-    fn parse_frontmatter(content: &str, path: &Path) -> anyhow::Result<AgentEntry> {
+    fn parse_frontmatter(content: &str, path: &Path) -> Result<AgentEntry> {
         let (yaml_str, body) = split_frontmatter(content).ok_or_else(|| {
-            anyhow::anyhow!(
+            anyhow!(
                 "Agent file {} does not start with YAML frontmatter (`---`)",
                 path.display()
             )
         })?;
 
-        // Parse YAML frontmatter
         let mut entry: AgentEntry = serde_yaml::from_str(yaml_str).map_err(|e| {
-            anyhow::anyhow!(
+            anyhow!(
                 "Failed to parse YAML frontmatter in {}: {}",
                 path.display(),
                 e
@@ -152,7 +152,7 @@ impl AgentManifest {
         entry.role_prompt = role_prompt.clone();
 
         if entry.role_abbreviation.is_empty() {
-            anyhow::bail!(
+            bail!(
                 "Agent file {} has empty `role_abbreviation`",
                 path.display()
             );

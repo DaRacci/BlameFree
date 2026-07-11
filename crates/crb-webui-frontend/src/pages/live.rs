@@ -2,7 +2,7 @@ use crate::components::agent_pane::AgentPane;
 use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crate::sse;
-use crate::{AppConfig, DashboardEvent};
+use crate::{AppConfig, RunEvent};
 use crb_webui_shared::config::RoleInfo;
 use leptos::{
     IntoView, ReadSignal, SignalGet, SignalGetUntracked, SignalSet, SignalUpdate, WriteSignal,
@@ -112,7 +112,7 @@ pub fn LivePage() -> impl IntoView {
                     set_conn.set(true);
                     set_stat.update(|s| *s = "running".into());
                     while let Ok(event) = rx.recv().await {
-                        match serde_json::from_str::<DashboardEvent>(&event) {
+                        match serde_json::from_str::<RunEvent>(&event) {
                             Ok(ev) => {
                                 let current_roles = roles.get_untracked();
                                 handle_event(
@@ -359,7 +359,7 @@ fn with_role_pr(
 
 #[allow(clippy::too_many_arguments)]
 fn handle_event(
-    ev: DashboardEvent,
+    ev: RunEvent,
     pr_states: &ReadSignal<HashMap<String, PrState>>,
     set_states: &WriteSignal<HashMap<String, PrState>>,
     set_order: &WriteSignal<Vec<String>>,
@@ -372,7 +372,7 @@ fn handle_event(
     roles: &[RoleInfo],
 ) {
     match ev {
-        DashboardEvent::AgentStarted { pr_key, role } => {
+        RunEvent::AgentStarted { pr_key, role } => {
             // Ensure PR state exists
             set_states.update(|states| {
                 if !states.contains_key(&pr_key) {
@@ -418,13 +418,13 @@ fn handle_event(
             });
         }
 
-        DashboardEvent::AgentChunk { role, chunk } => {
+        RunEvent::AgentChunk { role, chunk } => {
             with_role_pr(role_current_pr, set_states, &role, |agent| {
                 agent.response.push_str(&chunk);
             });
         }
 
-        DashboardEvent::AgentFinished {
+        RunEvent::AgentFinished {
             role,
             findings,
             success,
@@ -449,10 +449,11 @@ fn handle_event(
             }
         }
 
-        DashboardEvent::RunProgress {
+        RunEvent::RunProgress {
             completed_prs,
             total_prs,
             current_pr,
+            ..
         } => {
             set_done.set(completed_prs);
             set_total.set(total_prs);
@@ -479,7 +480,7 @@ fn handle_event(
             }
         }
 
-        DashboardEvent::PrCompleted { pr_key } => {
+        RunEvent::PrCompleted { pr_key, .. } => {
             set_states.update(|states| {
                 if let Some(pr) = states.get_mut(&pr_key) {
                     pr.completed = true;
@@ -487,7 +488,7 @@ fn handle_event(
             });
         }
 
-        DashboardEvent::RunFinished { .. } => {
+        RunEvent::RunFinished { .. } => {
             set_stat.update(|s| *s = "complete".into());
         }
     }

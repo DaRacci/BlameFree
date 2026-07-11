@@ -14,7 +14,6 @@ use tracing_subscriber::util::SubscriberInitExt;
 mod api;
 mod auth;
 mod config;
-mod events;
 mod harness;
 mod server;
 mod static_assets;

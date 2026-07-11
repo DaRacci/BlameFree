@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crb_agents::prompts::PromptLibrary;
-use crb_dashboard::DashboardEvent as HarnessEvent;
 use crb_judge::build_judge;
 use crb_reporting::{PrResult, load_golden_datasets, write_report};
 use crb_rules::RuleSet;
@@ -23,9 +22,8 @@ use tracing::info;
 use tracing::warn;
 
 use crate::api::BenchmarkConfig;
-use crate::events::AggregateMetrics;
-use crate::events::DashboardEvent;
-use crate::events::MetricsData;
+use crb_types::AggregateMetrics;
+use crb_types::RunEvent;
 use crate::server::ActiveRun;
 use crate::server::AppState;
 
@@ -34,17 +32,15 @@ use crate::server::AppState;
 /// This function:
 /// 1. Sets up the OpenAI client, judge agent, prompt library, rules, linters
 /// 2. Loads the dataset and filters PRs according to config
-/// 3. Spawns a bridge task that converts `crb_dashboard::DashboardEvent` to
-///    the web UI's `DashboardEvent` on the SSE broadcast channel
-/// 4. Evaluates each PR via `crb_harness::evaluate_pr_with_postprocessing`
-/// 5. Writes per-PR result files + a `_summary.json`
-/// 6. Sends a final `RunFinished` event
+/// 3. Evaluates each PR via `crb_harness::evaluate_pr_with_postprocessing`
+/// 4. Writes per-PR result files + a `_summary.json`
+/// 5. Sends a final `RunFinished` event
 pub async fn run_harness(
     run_id: &str,
     config: &BenchmarkConfig,
     output_dir: &Path,
     benchmark_dir: Option<&Path>,
-    webui_tx: broadcast::Sender<DashboardEvent>,
+    webui_tx: broadcast::Sender<RunEvent>,
     active_runs: Arc<RwLock<HashMap<String, ActiveRun>>>,
     dataset_dir: &Path,
 ) -> anyhow::Result<()> {
@@ -172,7 +168,7 @@ pub async fn run_harness(
 
     if filtered_prs.is_empty() {
         warn!("No PRs to evaluate");
-        let _ = webui_tx.send(DashboardEvent::RunFinished {
+        let _ = webui_tx.send(RunEvent::RunFinished {
             total_prs: 0,
             aggregated: AggregateMetrics::default(),
             total_cost: 0.0,
@@ -184,31 +180,9 @@ pub async fn run_harness(
 
     let total_prs = filtered_prs.len();
 
-    // The library emits `crb_dashboard::DashboardEvent`; we convert and
-    // forward to the SSE broadcast channel.
-    let (harness_tx, mut harness_rx) = broadcast::channel::<HarnessEvent>(256);
-    let forward_tx = webui_tx.clone();
-
-    tokio::spawn(async move {
-        loop {
-            match harness_rx.recv().await {
-                Ok(event) => {
-                    if let Some(converted) = convert_harness_event(event) {
-                        let _ = forward_tx.send(converted);
-                    }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    warn!("Harness event bridge lagged by {} messages", n);
-                    continue;
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    break;
-                }
-            }
-        }
-    });
-
-    let dashboard_tx: Option<broadcast::Sender<HarnessEvent>> = Some(harness_tx);
+    // Use the webui broadcast channel directly as the dashboard_tx
+    // (both sides now use crb_types::RunEvent, no bridge needed).
+    let dashboard_tx: Option<broadcast::Sender<RunEvent>> = Some(webui_tx.clone());
 
     // If no explicit benchmark_dir was passed, default to the `benchmark/`
     // subdirectory, which is the standard project convention (contains
@@ -313,7 +287,7 @@ pub async fn run_harness(
                 }
 
                 // Send RunProgress
-                let _ = webui_tx.send(DashboardEvent::RunProgress {
+                let _ = webui_tx.send(RunEvent::RunProgress {
                     completed_prs,
                     total_prs,
                     elapsed_secs: start_time.elapsed().as_secs_f64(),
@@ -370,7 +344,7 @@ pub async fn run_harness(
         error!("Failed to write summary: {e}");
     }
 
-    let _ = webui_tx.send(DashboardEvent::RunFinished {
+    let _ = webui_tx.send(RunEvent::RunFinished {
         total_prs: results.len(),
         aggregated: AggregateMetrics {
             true_positives: total_tp,
@@ -388,61 +362,4 @@ pub async fn run_harness(
     crb_harness::print_terminal_summary(&results);
 
     Ok(())
-}
-
-/// Convert a `crb_dashboard::DashboardEvent` (used by the harne ss library) to
-/// a web UI `DashboardEvent` (used for SSE streaming to the frontend).
-fn convert_harness_event(event: HarnessEvent) -> Option<DashboardEvent> {
-    match event {
-        HarnessEvent::AgentStarted { pr_key, role } => {
-            Some(DashboardEvent::AgentStarted { pr_key, role })
-        }
-        HarnessEvent::AgentChunk { role, chunk } => {
-            Some(DashboardEvent::AgentChunk { role, chunk })
-        }
-        HarnessEvent::AgentFinished {
-            role,
-            findings,
-            success,
-        } => Some(DashboardEvent::AgentFinished {
-            role,
-            findings,
-            success,
-        }),
-        HarnessEvent::PrCompleted {
-            pr_key,
-            metrics,
-            cost,
-            total_tokens,
-            agent_calls,
-            findings_count,
-        } => Some(DashboardEvent::PrCompleted {
-            pr_key,
-            metrics: MetricsData {
-                true_positives: metrics.true_positives,
-                false_positives: metrics.false_positives,
-                false_negatives: metrics.false_negatives,
-                precision: metrics.precision,
-                recall: metrics.recall,
-                f1: metrics.f1,
-            },
-            cost,
-            total_tokens,
-            agent_calls,
-            findings_count,
-        }),
-        HarnessEvent::RunFinished {
-            total_prs,
-            aggregated,
-            total_cost,
-            total_tokens,
-            total_agent_calls,
-        } => Some(DashboardEvent::RunFinished {
-            total_prs,
-            aggregated,
-            total_cost,
-            total_tokens,
-            total_agent_calls,
-        }),
-    }
 }

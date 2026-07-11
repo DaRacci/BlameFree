@@ -55,35 +55,7 @@ pub struct AppConfig {
     pub auth_enabled: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "event", content = "data")]
-pub enum DashboardEvent {
-    /// An agent has started its review for a given PR.
-    AgentStarted { pr_key: String, role: String },
-
-    /// A chunk of streaming response text from an agent.
-    AgentChunk { role: String, chunk: String },
-
-    /// An agent has finished its review.
-    AgentFinished {
-        role: String,
-        findings: usize,
-        success: bool,
-    },
-
-    /// A single PR has been fully evaluated.
-    PrCompleted { pr_key: String },
-
-    /// Progress update during a run.
-    RunProgress {
-        completed_prs: usize,
-        total_prs: usize,
-        current_pr: Option<String>,
-    },
-
-    /// The entire run has finished.
-    RunFinished { total_prs: usize },
-}
+pub use crb_types::RunEvent;
 
 /// Deterministic HSL color from a role abbreviation — no hardcoded color map.
 /// Each role gets a unique hue via a simple hash of its abbreviation bytes.

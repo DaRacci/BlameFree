@@ -17,7 +17,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::auth::SessionStore;
 use crate::config::WebUiConfig;
-use crate::events::DashboardEvent;
+use crb_types::RunEvent;
 use crate::static_assets::StaticAssets;
 
 /// Shared application state.
@@ -64,7 +64,7 @@ pub struct ActiveRun {
     pub config: crate::api::BenchmarkConfig,
 
     /// Broadcast channel for SSE events.
-    pub tx: broadcast::Sender<DashboardEvent>,
+    pub tx: broadcast::Sender<RunEvent>,
 
     /// Number of completed PRs.
     pub completed_prs: usize,

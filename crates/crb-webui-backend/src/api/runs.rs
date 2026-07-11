@@ -719,7 +719,7 @@ pub async fn start_run(
     let dataset_dir = state.dataset_dir.join(&config.dataset_dir);
     let total_prs = count_prs_in_dataset(&dataset_dir);
 
-    let (tx, _rx) = tokio::sync::broadcast::channel::<crate::events::DashboardEvent>(1024);
+    let (tx, _rx) = tokio::sync::broadcast::channel::<crb_types::RunEvent>(1024);
 
     let active_run = ActiveRun {
         created_at: UnixTime::now(),

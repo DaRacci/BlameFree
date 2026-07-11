@@ -14,7 +14,7 @@ use crb_agents::build_agent;
 use crb_agents::prompts::PromptLibrary;
 use crb_auditor::apply_severity_auditor;
 use crb_consensus::{CacheBackend, evaluate_pr_with_consensus};
-use crb_dashboard::DashboardEvent;
+use crb_types::RunEvent;
 use crb_judge::{compute_metrics, run_judge};
 use crb_reporting::PrResult;
 use crb_reporting::golden::GoldenCommentEntry;
@@ -824,7 +824,7 @@ pub async fn evaluate_pr_single_agent(
     prompt_lib: &PromptLibrary,
     cache: Option<Arc<crate::cache::LlmCache>>,
     cost_tracker: Arc<crate::cost::CostTracker>,
-    dashboard_tx: Option<&broadcast::Sender<DashboardEvent>>,
+    dashboard_tx: Option<&broadcast::Sender<RunEvent>>,
     additional_params: Option<serde_json::Value>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // Pre-compute content-addressed cache key components
@@ -880,13 +880,13 @@ pub async fn evaluate_pr_single_agent(
                     ct.record_agent(&usage, true);
                     // Send chunk + finished for cached response
                     if let Some(ref tx) = tx {
-                        let _ = tx.send(DashboardEvent::AgentChunk {
+                        let _ = tx.send(RunEvent::AgentChunk {
                             role: role.clone(),
                             chunk: cached_response.clone(),
                         });
                         let result = parse_agent_findings(&cached_response);
                         let findings_count = result.as_ref().map(|v| v.len()).unwrap_or(0);
-                        let _ = tx.send(DashboardEvent::AgentFinished {
+                        let _ = tx.send(RunEvent::AgentFinished {
                             role,
                             findings: findings_count,
                             success: result.is_ok(),
@@ -933,7 +933,7 @@ pub async fn evaluate_pr_single_agent(
 
                     // Send chunk for live response
                     if let Some(ref tx) = tx {
-                        let _ = tx.send(DashboardEvent::AgentChunk {
+                        let _ = tx.send(RunEvent::AgentChunk {
                             role: role.clone(),
                             chunk: response.clone(),
                         });
@@ -954,7 +954,7 @@ pub async fn evaluate_pr_single_agent(
                     // Send finished event
                     if let Some(ref tx) = tx {
                         let findings_count = findings.as_ref().map(|v| v.len()).unwrap_or(0);
-                        let _ = tx.send(DashboardEvent::AgentFinished {
+                        let _ = tx.send(RunEvent::AgentFinished {
                             role: role.clone(),
                             findings: findings_count,
                             success: findings.is_ok(),
@@ -969,7 +969,7 @@ pub async fn evaluate_pr_single_agent(
             // If the whole retry chain failed, send failed event
             if result.is_err() {
                 if let Some(ref tx) = tx {
-                    let _ = tx.send(DashboardEvent::AgentFinished {
+                    let _ = tx.send(RunEvent::AgentFinished {
                         role: role.clone(),
                         findings: 0,
                         success: false,
@@ -1090,7 +1090,7 @@ pub async fn evaluate_pr_consensus(
     cost_tracker: Arc<crate::cost::CostTracker>,
     workdir: Option<&str>,
     reasoning_effort: Option<&str>,
-    dashboard_tx: Option<&broadcast::Sender<DashboardEvent>>,
+    dashboard_tx: Option<&broadcast::Sender<RunEvent>>,
 ) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
     // Parse comma-separated roles
     let parsed_roles: Vec<&str> = roles
@@ -1300,7 +1300,7 @@ pub async fn evaluate_pr_with_postprocessing(
     roles: &str,
     max_findings: usize,
     cache_dir: Option<&PathBuf>,
-    dashboard_tx: Option<&broadcast::Sender<DashboardEvent>>,
+    dashboard_tx: Option<&broadcast::Sender<RunEvent>>,
     reasoning_effort: Option<&str>,
 ) -> Result<PrResult> {
     let cache: Option<Arc<crate::cache::LlmCache>> = if let Some(cache_dir) = cache_dir {
@@ -1413,7 +1413,7 @@ pub async fn evaluate_pr_with_postprocessing(
     // Send AgentStarted for each role
     if let Some(tx) = dashboard_tx {
         for role in ["SA", "CL", "AR", "SEC"] {
-            let _ = tx.send(DashboardEvent::AgentStarted {
+            let _ = tx.send(RunEvent::AgentStarted {
                 pr_key: pr_key.clone(),
                 role: role.to_string(),
             });
@@ -1473,7 +1473,7 @@ pub async fn evaluate_pr_with_postprocessing(
             } else {
                 processed_findings.len() / 4
             };
-            let _ = tx.send(DashboardEvent::AgentFinished {
+            let _ = tx.send(RunEvent::AgentFinished {
                 role: role.to_string(),
                 findings: role_findings,
                 success: true,
@@ -1488,9 +1488,16 @@ pub async fn evaluate_pr_with_postprocessing(
         let total_tokens = tokens.0 + tokens.1;
         let cost_usd = cost_tracker.total_cost_usd();
         let total_agent_calls = 4;
-        let _ = tx.send(DashboardEvent::PrCompleted {
+        let _ = tx.send(RunEvent::PrCompleted {
             pr_key,
-            metrics: metrics.clone(),
+            metrics: crb_types::MetricsData {
+                true_positives: metrics.true_positives,
+                false_positives: metrics.false_positives,
+                false_negatives: metrics.false_negatives,
+                precision: metrics.precision,
+                recall: metrics.recall,
+                f1: metrics.f1,
+            },
             cost: cost_usd,
             total_tokens,
             agent_calls: total_agent_calls,

@@ -465,7 +465,7 @@ pub async fn run_reviewers(
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
     additional_params: Option<serde_json::Value>,
-    dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_dashboard::DashboardEvent>>,
+    dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_types::RunEvent>>,
 ) -> (Vec<(Role, Vec<Finding>)>, usize, Usage) {
     let mut set = JoinSet::new();
     let agent_api_calls = Arc::new(AtomicUsize::new(0));
@@ -581,7 +581,7 @@ pub async fn run_reviewers(
                             let chunk = text.text;
                             response.push_str(&chunk);
                             if let Some(ref tx) = dashboard_tx {
-                                let _ = tx.send(crb_dashboard::DashboardEvent::AgentChunk {
+                                let _ = tx.send(crb_types::RunEvent::AgentChunk {
                                     role: role.to_string(),
                                     chunk: chunk.clone(),
                                 });
@@ -870,7 +870,7 @@ pub async fn run_consensus(
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
     additional_params: Option<serde_json::Value>,
-    dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_dashboard::DashboardEvent>>,
+    dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_types::RunEvent>>,
 ) -> ConsensusReport {
     // Step 1: run all reviewers concurrently with content-addressed caching
     let (agents, agent_api_calls, agent_usage) = run_reviewers(
@@ -1029,7 +1029,7 @@ pub async fn evaluate_pr_with_consensus(
     tool_preamble: Option<&str>,
     workdir: Option<&str>,
     additional_params: Option<serde_json::Value>,
-    dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_dashboard::DashboardEvent>>,
+    dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_types::RunEvent>>,
 ) -> Result<(PrResult, Usage, Usage, usize, usize, usize)> {
     // ── Adaptive agent dispatch (EXP-016) ──────────────────────────────
     #[cfg(feature = "exp16_adaptive_agents")]

@@ -6,17 +6,19 @@ use std::time;
 
 use anyhow::Context;
 use anyhow::Result;
+use anyhow::anyhow;
 use clap::{Parser, Subcommand};
 use crb_agents::prompts::PromptLibrary;
-use crb_dashboard::DashboardEvent;
+use crb_harness::validation;
 use crb_judge::build_judge;
 use crb_reporting::{GoldenCommentEntry, load_golden_datasets, write_report};
 use crb_rules::RuleSet;
 use crb_shared::metrics::MetricsOutput;
 use crb_shared::sanitize_filename;
+use crb_types::AggregateMetrics;
+use crb_types::RunEvent;
 use rig_core::client::ProviderClient;
 use tokio::sync::broadcast;
-use tokio::sync::mpsc;
 use tracing::error;
 use tracing::warn;
 use tracing::{info, info_span};
@@ -528,7 +530,7 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
 
 /// Show cache statistics.
 fn run_cache_stats(cache_dir: &PathBuf, json: bool) -> Result<()> {
-    let stats = crb_harness::LlmCache::stats(cache_dir).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let stats = crb_harness::LlmCache::stats(cache_dir).map_err(|e| anyhow!("{}", e))?;
     if json {
         println!("{}", serde_json::to_string_pretty(&stats)?);
     } else {
@@ -571,7 +573,7 @@ fn run_cache_prune(
     json: bool,
 ) -> Result<()> {
     let result = crb_harness::LlmCache::prune(cache_dir, max_age, max_size, max_prs, dry_run)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+        .map_err(|e| anyhow!("{}", e))?;
     if json {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
@@ -589,8 +591,8 @@ fn run_cache_prune(
 
 /// Scrub cache for stale entries, orphans, and corrupted indices.
 fn run_cache_scrub(cache_dir: &PathBuf, dry_run: bool, repair: bool, json: bool) -> Result<()> {
-    let result = crb_harness::LlmCache::scrub(cache_dir, dry_run, repair)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let result =
+        crb_harness::LlmCache::scrub(cache_dir, dry_run, repair).map_err(|e| anyhow!("{}", e))?;
     if json {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
@@ -628,14 +630,14 @@ fn run_cache_backup(cache_dir: &PathBuf, output: Option<PathBuf>) -> Result<()> 
         p.push(format!("cache_backup_{}.tar.gz", ts));
         p
     });
-    crb_harness::LlmCache::backup(cache_dir, &output_path).map_err(|e| anyhow::anyhow!("{}", e))?;
+    crb_harness::LlmCache::backup(cache_dir, &output_path).map_err(|e| anyhow!("{}", e))?;
     println!("Backup created: {}", output_path.display());
     Ok(())
 }
 
 /// Restore cache from a tar.gz backup.
 fn run_cache_restore(backup_file: &PathBuf, cache_dir: &PathBuf) -> Result<()> {
-    crb_harness::LlmCache::restore(cache_dir, backup_file).map_err(|e| anyhow::anyhow!("{}", e))?;
+    crb_harness::LlmCache::restore(cache_dir, backup_file).map_err(|e| anyhow!("{}", e))?;
     println!(
         "Restored from {} to {}",
         backup_file.display(),
@@ -646,7 +648,7 @@ fn run_cache_restore(backup_file: &PathBuf, cache_dir: &PathBuf) -> Result<()> {
 
 /// Rebuild cache indices from raw data.
 fn run_cache_rebuild(cache_dir: &PathBuf, dry_run: bool) -> Result<()> {
-    crb_harness::LlmCache::rebuild(cache_dir, dry_run).map_err(|e| anyhow::anyhow!("{}", e))?;
+    crb_harness::LlmCache::rebuild(cache_dir, dry_run).map_err(|e| anyhow!("{}", e))?;
     if dry_run {
         print!("[DRY RUN] ");
     }
@@ -814,7 +816,7 @@ async fn run_benchmark(
     }
 
     let client = rig_core::providers::openai::Client::from_env()
-        .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
+        .map_err(|e| anyhow!("Failed to create OpenAI client: {e}"))?;
 
     let judge = build_judge(&client, &judge_model);
 
@@ -859,26 +861,9 @@ async fn run_benchmark(
 
     let start_time = time::Instant::now();
 
-    let (event_broadcast_tx, _) = broadcast::channel::<DashboardEvent>(256);
+    let (event_broadcast_tx, _) = broadcast::channel::<RunEvent>(256);
 
-    let dashboard_tx: Option<broadcast::Sender<DashboardEvent>> = if dashboard {
-        let mut rx = event_broadcast_tx.subscribe();
-        let total_prs = prs_to_evaluate.len();
-        let (mpsc_tx, mpsc_rx) = mpsc::channel::<DashboardEvent>(1024);
-        tokio::spawn(async move {
-            while let Ok(event) = rx.recv().await {
-                if mpsc_tx.send(event).await.is_err() {
-                    break;
-                }
-            }
-        });
-        tokio::spawn(async move {
-            if let Err(e) = crb_dashboard::run_dashboard(total_prs, mpsc_rx).await {
-                error!("Dashboard error: {e}");
-            }
-        });
-        Some(event_broadcast_tx.clone())
-    } else if dashboard_events {
+    let dashboard_tx: Option<broadcast::Sender<RunEvent>> = if dashboard || dashboard_events {
         Some(event_broadcast_tx.clone())
     } else {
         None
@@ -991,9 +976,9 @@ async fn run_benchmark(
             f1: avg_f1,
         } = crb_shared::metrics::compute_aggregate_metrics(total_tp, total_fp, total_fn);
 
-        let _ = tx.send(DashboardEvent::RunFinished {
+        let _ = tx.send(RunEvent::RunFinished {
             total_prs,
-            aggregated: crb_dashboard::AggregateMetrics {
+            aggregated: AggregateMetrics {
                 true_positives: total_tp,
                 false_positives: total_fp,
                 false_negatives: total_fn,
@@ -1025,17 +1010,16 @@ async fn run_benchmark(
 
     if ci {
         let metrics: Vec<crb_judge::Metrics> = results.iter().map(|r| r.metrics.clone()).collect();
-        let (avg_precision, avg_recall, avg_f1) =
-            crb_harness::validation::compute_average_metrics(&metrics);
-        let baseline = crb_harness::validation::load_baseline(&workspace_root, "5.14")?;
-        let val_result = crb_harness::validation::validate_against_baseline(
+        let (avg_precision, avg_recall, avg_f1) = validation::compute_average_metrics(&metrics);
+        let baseline = validation::load_baseline(&workspace_root, "5.14")?;
+        let val_result = validation::validate_against_baseline(
             &baseline,
             results.len(),
             avg_precision,
             avg_recall,
             avg_f1,
         );
-        crb_harness::validation::print_validation_summary(
+        validation::print_validation_summary(
             &baseline,
             &val_result,
             avg_precision,
@@ -1046,7 +1030,7 @@ async fn run_benchmark(
         if val_result.in_threshold {
             Ok(())
         } else {
-            Err(anyhow::anyhow!(
+            Err(anyhow!(
                 "CI validation failed: metrics exceed baseline thresholds"
             ))
         }
