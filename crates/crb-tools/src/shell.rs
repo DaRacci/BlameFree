@@ -10,10 +10,11 @@ use std::time::Duration;
 /// Maximum output size in bytes (100 KB). Output beyond this is truncated.
 const MAX_OUTPUT: usize = 100_000;
 
-use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
+
+use crate::impl_tool;
 
 /// Arguments for [`ShellTool`].
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -64,21 +65,8 @@ impl Default for ShellTool {
     }
 }
 
-impl Tool for ShellTool {
-    const NAME: &'static str = "shell";
-
-    type Error = ShellError;
-    type Args = ShellArgs;
-    type Output = String;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "Execute a shell command in the repository working directory. Use for running tests, builds, linters, or any CLI operation. Output is capped at 100KB; very long output will be truncated with a note. IMPORTANT: Do NOT use this for reading files (use read_file), searching code (use grep), or listing directories (use list_dir).".to_string(),
-            parameters: serde_json::to_value(schemars::schema_for!(ShellArgs)).unwrap_or_default(),
-        }
-    }
-
+impl_tool! {ShellTool, ShellArgs, ShellError, String, "shell",
+    "Execute a shell command in the repository working directory. Use for running tests, builds, linters, or any CLI operation. Output is capped at 100KB; very long output will be truncated with a note. IMPORTANT: Do NOT use this for reading files (use read_file), searching code (use grep), or listing directories (use list_dir).",
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let cmd = args.command;
         let work_dir = self.work_dir.clone();

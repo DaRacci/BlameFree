@@ -6,10 +6,11 @@
 use std::fmt;
 use std::time::Duration;
 
-use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
+
+use crate::impl_tool;
 
 /// Arguments for [`GrepTool`].
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -63,25 +64,10 @@ impl GrepTool {
     const TIMEOUT: Duration = Duration::from_secs(8);
 }
 
-impl Tool for GrepTool {
-    const NAME: &'static str = "grep";
-
-    type Error = GrepError;
-    type Args = GrepArgs;
-    type Output = String;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description:
-                "Search file contents using regex. Returns matching lines with file paths in format \
-                 path:line:content. Use before reading files to find relevant locations. Do NOT use \
-                 the terminal tool for searches."
-                    .to_string(),
-            parameters: serde_json::to_value(schemars::schema_for!(GrepArgs)).unwrap_or_default(),
-        }
-    }
-
+impl_tool! {GrepTool, GrepArgs, GrepError, String, "grep",
+    "Search file contents using regex. Returns matching lines with file paths in format \
+     path:line:content. Use before reading files to find relevant locations. Do NOT use \
+     the terminal tool for searches.",
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let workdir = self.workdir.clone();
         let pattern = args.pattern.clone();

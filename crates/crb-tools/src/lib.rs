@@ -23,6 +23,7 @@ pub mod grep;
 pub mod language_detector;
 pub mod linters;
 pub mod list_dir;
+pub mod macros;
 pub mod mcp;
 pub mod read_file;
 pub mod shell;

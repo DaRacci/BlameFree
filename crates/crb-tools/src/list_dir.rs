@@ -6,10 +6,11 @@
 
 use std::fmt;
 
-use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
+
+use crate::impl_tool;
 
 /// Arguments for [`ListDirTool`].
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -46,24 +47,8 @@ pub struct ListDirTool {
     pub workdir: String,
 }
 
-impl Tool for ListDirTool {
-    const NAME: &'static str = "list_dir";
-
-    type Error = ListDirError;
-    type Args = ListDirArgs;
-    type Output = String;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description:
-                "List the contents of a directory. Returns filenames with indicators: directories show '/', files show ' (file)'."
-                    .to_string(),
-            parameters: serde_json::to_value(schemars::schema_for!(ListDirArgs))
-                .unwrap_or_default(),
-        }
-    }
-
+impl_tool! {ListDirTool, ListDirArgs, ListDirError, String, "list_dir",
+    "List the contents of a directory. Returns filenames with indicators: directories show '/', files show ' (file)'.",
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         // TODO:  check to ensure that the path does not contain '..' to prevent directory traversal attacks.
         if args.path.starts_with('/') {

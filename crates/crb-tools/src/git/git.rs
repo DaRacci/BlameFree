@@ -9,11 +9,11 @@ pub mod diff;
 use std::fmt;
 use std::time::Duration;
 
-use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use crate::impl_tool;
 use super::runner::run_git_command;
 use crate::error::GitError;
 
@@ -97,22 +97,8 @@ impl Default for GitTool {
     }
 }
 
-impl Tool for GitTool {
-    const NAME: &'static str = "git";
-
-    type Error = GitToolError;
-    type Args = GitArgs;
-    type Output = String;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "Run git operations on the repository: log, diff, show, status."
-                .to_string(),
-            parameters: serde_json::to_value(schemars::schema_for!(GitArgs)).unwrap_or_default(),
-        }
-    }
-
+impl_tool! {GitTool, GitArgs, GitToolError, String, "git",
+    "Run git operations on the repository: log, diff, show, status.",
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         match &args.operation {
             GitOperation::Log => {

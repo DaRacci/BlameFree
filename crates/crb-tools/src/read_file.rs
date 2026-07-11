@@ -5,10 +5,11 @@
 
 use std::fmt;
 
-use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
+
+use crate::impl_tool;
 
 /// Arguments for [`ReadFileTool`].
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -71,21 +72,8 @@ impl Default for ReadFileTool {
     }
 }
 
-impl Tool for ReadFileTool {
-    const NAME: &'static str = "read_file";
-
-    type Error = ReadFileError;
-    type Args = ReadFileArgs;
-    type Output = String;
-
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: Self::NAME.to_string(),
-            description: "Read a file from the repository. Use with optional start_line/max_lines to read specific sections rather than entire files at once. Prefer this over using the terminal tool to cat files.".to_string(),
-            parameters: serde_json::to_value(schemars::schema_for!(ReadFileArgs)).unwrap_or_default(),
-        }
-    }
-
+impl_tool! {ReadFileTool, ReadFileArgs, ReadFileError, String, "read_file",
+    "Read a file from the repository. Use with optional start_line/max_lines to read specific sections rather than entire files at once. Prefer this over using the terminal tool to cat files.",
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         // Reject absolute paths
         // TODO: check against path traversal (e.g., `..`) in addition to canonicalization
