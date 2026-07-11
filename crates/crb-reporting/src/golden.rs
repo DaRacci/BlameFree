@@ -14,16 +14,21 @@ struct DatasetFile {
 /// expected review findings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoldenCommentEntry {
+    /// The PR title (used as a human-readable identifier).
     pub pr_title: String,
 
+    /// URL to the PR (e.g. `https://github.com/owner/repo/pull/N`).
     pub url: String,
 
+    /// Original URL for the PR before any dataset migration.
     #[serde(default)]
     pub original_url: Option<String>,
 
+    /// Azure DevOps comment identifier, if sourced from Azure.
     #[serde(default)]
     pub az_comment: Option<String>,
 
+    /// The list of golden (expected) comments for this PR.
     pub comments: Vec<GoldenComment>,
 }
 
@@ -97,4 +102,10 @@ pub fn load_golden_datasets(dataset_dir: &Path) -> Result<Vec<GoldenCommentEntry
     }
 
     Ok(entries)
+}
+
+impl crb_shared::benchmark_pipeline::HasUrl for GoldenCommentEntry {
+    fn url(&self) -> &str {
+        &self.url
+    }
 }

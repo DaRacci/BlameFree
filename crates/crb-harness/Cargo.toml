@@ -32,6 +32,7 @@ reqwest = { workspace = true, features = ["blocking"] }
 rig-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 
 tokio = { workspace = true }
 tracing = { workspace = true }
@@ -40,9 +41,6 @@ tracing = { workspace = true }
 clap = { workspace = true, optional = true }
 dotenvy = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
-
-[dev-dependencies]
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

@@ -36,9 +36,13 @@ pub const REASONING_EFFORT_LEVELS: &[&str] = &["low", "medium", "high", "max"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReasoningEffort {
+    /// Low reasoning effort — faster responses, less deep reasoning.
     Low,
+    /// Medium reasoning effort — balanced depth and speed.
     Medium,
+    /// High reasoning effort — more thorough reasoning.
     High,
+    /// Maximum reasoning effort — most thorough, slowest.
     Max,
 }
 
@@ -124,16 +128,16 @@ fn set_reasoning_cache(result: Result<HashSet<String>, String>, info_suffix: &st
                 "OpenRouter models API: reasoning-capable models discovered{}",
                 info_suffix
             );
-            let _ = REASONING_MODEL_IDS.set(Some(ids));
-            let _ = USING_FALLBACK.set(false);
+            let _ = REASONING_MODEL_IDS.set(Some(ids)); // Ignore — first write wins, subsequent calls are no-ops
+            let _ = USING_FALLBACK.set(false); // Ignore — first write wins, subsequent calls are no-ops
         }
         Err(e) => {
             tracing::warn!(
                 "OpenRouter model API unreachable ({}); using fallback heuristic",
                 e
             );
-            let _ = REASONING_MODEL_IDS.set(None);
-            let _ = USING_FALLBACK.set(true);
+            let _ = REASONING_MODEL_IDS.set(None); // Ignore — first write wins, subsequent calls are no-ops
+            let _ = USING_FALLBACK.set(true); // Ignore — first write wins, subsequent calls are no-ops
         }
     }
 }

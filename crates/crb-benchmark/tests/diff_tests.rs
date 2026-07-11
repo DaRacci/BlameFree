@@ -3,64 +3,10 @@
 //! Covers: creating a temp git repo, making commits, and verifying
 //! diff content matches expectations.
 
-use std::path::PathBuf;
 use std::process::Command;
 
-/// Helper: create a temp git repo with two commits to produce a meaningful diff.
-fn setup_repo_with_diffs() -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::TempDir::new().expect("create temp dir");
-    let repo_path = dir.path().to_path_buf();
-
-    Command::new("git")
-        .args(["init"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git init");
-    Command::new("git")
-        .args(["config", "user.email", "diff@test.com"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git config email");
-    Command::new("git")
-        .args(["config", "user.name", "Diff Test"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git config name");
-
-    std::fs::write(
-        repo_path.join("main.rs"),
-        "fn main() {\n    println!(\"hello\");\n}\n",
-    )
-    .expect("write");
-    Command::new("git")
-        .args(["add", "main.rs"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git add");
-    Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git commit");
-
-    std::fs::write(
-        repo_path.join("main.rs"),
-        "fn main() {\n    println!(\"hello world\");\n    // added comment\n}\n",
-    )
-    .expect("write");
-    Command::new("git")
-        .args(["add", "main.rs"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git add");
-    Command::new("git")
-        .args(["commit", "-m", "Update message"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git commit");
-
-    (dir, repo_path)
-}
+use crb_harness::test_utils::setup_repo_with_diffs;
+use crb_harness::test_utils::setup_empty_commit_repo;
 
 #[test]
 fn git_diff_between_commits() {
@@ -189,30 +135,7 @@ fn fetch_single_diff_via_worktree() {
 
 #[test]
 fn git_diff_on_empty_initial_commit() {
-    let dir = tempfile::TempDir::new().expect("temp dir");
-    let repo_path = dir.path().to_path_buf();
-
-    Command::new("git")
-        .args(["init"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git init");
-    Command::new("git")
-        .args(["config", "user.email", "empty@test.com"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git config email");
-    Command::new("git")
-        .args(["config", "user.name", "Empty Test"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git config name");
-
-    Command::new("git")
-        .args(["commit", "--allow-empty", "-m", "Initial"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git commit");
+    let (_dir, repo_path) = setup_empty_commit_repo();
 
     let output = Command::new("git")
         .arg("diff")

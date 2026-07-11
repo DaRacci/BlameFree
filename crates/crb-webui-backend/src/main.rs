@@ -77,7 +77,7 @@ fn resolve_log_path(custom: Option<PathBuf>) -> PathBuf {
 
     for candidate in CANDIDATES.iter() {
         if let Some(parent) = candidate.parent() {
-            let _ = fs::create_dir_all(parent);
+            let _ = fs::create_dir_all(parent); // Ignore — best-effort log directory setup
         }
         if OpenOptions::new()
             .create(true)

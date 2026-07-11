@@ -1,7 +1,7 @@
 //! In-process harness execution via library calls.
 //!
 //! Previously this module spawned `crb-harness --dashboard-events` as a
-//! subprocess.  Now it calls `crb_harness::evaluate_pr_with_postprocessing`
+//! Now it calls `crb_harness::evaluate_pr`
 //! directly, forwarding progress events to all SSE clients via the same
 //! broadcast channel.
 
@@ -11,9 +11,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crb_agents::prompts::PromptLibrary;
+use crb_harness::{EvalConfig, EvalStrategy, evaluate_pr, load_pr_diff};
 use crb_judge::build_judge;
 use crb_reporting::{PrResult, load_golden_datasets, write_report};
 use crb_rules::RuleSet;
+use crb_shared::benchmark_pipeline;
 use crb_shared::metrics::MetricsOutput;
 use rig_core::client::ProviderClient;
 use tokio::sync::{RwLock, broadcast};
@@ -32,7 +34,7 @@ use crate::server::AppState;
 /// This function:
 /// 1. Sets up the OpenAI client, judge agent, prompt library, rules, linters
 /// 2. Loads the dataset and filters PRs according to config
-/// 3. Evaluates each PR via `crb_harness::evaluate_pr_with_postprocessing`
+/// 3. Evaluates each PR via `crb_harness::evaluate_pr`
 /// 4. Writes per-PR result files + a `_summary.json`
 /// 5. Sends a final `RunFinished` event
 pub async fn run_harness(
@@ -72,7 +74,7 @@ pub async fn run_harness(
                     rs.rules.len() + rs.always_rules.len(),
                     rules_dir.display()
                 );
-                Some(rs)
+                Some(Arc::new(rs))
             }
             Err(e) => {
                 warn!("Failed to load rules from {}: {e}", rules_dir.display());
@@ -86,7 +88,7 @@ pub async fn run_harness(
         match crb_tools::load_linter_config("linters.toml") {
             Ok(configs) => {
                 info!("Loaded {} linter(s) from linters.toml", configs.len());
-                Some(configs)
+                Some(Arc::new(configs))
             }
             Err(e) => {
                 warn!("Failed to load linter config: {e}. Linters disabled.");
@@ -107,68 +109,17 @@ pub async fn run_harness(
     };
     info!("Loaded {} PR entries total", all_prs.len());
 
-    use std::collections::HashSet;
-    let filtered_prs: Vec<crb_reporting::GoldenCommentEntry> =
-        if let Some(ref filter) = config.pr_filter {
-            let filter_patterns: HashSet<String> =
-                filter.split(',').map(|s| s.trim().to_lowercase()).collect();
-
-            let available_urls: Vec<String> = all_prs.iter().map(|pr| pr.url.clone()).collect();
-
-            let filtered: Vec<_> = all_prs
-                .into_iter()
-                .filter(|pr| {
-                    let url_lower = pr.url.to_lowercase();
-                    filter_patterns.iter().any(|pattern| {
-                        if let Some((repo_part, pr_num_str)) = pattern.split_once("/pull/") {
-                            if let Ok(pr_num) = pr_num_str.parse::<u32>() {
-                                let pr_tag = format!("/pull/{}", pr_num);
-                                if let Some(pos) = url_lower.find(&pr_tag) {
-                                    let after = &url_lower[pos + pr_tag.len()..];
-                                    if after.is_empty()
-                                        || !after.chars().next().unwrap().is_ascii_digit()
-                                    {
-                                        if url_lower.contains(repo_part) {
-                                            return true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        // Exact match only — fall through to exact PR number or URL suffix matching.
-                        // This avoids substring bugs where "1" matches "/pull/10".
-                        if let Ok(num) = pattern.parse::<u32>() {
-                            // Bare number: match exactly against the PR number extracted from the URL.
-                            url_lower
-                                .rsplit('/')
-                                .next()
-                                .and_then(|s| s.parse::<u32>().ok())
-                                == Some(num)
-                        } else {
-                            // Non-numeric fallback: exact URL suffix match (e.g. "repo/pull/1").
-                            url_lower.ends_with(&format!("/{}", pattern))
-                        }
-                    })
-                })
-                .collect();
-
-            if filtered.is_empty() {
-                warn!(
-                    "--pr-filter \"{}\" matched no PRs. Available URLs:\n  {}",
-                    filter,
-                    available_urls.join("\n  ")
-                );
-            }
-            filtered
-        } else {
-            all_prs
-        };
+    let filtered_prs = if let Some(ref filter) = config.pr_filter {
+        benchmark_pipeline::filter_prs_by_pattern(all_prs, filter)
+    } else {
+        all_prs
+    };
 
     info!("After PR filter: {} PR(s) to evaluate", filtered_prs.len());
 
     if filtered_prs.is_empty() {
         warn!("No PRs to evaluate");
-        let _ = webui_tx.send(RunEvent::RunFinished {
+        let _ = webui_tx.send(RunEvent::RunFinished { // Ignore — receiver may have disconnected
             total_prs: 0,
             aggregated: AggregateMetrics::default(),
             total_cost: 0.0,
@@ -187,10 +138,6 @@ pub async fn run_harness(
     // If no explicit benchmark_dir was passed, default to the `benchmark/`
     // subdirectory, which is the standard project convention (contains
     // base-repos/, diffs/, worktrees/).
-    let bench_dir = benchmark_dir.unwrap_or_else(|| {
-        warn!("No --benchmark-dir set; defaulting to 'benchmark/' directory");
-        Path::new("benchmark")
-    });
 
     let sem = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
     let mut set = tokio::task::JoinSet::new();
@@ -204,47 +151,65 @@ pub async fn run_harness(
         None
     };
 
+    // Pre-wrap values that need to be owned inside the spawn loop
+    let bench_dir = benchmark_dir.unwrap_or_else(|| {
+        warn!("No --benchmark-dir set; defaulting to 'benchmark/' directory");
+        Path::new("benchmark")
+    }).to_path_buf();
+    let model_owned = Arc::new(config.model.clone());
+    let roles_owned = config.roles.clone();
+    let reasoning_effort_owned = Arc::new(config.reasoning_effort.clone().unwrap_or_default());
+
     for pr in filtered_prs {
         let permit = sem.clone().acquire_owned().await.expect("semaphore closed");
         let client = client.clone();
         let judge = judge.clone();
-        let model = config.model.clone();
-        let bench_dir = bench_dir.to_path_buf();
+        let model = Arc::clone(&model_owned);
+        let bench_dir = bench_dir.clone();
         let linter_configs = linter_configs.clone();
         let skip_consensus = config.skip_consensus;
         let ruleset = ruleset.clone();
         let prompt_lib = prompt_lib.clone();
-        let roles = config.roles.clone();
+        let roles = roles_owned.clone();
         let max_findings = config.max_findings;
         let cache_dir_opt = cache_dir_opt.clone();
         let dashboard_tx = dashboard_tx.clone();
-        let reasoning_effort = config.reasoning_effort.clone().unwrap_or_default();
+        let reasoning_effort = Arc::clone(&reasoning_effort_owned);
 
         set.spawn(async move {
             let _permit = permit;
-            let re = if reasoning_effort.is_empty() || reasoning_effort == "none" {
-                None
-            } else {
-                Some(reasoning_effort.as_str())
-            };
-            crb_harness::evaluate_pr_with_postprocessing(
-                &pr,
-                &client,
-                &model,
-                &judge,
-                &bench_dir,
-                linter_configs.as_ref(),
-                skip_consensus,
-                false, // linters_only
-                ruleset.as_ref(),
-                prompt_lib.as_ref(),
-                &roles,
+            let cost_tracker = Arc::new(crb_harness::CostTracker::new());
+            let cfg = crb_harness::EvalConfig {
+                strategy: if skip_consensus {
+                    crb_harness::EvalStrategy::SingleAgent
+                } else {
+                    crb_harness::EvalStrategy::Consensus
+                },
+                model: model.to_string(),
+                judge_model: String::new(), // not tracked in this path
+                reasoning_effort: if reasoning_effort.as_str().is_empty() || reasoning_effort.as_str() == "none" {
+                    None
+                } else {
+                    Some(reasoning_effort.to_string())
+                },
+                client: client.clone(),
+                judge: judge.clone(),
+                cache: None,
+                prompt_lib: prompt_lib.clone(),
+                cost_tracker: cost_tracker.clone(),
+                dashboard_tx: dashboard_tx.clone(),
+                roles: roles.clone(),
                 max_findings,
-                cache_dir_opt.as_ref(),
-                dashboard_tx.as_ref(),
-                re,
-            )
-            .await
+                linters_only: false,
+                linter_configs: linter_configs.as_ref().map(|a| (*a).clone()),
+                ruleset: ruleset.as_ref().map(|a| (*a).clone()),
+                cache_dir: cache_dir_opt.clone(),
+                benchmark_dir: Some(bench_dir.clone()),
+                workdir: None,
+                template_vars: None,
+            };
+            let diff = crb_harness::load_pr_diff(&pr, &bench_dir).await?;
+            crb_harness::evaluate_pr(&pr, &diff, &cfg).await
         });
     }
 
@@ -287,7 +252,7 @@ pub async fn run_harness(
                 }
 
                 // Send RunProgress
-                let _ = webui_tx.send(RunEvent::RunProgress {
+                let _ = webui_tx.send(RunEvent::RunProgress { // Ignore — receiver may have disconnected
                     completed_prs,
                     total_prs,
                     elapsed_secs: start_time.elapsed().as_secs_f64(),
@@ -344,7 +309,7 @@ pub async fn run_harness(
         error!("Failed to write summary: {e}");
     }
 
-    let _ = webui_tx.send(RunEvent::RunFinished {
+    let _ = webui_tx.send(RunEvent::RunFinished { // Ignore — receiver may have disconnected
         total_prs: results.len(),
         aggregated: AggregateMetrics {
             true_positives: total_tp,

@@ -3,49 +3,9 @@
 //! Covers: `parse_github_url()` with valid/invalid URLs,
 //! and basic git worktree creation.
 
-use std::path::PathBuf;
 use std::process::Command;
 
-// ---------------------------------------------------------------------------
-// Worktree creation (basic git operations)
-// ---------------------------------------------------------------------------
-
-/// Helper: create a temp git repo with a commit.
-fn setup_git_repo() -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::TempDir::new().expect("create temp dir");
-    let repo_path = dir.path().to_path_buf();
-
-    Command::new("git")
-        .args(["init"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git init");
-    Command::new("git")
-        .args(["config", "user.email", "wt@test.com"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git config email");
-    Command::new("git")
-        .args(["config", "user.name", "Worktree Test"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git config name");
-
-    // Create a file and commit
-    std::fs::write(repo_path.join("test.txt"), "initial content").expect("write");
-    Command::new("git")
-        .args(["add", "test.txt"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git add");
-    Command::new("git")
-        .args(["commit", "-m", "Initial"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git commit");
-
-    (dir, repo_path)
-}
+use crb_harness::test_utils::setup_temp_repo as setup_git_repo;
 
 #[test]
 fn worktree_add_and_remove() {
@@ -63,11 +23,11 @@ fn worktree_add_and_remove() {
 
     // Verify worktree exists as a git-linked directory
     assert!(wt_path.join(".git").exists() || wt_path.join(".git").is_file());
-    assert!(wt_path.join("test.txt").exists());
+    assert!(wt_path.join("hello.txt").exists());
 
     // Verify content matches
-    let content = std::fs::read_to_string(wt_path.join("test.txt")).expect("read wt file");
-    assert_eq!(content, "initial content");
+    let content = std::fs::read_to_string(wt_path.join("hello.txt")).expect("read wt file");
+    assert_eq!(content, "hello world");
 
     // Remove worktree
     let status = Command::new("git")

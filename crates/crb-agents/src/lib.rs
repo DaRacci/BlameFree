@@ -1,3 +1,13 @@
+//! Agent orchestration and prompt library for the code review benchmark harness.
+//!
+//! This crate builds LLM reviewer agents with configurable tools and prompts:
+//! - [`build_agent`] — builds a rig [`Agent<ResponsesCompletionModel>`] for a
+//!   given role, optionally injecting rules preamble, template variables, and
+//!   filesystem tools.
+//! - [`PromptLibrary`] — loads and renders role prompts from embedded
+//!   Handlebars templates.
+//! - [`AgentManifest`] — parses agent metadata from YAML+markdown files.
+
 use rig_core::agent::Agent;
 use rig_core::client::CompletionClient;
 use rig_core::providers::openai;

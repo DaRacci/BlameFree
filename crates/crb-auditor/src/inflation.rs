@@ -2,14 +2,19 @@ use crb_shared::pattern::{PatternProvider, has_pattern, make_pattern_list};
 use regex::Regex;
 use std::sync::LazyLock;
 
+/// An inflated category that should be downgraded.
 #[derive(Debug)]
 pub struct InflatedCategory {
+    /// Canonical name for this inflated category (e.g. "architecture_nits").
     pub name: &'static str,
 
+    /// Regex patterns that identify this inflated category.
     pub patterns: &'static [&'static str],
 
+    /// Human-readable description of this inflated category.
     pub description: &'static str,
 
+    /// How many severity levels to downgrade (negative = downgrade, e.g. -2).
     pub downgrade_quantum: i32,
 }
 

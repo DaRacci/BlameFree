@@ -14,12 +14,11 @@ use crb_agents::build_agent;
 use crb_agents::prompts::PromptLibrary;
 use crb_auditor::apply_severity_auditor;
 use crb_consensus::evaluate_pr_with_consensus;
-use crb_shared::cache::CacheBackend;
-use crb_types::RunEvent;
 use crb_judge::{compute_metrics, run_judge};
 use crb_reporting::PrResult;
 use crb_reporting::golden::GoldenCommentEntry;
 use crb_rules::RuleSet;
+use crb_shared::cache::CacheBackend;
 use crb_shared::deduplicate::semantic_dedup;
 use crb_shared::finding::Finding;
 use crb_shared::jaccard::jaccard_similarity;
@@ -27,10 +26,12 @@ use crb_shared::sanitize_filename;
 use crb_tools::create_linter_tool;
 use crb_tools::linters::config::LinterConfig;
 use crb_tools::linters::tool::LinterArgs;
+use crb_types::RunEvent;
 use regex::Regex;
 use rig_core::agent::{Agent, PromptResponse};
 use rig_core::client::ProviderClient;
 use rig_core::completion::{Prompt, Usage};
+use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use rig_core::tool::Tool;
 use tokio::sync::broadcast;
@@ -41,11 +42,70 @@ pub mod config;
 pub mod cost;
 pub mod model_capabilities;
 pub mod paths;
+pub mod test_utils;
 pub mod validation;
 
-pub use cache::LlmCache;
-pub use cache::RunHistoryEntry;
-pub use cost::CostTracker;
+/// Strategy for evaluating a PR review — single agent or consensus-based.
+#[derive(Debug, Clone, PartialEq)]
+pub enum EvalStrategy {
+    SingleAgent,
+    Consensus,
+}
+
+/// Unified configuration for an evaluation run.
+#[derive(Clone)]
+pub struct EvalConfig {
+    // Strategy selection
+    pub strategy: EvalStrategy,
+
+    // Model/LLM config
+    pub model: String,
+    pub judge_model: String,
+    pub reasoning_effort: Option<String>,
+
+    // Shared services
+    pub client: Arc<openai::Client>,
+    pub judge: Agent<ResponsesCompletionModel>,
+    pub cache: Option<Arc<dyn CacheBackend>>,
+    pub prompt_lib: Arc<PromptLibrary>,
+    pub cost_tracker: Arc<crate::cost::CostTracker>,
+    pub dashboard_tx: Option<tokio::sync::broadcast::Sender<RunEvent>>,
+
+    // Evaluation parameters
+    pub roles: String,
+    pub max_findings: usize,
+    pub linters_only: bool,
+    pub linter_configs: Option<HashMap<String, LinterConfig>>,
+    pub ruleset: Option<RuleSet>,
+    pub cache_dir: Option<PathBuf>,
+    pub benchmark_dir: Option<PathBuf>,
+
+    // Consensus-specific
+    pub workdir: Option<String>,
+
+    // Other options
+    pub template_vars: Option<HashMap<String, serde_json::Value>>,
+}
+
+impl std::fmt::Debug for EvalConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EvalConfig")
+            .field("strategy", &self.strategy)
+            .field("model", &self.model)
+            .field("judge_model", &self.judge_model)
+            .field("reasoning_effort", &self.reasoning_effort)
+            .field("roles", &self.roles)
+            .field("max_findings", &self.max_findings)
+            .field("linters_only", &self.linters_only)
+            .field("linter_configs", &self.linter_configs)
+            .field("ruleset", &self.ruleset)
+            .field("cache_dir", &self.cache_dir)
+            .field("benchmark_dir", &self.benchmark_dir)
+            .field("workdir", &self.workdir)
+            .field("template_vars", &self.template_vars)
+            .finish_non_exhaustive()
+    }
+}
 
 /// Describes which kind of diff to review.
 pub enum ReviewMode {
@@ -58,11 +118,22 @@ pub enum ReviewMode {
 
 /// Parameters for a full PR review.
 pub struct ReviewParams {
+    /// Unified diff of the PR to review.
     pub diff: String,
+
+    /// Model identifier (e.g. "deepseek/deepseek-v4-flash").
     pub model: String,
+
+    /// Title of the PR being reviewed.
     pub pr_title: String,
+
+    /// Reviewer role abbreviations (e.g. ["SA", "CL", "SEC"]).
     pub roles: Vec<String>,
+
+    /// Maximum number of findings to return per agent.
     pub max_findings: usize,
+
+    /// Optional cache directory for LLM response caching.
     pub cache_dir: Option<PathBuf>,
 }
 
@@ -810,119 +881,125 @@ where
     }
 }
 
-/// Run the original single-agent evaluation with finding collection.
-#[doc(hidden)]
-#[allow(trivial_casts)]
-pub async fn evaluate_pr_single_agent(
-    pr: &GoldenCommentEntry,
-    client: &rig_core::providers::openai::Client,
-    model: &str,
-    judge: &Agent<ResponsesCompletionModel>,
-    diff: &str,
-    linter_findings: Vec<Finding>,
-    rules_preamble: Option<&str>,
-    prompt_lib: &PromptLibrary,
-    cache: Option<Arc<crate::cache::LlmCache>>,
-    cost_tracker: Arc<crate::cost::CostTracker>,
-    dashboard_tx: Option<&broadcast::Sender<RunEvent>>,
+/// Pre-computed cache key parts used by the single-agent pipeline.
+struct AgentCacheKeys {
+    diff_hash: String,
+    rules_hash: String,
+    judge_prompt_hash: String,
+    judge_model: String,
+}
+
+fn compute_cache_keys(diff: &str, rules_preamble: Option<&str>) -> AgentCacheKeys {
+    AgentCacheKeys {
+        diff_hash: crb_shared::cache::sha256_hex(diff),
+        rules_hash: crb_shared::cache::sha256_hex(rules_preamble.unwrap_or("")),
+        judge_prompt_hash: crb_shared::cache::sha256_hex(crb_judge::JUDGE_PROMPT),
+        judge_model: String::new(),
+    }
+}
+
+/// Spawn a single agent task for one role, with caching and retry.
+#[allow(clippy::too_many_arguments)]
+fn spawn_agent_task(
+    role: String,
+    client: rig_core::providers::openai::Client,
+    model: Arc<String>,
+    diff: Arc<String>,
+    diff_hash: String,
+    rules_hash: String,
+    rules_preamble: Option<String>,
+    prompt_lib: Arc<PromptLibrary>,
+    cache: Option<Arc<dyn CacheBackend>>,
+    cost_tracker: Arc<CostTracker>,
+    dashboard_tx: Option<broadcast::Sender<RunEvent>>,
     additional_params: Option<serde_json::Value>,
-) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
-    // Pre-compute content-addressed cache key components
-    let diff_hash = crb_shared::cache::sha256_hex(diff);
-    let rules_hash = crb_shared::cache::sha256_hex(rules_preamble.unwrap_or(""));
-    let judge_prompt_hash = crb_shared::cache::sha256_hex(crb_judge::JUDGE_PROMPT);
-    let judge_model = ""; // We don't have judge_model here; it's baked into the judge Agent
+) -> impl std::future::Future<Output = Result<Vec<Finding>, String>> {
+    let preamble = rules_preamble;
+    let p_lib = prompt_lib;
+    let ct = cost_tracker;
+    let tx = dashboard_tx;
 
-    let mut agent_set = tokio::task::JoinSet::new();
-    let prompt_lib = prompt_lib.clone();
-    for role in prompt_lib.roles() {
-        let client = client.clone();
-        let model = model.to_string();
-        let role = role.to_string();
-        let diff = diff.to_string();
-        let diff_hash = diff_hash.clone();
-        let rules_hash = rules_hash.clone();
-        let preamble = rules_preamble.map(String::from);
-        let p_lib = prompt_lib.clone();
-        #[allow(clippy::unnecessary_cast)]
-        let cache_arc: Option<Arc<dyn CacheBackend>> =
-            cache.clone().map(|c| c as Arc<dyn CacheBackend>);
-        let ct = cost_tracker.clone();
-        let tx = dashboard_tx.map(|t| t.clone());
-        let additional_params = additional_params.clone();
+    async move {
+        let span = info_span!("agent", role = %role);
+        let _guard = span.enter();
 
-        agent_set.spawn(async move {
-            let span = info_span!("agent", role = %role);
-            let _guard = span.enter();
+        // Compute agent cache key
+        let prompt_hash = crb_shared::cache::sha256_hex(p_lib.get(&role).unwrap_or(""));
+        let agent_cache_key = crb_shared::cache::compute_agent_cache_key(
+            &prompt_hash,
+            &diff_hash,
+            model.as_str(),
+            &role,
+            &rules_hash,
+        );
 
-            // Compute agent cache key
-            let prompt_hash = crb_shared::cache::sha256_hex(p_lib.get(&role).unwrap_or(""));
-            let agent_cache_key = crb_shared::cache::compute_agent_cache_key(
-                &prompt_hash,
-                &diff_hash,
-                &model,
-                &role,
-                &rules_hash,
-            );
-
-            // Check cache first
-            if let Some(ref c) = cache_arc {
-                if let Some((cached_response, cached_usage)) =
-                    c.lookup_agent_by_key_with_usage(&agent_cache_key)
-                {
-                    info!(
-                        "CACHE HIT for agent role={} (key={})",
-                        role,
-                        &agent_cache_key[..12]
-                    );
-                    // Record usage from cache if available, otherwise empty usage
-                    let usage = cached_usage.unwrap_or_default();
-                    ct.record_agent(&usage, true);
-                    // Send chunk + finished for cached response
-                    if let Some(ref tx) = tx {
-                        let _ = tx.send(RunEvent::AgentChunk {
-                            role: role.clone(),
-                            chunk: cached_response.clone(),
-                        });
-                        let result = parse_agent_findings(&cached_response);
-                        let findings_count = result.as_ref().map(|v| v.len()).unwrap_or(0);
-                        let _ = tx.send(RunEvent::AgentFinished {
-                            role,
-                            findings: findings_count,
-                            success: result.is_ok(),
-                        });
-                    }
+        // Check cache first
+        if let Some(ref c) = cache {
+            if let Some((cached_response, cached_usage)) =
+                c.lookup_agent_by_key_with_usage(&agent_cache_key)
+            {
+                info!(
+                    "CACHE HIT for agent role={} (key={})",
+                    role,
+                    &agent_cache_key[..12]
+                );
+                let usage = cached_usage.unwrap_or_default();
+                ct.record_agent(&usage, true);
+                if let Some(ref tx) = tx {
+                    let _ = tx.send(RunEvent::AgentChunk {
+                        // Ignore — receiver may have disconnected
+                        role: role.clone(),
+                        chunk: cached_response.clone(),
+                    });
                     let result = parse_agent_findings(&cached_response);
-                    return result;
+                    let findings_count = result.as_ref().map(|v| v.len()).unwrap_or(0);
+                    let _ = tx.send(RunEvent::AgentFinished {
+                        // Ignore — receiver may have disconnected
+                        role,
+                        findings: findings_count,
+                        success: result.is_ok(),
+                    });
                 }
+                let result = parse_agent_findings(&cached_response);
+                return result;
             }
-            info!(
-                "CACHE MISS for agent role={} (key={})",
-                role,
-                &agent_cache_key[..12]
-            );
-            // Cache miss - make API call
+        }
+        info!(
+            "CACHE MISS for agent role={} (key={})",
+            role,
+            &agent_cache_key[..12]
+        );
 
-            let tool_preamble = crb_tools::tool_prompt_section(
-                &role,
-                &crb_tools::budget::ToolCallBudget::default(),
-                &[],
-            );
-            let agent = build_agent(
-                &client,
-                &model,
-                &role,
-                preamble.as_deref(),
-                &p_lib,
-                None, // template_vars
-                Some(&tool_preamble),
-                None, // workdir - not available in single-agent path
-                additional_params.clone(),
-            );
-            let result: Result<Vec<Finding>, String> = with_retry(
-                || async {
+        // Cache miss - make API call
+        let tool_preamble = crb_tools::tool_prompt_section(
+            &role,
+            &crb_tools::budget::ToolCallBudget::default(),
+            &[],
+        );
+        let agent = build_agent(
+            &client,
+            model.as_str(),
+            &role,
+            preamble.as_deref(),
+            p_lib.as_ref(),
+            None,
+            Some(&tool_preamble),
+            None,
+            additional_params.clone(),
+        );
+
+        let result: Result<Vec<Finding>, String> = with_retry(
+            || {
+                let agent = agent.clone();
+                let role = role.clone();
+                let diff = Arc::clone(&diff);
+                let agent_cache_key = agent_cache_key.clone();
+                let cache = cache.clone();
+                let ct = ct.clone();
+                let tx = tx.clone();
+                async move {
                     let resp: PromptResponse = agent
-                        .prompt(&diff)
+                        .prompt(diff.as_str())
                         .extended_details()
                         .await
                         .map_err(|e| e.to_string())?;
@@ -931,68 +1008,70 @@ pub async fn evaluate_pr_single_agent(
 
                     ct.record_agent(&usage, false);
 
-                    // Send chunk for live response
                     if let Some(ref tx) = tx {
                         let _ = tx.send(RunEvent::AgentChunk {
+                            // Ignore — receiver may have disconnected
                             role: role.clone(),
                             chunk: response.clone(),
                         });
                     }
 
-                    // Cache the prompt+response with content-addressed key, including usage
-                    if let Some(ref c) = cache_arc {
+                    if let Some(ref c) = cache {
                         c.save_agent_with_key_and_usage(
                             &agent_cache_key,
                             &role,
-                            &diff,
+                            diff.as_str(),
                             &response,
                             &usage,
                         );
                     }
 
                     let findings = parse_agent_findings(&response);
-                    // Send finished event
                     if let Some(ref tx) = tx {
                         let findings_count = findings.as_ref().map(|v| v.len()).unwrap_or(0);
                         let _ = tx.send(RunEvent::AgentFinished {
+                            // Ignore — receiver may have disconnected
                             role: role.clone(),
                             findings: findings_count,
                             success: findings.is_ok(),
                         });
                     }
                     findings
-                },
-                3,    // max_retries
-                1000, // base_delay_ms
-            )
-            .await;
-            // If the whole retry chain failed, send failed event
-            if result.is_err() {
-                if let Some(ref tx) = tx {
-                    let _ = tx.send(RunEvent::AgentFinished {
-                        role: role.clone(),
-                        findings: 0,
-                        success: false,
-                    });
                 }
+            },
+            3,
+            1000,
+        )
+        .await;
+
+        if result.is_err() {
+            if let Some(ref tx) = tx {
+                let _ = tx.send(RunEvent::AgentFinished {
+                    // Ignore — receiver may have disconnected
+                    role: role.clone(),
+                    findings: 0,
+                    success: false,
+                });
             }
-            result
-        });
-    }
-
-    let mut all_findings: Vec<Finding> = linter_findings;
-    while let Some(res) = agent_set.join_next().await {
-        match res {
-            Ok(Ok(mut findings)) => all_findings.append(&mut findings),
-            Ok(Err(e)) => tracing::warn!("Agent failed: {e}"),
-            Err(e) => tracing::warn!("Agent join error: {e}"),
         }
+        result
     }
+}
 
-    // Judge evaluation: compare each finding against golden comments
-    let mut verdicts = Vec::new();
+/// Run the judge evaluation loop comparing findings against golden comments,
+/// using Jaccard pre-filtering and then LLM judge with caching.
+async fn run_judge_evaluation(
+    findings: &[Finding],
+    pr: &GoldenCommentEntry,
+    judge: &Agent<ResponsesCompletionModel>,
+    cache_keys: &AgentCacheKeys,
+    cache: Option<Arc<crate::cache::LlmCache>>,
+    cost_tracker: &CostTracker,
+) -> Vec<crb_judge::JudgeVerdict> {
     let jaccard_threshold = 0.12;
-    for finding in &all_findings {
+    let mut verdicts = Vec::new();
+
+    for finding in findings {
         for gc in &pr.comments {
             let score = jaccard_similarity(&finding.message, &gc.comment, false);
             if score >= jaccard_threshold {
@@ -1013,24 +1092,24 @@ pub async fn evaluate_pr_single_agent(
                 continue;
             }
 
-            // Step 2: File/line pre-filter (if available)
+            // File/line pre-filter
             if let Some(golden_file) = &gc.file {
                 if let Some(finding_file) = &finding.file {
                     if golden_file != finding_file {
-                        continue; // file mismatch - skip
+                        continue;
                     }
                 }
             }
 
-            // Compute judge cache key
+            // Judge cache key
             let judge_key = crb_shared::cache::compute_judge_cache_key(
-                &judge_prompt_hash,
+                &cache_keys.judge_prompt_hash,
                 &finding.message,
                 &gc.comment,
-                judge_model,
+                &cache_keys.judge_model,
             );
 
-            // Check judge cache first
+            // Check judge cache
             if let Some(ref c) = cache {
                 if let Some(cached_verdict) = c.lookup_judge_by_key(&judge_key) {
                     info!("CACHE HIT for judge (key={})", &judge_key[..12]);
@@ -1042,20 +1121,13 @@ pub async fn evaluate_pr_single_agent(
 
             // Cache miss - make API call
             info!("CACHE MISS for judge (key={})", &judge_key[..12]);
-            match with_retry(
-                || run_judge(judge, &gc.comment, &finding.message),
-                3,    // max_retries
-                1000, // base_delay_ms
-            )
-            .await
-            {
+            match with_retry(|| run_judge(judge, &gc.comment, &finding.message), 3, 1000).await {
                 Ok((verdict, usage)) => {
                     cost_tracker.record_judge(&usage, false);
-
-                    // Cache the judge call if cache is active
                     if let Some(ref c) = cache {
                         let verdict_json = serde_json::to_string(&verdict).unwrap_or_default();
                         let _ = c.save_judge_with_key(
+                            // Ignore — cache save is best-effort (non-critical)
                             &judge_key,
                             &gc.comment,
                             &finding.message,
@@ -1069,13 +1141,79 @@ pub async fn evaluate_pr_single_agent(
         }
     }
 
+    verdicts
+}
+
+/// Run the original single-agent evaluation with finding collection.
+/// (private) used by evaluate_pr
+#[doc(hidden)]
+#[allow(trivial_casts)]
+async fn evaluate_pr_single_agent(
+    pr: &GoldenCommentEntry,
+    client: &rig_core::providers::openai::Client,
+    model: &str,
+    judge: &Agent<ResponsesCompletionModel>,
+    diff: &str,
+    linter_findings: Vec<Finding>,
+    rules_preamble: Option<&str>,
+    prompt_lib: &PromptLibrary,
+    cache: Option<Arc<crate::cache::LlmCache>>,
+    cost_tracker: Arc<crate::cost::CostTracker>,
+    dashboard_tx: Option<&broadcast::Sender<RunEvent>>,
+    additional_params: Option<serde_json::Value>,
+) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
+    let cache_keys = compute_cache_keys(diff, rules_preamble);
+
+    // ── Phase 1: spawn one agent per role ─────────────────────────────────
+    let mut agent_set = tokio::task::JoinSet::new();
+    let dashboard_tx_owned = dashboard_tx.map(|t| t.clone());
+    let prompt_lib_arc = Arc::new(prompt_lib.clone());
+    let diff_arc = Arc::new(diff.to_string());
+    let model_arc = Arc::new(model.to_string());
+    let diff_hash = cache_keys.diff_hash.clone();
+    let rules_hash = cache_keys.rules_hash.clone();
+    let rules_preamble_owned = rules_preamble.map(String::from);
+    for role in prompt_lib.roles() {
+        let cache_arc: Option<Arc<dyn CacheBackend>> =
+            cache.clone().map(|c| c as Arc<dyn CacheBackend>);
+        agent_set.spawn(spawn_agent_task(
+            role.to_string(),
+            client.clone(),
+            Arc::clone(&model_arc),
+            Arc::clone(&diff_arc),
+            diff_hash.clone(),
+            rules_hash.clone(),
+            rules_preamble_owned.clone(),
+            Arc::clone(&prompt_lib_arc),
+            cache_arc,
+            cost_tracker.clone(),
+            dashboard_tx_owned.clone(),
+            additional_params.clone(),
+        ));
+    }
+
+    // ── Phase 2: collect agent findings ──────────────────────────────────
+    let mut all_findings: Vec<Finding> = linter_findings;
+    while let Some(res) = agent_set.join_next().await {
+        match res {
+            Ok(Ok(mut findings)) => all_findings.append(&mut findings),
+            Ok(Err(e)) => tracing::warn!("Agent failed: {e}"),
+            Err(e) => tracing::warn!("Agent join error: {e}"),
+        }
+    }
+
+    // ── Phase 3: judge evaluation ────────────────────────────────────────
+    let verdicts =
+        run_judge_evaluation(&all_findings, pr, judge, &cache_keys, cache, &cost_tracker).await;
+
     Ok((all_findings, verdicts))
 }
 
 /// Run the multi-agent consensus evaluation, merging linter findings.
+/// (private) used by evaluate_pr
 #[doc(hidden)]
 #[allow(trivial_casts)]
-pub async fn evaluate_pr_consensus(
+async fn evaluate_pr_consensus(
     pr: &GoldenCommentEntry,
     client: &rig_core::providers::openai::Client,
     model: &str,
@@ -1284,26 +1422,62 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
     capped
 }
 
-/// Evaluate a single PR, optionally using consensus orchestration and linters.
-#[doc(hidden)]
-pub async fn evaluate_pr_with_postprocessing(
+/// Load the diff for a PR from pre-extracted cached diff files.
+///
+/// Tries the persistent worktree first, then falls back to cached diff files
+/// at `{benchmark_dir}/diffs/{owner}_{repo}_{pr_num}.diff`.
+pub async fn load_pr_diff(pr: &GoldenCommentEntry, benchmark_dir: &Path) -> Result<String> {
+    match extract_pr_info(&pr.url) {
+        Some((owner, repo, pr_num)) => {
+            // Check for persistent per-PR worktree
+            let worktree_path = benchmark_dir
+                .join("worktrees")
+                .join(format!("{owner}_{repo}_{pr_num}"));
+            if worktree_path.join(".git").exists() {
+                info!(
+                    "Using persistent worktree at {} for PR #{}",
+                    worktree_path.display(),
+                    pr_num
+                );
+            }
+            // Load the cached diff regardless of worktree presence
+            let d = load_cached_diff(benchmark_dir, &owner, &repo, pr_num).unwrap_or_default();
+            if d.is_empty() {
+                tracing::warn!("Empty diff for PR: {} (url: {})", pr.pr_title, pr.url);
+            } else {
+                info!("Loaded diff ({} bytes) for PR: {}", d.len(), pr.pr_title);
+            }
+            Ok(d)
+        }
+        None => {
+            tracing::warn!(
+                "Could not extract PR info from URL '{}'. Using empty diff.",
+                pr.url
+            );
+            Ok(String::new())
+        }
+    }
+}
+
+/// Unified evaluation of a single PR.
+///
+/// This function replaces `evaluate_pr_with_postprocessing` and provides the
+/// full evaluation pipeline: diff preprocessing, linter collection, strategy
+/// dispatch (single-agent or consensus), post-processing (dedup / severity
+/// auditor / capping), metrics computation, dashboard events, and metadata
+/// caching.
+pub async fn evaluate_pr(
     pr: &GoldenCommentEntry,
-    client: &rig_core::providers::openai::Client,
-    model: &str,
-    judge: &Agent<ResponsesCompletionModel>,
-    benchmark_dir: &Path,
-    linter_configs: Option<&HashMap<String, LinterConfig>>,
-    skip_consensus: bool,
-    linters_only: bool,
-    ruleset: Option<&RuleSet>,
-    prompt_lib: &PromptLibrary,
-    roles: &str,
-    max_findings: usize,
-    cache_dir: Option<&PathBuf>,
-    dashboard_tx: Option<&broadcast::Sender<RunEvent>>,
-    reasoning_effort: Option<&str>,
+    diff: &str,
+    config: &EvalConfig,
 ) -> Result<PrResult> {
-    let cache: Option<Arc<crate::cache::LlmCache>> = if let Some(cache_dir) = cache_dir {
+    let bench_dir = config
+        .benchmark_dir
+        .as_deref()
+        .unwrap_or_else(|| Path::new("."));
+
+    // ── Phase 1: Cache setup ────────────────────────────────────────────
+    let cache: Option<Arc<crate::cache::LlmCache>> = if let Some(ref cache_dir) = config.cache_dir {
         let pr_key = sanitize_filename(&pr.pr_title);
         let c = Arc::new(
             crate::cache::LlmCache::new(cache_dir, &pr_key)
@@ -1320,51 +1494,13 @@ pub async fn evaluate_pr_with_postprocessing(
         None
     };
 
-    let cost_tracker = Arc::new(crate::cost::CostTracker::new());
+    // ── Phase 2: Preprocess the diff ─────────────────────────────────────
+    let diff = crate::preprocess_diff(diff);
 
-    // Strategy: try persistent worktree first (gives full file context),
-    // then fall back to cached diff only.
-    let (diff, pr_repo_dir): (String, Option<std::path::PathBuf>) = match extract_pr_info(&pr.url) {
-        Some((owner, repo, pr_num)) => {
-            // Check for persistent per-PR worktree
-            let worktree_path = benchmark_dir
-                .join("worktrees")
-                .join(format!("{owner}_{repo}_{pr_num}"));
-            if worktree_path.join(".git").exists() {
-                info!(
-                    "Using persistent worktree at {} for PR #{}",
-                    worktree_path.display(),
-                    pr_num
-                );
-                let d = load_cached_diff(benchmark_dir, &owner, &repo, pr_num).unwrap_or_default();
-                (d, Some(worktree_path))
-            } else {
-                let d = load_cached_diff(benchmark_dir, &owner, &repo, pr_num).unwrap_or_default();
-                (d, None)
-            }
-        }
-        None => {
-            tracing::warn!(
-                "Could not extract PR info from URL '{}'. Using empty diff.",
-                pr.url
-            );
-            (String::new(), None)
-        }
-    };
-    if diff.is_empty() {
-        tracing::warn!("Empty diff for PR: {} (url: {})", pr.pr_title, pr.url);
-    } else {
-        info!("Loaded diff ({} bytes) for PR: {}", diff.len(), pr.pr_title);
-    }
-
-    let diff = crate::preprocess_diff(&diff);
-
+    // ── Phase 3: Linter collection ───────────────────────────────────────
     let mut linter_findings: Vec<Finding> = Vec::new();
-    if let Some(configs) = linter_configs {
-        let host_repo_path = pr_repo_dir
-            .as_ref()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| benchmark_dir.to_string_lossy().to_string());
+    if let Some(ref configs) = config.linter_configs {
+        let host_repo_path = bench_dir.to_string_lossy().to_string();
         let mut linter_set = tokio::task::JoinSet::new();
         for (_name, lconfig) in configs {
             let tool = create_linter_tool(lconfig);
@@ -1392,7 +1528,8 @@ pub async fn evaluate_pr_with_postprocessing(
         );
     }
 
-    if linters_only {
+    // ── Phase 4: Linters-only early return ───────────────────────────────
+    if config.linters_only {
         return Ok(PrResult {
             pr_title: pr.pr_title.clone(),
             url: pr.url.clone(),
@@ -1400,18 +1537,16 @@ pub async fn evaluate_pr_with_postprocessing(
             golden_count: pr.comments.len(),
             metrics: crb_judge::Metrics::default(),
             verdicts: vec![],
-            cost: Some(cost_tracker.to_summary()),
+            cost: Some(config.cost_tracker.to_summary()),
         });
     }
 
-    // ── Compute rules preamble from changed files ────────────────────────
-    let rules_preamble = ruleset.map(|rs| rs.format_preamble(&[]));
+    // ── Phase 5: Rules preamble ──────────────────────────────────────────
+    let rules_preamble = config.ruleset.as_ref().map(|rs| rs.format_preamble(&[]));
 
-    // ── Agent evaluation ──────────────────────────────────────────────────
+    // ── Phase 6: Dashboard AgentStarted events ──────────────────────────
     let pr_key = sanitize_filename(&pr.pr_title);
-
-    // Send AgentStarted for each role
-    if let Some(tx) = dashboard_tx {
+    if let Some(ref tx) = config.dashboard_tx {
         for role in ["SA", "CL", "AR", "SEC"] {
             let _ = tx.send(RunEvent::AgentStarted {
                 pr_key: pr_key.clone(),
@@ -1420,73 +1555,83 @@ pub async fn evaluate_pr_with_postprocessing(
         }
     }
 
-    let (all_findings, verdicts) = if skip_consensus {
-        evaluate_pr_single_agent(
-            pr,
-            client,
-            model,
-            judge,
-            &diff,
-            linter_findings,
-            rules_preamble.as_deref(),
-            prompt_lib,
-            cache.clone(),
-            cost_tracker.clone(),
-            dashboard_tx,
-            None, // additional_params not wired for single-agent path
-        )
-        .await?
-    } else {
-        evaluate_pr_consensus(
-            pr,
-            client,
-            model,
-            judge,
-            &diff,
-            linter_findings,
-            rules_preamble.as_deref(),
-            prompt_lib,
-            roles,
-            max_findings,
-            cache.clone(),
-            cost_tracker.clone(),
-            None,
-            reasoning_effort,
-            dashboard_tx,
-        )
-        .await?
+    // ── Phase 7: Strategy dispatch ──────────────────────────────────────
+    let (all_findings, verdicts) = match config.strategy {
+        EvalStrategy::SingleAgent => {
+            let reasoning_params = config
+                .reasoning_effort
+                .as_ref()
+                .map(|re| {
+                    model_capabilities::reasoning_to_additional_params(
+                        &config.model,
+                        Some(re.as_str()),
+                    )
+                })
+                .flatten();
+            evaluate_pr_single_agent(
+                pr,
+                &config.client,
+                &config.model,
+                &config.judge,
+                &diff,
+                linter_findings,
+                rules_preamble.as_deref(),
+                &config.prompt_lib,
+                cache.clone(),
+                config.cost_tracker.clone(),
+                config.dashboard_tx.as_ref(),
+                reasoning_params,
+            )
+            .await?
+        }
+        EvalStrategy::Consensus => {
+            let reasoning = config
+                .reasoning_effort
+                .as_deref()
+                .filter(|re| !re.is_empty() && *re != "none");
+            evaluate_pr_consensus(
+                pr,
+                &config.client,
+                &config.model,
+                &config.judge,
+                &diff,
+                linter_findings,
+                rules_preamble.as_deref(),
+                &config.prompt_lib,
+                &config.roles,
+                config.max_findings,
+                cache.clone(),
+                config.cost_tracker.clone(),
+                config.workdir.as_deref(),
+                reasoning,
+                config.dashboard_tx.as_ref(),
+            )
+            .await?
+        }
     };
 
-    // ── Post-processing: aggregator dedup + auditor severity check ────────
+    // ── Phase 8: Post-processing ────────────────────────────────────────
     let processed_findings = post_process_findings(&all_findings);
 
-    // ── Send AgentFinished for each role ────────────────────────────────
-    if let Some(tx) = dashboard_tx {
-        for (i, role) in ["SA", "CL", "AR", "SEC"].iter().enumerate() {
-            let role_findings = if skip_consensus {
-                let per_role = all_findings.len() / 4;
-                if i == 0 {
-                    all_findings.len() - per_role * 3
-                } else {
-                    per_role
-                }
-            } else {
-                processed_findings.len() / 4
-            };
+    // ── Phase 9: Dashboard AgentFinished events ─────────────────────────
+    if let Some(ref tx) = config.dashboard_tx {
+        for (_i, role) in ["SA", "CL", "AR", "SEC"].iter().enumerate() {
             let _ = tx.send(RunEvent::AgentFinished {
                 role: role.to_string(),
-                findings: role_findings,
+                findings: processed_findings.len() / 4,
                 success: true,
             });
         }
     }
 
+    // ── Phase 10: Metrics ────────────────────────────────────────────────
     let metrics = compute_metrics(&verdicts, pr.comments.len());
 
-    if let Some(tx) = dashboard_tx {
-        let tokens = cost_tracker.total_tokens();
+    // ── Phase 11: Dashboard PrCompleted event ──────────────────────────
+    if let Some(ref tx) = config.dashboard_tx {
+        let tokens = config.cost_tracker.total_tokens();
         let total_tokens = tokens.0 + tokens.1;
-        let cost_usd = cost_tracker.total_cost_usd();
+        let cost_usd = config.cost_tracker.total_cost_usd();
         let total_agent_calls = 4;
         let _ = tx.send(RunEvent::PrCompleted {
             pr_key,
@@ -1505,11 +1650,12 @@ pub async fn evaluate_pr_with_postprocessing(
         });
     }
 
+    // ── Phase 12: Cache metadata ────────────────────────────────────────
     let metadata = serde_json::json!({
         "pr_title": pr.pr_title,
         "url": pr.url,
-        "model": model,
-        "skip_consensus": skip_consensus,
+        "model": config.model,
+        "strategy": format!("{:?}", config.strategy),
         "timestamp": format!("{:?}", std::time::SystemTime::now()),
         "findings_count": verdicts.len(),
         "golden_count": pr.comments.len(),
@@ -1528,6 +1674,7 @@ pub async fn evaluate_pr_with_postprocessing(
         }
     }
 
+    // ── Phase 13: Return result ─────────────────────────────────────────
     Ok(PrResult {
         pr_title: pr.pr_title.clone(),
         url: pr.url.clone(),
@@ -1535,7 +1682,7 @@ pub async fn evaluate_pr_with_postprocessing(
         golden_count: pr.comments.len(),
         metrics,
         verdicts,
-        cost: Some(cost_tracker.to_summary()),
+        cost: Some(config.cost_tracker.to_summary()),
     })
 }
 

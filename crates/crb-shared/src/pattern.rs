@@ -9,6 +9,10 @@ pub trait PatternProvider {
     fn patterns(&self) -> &[&'static str];
 }
 
+/// Build a compiled regex pattern list from a vec of pattern providers.
+///
+/// Each provider's patterns are compiled case-insensitively. Returns a
+/// `Vec` of `(category_name, raw_pattern, compiled_regex)` tuples.
 pub fn make_pattern_list<T>(patterns: &Vec<T>) -> Vec<(&'static str, &'static str, Regex)>
 where
     T: PatternProvider,

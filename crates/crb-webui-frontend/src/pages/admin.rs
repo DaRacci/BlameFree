@@ -85,8 +85,8 @@ pub fn AdminPage() -> impl IntoView {
     // Auto-scroll to bottom when logs update (only after initial load)
     create_effect(move |_| {
         // Depend on logs and live_line_count so this fires on new content
-        let _ = logs.get();
-        let _ = live_line_count.get();
+        let _ = logs.get(); // Signal read to create reactivity dependency
+        let _ = live_line_count.get(); // Signal read to create reactivity dependency
         if !loading.get() {
             if let Some(container) = log_container_ref.get() {
                 container.set_scroll_top(container.scroll_height());

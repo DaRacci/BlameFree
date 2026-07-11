@@ -348,7 +348,7 @@ body
     #[test]
     fn test_manifest_detects_no_generalist_error() {
         let dir = std::env::temp_dir().join("manifest_test_no_gen");
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir); // Ignore — best-effort cleanup in test
         std::fs::create_dir_all(&dir).unwrap();
 
         std::fs::write(
@@ -371,13 +371,13 @@ Body"#,
                 .contains("No agent with `generalist_agent: true`")
         );
 
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir); // Ignore — best-effort cleanup in test
     }
 
     #[test]
     fn test_manifest_detects_duplicate_abbreviations() {
         let dir = std::env::temp_dir().join("manifest_test_dup");
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir); // Ignore — best-effort cleanup in test
         std::fs::create_dir_all(&dir).unwrap();
 
         std::fs::write(
@@ -407,7 +407,7 @@ Body"#,
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Duplicate"));
 
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir); // Ignore — best-effort cleanup in test
     }
 
     #[test]

@@ -1,30 +1,41 @@
 use serde::Deserialize;
 use std::path::Path;
 
+/// A single MCP server configuration from a TOML config file.
 #[derive(Debug, Clone, Deserialize)]
 pub struct McpServerConfig {
+    /// Human-readable name for this server.
     pub name: String,
+    /// Base URL for the MCP server endpoint.
     pub url: String,
+    /// Transport protocol (HTTP or stdio).
     #[serde(default)]
     pub transport: McpTransportType,
+    /// Whether this server is enabled at startup.
     #[serde(default)]
     pub enabled: bool,
 }
 
+/// Transport protocol for connecting to an MCP server.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum McpTransportType {
+    /// HTTP (or HTTPS) transport — the default.
     #[default]
     Http,
+    /// Stdio transport — spawns a subprocess and communicates via stdin/stdout.
     Stdio,
 }
 
+/// Top-level MCP configuration from a TOML config file.
 #[derive(Debug, Clone, Deserialize)]
 pub struct McpConfig {
+    /// List of MCP server configurations.
     pub servers: Vec<McpServerConfig>,
 }
 
 impl McpConfig {
+    /// Load MCP configuration from a TOML file.
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)?;
         Ok(toml::from_str(&content)?)

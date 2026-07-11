@@ -475,72 +475,75 @@ fn get_file_modified(path: &Path) -> String {
     "unknown".to_string()
 }
 
-/// GET /api/runs/:id — get detailed run results.
-pub async fn get_run(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-) -> impl IntoResponse {
-    tracing::info!("GET /api/runs/{}", id);
-
-    // Check if run is still in progress (in active_runs before output dir exists)
-    let active_run_config = {
-        let runs = state.active_runs.read().await;
-        runs.get(&id).cloned()
+/// Build a RunDetail for a run still in memory (not yet written to disk).
+fn format_running_response(id: &str, active_run: &ActiveRun) -> impl IntoResponse {
+    let roles: Vec<String> = active_run
+        .config
+        .roles
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect();
+    let detail = RunDetail {
+        id: id.to_string(),
+        name: id.to_string(),
+        pr_count: active_run.total_prs,
+        results: vec![],
+        aggregate: None,
+        total_cost: None,
+        total_tokens: 0,
+        duration_secs: None,
+        model: active_run.config.model.clone(),
+        status: "running".to_string(),
+        config: Some(RunConfig {
+            model: active_run.config.model.clone(),
+            dataset: active_run.config.dataset_dir.clone(),
+            roles,
+        }),
     };
-    if let Some(ref active_run) = active_run_config {
-        if !active_run.finished {
-            // Running — return in-memory state
-            let roles: Vec<String> = active_run
-                .config
-                .roles
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .collect();
-            let detail = RunDetail {
-                id: id.clone(),
-                name: id.clone(),
-                pr_count: active_run.total_prs,
-                results: vec![],
-                aggregate: None,
-                total_cost: None,
-                total_tokens: 0,
-                duration_secs: None,
-                model: active_run.config.model.clone(),
-                status: "running".to_string(),
-                config: Some(RunConfig {
-                    model: active_run.config.model.clone(),
-                    dataset: active_run.config.dataset_dir.clone(),
-                    roles,
-                }),
-            };
-            return Json(detail).into_response();
-        }
-        // Finished — fall through to disk reading below (do NOT return early with empty results)
-    }
+    Json(detail).into_response()
+}
 
-    let run_path = state.output_dir.join(&id);
+/// Summary data extracted from a `_summary.json` file.
+struct RunDirSummary {
+    model: String,
+    duration_secs: f64,
+    total_cost: f64,
+    total_tokens: usize,
+}
 
-    if !run_path.exists() || !run_path.is_dir() {
-        tracing::error!("Run directory not found: {}", run_path.display());
-        return not_found(format!("Run not found: {}", id));
-    }
+/// Read `_summary.json` from a run directory, if it exists.
+fn read_summary_from_dir(run_path: &Path) -> Option<RunDirSummary> {
+    let summary_path = run_path.join(crb_harness::paths::SUMMARY_FILE);
+    let content = std::fs::read_to_string(&summary_path).ok()?;
+    let summary: HashMap<String, serde_json::Value> = serde_json::from_str(&content).ok()?;
+    Some(RunDirSummary {
+        model: summary
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string(),
+        duration_secs: summary
+            .get("duration_secs")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0),
+        total_cost: summary
+            .get("total_cost_usd")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0),
+        total_tokens: summary
+            .get("total_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize,
+    })
+}
 
-    let entries = match std::fs::read_dir(&run_path) {
-        Ok(entries) => entries,
-        Err(e) => {
-            tracing::error!("Failed to read run dir {}: {}", run_path.display(), e);
-            return internal_err(e.to_string());
-        }
+/// Read all PR result files from a run directory.
+fn read_pr_results_from_dir(run_path: &Path, cache_dir: &Option<PathBuf>) -> Vec<PrResult> {
+    let mut results = Vec::new();
+    let entries = match std::fs::read_dir(run_path) {
+        Ok(e) => e,
+        Err(_) => return results,
     };
-
-    let mut results: Vec<PrResult> = Vec::new();
-    let mut total_cost = 0.0f64;
-    let mut total_tokens = 0usize;
-    let mut model = "unknown".to_string();
-    let mut duration_secs = 0.0f64;
-
-    // Resolve cache dir once for agent checking
-    let cache_dir = resolve_cache_dir(&state.output_dir, &id);
 
     for entry in entries.flatten() {
         let file_path = entry.path();
@@ -555,83 +558,55 @@ pub async fn get_run(
 
         // Skip metadata files (anything starting with _)
         if file_name.starts_with('_') {
-            if file_name == crb_harness::paths::SUMMARY_FILE {
-                if let Ok(content) = std::fs::read_to_string(&file_path) {
-                    if let Ok(summary) =
-                        serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
-                    {
-                        model = summary
-                            .get("model")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unknown")
-                            .to_string();
-                        duration_secs = summary
-                            .get("duration_secs")
-                            .and_then(|v| v.as_f64())
-                            .unwrap_or(0.0);
-                        total_cost = summary
-                            .get("total_cost_usd")
-                            .and_then(|v| v.as_f64())
-                            .unwrap_or(0.0);
-                        total_tokens = summary
-                            .get("total_tokens")
-                            .and_then(|v| v.as_u64())
-                            .unwrap_or(0) as usize;
-                    }
-                }
-            }
             continue;
         }
 
-        if let Ok(content) = std::fs::read_to_string(&file_path) {
-            match serde_json::from_str::<PrResultJson>(&content) {
-                Ok(pr) => {
-                    // Extract PR number from URL or filename
-                    let pr_number = pr
-                        .url
-                        .rsplit('/')
-                        .next()
-                        .and_then(|s| s.parse::<u32>().ok())
-                        .unwrap_or(0);
-                    // pr_key is the output filename stem (sanitized PR title)
-                    let pr_key = file_path
-                        .file_stem()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .to_string();
-                    let pr_key_for_agents = pr_key.clone();
+        let content = match std::fs::read_to_string(&file_path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
 
-                    results.push(PrResult {
-                        pr_number,
-                        pr_key,
-                        title: pr.pr_title,
-                        f1: Some(pr.metrics.f1),
-                        precision: Some(pr.metrics.precision),
-                        recall: Some(pr.metrics.recall),
-                        cost: pr.cost.as_ref().map(|c| c.total_usd),
-                        status: Some("done".to_string()),
-                        has_agents: cache_dir.as_ref().map_or(false, |cd| {
-                            let pr_dir = cd.join(&pr_key_for_agents);
-                            pr_dir.is_dir() && pr_dir.join("agents").is_dir()
-                        }),
-                    });
-                }
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to parse PR result file {}: {}",
-                        file_path.display(),
-                        e
-                    );
-                }
-            }
+        if let Ok(pr) = serde_json::from_str::<PrResultJson>(&content) {
+            let pr_number = pr
+                .url
+                .rsplit('/')
+                .next()
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0);
+            let pr_key = file_path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let pr_key_for_agents = pr_key.clone();
+
+            results.push(PrResult {
+                pr_number,
+                pr_key,
+                title: pr.pr_title,
+                f1: Some(pr.metrics.f1),
+                precision: Some(pr.metrics.precision),
+                recall: Some(pr.metrics.recall),
+                cost: pr.cost.as_ref().map(|c| c.total_usd),
+                status: Some("done".to_string()),
+                has_agents: cache_dir.as_ref().map_or(false, |cd| {
+                    let pr_dir = cd.join(&pr_key_for_agents);
+                    pr_dir.is_dir() && pr_dir.join("agents").is_dir()
+                }),
+            });
         }
     }
 
-    let pr_count = results.len();
-    let _total_tp: usize = 0;
-    let _total_fp: usize = 0;
-    let _total_fn: usize = 0;
+    results
+}
 
+/// Compute aggregate metrics from PR results, averaging f1/precision/recall.
+fn compute_aggregate_metrics(
+    results: &[PrResult],
+    total_cost: f64,
+    duration_secs: f64,
+) -> AggregateMetrics {
+    let pr_count = results.len();
     let avg_f1 = if pr_count > 0 {
         results.iter().filter_map(|r| r.f1).sum::<f64>() / pr_count as f64
     } else {
@@ -648,9 +623,59 @@ pub async fn get_run(
         0.0
     };
 
+    AggregateMetrics {
+        avg_f1,
+        avg_precision,
+        avg_recall,
+        total_tp: 0,
+        total_fp: 0,
+        total_fn: 0,
+        total_cost,
+        total_prs: pr_count as u32,
+        duration_secs,
+    }
+}
+
+/// GET /api/runs/:id — get detailed run results.
+pub async fn get_run(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> impl IntoResponse {
+    tracing::info!("GET /api/runs/{}", id);
+
+    // Check if run is still in progress (in active_runs before output dir exists)
+    let active_run_config = {
+        let runs = state.active_runs.read().await;
+        runs.get(&id).cloned()
+    };
+
+    if let Some(ref active_run) = active_run_config {
+        if !active_run.finished {
+            return format_running_response(&id, active_run);
+        }
+        // Finished — fall through to disk reading
+    }
+
+    let run_path = state.output_dir.join(&id);
+    if !run_path.exists() || !run_path.is_dir() {
+        tracing::error!("Run directory not found: {}", run_path.display());
+        return not_found(format!("Run not found: {}", id));
+    }
+
+    // Read summary metadata
+    let (model, mut duration_secs, mut total_cost, mut total_tokens) = read_summary_from_dir(&run_path)
+        .map(|s| (s.model, s.duration_secs, s.total_cost, s.total_tokens))
+        .unwrap_or_else(|| ("unknown".to_string(), 0.0, 0.0, 0));
+
+    // Resolve cache dir once for agent checking
+    let cache_dir = resolve_cache_dir(&state.output_dir, &id);
+
+    // Read PR result files
+    let results = read_pr_results_from_dir(&run_path, &cache_dir);
+    let pr_count = results.len();
+
     // Fallback: compute duration from file timestamps if not found in summary
     if duration_secs == 0.0 {
-        let run_path = state.output_dir.join(&id);
         duration_secs = compute_duration_from_timestamps(&run_path);
     }
 
@@ -666,22 +691,14 @@ pub async fn get_run(
             .collect(),
     });
 
+    let aggregate = compute_aggregate_metrics(&results, total_cost, duration_secs);
+
     let detail = RunDetail {
         id: id.clone(),
         name: id.clone(),
         pr_count,
         results,
-        aggregate: Some(AggregateMetrics {
-            avg_f1,
-            avg_precision,
-            avg_recall,
-            total_tp: _total_tp,
-            total_fp: _total_fp,
-            total_fn: _total_fn,
-            total_cost,
-            total_prs: pr_count as u32,
-            duration_secs,
-        }),
+        aggregate: Some(aggregate),
         total_cost: Some(total_cost),
         total_tokens,
         duration_secs: Some(duration_secs),

@@ -4,46 +4,8 @@
 //! It should fail gracefully with "no API key" rather than panic.
 
 use std::path::PathBuf;
-use std::process::Command;
 
-/// Helper: create a temporary git repo with a file and a commit.
-fn setup_temp_repo() -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::TempDir::new().expect("create temp dir");
-    let repo_path = dir.path().to_path_buf();
-
-    Command::new("git")
-        .args(["init"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git init");
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git config email");
-
-    Command::new("git")
-        .args(["config", "user.name", "Test User"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git config name");
-
-    // Create a file and commit it
-    std::fs::write(repo_path.join("hello.txt"), "hello world").expect("write file");
-    Command::new("git")
-        .args(["add", "hello.txt"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git add");
-    Command::new("git")
-        .args(["commit", "-m", "Initial commit"])
-        .current_dir(&repo_path)
-        .output()
-        .expect("git commit");
-
-    (dir, repo_path)
-}
+use crb_harness::test_utils::setup_temp_repo;
 
 // ---------------------------------------------------------------------------
 // review_diff on working tree with no changes -> empty findings

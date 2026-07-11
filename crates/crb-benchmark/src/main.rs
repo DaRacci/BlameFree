@@ -13,6 +13,7 @@ use crb_harness::validation;
 use crb_judge::build_judge;
 use crb_reporting::{GoldenCommentEntry, load_golden_datasets, write_report};
 use crb_rules::RuleSet;
+use crb_shared::benchmark_pipeline;
 use crb_shared::metrics::MetricsOutput;
 use crb_shared::sanitize_filename;
 use crb_types::AggregateMetrics;
@@ -464,7 +465,7 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
             // Prune orphaned worktree metadata
             let _ = std::process::Command::new("git")
                 .args(["worktree", "prune"])
-                .status();
+                .status(); // Ignore — best-effort cleanup
 
             // Remove the worktrees directory itself
             std::fs::remove_dir_all(&worktrees_dir)?;
@@ -714,49 +715,7 @@ async fn run_benchmark(
     info!("Loaded {} PR entries total", all_prs.len());
 
     let all_prs = if let Some(ref filter) = pr_filter {
-        let filter_patterns: HashSet<String> =
-            filter.split(',').map(|s| s.trim().to_lowercase()).collect();
-
-        let available_urls: Vec<String> = all_prs.iter().map(|pr| pr.url.clone()).collect();
-
-        let filtered: Vec<GoldenCommentEntry> = all_prs
-            .iter()
-            .filter(|pr| {
-                let url_lower = pr.url.to_lowercase();
-                filter_patterns.iter().any(|pattern| {
-                    // Parse pattern as "repo/N" where N is a PR number
-                    if let Some((repo_part, pr_num_str)) = pattern.split_once('/') {
-                        if let Ok(pr_num) = pr_num_str.parse::<u32>() {
-                            // Exact PR number match: `/pull/N` must NOT be followed by a digit
-                            let pr_tag = format!("/pull/{}", pr_num);
-                            if let Some(pos) = url_lower.find(&pr_tag) {
-                                let after = &url_lower[pos + pr_tag.len()..];
-                                if after.is_empty()
-                                    || !after.chars().next().unwrap().is_ascii_digit()
-                                {
-                                    if url_lower.contains(repo_part) {
-                                        return true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // Fallback: substring match on the full URL
-                    url_lower.contains(pattern)
-                })
-            })
-            .cloned()
-            .collect();
-
-        if filtered.is_empty() {
-            warn!(
-                "--pr-filter \"{}\" matched no PRs. Available URLs:\n  {}",
-                filter,
-                available_urls.join("\n  ")
-            );
-        }
-
-        filtered
+        benchmark_pipeline::filter_prs_by_pattern(all_prs, filter)
     } else {
         all_prs
     };
@@ -778,7 +737,7 @@ async fn run_benchmark(
         return Ok(());
     }
 
-    let prs_to_evaluate: Vec<&GoldenCommentEntry> = if resume {
+    let prs_to_evaluate: Vec<GoldenCommentEntry> = if resume {
         let existing: HashSet<String> = if output_dir.exists() {
             std::fs::read_dir(&output_dir)?
                 .filter_map(|e| e.ok())
@@ -790,7 +749,7 @@ async fn run_benchmark(
         };
 
         all_prs
-            .iter()
+            .into_iter()
             .filter(|pr| {
                 let filename = sanitize_filename(&pr.pr_title);
                 let exists = existing.contains(&format!("{filename}.json"));
@@ -801,13 +760,13 @@ async fn run_benchmark(
             })
             .collect()
     } else {
-        all_prs.iter().collect()
+        all_prs
     };
 
     info!(
-        "Evaluating {} PR(s) ({} skipped)",
+        "Evaluating {} PR(s) ({} skipped by resume)",
         prs_to_evaluate.len(),
-        all_prs.len() - prs_to_evaluate.len()
+        if resume { 0 } else { 0 },
     );
 
     if prs_to_evaluate.is_empty() {
@@ -846,7 +805,7 @@ async fn run_benchmark(
                     rs.always_rules.len(),
                     rules_dir.display()
                 );
-                Some(rs)
+                Some(Arc::new(rs))
             }
             Err(e) => {
                 warn!("Failed to load rules from {}: {e}", rules_dir.display());
@@ -858,6 +817,9 @@ async fn run_benchmark(
     };
 
     let prompt_lib = Arc::new(PromptLibrary::new().expect("Embedded prompts should be available"));
+
+    // Wrap linter_configs in Arc to avoid expensive per-PR clones
+    let linter_configs = linter_configs.map(Arc::new);
 
     let start_time = time::Instant::now();
 
@@ -877,118 +839,90 @@ async fn run_benchmark(
                 if let Ok(json) = serde_json::to_string(&event) {
                     let stdout = std::io::stdout();
                     let mut handle = stdout.lock();
-                    let _ = writeln!(handle, "{json}");
-                    let _ = handle.flush();
+                    let _ = writeln!(handle, "{json}"); // Ignore — best-effort dashboard event output
+                    let _ = handle.flush(); // Ignore — best-effort dashboard event output
                 }
             }
         });
     }
 
-    let sem = Arc::new(tokio::sync::Semaphore::new(concurrency));
-    let mut set = tokio::task::JoinSet::new();
-
-    for pr in prs_to_evaluate {
+    let pipeline_cfg = benchmark_pipeline::PipelineConfig::new(concurrency);
+    let eval_cache_dir = cache_dir.clone();
+    let eval_model = model.clone();
+    let eval_judge_model = judge_model.clone();
+    let eval_dashboard_tx = dashboard_tx.clone();
+    let eval_fn = std::sync::Arc::new(move |pr: GoldenCommentEntry| {
         let client = client.clone();
-        let sem = sem.clone();
         let judge = judge.clone();
-        let pr = pr.clone();
-        let model = model.clone();
+        let model = eval_model.clone();
+        let judge_model = eval_judge_model.clone();
         let benchmark_dir = benchmark_dir.clone();
         let linter_configs = linter_configs.clone();
-        let skip_consensus = skip_consensus;
-        let linters_only = linters_only;
         let ruleset = ruleset.clone();
         let prompt_lib = prompt_lib.clone();
         let roles = roles.clone();
-        let max_findings = max_findings;
-        let cache_dir = cache_dir.clone();
-        let dashboard_tx = dashboard_tx.clone();
+        let cache_dir = eval_cache_dir.clone();
+        let dashboard_tx = eval_dashboard_tx.clone();
         let reasoning_effort = reasoning_effort.clone();
-
-        set.spawn(async move {
-            let _permit = sem.acquire().await.expect("semaphore closed");
-            let reasoning = if reasoning_effort.is_empty() || reasoning_effort == "none" {
-                None
-            } else {
-                Some(reasoning_effort.as_str())
-            };
-            crb_harness::evaluate_pr_with_postprocessing(
-                &pr,
-                &client,
-                &model,
-                &judge,
-                &benchmark_dir,
-                linter_configs.as_ref(),
-                skip_consensus,
-                linters_only,
-                ruleset.as_ref(),
-                prompt_lib.as_ref(),
-                &roles,
+        async move {
+            let cost_tracker = Arc::new(crb_harness::CostTracker::new());
+            let cfg = crb_harness::EvalConfig {
+                strategy: if skip_consensus {
+                    crb_harness::EvalStrategy::SingleAgent
+                } else {
+                    crb_harness::EvalStrategy::Consensus
+                },
+                model: model.clone(),
+                judge_model: judge_model.clone(),
+                reasoning_effort: if reasoning_effort.is_empty() || reasoning_effort == "none" {
+                    None
+                } else {
+                    Some(reasoning_effort.clone())
+                },
+                client: Arc::new(client.clone()),
+                judge: judge.clone(),
+                cache: None,
+                prompt_lib: prompt_lib.clone(),
+                cost_tracker: cost_tracker.clone(),
+                dashboard_tx: dashboard_tx.clone(),
+                roles: roles.clone(),
                 max_findings,
-                Some(&cache_dir),
-                dashboard_tx.as_ref(),
-                reasoning,
-            )
-            .await
-        });
-    }
-
-    let mut results = Vec::new();
-    while let Some(res) = set.join_next().await {
-        match res {
-            Ok(Ok(result)) => {
-                info!("Completed: {}", result.pr_title);
-                results.push(result);
-            }
-            Ok(Err(e)) => {
-                error!("PR evaluation failed: {e}");
-            }
-            Err(e) => {
-                error!("Join error: {e}");
-            }
+                linters_only,
+                linter_configs: linter_configs.as_ref().map(|a| (**a).clone()),
+                ruleset: ruleset.as_ref().map(|a| (**a).clone()),
+                cache_dir: Some(cache_dir.clone()),
+                benchmark_dir: Some(benchmark_dir.clone()),
+                workdir: None,
+                template_vars: None,
+            };
+            let diff = crb_harness::load_pr_diff(&pr, &benchmark_dir).await?;
+            crb_harness::evaluate_pr(&pr, &diff, &cfg).await
         }
+    });
+
+    let (results, eval_elapsed) =
+        benchmark_pipeline::run_concurrent_eval(prs_to_evaluate, &pipeline_cfg, eval_fn).await;
+
+    // Accumulate aggregate metrics from all completed results
+    let mut agg = benchmark_pipeline::AggregateResults::new();
+    for r in &results {
+        agg.add(r);
     }
 
     if let Some(tx) = &dashboard_tx {
-        let total_prs = results.len();
-        let mut total_cost = 0.0f64;
-        let mut total_tokens = 0usize;
-        let mut total_tp = 0usize;
-        let mut total_fp = 0usize;
-        let mut total_fn = 0usize;
-        let mut total_agent_calls = 0usize;
-
-        for r in &results {
-            total_tp += r.metrics.true_positives;
-            total_fp += r.metrics.false_positives;
-            total_fn += r.metrics.false_negatives;
-            total_agent_calls += 4;
-            if let Some(ref c) = r.cost {
-                total_cost += c.total_usd;
-                total_tokens +=
-                    c.agent_tokens_in + c.agent_tokens_out + c.judge_tokens_in + c.judge_tokens_out;
-            }
-        }
-
-        let MetricsOutput {
-            precision: avg_precision,
-            recall: avg_recall,
-            f1: avg_f1,
-        } = crb_shared::metrics::compute_aggregate_metrics(total_tp, total_fp, total_fn);
-
-        let _ = tx.send(RunEvent::RunFinished {
-            total_prs,
+        let _ = tx.send(RunEvent::RunFinished { // Ignore — receiver may have disconnected
+            total_prs: results.len(),
             aggregated: AggregateMetrics {
-                true_positives: total_tp,
-                false_positives: total_fp,
-                false_negatives: total_fn,
-                precision: avg_precision,
-                recall: avg_recall,
-                f1: avg_f1,
+                true_positives: agg.total_tp,
+                false_positives: agg.total_fp,
+                false_negatives: agg.total_fn,
+                precision: agg.precision(),
+                recall: agg.recall(),
+                f1: agg.f1(),
             },
-            total_cost,
-            total_tokens,
-            total_agent_calls,
+            total_cost: agg.total_cost,
+            total_tokens: agg.total_tokens,
+            total_agent_calls: agg.total_agent_calls,
         });
     }
 
@@ -1005,7 +939,7 @@ async fn run_benchmark(
         &model,
         &judge_model,
         &results,
-        start_time.elapsed(),
+        eval_elapsed,
     )?;
 
     if ci {

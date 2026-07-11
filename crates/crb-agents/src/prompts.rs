@@ -9,10 +9,29 @@ const AGENT_TEMPLATE_PATH: &str = "agent.hbs";
 const AGENTS_DIR: &str = "agents";
 const SECTIONS_DIR: &str = "sections";
 
+/// A library of role prompts loaded from embedded templates and markdown files.
+///
+/// The [`PromptLibrary`] is initialised at compile time via `include_dir!` and
+/// provides:
+/// - Role-specific agent prompt rendering through a Handlebars template.
+/// - Section content injection (output_format, max_findings, etc.).
+/// - Agent metadata lookups (config, raw body).
+///
+/// # Example
+///
+/// ```no_run
+/// use crb_agents::prompts::PromptLibrary;
+/// let lib = PromptLibrary::new().expect("Embedded prompts should be available");
+/// let rendered = lib.render("SA", std::collections::HashMap::new());
+/// assert!(!rendered.is_empty());
+/// ```
 #[derive(Clone)]
 pub struct PromptLibrary {
+    /// Map of uppercase abbreviation -> agent entry.
     agents: HashMap<String, AgentEntry>,
+    /// Map of section name -> raw section content.
     sections: HashMap<String, String>,
+    /// Compiled Handlebars registry with the agent template registered.
     handlebars: Handlebars<'static>,
 }
 

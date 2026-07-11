@@ -4,10 +4,19 @@ use std::collections::HashSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct Finding {
+    /// Source file path where the issue was found, if available.
     pub file: Option<String>,
+
+    /// Line number in the source file, if available.
     pub line: Option<u32>,
+
+    /// Human-readable description of the finding.
     pub message: String,
+
+    /// Severity label (e.g. "critical", "high", "medium", "low", "info").
     pub severity: String,
+
+    /// Optional rule or check identifier (e.g. "S001", "R101").
     pub rule_code: Option<String>,
 
     /// Whether the severity has been audited/downgraded by the severity auditor.
@@ -51,10 +60,14 @@ pub struct Finding {
     pub merged_from: Option<u64>,
 }
 
+/// A confidence level for a finding.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub enum ConfidenceLevel {
+    /// The finding is confirmed with high certainty.
     Confirmed,
+    /// The finding is likely but not certain.
     Likely,
+    /// The finding is uncertain or speculative.
     Uncertain,
 }
 

@@ -15,18 +15,40 @@
 //! given reviewer role (SA, CL, AR, SEC).  [`tool_prompt_section()`] renders the
 //! tool-calling preamble for inclusion in the agent's system prompt.
 
+/// Tool call budget for limiting per-agent tool invocations.
 pub mod budget;
+
+/// Error types for linter and git operations.
 pub mod error;
+
+/// Git tools (clean, diff, runner) for pre-review git operations.
 pub mod git;
+
+/// Grep tool for searching file contents during review.
 pub mod grep;
+
 #[cfg(feature = "exp14_template_vars")]
+/// Language detector for template variable injection.
 pub mod language_detector;
+
+/// Linter integrations (ruff, ESLint, go vet) with JSON/text output parsers.
 pub mod linters;
+
+/// List directory contents tool for agent use.
 pub mod list_dir;
+
+/// Internal helper macros.
 pub mod macros;
+
+/// MCP (Model Context Protocol) server config and tool adapter.
 pub mod mcp;
+
+/// Read file contents tool for agent use.
 pub mod read_file;
+
+/// Execute shell commands tool for agent use.
 pub mod shell;
+
 #[cfg(feature = "exp14_submit_finding")]
 pub mod submit_finding;
 

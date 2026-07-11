@@ -1,12 +1,22 @@
 use serde::{Deserialize, Serialize};
 
+/// Severity levels for findings, ordered from most to least severe.
+///
+/// # Ord
+///
+/// `Critical < High < Medium < Low < Info`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
+    /// Critical severity — security vulnerabilities or correctness bugs.
     Critical = 0,
+    /// High severity — significant issues that should be addressed soon.
     High = 1,
+    /// Medium severity — moderate issues that should be reviewed.
     Medium = 2,
+    /// Low severity — minor issues or style concerns.
     Low = 3,
+    /// Informational — observations without actionable impact.
     Info = 4,
 }
 

@@ -36,19 +36,33 @@ impl fmt::Display for Language {
 // All language constants use the canonical GitHub Linguist names.
 #[allow(non_upper_case_globals)]
 impl Language {
+    /// Python language.
     pub const Python: Language = Language("Python");
+    /// Rust language.
     pub const Rust: Language = Language("Rust");
+    /// TypeScript language.
     pub const TypeScript: Language = Language("TypeScript");
+    /// JavaScript language.
     pub const JavaScript: Language = Language("JavaScript");
+    /// Go language.
     pub const Go: Language = Language("Go");
+    /// Ruby language.
     pub const Ruby: Language = Language("Ruby");
+    /// Java language.
     pub const Java: Language = Language("Java");
+    /// Kotlin language.
     pub const Kotlin: Language = Language("Kotlin");
+    /// Swift language.
     pub const Swift: Language = Language("Swift");
+    /// C# language.
     pub const CSharp: Language = Language("C#");
+    /// C++ language.
     pub const Cpp: Language = Language("C++");
+    /// C language.
     pub const C: Language = Language("C");
+    /// Scala language.
     pub const Scala: Language = Language("Scala");
+    /// PHP language.
     pub const Php: Language = Language("PHP");
 }
 

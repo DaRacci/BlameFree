@@ -4,12 +4,28 @@ pub const DEFAULT_MODEL: &str = "deepseek/deepseek-v4-flash";
 /// Default model for benchmark/harness reviews (often a larger model).
 pub const DEFAULT_MODEL_PRO: &str = "deepseek/deepseek-v4-pro";
 
+/// Shared concurrent evaluation loop, metrics aggregation, and PR filtering.
+pub mod benchmark_pipeline;
+
+/// Content-addressed LLM interaction cache (filesystem-backed).
 pub mod cache;
+
+/// Finding deduplication utilities (by file+line, semantic overlap).
 pub mod deduplicate;
+
+/// Core [`Finding`] type and confidence levels for code review issues.
 pub mod finding;
+
+/// Jaccard word-overlap heuristic matching for findings vs. golden comments.
 pub mod jaccard;
+
+/// Aggregate metrics computation (precision, recall, F1) from totals.
 pub mod metrics;
+
+/// Shared pattern-matching infrastructure for severity auditing.
 pub mod pattern;
+
+/// [`Severity`] enum and utility functions for severity level management.
 pub mod severity;
 
 /// Sanitize a string for use as a filename.

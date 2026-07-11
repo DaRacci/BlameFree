@@ -22,33 +22,48 @@ pub struct Baseline {
 /// Expected metric values that the benchmark should achieve.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpectedMetrics {
+    /// Total number of PRs expected in the result set.
     pub total_prs: usize,
+    /// Average precision across all evaluated PRs.
     pub avg_precision: f64,
+    /// Average recall across all evaluated PRs.
     pub avg_recall: f64,
+    /// Average F1 score across all evaluated PRs.
     pub avg_f1: f64,
 }
 
 /// Tolerance thresholds for each metric.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricThresholds {
+    /// Maximum allowed absolute deviation for precision.
     pub precision_delta: f64,
+    /// Maximum allowed absolute deviation for recall.
     pub recall_delta: f64,
+    /// Maximum allowed absolute deviation for F1 score.
     pub f1_delta: f64,
 }
 
 /// Result of comparing computed metrics against a baseline.
 #[derive(Debug, Clone)]
 pub struct ValidationResult {
+    /// Whether all metrics are within their respective threshold deltas.
     pub in_threshold: bool,
+
+    /// Computed deltas (absolute deviations) for each metric.
     pub deltas: MetricDeltas,
+
+    /// Total number of PRs evaluated in this validation.
     pub total_prs: usize,
 }
 
 /// Deltas (computed - expected) for each metric.
 #[derive(Debug, Clone)]
 pub struct MetricDeltas {
+    /// Absolute deviation between computed and expected precision.
     pub precision_delta: f64,
+    /// Absolute deviation between computed and expected recall.
     pub recall_delta: f64,
+    /// Absolute deviation between computed and expected F1 score.
     pub f1_delta: f64,
 }
 

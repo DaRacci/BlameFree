@@ -5,8 +5,10 @@ use std::sync::LazyLock;
 /// A protected category that should never be downgraded.
 #[derive(Debug)]
 pub struct ProtectionCategory {
+    /// Canonical name for this protection category (e.g. "security_vulns").
     pub name: &'static str,
 
+    /// Regex patterns that trigger this protection.
     pub patterns: &'static [&'static str],
 }
 

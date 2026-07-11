@@ -10,25 +10,37 @@ use serde::{Deserialize, Serialize};
 /// Metrics data for a single PR evaluation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricsData {
+    /// True positives count.
     pub true_positives: usize,
+    /// False positives count.
     pub false_positives: usize,
+    /// False negatives count.
     pub false_negatives: usize,
+    /// Precision score.
     pub precision: f64,
+    /// Recall score.
     pub recall: f64,
+    /// F1 score.
     pub f1: f64,
 }
 
 /// Aggregate metrics across all PRs.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AggregateMetrics {
+    /// Total true positives across all evaluated PRs.
     #[serde(alias = "total_tp")]
     pub true_positives: usize,
+    /// Total false positives across all evaluated PRs.
     #[serde(alias = "total_fp")]
     pub false_positives: usize,
+    /// Total false negatives across all evaluated PRs.
     #[serde(alias = "total_fn")]
     pub false_negatives: usize,
+    /// Aggregate precision score.
     pub precision: f64,
+    /// Aggregate recall score.
     pub recall: f64,
+    /// Aggregate F1 score.
     pub f1: f64,
 }
 

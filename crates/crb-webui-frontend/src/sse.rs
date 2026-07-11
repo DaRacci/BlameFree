@@ -78,7 +78,7 @@ fn attach_onmessage(es: &web_sys::EventSource, tx: mpsc::UnboundedSender<String>
     let tx_clone = tx.clone();
     let msg_closure = Closure::wrap(Box::new(move |event: MessageEvent| {
         if let Some(text) = event.data().as_string() {
-            let _ = tx_clone.unbounded_send(text);
+            let _ = tx_clone.unbounded_send(text); // Ignore — receiver may have disconnected
         } else {
             log::warn!("SSE message with non-string data");
         }

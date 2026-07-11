@@ -6,7 +6,10 @@
 //!
 //! Adds audit trail fields: `severity_audited` and `severity_audit_reason`.
 
+/// Never-downgrade protection patterns (security, data integrity, correctness).
 pub mod deflation;
+
+/// Inflated pattern detection and quantum-based downgrade.
 pub mod inflation;
 
 use crb_shared::{finding::Finding, severity::Severity};

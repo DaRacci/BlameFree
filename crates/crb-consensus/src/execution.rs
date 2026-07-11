@@ -1,0 +1,323 @@
+//! Concurrent execution — spawn all reviewer agents and collect findings.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+use std::time::Duration;
+
+use rig_core::completion::{
+    AssistantContent, Message, PromptError, Usage,
+};
+use rig_core::providers::openai;
+use rig_core::streaming::StreamingPrompt;
+use tokio::task::JoinSet;
+
+use crb_agents::prompts::PromptLibrary;
+use crb_shared::cache::compute_agent_cache_key;
+use crb_shared::finding::Finding;
+
+use crate::agent::{TurnBudgetHook, build_reviewer_agent};
+use crate::{CacheBackend, ReviewerConfig, Role, extract_last_assistant_text, parse_findings_from_response};
+
+/// Spawn all reviewer agents concurrently and collect their findings.
+///
+/// Each agent is run with a 300-second timeout.  Findings are capped at
+/// `config.max_findings`.  Agents that time out or return errors yield an
+/// empty finding list with a warning - no hard failure.
+///
+/// If `cache` is provided, uses content-addressed caching:
+/// - Computes cache key from prompt_hash, diff_hash, model, role, rules_hash
+/// - On cache hit: skips API call, logs "CACHE HIT", uses cached response
+/// - On cache miss: makes API call, saves response, logs "CACHE MISS"
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+pub async fn run_reviewers(
+    configs: Vec<ReviewerConfig>,
+    diff: &str,
+    diff_hash: &str,
+    client: &openai::Client,
+    rules_preamble: Option<&str>,
+    prompt_lib: &PromptLibrary,
+    template_vars: Option<&std::collections::HashMap<String, serde_json::Value>>,
+    cache: Option<Arc<dyn CacheBackend>>,
+    prompt_hash: &str,
+    rules_hash: &str,
+    tool_preamble: Option<&str>,
+    workdir: Option<&str>,
+    additional_params: Option<serde_json::Value>,
+    dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_types::RunEvent>>,
+) -> (Vec<(Role, Vec<Finding>)>, usize, Usage) {
+    let mut set = JoinSet::new();
+    let agent_api_calls = Arc::new(AtomicUsize::new(0));
+    let aggregate_usage = Arc::new(Mutex::new(Usage::new()));
+
+    for config in configs {
+        let client = client.clone();
+        let diff = diff.to_string();
+        let diff_hash = diff_hash.to_string();
+        let role = config.role.clone();
+        let max_findings = config.max_findings;
+        let preamble = rules_preamble.map(String::from);
+        let tool_preamble = tool_preamble.map(String::from);
+        let agent = build_reviewer_agent(
+            &client,
+            &config,
+            preamble.as_deref(),
+            prompt_lib,
+            template_vars,
+            tool_preamble.as_deref(),
+            workdir,
+            additional_params.clone(),
+            #[cfg(feature = "exp14_submit_finding")]
+            None,
+        );
+        let cache = cache.clone();
+        let prompt_hash = prompt_hash.to_string();
+        let rules_hash = rules_hash.to_string();
+        let model_name = config.model.clone();
+        let agent_api_calls = Arc::clone(&agent_api_calls);
+        let aggregate_usage = Arc::clone(&aggregate_usage);
+        let dashboard_tx = dashboard_tx.clone();
+
+        set.spawn(async move {
+            let cache_key = compute_agent_cache_key(
+                &prompt_hash,
+                &diff_hash,
+                &model_name,
+                role.as_str(),
+                &rules_hash,
+            );
+
+            // Check cache first
+            if let Some(ref cache) = cache {
+                if let Some((cached_response, cached_usage_opt)) =
+                    cache.lookup_agent_by_key_with_usage(&cache_key)
+                {
+                    tracing::info!("CACHE HIT for role {:?} (key={})", role, &cache_key[..12]);
+                    // Record usage from cache if available
+                    if let Some(cached_usage) = cached_usage_opt {
+                        if let Ok(mut agg) = aggregate_usage.lock() {
+                            agg.input_tokens += cached_usage.input_tokens;
+                            agg.output_tokens += cached_usage.output_tokens;
+                            agg.total_tokens += cached_usage.total_tokens;
+                            agg.cached_input_tokens += cached_usage.cached_input_tokens;
+                            agg.cache_creation_input_tokens +=
+                                cached_usage.cache_creation_input_tokens;
+                            agg.reasoning_tokens += cached_usage.reasoning_tokens;
+                            agg.tool_use_prompt_tokens += cached_usage.tool_use_prompt_tokens;
+                        }
+                    }
+                    // Parse findings from cached response
+                    let response = cached_response;
+                    let preview_len = std::cmp::min(500, response.len());
+                    tracing::info!(
+                        "Agent cached response (first 500 chars): {}",
+                        &response[..preview_len]
+                    );
+
+                    let mut findings: Vec<Finding> =
+                        parse_findings_from_response(&response, &role, "CACHED");
+                    if findings.len() > max_findings {
+                        tracing::warn!(
+                            "Role {:?} produced {} findings (cached), capping at {}",
+                            role,
+                            findings.len(),
+                            max_findings,
+                        );
+                        findings.truncate(max_findings);
+                    }
+                    return (role, findings);
+                }
+            }
+
+            // Cache miss - make the API call
+            agent_api_calls.fetch_add(1, Ordering::SeqCst);
+            tracing::info!("CACHE MISS for role {:?} (key={})", role, &cache_key[..12]);
+
+            // Connect the turn-budget hook that nudges the model to stop
+            // exploring and produce JSON findings before max_turns is reached.
+            let turn_budget_hook = TurnBudgetHook::new(agent.default_max_turns.unwrap_or(6));
+
+            // Clone role for async block capture (Role no longer Copy)
+            let role_async = role.clone();
+            let outcome = tokio::time::timeout(Duration::from_secs(900), async {
+                use futures::StreamExt;
+                use rig_core::agent::MultiTurnStreamItem;
+
+                let role = role_async;
+
+                // Start streaming the agent response
+                let mut stream = agent.stream_prompt(&diff).with_hook(turn_budget_hook).await;
+
+                let mut response = String::new();
+                let mut usage = Usage::new();
+                let mut reasoning_text: Option<String> = None;
+
+                while let Some(item) = stream.next().await {
+                    match item.map_err(|e| anyhow::anyhow!("{e}"))? {
+                        MultiTurnStreamItem::StreamAssistantItem(
+                            rig_core::streaming::StreamedAssistantContent::Text(text),
+                        ) => {
+                            let chunk = text.text;
+                            response.push_str(&chunk);
+                            if let Some(ref tx) = dashboard_tx {
+                                let _ = tx.send(crb_types::RunEvent::AgentChunk { // Ignore — receiver may have disconnected
+                                    role: role.to_string(),
+                                    chunk: chunk.clone(),
+                                });
+                            }
+                        }
+                        MultiTurnStreamItem::CompletionCall(call) => {
+                            // Accumulate per-completion-call usage
+                            if call.usage.input_tokens > 0 || call.usage.output_tokens > 0 {
+                                usage.input_tokens += call.usage.input_tokens;
+                                usage.output_tokens += call.usage.output_tokens;
+                                usage.total_tokens += call.usage.total_tokens;
+                                usage.cached_input_tokens += call.usage.cached_input_tokens;
+                                usage.cache_creation_input_tokens +=
+                                    call.usage.cache_creation_input_tokens;
+                                usage.reasoning_tokens += call.usage.reasoning_tokens;
+                                usage.tool_use_prompt_tokens += call.usage.tool_use_prompt_tokens;
+                            }
+                        }
+                        MultiTurnStreamItem::FinalResponse(final_resp) => {
+                            // Use aggregated usage from final response
+                            let final_usage = final_resp.usage();
+                            if usage.input_tokens == 0 && usage.output_tokens == 0 {
+                                usage = final_usage;
+                            }
+                            // If no text was streamed, use final response text
+                            if response.is_empty() {
+                                response = final_resp.response().to_string();
+                            }
+
+                            // Extract reasoning from chat history
+                            reasoning_text = final_resp.history().and_then(|msgs| {
+                                let mut reasoning = String::new();
+                                for msg in msgs {
+                                    if let Message::Assistant { content, .. } = msg {
+                                        for item in content.iter() {
+                                            if let AssistantContent::Reasoning(r) = item {
+                                                use std::fmt::Write;
+                                                let _ = write!(reasoning, "{}", r.display_text()); // Ignore — write! to String is infallible
+                                            }
+                                        }
+                                    }
+                                }
+                                if reasoning.is_empty() {
+                                    None
+                                } else {
+                                    Some(reasoning)
+                                }
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+
+                // Save reasoning to cache if available (after stream completes)
+                if let (Some(cache), Some(reasoning)) = (&cache, &reasoning_text) {
+                    cache.save_agent_reasoning_with_key(&cache_key, role.as_str(), reasoning);
+                }
+
+                // Record usage in aggregate
+                if let Ok(mut agg) = aggregate_usage.lock() {
+                    agg.input_tokens += usage.input_tokens;
+                    agg.output_tokens += usage.output_tokens;
+                    agg.total_tokens += usage.total_tokens;
+                    agg.cached_input_tokens += usage.cached_input_tokens;
+                    agg.cache_creation_input_tokens += usage.cache_creation_input_tokens;
+                    agg.reasoning_tokens += usage.reasoning_tokens;
+                    agg.tool_use_prompt_tokens += usage.tool_use_prompt_tokens;
+                }
+
+                // Cache the response + usage if cache is active
+                if let Some(ref cache) = cache {
+                    cache.save_agent_with_key_and_usage(
+                        &cache_key,
+                        role.as_str(),
+                        &diff,
+                        &response,
+                        &usage,
+                    );
+                }
+
+                // Log raw response for debugging
+                let preview_len = std::cmp::min(500, response.len());
+                tracing::info!(
+                    "Agent raw response (first 500 chars): {}",
+                    &response[..preview_len]
+                );
+
+                let mut findings: Vec<Finding> = parse_findings_from_response(&response, &role, "");
+                if findings.len() > max_findings {
+                    tracing::warn!(
+                        "Role {:?} produced {} findings, capping at {}",
+                        role,
+                        findings.len(),
+                        max_findings,
+                    );
+                    findings.truncate(max_findings);
+                }
+                Ok::<_, anyhow::Error>((role, findings))
+            })
+            .await;
+
+            match outcome {
+                Ok(Ok(pair)) => pair,
+                Ok(Err(e)) => {
+                    // Check for MaxTurnsError - the model may have produced
+                    // text findings that were cut off by the turn limit.
+                    if let Some(PromptError::MaxTurnsError { chat_history, .. }) =
+                        e.downcast_ref::<PromptError>()
+                    {
+                        if let Some(text) = extract_last_assistant_text(chat_history) {
+                            tracing::info!(
+                                "Role {:?} hit MaxTurnsError but chat_history contains text \
+                                 - attempting to recover findings",
+                                role,
+                            );
+                            let preview_len = std::cmp::min(500, text.len());
+                            tracing::info!(
+                                "Recovered text (first 500 chars): {}",
+                                &text[..preview_len]
+                            );
+
+                            // Attempt to parse findings from the recovered text
+                            let mut findings: Vec<Finding> =
+                                parse_findings_from_response(&text, &role, "");
+                            if findings.len() > max_findings {
+                                findings.truncate(max_findings);
+                            }
+                            if !findings.is_empty() {
+                                return (role, findings);
+                            }
+                        }
+                    }
+                    tracing::warn!("Role {:?} agent failed: {e}", role);
+                    (role, Vec::new())
+                }
+                Err(_) => {
+                    tracing::warn!("Role {:?} timed out after 300s", role);
+                    (role, Vec::new())
+                }
+            }
+        });
+    }
+
+    let mut results: Vec<(Role, Vec<Finding>)> = Vec::new();
+    while let Some(res) = set.join_next().await {
+        match res {
+            Ok(pair) => results.push(pair),
+            Err(e) => tracing::warn!("Agent join error: {e}"),
+        }
+    }
+    // Sort by role for deterministic ordering - JoinSet::join_next()
+    // returns tasks in completion order, which is non-deterministic.
+    results.sort_by(|a, b| a.0.cmp(&b.0));
+    let aggregate_usage = *aggregate_usage.lock().unwrap_or_else(|e| e.into_inner());
+    (
+        results,
+        agent_api_calls.load(Ordering::SeqCst),
+        aggregate_usage,
+    )
+}

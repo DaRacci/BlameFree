@@ -3,8 +3,11 @@ use serde::{Deserialize, Serialize};
 /// Aggregate metrics computed from total true/false positives and false negatives.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct MetricsOutput {
+    /// Precision score (tp / (tp + fp)).
     pub precision: f64,
+    /// Recall score (tp / (tp + fn)).
     pub recall: f64,
+    /// F1 score (harmonic mean of precision and recall).
     pub f1: f64,
 }
 
@@ -18,6 +21,10 @@ pub struct MetricsOutput {
 /// * precision = tp / (tp + fp)
 /// * recall    = tp / (tp + fn)
 /// * f1       = 2 * precision * recall / (precision + recall)
+///
+/// # Returns
+///
+/// A [`MetricsOutput`] with the computed precision, recall, and F1 values.
 pub fn compute_aggregate_metrics(
     total_tp: usize,
     total_fp: usize,

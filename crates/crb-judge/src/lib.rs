@@ -32,20 +32,29 @@ Respond with ONLY a JSON object:
 /// The structured verdict returned by the judge LLM.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct JudgeVerdict {
+    /// Brief explanation of why the judge determined a match or no match.
     pub reasoning: String,
+    /// Whether the candidate finding matches the golden comment.
     #[serde(rename = "match")]
     pub match_: bool,
+    /// Confidence level for this judgment (0.0–1.0).
     pub confidence: f64,
 }
 
 /// Aggregated evaluation metrics computed from judge verdicts.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Metrics {
+    /// Number of true positives (agent findings that matched a golden comment).
     pub true_positives: usize,
+    /// Number of false positives (agent findings that matched no golden comment).
     pub false_positives: usize,
+    /// Number of false negatives (golden comments that matched no finding).
     pub false_negatives: usize,
+    /// Precision = tp / (tp + fp).
     pub precision: f64,
+    /// Recall = tp / (tp + fn).
     pub recall: f64,
+    /// F1 score (harmonic mean of precision and recall).
     pub f1: f64,
 }
 
@@ -67,6 +76,11 @@ pub fn format_judge_prompt(golden_comment: &str, candidate: &str) -> String {
 
 /// Run the judge agent to produce a verdict for a single comparison,
 /// returning both the verdict and the API usage statistics.
+///
+/// # Errors
+///
+/// Returns an error if the judge agent call fails or the response cannot
+/// be parsed as a [`JudgeVerdict`].
 pub async fn run_judge(
     judge: &Agent<ResponsesCompletionModel>,
     golden_comment: &str,
@@ -96,6 +110,11 @@ fn tokenize(text: &str) -> Vec<String> {
 ///
 /// If either string is empty after tokenization, the union is zero and `None` is
 /// returned (cannot compute meaningful similarity on empty sets).
+///
+/// # Returns
+///
+/// `Some(score)` where `score` is the Jaccard similarity (0.0–1.0) if it meets
+/// the threshold, or `None` if below threshold or either input is empty.
 pub fn jaccard_match(finding_text: &str, golden_comment: &str, threshold: f64) -> Option<f64> {
     let finding_words = tokenize(finding_text);
     let golden_words = tokenize(golden_comment);
@@ -133,6 +152,10 @@ pub fn jaccard_match(finding_text: &str, golden_comment: &str, threshold: f64) -
 ///
 /// `verdicts` is the flattened list of all (finding × golden) judge calls.
 /// `golden_count` is the total number of golden comments for this PR.
+///
+/// # Returns
+///
+/// A [`Metrics`] struct with TP, FP, FN, precision, recall, and F1.
 pub fn compute_metrics(verdicts: &[JudgeVerdict], golden_count: usize) -> Metrics {
     let true_positives = verdicts.iter().filter(|v| v.match_).count();
     let false_positives = verdicts.len() - true_positives;

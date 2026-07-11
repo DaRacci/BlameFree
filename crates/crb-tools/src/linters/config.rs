@@ -26,9 +26,12 @@ pub struct LinterConfig {
     pub optional: Option<bool>,
 }
 
+/// The output format for a linter tool.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub enum OutputFormat {
+    /// JSON output (used by ruff, ESLint with --format json).
     Json,
+    /// Plain text output (used by go vet, etc.).
     Text,
 }
 
@@ -44,6 +47,7 @@ impl Display for OutputFormat {
 /// Top-level config file structure.
 #[derive(Debug, Deserialize)]
 pub struct LinterConfigFile {
+    /// Map of linter name to linter configuration.
     pub linters: HashMap<String, LinterConfig>,
 }
 

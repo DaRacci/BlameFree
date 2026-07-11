@@ -438,53 +438,40 @@ async fn run_adhoc_review_inner(
         tracing::warn!("Empty diff for PR: {}", pr_title);
     }
 
-    // ── Rules preamble (none) ─────────────────────────────────────────
-    let rules_preamble: Option<String> = None;
     tracing::info!(
         "Running ad-hoc review with roles={}, model={}",
         roles,
         model
     );
 
-    let (all_findings, verdicts) = crb_harness::evaluate_pr_consensus(
-        &pr,
-        &client,
-        model,
-        &judge,
-        &diff,
-        vec![], // no linter findings
-        rules_preamble.as_deref(),
-        &prompt_lib,
-        roles,
-        20, // max_findings
-        Some(cache.clone()),
-        cost_tracker.clone(),
-        None, // workdir
-        None, // reasoning_effort
-        None, // dashboard_tx
-    )
-    .await?;
-
-    let processed_findings = crb_harness::post_process_findings(&all_findings);
-
-    // ── Compute metrics ───────────────────────────────────────────────
-    // Since there are no golden comments, metrics will be 0
-    let metrics = crb_judge::compute_metrics(&verdicts, 0);
-    let metrics_for_summary = metrics.clone();
-
-    let cost_summary = cost_tracker.to_summary();
-    let total_cost = cost_summary.total_usd;
-
-    use crb_reporting::PrResult;
-    let result = PrResult {
-        pr_title: pr_title.to_string(),
-        url: pr_url.to_string(),
-        findings_count: processed_findings.len(),
-        golden_count: 0,
-        metrics,
-        verdicts,
-        cost: Some(cost_summary),
+    let cost_tracker_arc = cost_tracker.clone();
+    let cfg = crb_harness::EvalConfig {
+        strategy: crb_harness::EvalStrategy::Consensus,
+        model: model.to_string(),
+        judge_model: model.to_string(),
+        reasoning_effort: None,
+        client: Arc::new(client),
+        judge,
+        cache: None,
+        prompt_lib,
+        cost_tracker: cost_tracker_arc,
+        dashboard_tx: None,
+        roles: roles.to_string(),
+        max_findings: 20,
+        linters_only: false,
+        linter_configs: None,
+        ruleset: None,
+        cache_dir: Some(cache_dir),
+        benchmark_dir: None,
+        workdir: None,
+        template_vars: None,
     };
+
+    let result = crb_harness::evaluate_pr(&pr, diff, &cfg).await?;
+
+    let metrics_for_summary = result.metrics;
+
+    let total_cost = result.cost.as_ref().map(|c| c.total_usd).unwrap_or(0.0);
 
     std::fs::create_dir_all(&output_subdir)?;
 
@@ -521,17 +508,7 @@ async fn run_adhoc_review_inner(
             agent_call_count: c.agent_call_count as u64,
             judge_call_count: c.judge_call_count as u64,
         }),
-        findings: serde_json::json!({
-            "findings": processed_findings.iter().map(|f| {
-                serde_json::json!({
-                    "message": f.message,
-                    "severity": f.severity,
-                    "file": f.file,
-                    "line": f.line,
-                    "rule_code": f.rule_code,
-                })
-            }).collect::<Vec<_>>()
-        }),
+        findings: serde_json::json!([]),
         agent_responses: vec![],
     };
 
@@ -569,7 +546,7 @@ async fn run_adhoc_review_inner(
     tracing::info!(
         run_id = %run_id,
         pr_title = %pr_title,
-        findings = processed_findings.len(),
+        findings = result.findings_count,
         cost = total_cost,
         elapsed_secs = elapsed.as_secs_f64(),
         "Ad-hoc review completed"
@@ -578,103 +555,56 @@ async fn run_adhoc_review_inner(
     Ok(())
 }
 
+/// Extract a string field from a JSON summary value.
+fn summary_str(data: &Option<serde_json::Value>, key: &str, default: &str) -> String {
+    data.as_ref()
+        .and_then(|s| s.get(key))
+        .and_then(|v| v.as_str())
+        .unwrap_or(default)
+        .to_string()
+}
+
+/// Extract an f64 field from a JSON summary value.
+fn summary_f64(data: &Option<serde_json::Value>, key: &str, default: f64) -> f64 {
+    data.as_ref()
+        .and_then(|s| s.get(key))
+        .and_then(|v| v.as_f64())
+        .unwrap_or(default)
+}
+
+/// Load the JSON summary file for an ad-hoc run, if it exists.
+fn load_adhoc_summary(path: &Path) -> (Option<serde_json::Value>, bool) {
+    let summary_path = path.join(crb_harness::paths::SUMMARY_FILE);
+    match std::fs::read_to_string(&summary_path) {
+        Ok(content) => match serde_json::from_str(&content) {
+            Ok(val) => (Some(val), true),
+            Err(_) => (None, false),
+        },
+        Err(_) => (None, false),
+    }
+}
+
 /// Scan an ad-hoc run directory and produce a summary.
 fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<AdhocRunSummary> {
-    let summary_path = path.join(crb_harness::paths::SUMMARY_FILE);
-    let content = std::fs::read_to_string(&summary_path).ok()?;
-    let data: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let (summary_data, _has_summary) = load_adhoc_summary(path);
 
-    let pr_title = data
-        .get("pr_title")
-        .and_then(|v| v.as_str())
-        .unwrap_or("Unknown")
-        .to_string();
-
-    let pr_url = data
-        .get("pr_url")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    let status = data
-        .get("status")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    let model = data
-        .get("model")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    let roles: Vec<String> = data
-        .get("roles")
+    let pr_title = summary_str(&summary_data, "pr_title", "Unknown");
+    let pr_url = summary_str(&summary_data, "pr_url", "");
+    let status = summary_str(&summary_data, "status", "unknown");
+    let model = summary_str(&summary_data, "model", "unknown");
+    let total_cost = summary_f64(&summary_data, "total_cost_usd", 0.0);
+    let roles: Vec<String> = summary_data
+        .as_ref()
+        .and_then(|s| s.get("roles"))
         .and_then(|v| v.as_str())
         .map(|s| s.split(',').map(|r| r.trim().to_string()).collect())
         .unwrap_or_default();
 
-    let total_cost = data
-        .get("total_cost_usd")
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.0);
-
-    let findings_count = data
-        .get("aggregate_metrics")
-        .and_then(|m| m.as_object())
-        .and_then(|_m| {
-            // Count total findings from per-PR file
-            None::<usize>
-        })
-        .unwrap_or(0);
-
     // Try to get created_at from the directory name (adhoc-{timestamp})
-    let created_at = if let Some(ts_str) = run_id.strip_prefix("adhoc-") {
-        if let Ok(ts) = ts_str.parse::<u64>() {
-            chrono::DateTime::from_timestamp(ts as i64, 0)
-                .map(|dt| dt.to_rfc3339())
-                .unwrap_or_else(|| "unknown".to_string())
-        } else {
-            "unknown".to_string()
-        }
-    } else {
-        "unknown".to_string()
-    };
+    let created_at = created_at_from_run_id(run_id);
 
     // Count findings from the per-PR result file
-    let findings_count = if let Ok(entries) = std::fs::read_dir(path) {
-        for entry in entries.flatten() {
-            let fpath = entry.path();
-            if fpath.extension().map_or(true, |e| e != "json") {
-                continue;
-            }
-            if fpath
-                .file_name()
-                .map_or(true, |n| n == crb_harness::paths::SUMMARY_FILE)
-            {
-                continue;
-            }
-            if let Ok(content) = std::fs::read_to_string(&fpath) {
-                if let Ok(pr_json) = serde_json::from_str::<PrResultJson>(&content) {
-                    return Some(AdhocRunSummary {
-                        id: run_id.to_string(),
-                        pr_url,
-                        pr_title,
-                        status,
-                        created_at,
-                        model,
-                        roles,
-                        findings_count: pr_json.findings_count,
-                        total_cost,
-                    });
-                }
-            }
-        }
-        // Fallback: count from aggregate metrics if no per-PR file
-        0
-    } else {
-        0
-    };
+    let findings_count = count_adhoc_findings(path);
 
     Some(AdhocRunSummary {
         id: run_id.to_string(),
@@ -687,4 +617,46 @@ fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<AdhocRunSummary> {
         findings_count,
         total_cost,
     })
+}
+
+/// Parse `created_at` from an ad-hoc run ID of the form `adhoc-{timestamp}`.
+fn created_at_from_run_id(run_id: &str) -> String {
+    if let Some(ts_str) = run_id.strip_prefix("adhoc-") {
+        if let Ok(ts) = ts_str.parse::<u64>() {
+            chrono::DateTime::from_timestamp(ts as i64, 0)
+                .map(|dt| dt.to_rfc3339())
+                .unwrap_or_else(|| "unknown".to_string())
+        } else {
+            "unknown".to_string()
+        }
+    } else {
+        "unknown".to_string()
+    }
+}
+
+/// Count findings from the per-PR result file in an ad-hoc run directory.
+fn count_adhoc_findings(path: &Path) -> usize {
+    let entries = match std::fs::read_dir(path) {
+        Ok(e) => e,
+        Err(_) => return 0,
+    };
+
+    for entry in entries.flatten() {
+        let fpath = entry.path();
+        if fpath.extension().map_or(true, |e| e != "json") {
+            continue;
+        }
+        if fpath
+            .file_name()
+            .map_or(true, |n| n == crb_harness::paths::SUMMARY_FILE)
+        {
+            continue;
+        }
+        if let Ok(content) = std::fs::read_to_string(&fpath) {
+            if let Ok(pr_json) = serde_json::from_str::<PrResultJson>(&content) {
+                return pr_json.findings_count;
+            }
+        }
+    }
+    0
 }

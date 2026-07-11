@@ -113,7 +113,7 @@ pub fn PrDetailPage() -> impl IntoView {
     };
 
     // Trigger fetch on mount
-    let _ = create_local_resource(
+    let _ = create_local_resource( // Ignore — triggered for side-effect; returns LocalResource handle
         move || (run_id(), pr_key()),
         move |_| {
             fetch_pr();
