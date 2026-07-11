@@ -875,7 +875,7 @@ impl LlmCache {
         let read_dir = match std::fs::read_dir(base_dir) {
             Ok(d) => d,
             Err(e) => {
-                return Err(format!("cannot read cache dir {}: {}", base_dir.display(), e).into())
+                return Err(format!("cannot read cache dir {}: {}", base_dir.display(), e).into());
             }
         };
 

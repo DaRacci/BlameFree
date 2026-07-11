@@ -1,6 +1,6 @@
 use crb_webui_shared::config::RoleInfo;
 use leptos::{
-    component, view, IntoView, ReadSignal, SignalGet, SignalUpdate, SignalWith, WriteSignal,
+    IntoView, ReadSignal, SignalGet, SignalUpdate, SignalWith, WriteSignal, component, view,
 };
 
 /// A reusable checkbox group for selecting roles/agents.
@@ -16,33 +16,28 @@ pub fn RoleSelector(
     /// Write-signal to update the selected role abbreviations.
     set_selected_roles: WriteSignal<Vec<String>>,
 ) -> impl IntoView {
-    let is_role_disabled =
-        move |role_abbr: &str, role_infos: &Vec<RoleInfo>| -> bool {
-            let selected = selected_roles.get();
-            if selected.contains(&role_abbr.to_string()) {
-                return false;
-            }
-            for s in &selected {
-                if let Some(info) =
-                    role_infos.iter().find(|r| r.abbreviation == *s)
+    let is_role_disabled = move |role_abbr: &str, role_infos: &Vec<RoleInfo>| -> bool {
+        let selected = selected_roles.get();
+        if selected.contains(&role_abbr.to_string()) {
+            return false;
+        }
+        for s in &selected {
+            if let Some(info) = role_infos.iter().find(|r| r.abbreviation == *s) {
+                if info
+                    .incompatible_with_roles
+                    .contains(&role_abbr.to_string())
                 {
-                    if info
-                        .incompatible_with_roles
-                        .contains(&role_abbr.to_string())
-                    {
-                        return true;
-                    }
-                }
-                if let Some(info) =
-                    role_infos.iter().find(|r| r.abbreviation == role_abbr)
-                {
-                    if info.incompatible_with_roles.contains(s) {
-                        return true;
-                    }
+                    return true;
                 }
             }
-            false
-        };
+            if let Some(info) = role_infos.iter().find(|r| r.abbreviation == role_abbr) {
+                if info.incompatible_with_roles.contains(s) {
+                    return true;
+                }
+            }
+        }
+        false
+    };
 
     let toggle_role = move |role: &str| {
         let role = role.to_string();

@@ -9,15 +9,15 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use crb_agents::build_agent;
 use crb_agents::prompts::PromptLibrary;
 use crb_auditor::apply_severity_auditor;
-use crb_consensus::{evaluate_pr_with_consensus, CacheBackend};
+use crb_consensus::{CacheBackend, evaluate_pr_with_consensus};
 use crb_dashboard::DashboardEvent;
 use crb_judge::{compute_metrics, run_judge};
-use crb_reporting::golden::GoldenCommentEntry;
 use crb_reporting::PrResult;
+use crb_reporting::golden::GoldenCommentEntry;
 use crb_rules::RuleSet;
 use crb_shared::deduplicate::semantic_dedup;
 use crb_shared::finding::Finding;
@@ -453,15 +453,7 @@ async fn run_agent_roles(
     for &role in roles {
         // Build agent with embedded prompt library
         let agent = build_agent(
-            client,
-            model,
-            role,
-            None,
-            prompt_lib,
-            None,
-            None,
-            None,
-            None,
+            client, model, role, None, prompt_lib, None, None, None, None,
         );
 
         // Call agent with the diff - get real token usage via extended_details

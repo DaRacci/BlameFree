@@ -2,7 +2,7 @@ use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crb_webui_shared::runs::{PrResult, RunDetail};
 use leptos::{
-    component, create_local_resource, create_signal, view, DynAttrs, IntoView, SignalGet, SignalSet,
+    DynAttrs, IntoView, SignalGet, SignalSet, component, create_local_resource, create_signal, view,
 };
 use leptos_router::*;
 

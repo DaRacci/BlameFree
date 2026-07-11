@@ -10,7 +10,7 @@ use clap::{Parser, Subcommand};
 use crb_agents::prompts::PromptLibrary;
 use crb_dashboard::DashboardEvent;
 use crb_judge::build_judge;
-use crb_reporting::{load_golden_datasets, write_report, GoldenCommentEntry};
+use crb_reporting::{GoldenCommentEntry, load_golden_datasets, write_report};
 use crb_rules::RuleSet;
 use crb_shared::metrics::MetricsOutput;
 use crb_shared::sanitize_filename;
@@ -575,10 +575,14 @@ fn run_cache_prune(
     if json {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
-        print_cache_output(json, dry_run, &format!(
-            "Prune: {} entries removed from {} PRs, {} bytes freed ({} PRs kept)",
-            result.entries_removed, result.prs_removed, result.bytes_freed, result.prs_kept
-        ));
+        print_cache_output(
+            json,
+            dry_run,
+            &format!(
+                "Prune: {} entries removed from {} PRs, {} bytes freed ({} PRs kept)",
+                result.entries_removed, result.prs_removed, result.bytes_freed, result.prs_kept
+            ),
+        );
     }
     Ok(())
 }
@@ -590,13 +594,17 @@ fn run_cache_scrub(cache_dir: &PathBuf, dry_run: bool, repair: bool, json: bool)
     if json {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
-        print_cache_output(json, dry_run, &format!(
-            "Scrub: scanned {} PR dirs, {} stale entries, {} orphans, {} corrupted indices",
-            result.pr_dirs_scanned,
-            result.stale_entries_found,
-            result.orphan_files_found,
-            result.corrupted_indices_found
-        ));
+        print_cache_output(
+            json,
+            dry_run,
+            &format!(
+                "Scrub: scanned {} PR dirs, {} stale entries, {} orphans, {} corrupted indices",
+                result.pr_dirs_scanned,
+                result.stale_entries_found,
+                result.orphan_files_found,
+                result.corrupted_indices_found
+            ),
+        );
         if repair {
             println!(
                 "  Repaired: {} indices rebuilt, {} stale removed, {} orphans removed",

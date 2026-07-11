@@ -13,19 +13,19 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Json, Redirect};
 use axum::routing::get;
-use axum::Router;
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
 use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, Scope,
     TokenResponse, TokenUrl,
 };
-use rand::distributions::Alphanumeric;
 use rand::Rng;
+use rand::distributions::Alphanumeric;
 use reqwest::Client as HttpClient;
 use serde::Deserialize;
 use tokio::sync::RwLock;
@@ -286,12 +286,8 @@ async fn fetch_oauth_json(
 async fn fetch_user(provider: &str, access_token: &str) -> Result<AuthUser, (StatusCode, String)> {
     match provider {
         "github" => {
-            let body = fetch_oauth_json(
-                "https://api.github.com/user",
-                access_token,
-                "GitHub",
-            )
-            .await?;
+            let body =
+                fetch_oauth_json("https://api.github.com/user", access_token, "GitHub").await?;
 
             Ok(AuthUser {
                 id: body["id"].to_string(),
@@ -318,12 +314,8 @@ async fn fetch_user(provider: &str, access_token: &str) -> Result<AuthUser, (Sta
             })
         }
         "gitlab" => {
-            let body = fetch_oauth_json(
-                "https://gitlab.com/api/v4/user",
-                access_token,
-                "GitLab",
-            )
-            .await?;
+            let body =
+                fetch_oauth_json("https://gitlab.com/api/v4/user", access_token, "GitLab").await?;
 
             Ok(AuthUser {
                 id: body["id"].to_string(),

@@ -171,7 +171,10 @@ pub fn run(dataset_dir: &Path, benchmark_dir: &Path) -> Result<()> {
                                     }
                                 }
                                 _ => {
-                                    warn!("GitHub API failed for PR #{} (gh not available or rate-limited)", pr_num);
+                                    warn!(
+                                        "GitHub API failed for PR #{} (gh not available or rate-limited)",
+                                        pr_num
+                                    );
                                 }
                             }
                         }

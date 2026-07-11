@@ -1,7 +1,7 @@
 use crb_webui_shared::{adhoc::AdhocRunSummary, runs::RunSummary};
 use leptos::{
-    component, create_effect, create_signal, set_interval, spawn_local, view, IntoView, SignalGet,
-    SignalSet, WriteSignal,
+    IntoView, SignalGet, SignalSet, WriteSignal, component, create_effect, create_signal,
+    set_interval, spawn_local, view,
 };
 use std::time::Duration;
 

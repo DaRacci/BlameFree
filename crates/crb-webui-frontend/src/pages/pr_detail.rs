@@ -4,9 +4,9 @@ use crate::role_color;
 use crb_webui_shared::config::RoleInfo;
 use crb_webui_shared::runs::{AgentLogResponse, PrAgentEntry, PrAgentsResponse};
 use leptos::{
-    component, create_local_resource, create_signal, view, DynAttrs, IntoView, SignalGet, SignalSet,
+    DynAttrs, IntoView, SignalGet, SignalSet, component, create_local_resource, create_signal, view,
 };
-use leptos_router::{use_params_map, A};
+use leptos_router::{A, use_params_map};
 
 #[component]
 pub fn PrDetailPage() -> impl IntoView {

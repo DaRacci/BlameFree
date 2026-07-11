@@ -1,19 +1,19 @@
 use crb_webui_shared::auth::AuthUser;
 use gloo_net::http::Request;
 use leptos::{
-    component, create_rw_signal, create_signal, provide_context, spawn_local, use_context, view,
-    DynAttrs, IntoView, RwSignal, SignalGet, SignalSet, SignalUpdate,
+    DynAttrs, IntoView, RwSignal, SignalGet, SignalSet, SignalUpdate, component, create_rw_signal,
+    create_signal, provide_context, spawn_local, use_context, view,
 };
-use leptos_meta::{provide_meta_context, Html};
-use leptos_router::{use_location, Route, Router, Routes};
+use leptos_meta::{Html, provide_meta_context};
+use leptos_router::{Route, Router, Routes, use_location};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::{
+    AppConfig,
     pages::{
         adhoc_review::AdhocReviewPage, adhoc_runs::AdhocRunsPage, admin::AdminPage, home::HomePage,
         live::LivePage, new_run::NewRunPage, pr_detail::PrDetailPage, run_detail::RunDetailPage,
     },
-    AppConfig,
 };
 
 #[wasm_bindgen(start)]

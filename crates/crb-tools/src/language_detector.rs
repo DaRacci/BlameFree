@@ -44,7 +44,7 @@ fn extension_to_language() -> HashMap<&'static str, &'static str> {
     // Go
     map.insert("go", "Go");
     map.insert("mod", "Go"); // go.mod
-                             // Python
+    // Python
     map.insert("py", "Python");
     map.insert("pyi", "Python");
     map.insert("pyx", "Python");

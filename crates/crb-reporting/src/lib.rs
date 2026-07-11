@@ -1,6 +1,6 @@
 pub mod golden;
 
-pub use golden::{load_golden_datasets, GoldenCommentEntry};
+pub use golden::{GoldenCommentEntry, load_golden_datasets};
 
 use std::path::Path;
 

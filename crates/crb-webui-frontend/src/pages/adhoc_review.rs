@@ -1,10 +1,10 @@
-use crate::components::role_selector::RoleSelector;
 use crate::AppConfig;
+use crate::components::role_selector::RoleSelector;
 use crb_webui_shared::adhoc::{AdhocReviewResponse, GithubPrListItem};
 use crb_webui_shared::config::RoleInfo;
 use leptos::{
-    component, create_signal, event_target_value, spawn_local, view, IntoView, SignalGet,
-    SignalGetUntracked, SignalSet,
+    IntoView, SignalGet, SignalGetUntracked, SignalSet, component, create_signal,
+    event_target_value, spawn_local, view,
 };
 use leptos_router::*;
 

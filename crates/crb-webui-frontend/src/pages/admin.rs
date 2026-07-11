@@ -182,4 +182,3 @@ pub fn AdminPage() -> impl IntoView {
         </div>
     }
 }
-

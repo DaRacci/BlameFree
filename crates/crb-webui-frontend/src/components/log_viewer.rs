@@ -1,5 +1,5 @@
 use crb_webui_shared::runs::{AgentLogResponse, LogsListResponse};
-use leptos::{component, create_signal, view, IntoView, SignalGet, SignalSet};
+use leptos::{IntoView, SignalGet, SignalSet, component, create_signal, view};
 use log::error;
 
 #[component]

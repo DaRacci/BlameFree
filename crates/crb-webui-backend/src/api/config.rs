@@ -2,8 +2,8 @@
 
 use std::path::Path;
 
-use axum::extract::{Path as AxumPath, State};
 use axum::Json;
+use axum::extract::{Path as AxumPath, State};
 use serde::Serialize;
 
 use crate::server::AppState;

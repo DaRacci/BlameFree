@@ -13,7 +13,7 @@ pub mod parser;
 pub mod preamble;
 
 pub use matcher::{
-    detect_language, detect_repo_languages, language_from_str, language_to_extension, Language,
+    Language, detect_language, detect_repo_languages, language_from_str, language_to_extension,
 };
 pub use parser::parse_rule_file;
 pub use preamble::format_preamble;
@@ -166,9 +166,16 @@ mod tests {
     /// Create a temporary directory with a single rule file and load the
     /// ruleset from it. Returns the `TempDir` (keeps it alive) and the
     /// loaded `RuleSet`.
-    fn with_rule_file(name: &str, frontmatter_globs: &str, body: &str) -> (tempfile::TempDir, RuleSet) {
+    fn with_rule_file(
+        name: &str,
+        frontmatter_globs: &str,
+        body: &str,
+    ) -> (tempfile::TempDir, RuleSet) {
         let dir = tempfile::tempdir().unwrap();
-        let content = format!("---\ndescription: {}\nglobs: \"{}\"\n---\n{}", name, frontmatter_globs, body);
+        let content = format!(
+            "---\ndescription: {}\nglobs: \"{}\"\n---\n{}",
+            name, frontmatter_globs, body
+        );
         std::fs::write(dir.path().join(name), content).unwrap();
         let rs = RuleSet::load_from_dir(dir.path()).unwrap();
         (dir, rs)
@@ -178,7 +185,10 @@ mod tests {
     /// load the ruleset from it.
     fn with_always_rule(description: &str, body: &str) -> (tempfile::TempDir, RuleSet) {
         let dir = tempfile::tempdir().unwrap();
-        let content = format!("---\ndescription: {}\nalways_apply: true\n---\n{}", description, body);
+        let content = format!(
+            "---\ndescription: {}\nalways_apply: true\n---\n{}",
+            description, body
+        );
         std::fs::write(dir.path().join("always.md"), content).unwrap();
         let rs = RuleSet::load_from_dir(dir.path()).unwrap();
         (dir, rs)

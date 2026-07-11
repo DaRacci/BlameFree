@@ -9,15 +9,15 @@
 
 use std::cmp::min;
 use std::convert::Infallible;
-use std::fs::{metadata, File};
+use std::fs::{File, metadata};
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::time::Duration;
 
+use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::IntoResponse;
-use axum::Json;
+use axum::response::sse::{Event, KeepAlive, Sse};
 use tokio::sync::mpsc;
 use tokio::time::interval;
 use tokio_stream::wrappers::UnboundedReceiverStream;

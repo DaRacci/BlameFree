@@ -10,14 +10,14 @@ pub async fn run_dashboard(
     total_prs: usize,
     rx: mpsc::Receiver<DashboardEvent>,
 ) -> anyhow::Result<()> {
+    use crossterm::ExecutableCommand;
     use crossterm::event::{self, Event, KeyCode};
     use crossterm::terminal::{
-        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+        EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
     };
-    use crossterm::ExecutableCommand;
-    use ratatui::backend::CrosstermBackend;
     use ratatui::Terminal;
-    use std::io::{stdout, IsTerminal};
+    use ratatui::backend::CrosstermBackend;
+    use std::io::{IsTerminal, stdout};
 
     // If stdout isn't a real TTY, skip the TUI to avoid crashes on
     // enable_raw_mode / EnterAlternateScreen.  Events are drained
@@ -193,7 +193,6 @@ impl AgentPane {
         }
     }
 }
-
 
 /// Full dashboard state, updated by events from the harness.
 pub struct Dashboard {

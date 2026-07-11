@@ -1,11 +1,10 @@
-use leptos::{component, view, IntoView};
+use leptos::{IntoView, component, view};
 
 #[component]
 pub fn MetricsCard(
     value: impl Into<String>,
     label: &'static str,
-    #[prop(optional)]
-    value_style: Option<&'static str>,
+    #[prop(optional)] value_style: Option<&'static str>,
 ) -> impl IntoView {
     let value = value.into();
     view! {

@@ -3,7 +3,7 @@ use rig_core::agent::PromptResponse;
 use rig_core::client::CompletionClient;
 use rig_core::completion::Prompt;
 use rig_core::completion::Usage;
-use rig_core::providers::openai::{responses_api::ResponsesCompletionModel, Client};
+use rig_core::providers::openai::{Client, responses_api::ResponsesCompletionModel};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -426,7 +426,10 @@ mod tests {
             "cross site scripting",
             THRESHOLD,
         );
-        println!("[Rust CV] hyphen case (cross-site vs cross site): score={:?}  [Python: 1/5=0.2] ✓ MATCHES", hyphen_score);
+        println!(
+            "[Rust CV] hyphen case (cross-site vs cross site): score={:?}  [Python: 1/5=0.2] ✓ MATCHES",
+            hyphen_score
+        );
         println!(
             "[Rust CV] regular case (no hyphen): score={:?}  [Python: 3/4=0.75]",
             regular_score

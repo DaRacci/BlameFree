@@ -1,6 +1,6 @@
 use crb_webui_shared::adhoc::AdhocRunSummary;
 use leptos::{
-    component, create_local_resource, create_signal, view, IntoView, SignalGet, SignalSet,
+    IntoView, SignalGet, SignalSet, component, create_local_resource, create_signal, view,
 };
 
 #[component]

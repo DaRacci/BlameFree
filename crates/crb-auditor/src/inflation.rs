@@ -1,4 +1,4 @@
-use crb_shared::pattern::{has_pattern, make_pattern_list, PatternProvider};
+use crb_shared::pattern::{PatternProvider, has_pattern, make_pattern_list};
 use regex::Regex;
 use std::sync::LazyLock;
 

@@ -5,8 +5,8 @@ use crate::sse;
 use crate::{AppConfig, DashboardEvent};
 use crb_webui_shared::config::RoleInfo;
 use leptos::{
-    component, create_signal, spawn_local, view, IntoView, ReadSignal, SignalGet,
-    SignalGetUntracked, SignalSet, SignalUpdate, WriteSignal,
+    IntoView, ReadSignal, SignalGet, SignalGetUntracked, SignalSet, SignalUpdate, WriteSignal,
+    component, create_signal, spawn_local, view,
 };
 use leptos_router::use_params_map;
 use std::collections::HashMap;
@@ -430,7 +430,11 @@ fn handle_event(
             success,
         } => {
             with_role_pr(role_current_pr, set_states, &role, |agent| {
-                agent.status = if success { "done".into() } else { "failed".into() };
+                agent.status = if success {
+                    "done".into()
+                } else {
+                    "failed".into()
+                };
                 agent.findings = Some(findings);
             });
             // Check if all agents for this PR are done

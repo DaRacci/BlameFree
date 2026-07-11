@@ -46,7 +46,10 @@ use crate::budget::ToolCallBudget;
 use crate::error::LinterError;
 
 /// Internal helper to create a [`LinterTool`] from a [`LinterConfig`] and a parser function.
-fn create_linter_tool_inner(config: &LinterConfig, parser: fn(&str) -> Result<Vec<Finding>, LinterError>) -> LinterTool {
+fn create_linter_tool_inner(
+    config: &LinterConfig,
+    parser: fn(&str) -> Result<Vec<Finding>, LinterError>,
+) -> LinterTool {
     LinterTool {
         name: config.name.clone(),
         cmd: config.cmd.clone(),

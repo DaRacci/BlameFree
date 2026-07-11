@@ -2,11 +2,11 @@
 //!
 //! Draws a 4-pane agent view, progress bar, and summary/report panes.
 
+use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph};
-use ratatui::Frame;
 
 use crate::{AgentStatus, Dashboard};
 

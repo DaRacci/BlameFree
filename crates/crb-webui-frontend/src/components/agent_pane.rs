@@ -1,4 +1,4 @@
-use leptos::{component, view, IntoView, Signal, SignalGet};
+use leptos::{IntoView, Signal, SignalGet, component, view};
 
 #[component]
 pub fn AgentPane(

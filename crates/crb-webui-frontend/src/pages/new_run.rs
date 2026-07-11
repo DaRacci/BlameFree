@@ -3,8 +3,8 @@ use crate::{AppConfig, NewRunRequest, NewRunResponse};
 use crb_shared::{DEFAULT_MODEL, DEFAULT_MODEL_PRO};
 use crb_webui_shared::config::{DatasetInfo, PrEntry};
 use leptos::{
-    component, create_local_resource, create_signal, event_target_value, spawn_local, view,
-    IntoView, SignalGet, SignalSet, SignalUpdate,
+    IntoView, SignalGet, SignalSet, SignalUpdate, component, create_local_resource, create_signal,
+    event_target_value, spawn_local, view,
 };
 use leptos_router::use_navigate;
 

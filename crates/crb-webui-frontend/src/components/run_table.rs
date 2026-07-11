@@ -1,5 +1,5 @@
 use crb_webui_shared::runs::RunSummary;
-use leptos::{component, create_signal, view, IntoView, SignalGet, SignalSet, SignalUpdate};
+use leptos::{IntoView, SignalGet, SignalSet, SignalUpdate, component, create_signal, view};
 
 #[component]
 pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
@@ -41,11 +41,7 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
                 runs.sort_by(|a, b| {
                     let a_m = a.model.as_deref().unwrap_or("");
                     let b_m = b.model.as_deref().unwrap_or("");
-                    if asc {
-                        a_m.cmp(b_m)
-                    } else {
-                        b_m.cmp(a_m)
-                    }
+                    if asc { a_m.cmp(b_m) } else { b_m.cmp(a_m) }
                 });
             }
             SortColumn::F1 => {
@@ -94,11 +90,7 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
 
     let _sort_indicator = move |col| {
         if sort_column.get() == col {
-            if sort_asc.get() {
-                " ^"
-            } else {
-                " v"
-            }
+            if sort_asc.get() { " ^" } else { " v" }
         } else {
             ""
         }
@@ -106,11 +98,7 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
 
     let sort_arrow = move |col| {
         if sort_column.get() == col {
-            if sort_asc.get() {
-                "^"
-            } else {
-                "v"
-            }
+            if sort_asc.get() { "^" } else { "v" }
         } else {
             ""
         }

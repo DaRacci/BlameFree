@@ -77,7 +77,10 @@ pub fn load_linter_config(path: &str) -> Result<HashMap<String, LinterConfig>, C
 mod tests {
     use super::*;
 
-    fn load_temp_config(filename: &str, content: &str) -> Result<HashMap<String, LinterConfig>, ConfigError> {
+    fn load_temp_config(
+        filename: &str,
+        content: &str,
+    ) -> Result<HashMap<String, LinterConfig>, ConfigError> {
         let dir = std::env::temp_dir();
         let path = dir.join(filename);
         std::fs::write(&path, content).expect("failed to write temp config");

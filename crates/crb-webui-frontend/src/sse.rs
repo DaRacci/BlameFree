@@ -1,13 +1,20 @@
 use futures::channel::mpsc;
 use leptos::{SignalSet, WriteSignal};
-use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::*;
 use web_sys::MessageEvent;
 
 /// Create an EventSource and an unbounded channel pair.
 fn new_event_source(
     url: &str,
-) -> Result<(web_sys::EventSource, mpsc::UnboundedSender<String>, mpsc::UnboundedReceiver<String>), String> {
+) -> Result<
+    (
+        web_sys::EventSource,
+        mpsc::UnboundedSender<String>,
+        mpsc::UnboundedReceiver<String>,
+    ),
+    String,
+> {
     let (tx, rx) = mpsc::unbounded();
     let es = web_sys::EventSource::new(url)
         .map_err(|e| format!("Failed to construct EventSource: {:?}", e))?;
@@ -20,9 +27,7 @@ fn new_event_source(
 /// This basic version only sets up the `onmessage` handler — no connection
 /// status tracking. For status-aware connections (onopen / onerror), see
 /// [`connect_sse_with_status`].
-pub async fn connect_sse(
-    url: &str,
-) -> Result<mpsc::UnboundedReceiver<String>, String> {
+pub async fn connect_sse(url: &str) -> Result<mpsc::UnboundedReceiver<String>, String> {
     let (es, tx, rx) = new_event_source(url)?;
     attach_onmessage(&es, tx);
     Ok(rx)
@@ -69,10 +74,7 @@ pub async fn connect_sse_with_status(
 }
 
 /// Set up the onmessage handler on an EventSource.
-fn attach_onmessage(
-    es: &web_sys::EventSource,
-    tx: mpsc::UnboundedSender<String>,
-) {
+fn attach_onmessage(es: &web_sys::EventSource, tx: mpsc::UnboundedSender<String>) {
     let tx_clone = tx.clone();
     let msg_closure = Closure::wrap(Box::new(move |event: MessageEvent| {
         if let Some(text) = event.data().as_string() {

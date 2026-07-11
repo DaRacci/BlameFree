@@ -4,11 +4,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use axum::Json;
 use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::response::Response;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::harness;
@@ -17,9 +17,9 @@ use crb_webui_shared::config::RoleInfo;
 use rustls::pki_types::UnixTime;
 
 pub use crb_shared::CostJson;
+pub use crb_shared::DEFAULT_MODEL;
 pub use crb_shared::RunDetail;
 pub use crb_shared::RunSummary;
-pub use crb_shared::DEFAULT_MODEL;
 pub use crb_shared::{
     AgentLogResponse, LogsListResponse, PrAgentEntry, PrAgentsResponse, PrDetailResponse,
     PrLogsEntry,
@@ -1230,7 +1230,6 @@ pub async fn get_pr_detail(
 
     let pr_key_lower = pr_key.to_lowercase();
     for (file_path, fname) in iter_json_files(&run_path) {
-
         // Match by filename containing pr_key, or by PR number extracted from URL
         let content = match std::fs::read_to_string(&file_path) {
             Ok(c) => c,
@@ -1259,7 +1258,11 @@ pub async fn get_pr_detail(
 
         tracing::debug!(
             "pr-detail matching: pr_key='{}', fname='{}', fname_lower='{}', pr_key_normalized='{}', matches={}",
-            pr_key, fname, fname_lower, pr_key_normalized, matches
+            pr_key,
+            fname,
+            fname_lower,
+            pr_key_normalized,
+            matches
         );
 
         if matches {

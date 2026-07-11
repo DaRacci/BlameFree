@@ -1,4 +1,4 @@
-use leptos::{component, view, IntoView};
+use leptos::{IntoView, component, view};
 
 #[component]
 pub fn ProgressBar(value: u32, max: u32, label: String) -> impl IntoView {

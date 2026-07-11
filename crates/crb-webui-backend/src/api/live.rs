@@ -3,14 +3,14 @@
 //! Server-Sent Events for real-time agent monitoring during
 //! active benchmark runs.
 
+use axum::Json;
 use axum::extract::Path as AxumPath;
 use axum::extract::State;
-use axum::response::sse::{Event, Sse};
 use axum::response::IntoResponse;
-use axum::Json;
+use axum::response::sse::{Event, Sse};
 use std::convert::Infallible;
-use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::BroadcastStream;
 
 use crate::server::AppState;
 

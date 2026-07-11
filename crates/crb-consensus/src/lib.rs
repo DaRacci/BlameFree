@@ -5,10 +5,10 @@
 //! judge fallback against golden comments.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::LazyLock;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -29,7 +29,7 @@ use tokio::task::JoinSet;
 
 use crb_agents::build_agent;
 use crb_agents::prompts::PromptLibrary;
-use crb_judge::{run_judge, JudgeVerdict};
+use crb_judge::{JudgeVerdict, run_judge};
 use crb_reporting::PrResult;
 
 /// Regex to extract JSON from markdown code blocks.
@@ -510,7 +510,9 @@ pub async fn run_reviewers(
 
             // Check cache first
             if let Some(ref cache) = cache {
-                if let Some((cached_response, cached_usage_opt)) = cache.lookup_agent_by_key_with_usage(&cache_key) {
+                if let Some((cached_response, cached_usage_opt)) =
+                    cache.lookup_agent_by_key_with_usage(&cache_key)
+                {
                     tracing::info!("CACHE HIT for role {:?} (key={})", role, &cache_key[..12]);
                     // Record usage from cache if available
                     if let Some(cached_usage) = cached_usage_opt {
@@ -519,7 +521,8 @@ pub async fn run_reviewers(
                             agg.output_tokens += cached_usage.output_tokens;
                             agg.total_tokens += cached_usage.total_tokens;
                             agg.cached_input_tokens += cached_usage.cached_input_tokens;
-                            agg.cache_creation_input_tokens += cached_usage.cache_creation_input_tokens;
+                            agg.cache_creation_input_tokens +=
+                                cached_usage.cache_creation_input_tokens;
                             agg.reasoning_tokens += cached_usage.reasoning_tokens;
                             agg.tool_use_prompt_tokens += cached_usage.tool_use_prompt_tokens;
                         }
@@ -527,7 +530,10 @@ pub async fn run_reviewers(
                     // Parse findings from cached response
                     let response = cached_response;
                     let preview_len = std::cmp::min(500, response.len());
-                    tracing::info!("Agent cached response (first 500 chars): {}", &response[..preview_len]);
+                    tracing::info!(
+                        "Agent cached response (first 500 chars): {}",
+                        &response[..preview_len]
+                    );
 
                     let mut findings: Vec<Finding> =
                         parse_findings_from_response(&response, &role, "CACHED");
@@ -561,10 +567,7 @@ pub async fn run_reviewers(
                 let role = role_async;
 
                 // Start streaming the agent response
-                let mut stream = agent
-                    .stream_prompt(&diff)
-                    .with_hook(turn_budget_hook)
-                    .await;
+                let mut stream = agent.stream_prompt(&diff).with_hook(turn_budget_hook).await;
 
                 let mut response = String::new();
                 let mut usage = Usage::new();
@@ -572,7 +575,9 @@ pub async fn run_reviewers(
 
                 while let Some(item) = stream.next().await {
                     match item.map_err(|e| anyhow::anyhow!("{e}"))? {
-                        MultiTurnStreamItem::StreamAssistantItem(rig_core::streaming::StreamedAssistantContent::Text(text)) => {
+                        MultiTurnStreamItem::StreamAssistantItem(
+                            rig_core::streaming::StreamedAssistantContent::Text(text),
+                        ) => {
                             let chunk = text.text;
                             response.push_str(&chunk);
                             if let Some(ref tx) = dashboard_tx {
@@ -589,7 +594,8 @@ pub async fn run_reviewers(
                                 usage.output_tokens += call.usage.output_tokens;
                                 usage.total_tokens += call.usage.total_tokens;
                                 usage.cached_input_tokens += call.usage.cached_input_tokens;
-                                usage.cache_creation_input_tokens += call.usage.cache_creation_input_tokens;
+                                usage.cache_creation_input_tokens +=
+                                    call.usage.cache_creation_input_tokens;
                                 usage.reasoning_tokens += call.usage.reasoning_tokens;
                                 usage.tool_use_prompt_tokens += call.usage.tool_use_prompt_tokens;
                             }
@@ -618,7 +624,11 @@ pub async fn run_reviewers(
                                         }
                                     }
                                 }
-                                if reasoning.is_empty() { None } else { Some(reasoning) }
+                                if reasoning.is_empty() {
+                                    None
+                                } else {
+                                    Some(reasoning)
+                                }
                             });
                         }
                         _ => {}
@@ -643,15 +653,23 @@ pub async fn run_reviewers(
 
                 // Cache the response + usage if cache is active
                 if let Some(ref cache) = cache {
-                    cache.save_agent_with_key_and_usage(&cache_key, role.as_str(), &diff, &response, &usage);
+                    cache.save_agent_with_key_and_usage(
+                        &cache_key,
+                        role.as_str(),
+                        &diff,
+                        &response,
+                        &usage,
+                    );
                 }
 
                 // Log raw response for debugging
                 let preview_len = std::cmp::min(500, response.len());
-                tracing::info!("Agent raw response (first 500 chars): {}", &response[..preview_len]);
+                tracing::info!(
+                    "Agent raw response (first 500 chars): {}",
+                    &response[..preview_len]
+                );
 
-                let mut findings: Vec<Finding> =
-                    parse_findings_from_response(&response, &role, "");
+                let mut findings: Vec<Finding> = parse_findings_from_response(&response, &role, "");
                 if findings.len() > max_findings {
                     tracing::warn!(
                         "Role {:?} produced {} findings, capping at {}",
