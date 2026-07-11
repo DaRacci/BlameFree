@@ -2,6 +2,7 @@
 name = "crb-auditor"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [lib]
 name = "crb_auditor"
