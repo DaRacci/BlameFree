@@ -1,34 +1,29 @@
 use std::collections::HashSet;
-use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time;
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::{env, fs, io};
+use std::{process, time};
 
-use anyhow::Context;
-use anyhow::Result;
-use anyhow::anyhow;
+use anyhow::{Context, Result, anyhow};
 use clap::{Parser, Subcommand};
 use crb_agents::prompts::PromptLibrary;
-use crb_harness::validation;
+use crb_harness::{model_capabilities, validation};
 use crb_judge::build_judge;
 use crb_reporting::{GoldenCommentEntry, load_golden_datasets, write_report};
 use crb_rules::RuleSet;
-use crb_shared::benchmark_pipeline;
+use crb_shared::cache::LlmCache;
 use crb_shared::metrics::MetricsOutput;
-use crb_shared::sanitize_filename;
-use crb_types::AggregateMetrics;
-use crb_types::RunEvent;
+use crb_shared::{benchmark_pipeline, sanitize_filename};
+use crb_types::{AggregateMetrics, RunEvent};
 use rig_core::client::ProviderClient;
 use tokio::sync::broadcast;
-use tracing::error;
-use tracing::warn;
-use tracing::{info, info_span};
+use tracing::{error, info, info_span, warn};
 
 mod diffs;
 mod scaffold;
 mod validate;
 
-/// CLI tool for code review benchmark preparation tasks.
 #[derive(Debug, Parser)]
 #[command(name = "crb-benchmark", about = "Benchmark preparation CLI")]
 struct Cli {
@@ -261,16 +256,13 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
-    // Load .env from CWD (and parent directories)
     match dotenvy::dotenv() {
         Ok(path) => eprintln!("[dotenv] Loaded .env from: {}", path.display()),
         Err(e) => eprintln!("[dotenv] No .env file loaded: {e}"),
     }
 
-    // Fallback: if OPENAI_API_KEY is not set but OPENROUTER_API_KEY is, use that
     if env::var("OPENAI_API_KEY").is_err() {
         if env::var("OPENROUTER_API_KEY").is_ok() {
-            // Dotenv: set it via the process env since dotenvy already loaded
             eprintln!("[dotenv] OPENAI_API_KEY not found - falling back to OPENROUTER_API_KEY");
         }
     }
@@ -365,9 +357,8 @@ fn main() -> Result<()> {
         } => {
             let rt = tokio::runtime::Runtime::new()?;
 
-            // Pre-warm model capabilities cache (uses blocking HTTP, must be
-            // called outside the async runtime)
-            crb_harness::model_capabilities::warm_model_cache_blocking();
+            // Pre-warm model capabilities cache (uses blocking HTTP, must be called outside the async runtime)
+            model_capabilities::warm_model_cache_blocking();
 
             rt.block_on(run_benchmark(
                 benchmark_dir,
@@ -406,7 +397,6 @@ fn run_list(dataset_dir: &PathBuf) -> Result<()> {
     let mut repos = std::collections::BTreeSet::new();
 
     for entry in &entries {
-        // Extract repo name from URL: "https://github.com/repo-owner/repo-name/pull/N"
         let repo_name = entry
             .url
             .trim_end_matches('/')
@@ -442,15 +432,14 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
                 worktrees_dir.display()
             );
         } else {
-            // Remove each worktree using `git worktree remove --force`
-            for entry in std::fs::read_dir(&worktrees_dir)? {
+            for entry in fs::read_dir(&worktrees_dir)? {
                 let entry = entry?;
                 let wt_path = entry.path();
                 if !wt_path.is_dir() {
                     continue;
                 }
                 if wt_path.join(".git").exists() {
-                    let status = std::process::Command::new("git")
+                    let status = process::Command::new("git")
                         .args(["worktree", "remove", "--force"])
                         .arg(&wt_path)
                         .status()?;
@@ -462,13 +451,11 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
                 }
             }
 
-            // Prune orphaned worktree metadata
-            let _ = std::process::Command::new("git")
+            let _ = process::Command::new("git")
                 .args(["worktree", "prune"])
                 .status(); // Ignore — best-effort cleanup
 
-            // Remove the worktrees directory itself
-            std::fs::remove_dir_all(&worktrees_dir)?;
+            fs::remove_dir_all(&worktrees_dir)?;
             println!("Removed worktrees directory: {}", worktrees_dir.display());
         }
     } else {
@@ -487,7 +474,7 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
                     diffs_dir.display()
                 );
             } else {
-                std::fs::remove_dir_all(&diffs_dir)?;
+                fs::remove_dir_all(&diffs_dir)?;
                 println!("Removed diffs directory: {}", diffs_dir.display());
             }
         } else {
@@ -504,14 +491,13 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
                     outputs_dir.display()
                 );
             } else {
-                std::fs::remove_dir_all(&outputs_dir)?;
+                fs::remove_dir_all(&outputs_dir)?;
                 println!("Removed outputs directory: {}", outputs_dir.display());
             }
         } else {
             println!("No outputs directory found at {}", outputs_dir.display());
         }
 
-        // Also check for top-level "output/" as used by the benchmark run command
         let output_dir = benchmark_dir.join("output");
         if output_dir.exists() && output_dir != outputs_dir {
             if dry_run {
@@ -520,7 +506,7 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
                     output_dir.display()
                 );
             } else {
-                std::fs::remove_dir_all(&output_dir)?;
+                fs::remove_dir_all(&output_dir)?;
                 println!("Removed output directory: {}", output_dir.display());
             }
         }
@@ -531,7 +517,7 @@ fn run_clean(benchmark_dir: &PathBuf, all: bool, outputs: bool, dry_run: bool) -
 
 /// Show cache statistics.
 fn run_cache_stats(cache_dir: &PathBuf, json: bool) -> Result<()> {
-    let stats = crb_harness::LlmCache::stats(cache_dir).map_err(|e| anyhow!("{}", e))?;
+    let stats = LlmCache::stats(cache_dir).map_err(|e| anyhow!("{}", e))?;
     if json {
         println!("{}", serde_json::to_string_pretty(&stats)?);
     } else {
@@ -550,9 +536,9 @@ fn run_cache_stats(cache_dir: &PathBuf, json: bool) -> Result<()> {
     Ok(())
 }
 
-/// Print the result of a cache operation.  When `json` is true, the result
-/// is printed as pretty-printed JSON; otherwise a human-readable message
-/// is printed (with an optional `"[DRY RUN] "` prefix).
+/// Print the result of a cache operation.
+/// When `json` is true, the result is printed as pretty-printed JSON;
+/// otherwise a human-readable message is printed (with an optional `"[DRY RUN] "` prefix).
 fn print_cache_output(json: bool, dry_run: bool, message: &str) {
     if json {
         // JSON is already printed by the caller via serde_json::to_string_pretty
@@ -573,7 +559,7 @@ fn run_cache_prune(
     dry_run: bool,
     json: bool,
 ) -> Result<()> {
-    let result = crb_harness::LlmCache::prune(cache_dir, max_age, max_size, max_prs, dry_run)
+    let result = LlmCache::prune(cache_dir, max_age, max_size, max_prs, dry_run)
         .map_err(|e| anyhow!("{}", e))?;
     if json {
         println!("{}", serde_json::to_string_pretty(&result)?);
@@ -592,8 +578,7 @@ fn run_cache_prune(
 
 /// Scrub cache for stale entries, orphans, and corrupted indices.
 fn run_cache_scrub(cache_dir: &PathBuf, dry_run: bool, repair: bool, json: bool) -> Result<()> {
-    let result =
-        crb_harness::LlmCache::scrub(cache_dir, dry_run, repair).map_err(|e| anyhow!("{}", e))?;
+    let result = LlmCache::scrub(cache_dir, dry_run, repair).map_err(|e| anyhow!("{}", e))?;
     if json {
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
@@ -620,8 +605,8 @@ fn run_cache_scrub(cache_dir: &PathBuf, dry_run: bool, repair: bool, json: bool)
 
 /// Backup cache to a tar.gz archive.
 fn run_cache_backup(cache_dir: &PathBuf, output: Option<PathBuf>) -> Result<()> {
-    use std::time::SystemTime;
-    use std::time::UNIX_EPOCH;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -631,14 +616,14 @@ fn run_cache_backup(cache_dir: &PathBuf, output: Option<PathBuf>) -> Result<()> 
         p.push(format!("cache_backup_{}.tar.gz", ts));
         p
     });
-    crb_harness::LlmCache::backup(cache_dir, &output_path).map_err(|e| anyhow!("{}", e))?;
+    LlmCache::backup(cache_dir, &output_path).map_err(|e| anyhow!("{}", e))?;
     println!("Backup created: {}", output_path.display());
     Ok(())
 }
 
 /// Restore cache from a tar.gz backup.
 fn run_cache_restore(backup_file: &PathBuf, cache_dir: &PathBuf) -> Result<()> {
-    crb_harness::LlmCache::restore(cache_dir, backup_file).map_err(|e| anyhow!("{}", e))?;
+    LlmCache::restore(cache_dir, backup_file).map_err(|e| anyhow!("{}", e))?;
     println!(
         "Restored from {} to {}",
         backup_file.display(),
@@ -649,7 +634,7 @@ fn run_cache_restore(backup_file: &PathBuf, cache_dir: &PathBuf) -> Result<()> {
 
 /// Rebuild cache indices from raw data.
 fn run_cache_rebuild(cache_dir: &PathBuf, dry_run: bool) -> Result<()> {
-    crb_harness::LlmCache::rebuild(cache_dir, dry_run).map_err(|e| anyhow!("{}", e))?;
+    LlmCache::rebuild(cache_dir, dry_run).map_err(|e| anyhow!("{}", e))?;
     if dry_run {
         print!("[DRY RUN] ");
     }
@@ -689,14 +674,12 @@ async fn run_benchmark(
     let benchmark_dir = PathBuf::from(&benchmark_dir);
 
     if auto_backup {
-        use std::time::SystemTime;
-        use std::time::UNIX_EPOCH;
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
         let backup_path = PathBuf::from(format!("cache_backup_{}.tar.gz", ts));
-        match crb_harness::LlmCache::backup(&cache_dir, &backup_path) {
+        match LlmCache::backup(&cache_dir, &backup_path) {
             Ok(()) => info!("Auto-backup created at {}", backup_path.display()),
             Err(e) => warn!("Auto-backup failed: {e}"),
         }
@@ -739,7 +722,7 @@ async fn run_benchmark(
 
     let prs_to_evaluate: Vec<GoldenCommentEntry> = if resume {
         let existing: HashSet<String> = if output_dir.exists() {
-            std::fs::read_dir(&output_dir)?
+            fs::read_dir(&output_dir)?
                 .filter_map(|e| e.ok())
                 .filter(|e| e.path().extension().map_or(false, |ext| ext == "json"))
                 .filter_map(|e| e.file_name().into_string().ok())
@@ -776,10 +759,9 @@ async fn run_benchmark(
 
     let client = rig_core::providers::openai::Client::from_env()
         .map_err(|e| anyhow!("Failed to create OpenAI client: {e}"))?;
-
     let judge = build_judge(&client, &judge_model);
 
-    let linter_config_path = std::path::Path::new(&linters_config);
+    let linter_config_path = Path::new(&linters_config);
     let linter_configs = if linter_config_path.exists() && !skip_linters {
         match crb_tools::load_linter_config(&linters_config) {
             Ok(configs) => {
@@ -796,7 +778,7 @@ async fn run_benchmark(
     };
 
     let ruleset = if !skip_rules {
-        let rules_dir = std::path::Path::new(".crb/rules/");
+        let rules_dir = Path::new(".crb/rules/");
         match RuleSet::load_from_dir(rules_dir) {
             Ok(rs) => {
                 info!(
@@ -816,15 +798,12 @@ async fn run_benchmark(
         None
     };
 
-    let prompt_lib = Arc::new(PromptLibrary::get_instance());
-
     // Wrap linter_configs in Arc to avoid expensive per-PR clones
     let linter_configs = linter_configs.map(Arc::new);
+    let prompt_lib = Arc::new(PromptLibrary::get_instance());
 
     let start_time = time::Instant::now();
-
     let (event_broadcast_tx, _) = broadcast::channel::<RunEvent>(256);
-
     let dashboard_tx: Option<broadcast::Sender<RunEvent>> = if dashboard || dashboard_events {
         Some(event_broadcast_tx.clone())
     } else {
@@ -834,13 +813,12 @@ async fn run_benchmark(
     if dashboard_events {
         let mut rx = event_broadcast_tx.subscribe();
         tokio::spawn(async move {
-            use std::io::Write;
             while let Ok(event) = rx.recv().await {
                 if let Ok(json) = serde_json::to_string(&event) {
-                    let stdout = std::io::stdout();
+                    let stdout = io::stdout();
                     let mut handle = stdout.lock();
-                    let _ = writeln!(handle, "{json}"); // Ignore — best-effort dashboard event output
-                    let _ = handle.flush(); // Ignore — best-effort dashboard event output
+                    let _ = writeln!(handle, "{json}"); // Ignore; best-effort dashboard event output
+                    let _ = handle.flush(); // Ignore; best-effort dashboard event output
                 }
             }
         });
@@ -903,15 +881,14 @@ async fn run_benchmark(
     let (results, eval_elapsed) =
         benchmark_pipeline::run_concurrent_eval(prs_to_evaluate, &pipeline_cfg, eval_fn).await;
 
-    // Accumulate aggregate metrics from all completed results
     let mut agg = benchmark_pipeline::AggregateResults::new();
     for r in &results {
         agg.add(r);
     }
 
     if let Some(tx) = &dashboard_tx {
+        // Ignore; receiver may have disconnected
         let _ = tx.send(RunEvent::RunFinished {
-            // Ignore — receiver may have disconnected
             total_prs: results.len(),
             aggregated: AggregateMetrics {
                 true_positives: agg.total_tp,

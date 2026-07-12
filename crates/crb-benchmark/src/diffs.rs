@@ -1,8 +1,9 @@
 use std::path::Path;
 use std::process::Command;
+use std::{env, fs};
 
-use anyhow::Result;
-use tracing::info;
+use anyhow::{Result, bail};
+use tracing::{info, warn};
 
 /// Extract diffs from base repos into persistent per-PR worktrees.
 ///
@@ -13,7 +14,7 @@ use tracing::info;
 pub fn run(benchmark_dir: &Path) -> Result<()> {
     let base_repos_dir = benchmark_dir.join("base-repos");
     if !base_repos_dir.exists() {
-        anyhow::bail!(
+        bail!(
             "Base repos directory does not exist: {}. Run `crb-benchmark scaffold` first.",
             base_repos_dir.display()
         );
@@ -21,15 +22,15 @@ pub fn run(benchmark_dir: &Path) -> Result<()> {
 
     let diffs_dir = benchmark_dir.join("diffs");
     let worktrees_dir = benchmark_dir.join("worktrees");
-    std::fs::create_dir_all(&diffs_dir)?;
-    std::fs::create_dir_all(&worktrees_dir)?;
+    fs::create_dir_all(&diffs_dir)?;
+    fs::create_dir_all(&worktrees_dir)?;
 
     info!("Scanning base repos in: {}", base_repos_dir.display());
 
     let mut diff_count = 0;
     let skipped_count = 0;
 
-    for entry in std::fs::read_dir(&base_repos_dir)? {
+    for entry in fs::read_dir(&base_repos_dir)? {
         let entry = entry?;
         let repo_path = entry.path();
         if !repo_path.is_dir() || !repo_path.join(".git").exists() {
@@ -58,17 +59,14 @@ pub fn run(benchmark_dir: &Path) -> Result<()> {
             .output()?;
 
         if !refs_output.status.success() {
-            tracing::warn!("Failed to list PR refs for {}", repo_name);
+            warn!("Failed to list PR refs for {}", repo_name);
             continue;
         }
 
         let refs_str = String::from_utf8_lossy(&refs_output.stdout);
         let pr_numbers: Vec<u32> = refs_str
             .lines()
-            .filter_map(|line| {
-                // Format: "N/merge" -> extract N
-                line.split('/').next().and_then(|n| n.parse().ok())
-            })
+            .filter_map(|line| line.split('/').next().and_then(|n| n.parse().ok()))
             .collect();
 
         if pr_numbers.is_empty() {
@@ -89,7 +87,7 @@ pub fn run(benchmark_dir: &Path) -> Result<()> {
                     .filter_map(|line| line.split('/').next().and_then(|n| n.parse().ok()))
                     .collect();
                 if head_nums.is_empty() {
-                    tracing::warn!("No PR refs found for {}", repo_name);
+                    warn!("No PR refs found for {}", repo_name);
                     continue;
                 }
                 for pr_number in &head_nums {
@@ -100,10 +98,10 @@ pub fn run(benchmark_dir: &Path) -> Result<()> {
                         &diffs_dir,
                         &worktrees_dir,
                         false,
-                    )?;
+                    )? as u32;
                 }
             } else {
-                tracing::warn!("No PR refs found for {}", repo_name);
+                warn!("No PR refs found for {}", repo_name);
                 continue;
             }
         } else {
@@ -115,7 +113,7 @@ pub fn run(benchmark_dir: &Path) -> Result<()> {
                     &diffs_dir,
                     &worktrees_dir,
                     true,
-                )?;
+                )? as u32;
             }
         }
     }
@@ -127,9 +125,9 @@ pub fn run(benchmark_dir: &Path) -> Result<()> {
     );
 
     if diff_count == 0 && skipped_count == 0 {
-        println!("No diffs extracted. Run `crb-benchmark scaffold` first.");
+        info!("No diffs extracted. Run `crb-benchmark scaffold` first.");
     } else if skipped_count > 0 {
-        println!("{} worktrees/diffs already exist (skipped)", skipped_count);
+        info!("{} worktrees/diffs already exist (skipped)", skipped_count);
     }
 
     Ok(())
@@ -137,8 +135,7 @@ pub fn run(benchmark_dir: &Path) -> Result<()> {
 
 /// Extract diff for a single PR using persistent worktrees.
 ///
-/// Skips if BOTH the worktree AND the diff file already exist.
-/// Returns 1 if a new diff was extracted, 0 if skipped.
+/// Returns `bool` indicating whether a new diff was extracted.
 fn extract_diff_for_pr(
     repo_path: &Path,
     repo_name: &str,
@@ -146,17 +143,16 @@ fn extract_diff_for_pr(
     diffs_dir: &Path,
     worktrees_dir: &Path,
     use_merge_ref: bool,
-) -> Result<u32> {
+) -> Result<bool> {
     let worktree_path = worktrees_dir.join(format!("{repo_name}_{pr_number}"));
     let diff_path = diffs_dir.join(format!("{repo_name}_{pr_number}.diff"));
 
-    // Skip if BOTH worktree AND diff already exist
     if worktree_path.join(".git").exists() && diff_path.exists() {
         info!(
             "Worktree and diff already exist for PR #{} in {} (skipping)",
             pr_number, repo_name
         );
-        return Ok(0);
+        return Ok(false);
     }
 
     let ref_name = if use_merge_ref {
@@ -165,7 +161,6 @@ fn extract_diff_for_pr(
         format!("refs/remotes/origin/pull/{pr_number}/head")
     };
 
-    // Create worktree if it doesn't exist
     if !worktree_path.join(".git").exists() {
         info!(
             "Creating worktree at {} for PR #{} in {}",
@@ -174,14 +169,14 @@ fn extract_diff_for_pr(
             repo_name
         );
 
-        // Canonicalize worktree path to absolute - git worktree add resolves
-        // relative paths relative to the repo, not CWD.
+        // Canonicalize worktree path to absolute
+        // git worktree add resolves relative paths relative to the repo, not CWD.
         let abs_worktree = if worktree_path.is_absolute() {
             worktree_path.clone()
         } else {
-            std::env::current_dir()?.join(&worktree_path)
+            env::current_dir()?.join(&worktree_path)
         };
-        std::fs::create_dir_all(abs_worktree.parent().unwrap_or(&abs_worktree))?;
+        fs::create_dir_all(abs_worktree.parent().unwrap_or(&abs_worktree))?;
 
         let status = Command::new("git")
             .args([
@@ -194,23 +189,21 @@ fn extract_diff_for_pr(
             .status()?;
 
         if !status.success() {
-            tracing::warn!(
+            warn!(
                 "Failed to create worktree for PR #{} in {}",
-                pr_number,
-                repo_name
+                pr_number, repo_name
             );
-            return Ok(0);
+            return Ok(false);
         }
     }
 
-    // Extract diff from worktree (HEAD^..HEAD for merge commits)
     let output = Command::new("git")
         .args(["diff", "HEAD^", "HEAD"])
         .current_dir(&worktree_path)
         .output()?;
 
     if output.status.success() {
-        std::fs::write(&diff_path, &output.stdout)?;
+        fs::write(&diff_path, &output.stdout)?;
         let line_count = String::from_utf8_lossy(&output.stdout).lines().count();
         info!(
             "Extracted diff for {} PR #{} ({} lines) -> {}",
@@ -219,22 +212,21 @@ fn extract_diff_for_pr(
             line_count,
             diff_path.display()
         );
-        Ok(1)
+        Ok(true)
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        // HEAD^ may fail if not a merge commit - try diff with no parent (--root)
+        // HEAD^ may fail if not a merge commit, try diff with no parent (--root)
         if stderr.contains("ambiguous argument") || stderr.contains("unknown revision") {
-            tracing::warn!(
+            warn!(
                 "HEAD^ not available for {} PR #{}, trying --root diff",
-                repo_name,
-                pr_number
+                repo_name, pr_number
             );
             let root_output = Command::new("git")
                 .args(["diff", "--root", "HEAD"])
                 .current_dir(&worktree_path)
                 .output()?;
             if root_output.status.success() {
-                std::fs::write(&diff_path, &root_output.stdout)?;
+                fs::write(&diff_path, &root_output.stdout)?;
                 let line_count = String::from_utf8_lossy(&root_output.stdout).lines().count();
                 info!(
                     "Extracted root diff for {} PR #{} ({} lines) -> {}",
@@ -243,9 +235,9 @@ fn extract_diff_for_pr(
                     line_count,
                     diff_path.display()
                 );
-                return Ok(1);
+                return Ok(true);
             } else {
-                tracing::warn!(
+                warn!(
                     "Failed to extract root diff for {} PR #{}: {}",
                     repo_name,
                     pr_number,
@@ -253,13 +245,157 @@ fn extract_diff_for_pr(
                 );
             }
         } else {
-            tracing::warn!(
+            warn!(
                 "Failed to extract diff for {} PR #{}: {}",
                 repo_name,
                 pr_number,
                 stderr.trim()
             );
         }
-        Ok(0)
+        Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_diff_between_commits() {
+        let (_, repo_path) = setup_repo_with_diffs();
+
+        let output = Command::new("git")
+            .args(["diff", "HEAD~1..HEAD"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("git diff");
+        assert!(output.status.success(), "git diff should succeed");
+
+        let diff = String::from_utf8_lossy(&output.stdout);
+        assert!(!diff.is_empty(), "diff should not be empty");
+        assert!(diff.contains("main.rs"), "diff should mention main.rs");
+        assert!(
+            diff.contains("hello world"),
+            "diff should contain new content"
+        );
+        assert!(
+            diff.contains("+") && diff.contains("-"),
+            "diff should have additions and deletions"
+        );
+    }
+
+    #[test]
+    fn git_diff_working_tree() {
+        let (_, repo_path) = setup_repo_with_diffs();
+
+        fs::write(
+            repo_path.join("main.rs"),
+            "fn main() {\n    println!(\"modified!\");\n}\n",
+        )
+        .expect("write");
+
+        let output = Command::new("git")
+            .arg("diff")
+            .current_dir(&repo_path)
+            .output()
+            .expect("git diff");
+        assert!(output.status.success());
+
+        let diff = String::from_utf8_lossy(&output.stdout);
+        assert!(!diff.is_empty(), "working tree diff should not be empty");
+        assert!(
+            diff.contains("modified"),
+            "diff should show unstaged changes"
+        );
+    }
+
+    #[test]
+    fn git_diff_staged_changes() {
+        let (_, repo_path) = setup_repo_with_diffs();
+
+        fs::write(repo_path.join("main.rs"), "fn main() {\n    // staged\n}\n").expect("write");
+        Command::new("git")
+            .args(["add", "main.rs"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("git add");
+
+        let output = Command::new("git")
+            .args(["diff", "--cached"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("git diff --cached");
+        assert!(output.status.success());
+
+        let diff = String::from_utf8_lossy(&output.stdout);
+        assert!(!diff.is_empty(), "staged diff should not be empty");
+        assert!(diff.contains("staged"), "diff should show staged content");
+    }
+
+    #[test]
+    fn git_diff_format_has_hunks() {
+        let (_, repo_path) = setup_repo_with_diffs();
+
+        let output = Command::new("git")
+            .args(["diff", "HEAD~1..HEAD"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("git diff");
+        let diff = String::from_utf8_lossy(&output.stdout);
+
+        assert!(
+            diff.starts_with("diff --git"),
+            "diff should start with diff --git header"
+        );
+        assert!(diff.contains("@@"), "diff should contain hunk header (@@)");
+    }
+
+    #[test]
+    fn fetch_single_diff_via_worktree() {
+        let (_, repo_path) = setup_repo_with_diffs();
+
+        let worktree_dir = tempfile::TempDir::new().expect("worktree temp");
+        let wt_path = worktree_dir.path().join("wt");
+
+        let status = Command::new("git")
+            .args(["worktree", "add", &wt_path.to_string_lossy(), "HEAD"])
+            .current_dir(&repo_path)
+            .status()
+            .expect("git worktree add");
+        assert!(status.success(), "worktree add");
+
+        let output = Command::new("git")
+            .args(["diff", "HEAD^", "HEAD"])
+            .current_dir(&wt_path)
+            .output()
+            .expect("git diff in worktree");
+
+        assert!(output.status.success(), "git diff should succeed");
+        let diff = String::from_utf8_lossy(&output.stdout);
+        assert!(!diff.is_empty(), "worktree diff should not be empty");
+        assert!(
+            diff.contains("hello world"),
+            "diff should contain second commit content"
+        );
+
+        Command::new("git")
+            .args(["worktree", "remove", "--force", &wt_path.to_string_lossy()])
+            .current_dir(&repo_path)
+            .status()
+            .expect("git worktree remove");
+    }
+
+    #[test]
+    fn git_diff_on_empty_initial_commit() {
+        let (_, repo_path) = setup_empty_commit_repo();
+
+        let output = Command::new("git")
+            .arg("diff")
+            .current_dir(&repo_path)
+            .output()
+            .expect("git diff on empty");
+        assert!(output.status.success());
+        let diff = String::from_utf8_lossy(&output.stdout);
+        assert!(diff.is_empty(), "empty repo should have no diff");
     }
 }

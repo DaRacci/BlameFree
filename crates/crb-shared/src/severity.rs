@@ -1,11 +1,14 @@
 use serde::{Deserialize, Serialize};
+use strum::{Display, EnumIter};
 
 /// Severity levels for findings, ordered from most to least severe.
 ///
 /// # Ord
 ///
 /// `Critical < High < Medium < Low < Info`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, EnumIter, Display,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     /// Critical severity — security vulnerabilities or correctness bugs.

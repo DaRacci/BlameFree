@@ -14,6 +14,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use crb_agents::prompts;
 use crb_shared::sanitize_filename;
+use crb_shared::url::parse_github_url;
 use crb_shared::{DEFAULT_MODEL, cache};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -61,8 +62,8 @@ pub async fn start_adhoc_review(
     );
 
     let (owner, repo, pr_number) = match parse_github_url(&req.url) {
-        Some(info) => info,
-        None => {
+        Ok(info) => info,
+        Err(_) => {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(json!({
@@ -323,16 +324,6 @@ pub async fn list_repo_prs(
         .collect();
 
     Json(prs).into_response()
-}
-
-// Parse a GitHub PR URL into (owner, repo, pr_number)
-fn parse_github_url(url: &str) -> Option<(String, String, u32)> {
-    let re = regex::Regex::new(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)$").ok()?;
-    let caps = re.captures(url)?;
-    let owner = caps.get(1)?.as_str().to_string();
-    let repo = caps.get(2)?.as_str().to_string();
-    let pr_number: u32 = caps.get(3)?.as_str().parse().ok()?;
-    Some((owner, repo, pr_number))
 }
 
 /// Fetch PR title and raw diff from the GitHub API via octocrab.

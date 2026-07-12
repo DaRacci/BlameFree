@@ -28,6 +28,9 @@ pub mod pattern;
 /// [`Severity`] enum and utility functions for severity level management.
 pub mod severity;
 
+/// GitHub URL parsing utilities.
+pub mod url;
+
 /// Sanitize a string for use as a filename.
 pub fn sanitize_filename(name: &str) -> String {
     name.chars()
