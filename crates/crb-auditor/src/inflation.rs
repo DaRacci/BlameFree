@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 /// An inflated category that should be downgraded.
 #[derive(Debug)]
 pub struct InflatedCategory {
-    /// Canonical name for this inflated category (e.g. "architecture_nits").
+    /// Canonical name for this inflated category.
     pub name: &'static str,
 
     /// Regex patterns that identify this inflated category.

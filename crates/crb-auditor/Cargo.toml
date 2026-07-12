@@ -9,12 +9,8 @@ name = "crb_auditor"
 path = "src/lib.rs"
 
 [dependencies]
-crb-agents = { path = "../crb-agents" }
-crb-tools = { path = "../crb-tools" }
 crb-shared = { path = "../crb-shared" }
 regex = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 
 [lints]
 workspace = true

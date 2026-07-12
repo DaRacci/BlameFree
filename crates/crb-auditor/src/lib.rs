@@ -6,14 +6,10 @@
 //!
 //! Adds audit trail fields: `severity_audited` and `severity_audit_reason`.
 
-/// Never-downgrade protection patterns (security, data integrity, correctness).
 pub mod deflation;
-
-/// Inflated pattern detection and quantum-based downgrade.
 pub mod inflation;
 
 use crb_shared::{finding::Finding, severity::Severity};
-use serde::{Deserialize, Serialize};
 
 use crate::{
     deflation::has_never_downgrade_pattern,
@@ -100,9 +96,7 @@ pub fn apply_severity_auditor(findings: Vec<Finding>) -> Vec<Finding> {
 
 #[cfg(test)]
 mod tests {
-    use crb_shared::finding::Finding;
-
-    use super::{apply_severity_auditor, downgrade_quantum};
+    use super::*;
 
     fn make_finding(text: &str, severity: &str, evidence: &str, num_agents: u64) -> Finding {
         Finding {
