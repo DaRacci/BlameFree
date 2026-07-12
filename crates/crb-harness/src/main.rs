@@ -2,6 +2,7 @@ use std::env;
 
 use anyhow::Result;
 use clap::Parser;
+use crb_shared::DEFAULT_MODEL;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Clone, Parser)]
@@ -20,10 +21,14 @@ pub enum Cli {
         #[arg(long, default_value = ".")]
         pub path: PathBuf,
 
-        /// Model to use for agent reviews (e.g. gpt-4o, claude-sonnet-4-20250514, deepseek/deepseek-v4-flash).
-        #[arg(long, env = "MODEL", default_value = "deepseek/deepseek-v4-pro")]
+        /// Model to use for agent reviews.
+        #[arg(long, env = "MODEL", default_value = "default_model")]
         pub model: String,
     },
+}
+
+fn default_model() -> String {
+    DEFAULT_MODEL.to_string()
 }
 
 #[tokio::main]
@@ -36,7 +41,7 @@ async fn main() -> Result<()> {
     if env::var("OPENAI_API_KEY").is_err() {
         if let Ok(key) = env::var("OPENROUTER_API_KEY") {
             env::set_var("OPENAI_API_KEY", key);
-            eprintln!("[dotenv] OPENAI_API_KEY not found - falling back to OPENROUTER_API_KEY");
+            eprintln!("[dotenv] OPENAI_API_KEY not found, falling back to OPENROUTER_API_KEY");
         }
     }
 

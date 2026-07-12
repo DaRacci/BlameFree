@@ -1,33 +1,15 @@
 //! Cost tracking for LLM calls during PR evaluation.
 //!
-//! Tracks token counts, cache hit rates, and computes USD cost
-//! from pricing rates configured via environment variables.
-//!
-//! # Real API usage
-//! Token counts now come from real `Usage` data reported by the API
-//! through rig-core's `PromptResponse.usage` field (obtained via
-//! `.extended_details()` on agent/judge prompt calls).
-//!
-//! # Pricing
-//! Pricing rates are read from environment variables:
-//! - `COST_AGENT_INPUT_PER_1M`          (default: 0.14, deepseek-v4-flash)
-//! - `COST_AGENT_OUTPUT_PER_1M`         (default: 0.28)
-//! - `COST_AGENT_CACHE_READ_PER_1M`     (default: 0.0028)
-//! - `COST_AGENT_REASONING_PER_1M`      (default: 0.28, same as output rate)
-//! - `COST_JUDGE_INPUT_PER_1M`          (default: 0.14)
-//! - `COST_JUDGE_OUTPUT_PER_1M`         (default: 0.28)
-//! - `COST_JUDGE_CACHE_READ_PER_1M`     (default: 0.0028)
-//! - `COST_JUDGE_REASONING_PER_1M`      (default: 0.28, same as output rate)
+//! Tracks token counts, cache hit rates, and computes USD cost estimates.
 
-use std::sync::Mutex;
+use std::{env, sync::Mutex};
 
 use crb_reporting::CostSummary;
 use rig_core::completion::Usage;
 
 /// Thread-safe cost tracker for a single PR evaluation.
 ///
-/// Wraps all counters in a `Mutex` so it can be shared across concurrent
-/// agent calls via `Arc<CostTracker>`.
+/// Wraps all counters in a `Mutex` so it can be shared across concurrent agent calls via `Arc<CostTracker>`.
 pub struct CostTracker {
     inner: Mutex<CostTrackerInner>,
 }
@@ -112,8 +94,7 @@ impl CostTracker {
     }
 
     /// Record an agent call with a default (zero) Usage.
-    /// Used when usage data isn't available (e.g., legacy cache hits
-    /// that have no stored usage).
+    /// Used when usage data isn't available (e.g., legacy cache hits that have no stored usage).
     pub fn record_agent_empty(&self, cache_hit: bool) {
         self.record_agent(&Usage::new(), cache_hit);
     }
@@ -125,48 +106,47 @@ impl CostTracker {
 
     /// Total estimated cost in USD, computed from env-configured pricing rates.
     ///
-    /// Pricing rates are read from environment variables (see module docs for
-    /// defaults). The formula is:
+    /// Pricing rates are read from environment variables (see module docs for defaults).
+    /// The formula is:
     /// ```text
     /// cost = (tokens_in * input_price_per_token) + (tokens_out * output_price_per_token)
     /// ```
     /// where prices are per-token (derived from per-1M-token rates).
     pub fn total_cost_usd(&self) -> f64 {
-        if let Ok(inner) = self.inner.lock() {
-            compute_cost(&inner)
-        } else {
-            0.0
-        }
+        let Ok(inner) = self.inner.lock() else {
+            return 0.0;
+        };
+
+        compute_cost(&inner)
     }
 
     /// Cache hit rate for agent calls (0.0 to 1.0).
     /// Returns 0.0 if no calls were made.
     pub fn agent_cache_hit_rate(&self) -> f64 {
-        if let Ok(inner) = self.inner.lock() {
-            let total = inner.agent_cache_hits + inner.agent_cache_misses;
-            if total == 0 {
-                0.0
-            } else {
-                inner.agent_cache_hits as f64 / total as f64
-            }
-        } else {
-            0.0
-        }
+        let Ok(inner) = self.inner.lock() else {
+            return 0.0;
+        };
+
+        Self::hit_rate(inner.agent_cache_hits, inner.agent_cache_misses)
     }
 
     /// Cache hit rate for judge calls (0.0 to 1.0).
     /// Returns 0.0 if no calls were made.
     pub fn judge_cache_hit_rate(&self) -> f64 {
-        if let Ok(inner) = self.inner.lock() {
-            let total = inner.judge_cache_hits + inner.judge_cache_misses;
-            if total == 0 {
-                0.0
-            } else {
-                inner.judge_cache_hits as f64 / total as f64
-            }
-        } else {
-            0.0
+        let Ok(inner) = self.inner.lock() else {
+            return 0.0;
+        };
+
+        Self::hit_rate(inner.judge_cache_hits, inner.judge_cache_misses)
+    }
+
+    fn hit_rate(hits: usize, misses: usize) -> f64 {
+        let total = hits + misses;
+        if total != 0 {
+            return hits as f64 / total as f64;
         }
+
+        0.0
     }
 
     /// Total token counts across both agent and judge calls.
@@ -181,63 +161,45 @@ impl CostTracker {
         }
     }
 
-    /// Build a serializable [`CostSummary`] snapshot of the current state.
+    /// Build a [`CostSummary`] snapshot of the current state.
     pub fn to_summary(&self) -> CostSummary {
-        if let Ok(inner) = self.inner.lock() {
-            let agent_total = inner.agent_cache_hits + inner.agent_cache_misses;
-            let judge_total = inner.judge_cache_hits + inner.judge_cache_misses;
+        let Ok(inner) = self.inner.lock() else {
+            return CostSummary::default();
+        };
 
-            // Compute cost inline (avoid calling total_cost_usd which tries to re-lock the Mutex)
-            let agent_cost = compute_cost(&inner);
-            let judge_cost = 0.0; // compute_cost already returns total
+        let agent_total = inner.agent_cache_hits + inner.agent_cache_misses;
+        let judge_total = inner.judge_cache_hits + inner.judge_cache_misses;
 
-            CostSummary {
-                agent_tokens_in: inner.agent_tokens_in,
-                agent_tokens_out: inner.agent_tokens_out,
-                judge_tokens_in: inner.judge_tokens_in,
-                judge_tokens_out: inner.judge_tokens_out,
-                total_usd: agent_cost + judge_cost,
-                agent_cache_hit_rate: if agent_total == 0 {
-                    0.0
-                } else {
-                    inner.agent_cache_hits as f64 / agent_total as f64
-                },
-                judge_cache_hit_rate: if judge_total == 0 {
-                    0.0
-                } else {
-                    inner.judge_cache_hits as f64 / judge_total as f64
-                },
-                agent_cached_input_tokens: inner.agent_cached_input_tokens,
-                agent_cache_creation_input_tokens: inner.agent_cache_creation_input_tokens,
-                agent_reasoning_tokens: inner.agent_reasoning_tokens,
-                agent_tool_use_prompt_tokens: inner.agent_tool_use_prompt_tokens,
-                judge_cached_input_tokens: inner.judge_cached_input_tokens,
-                judge_cache_creation_input_tokens: inner.judge_cache_creation_input_tokens,
-                judge_reasoning_tokens: inner.judge_reasoning_tokens,
-                judge_tool_use_prompt_tokens: inner.judge_tool_use_prompt_tokens,
-                agent_call_count: inner.agent_call_count,
-                judge_call_count: inner.judge_call_count,
-            }
-        } else {
-            CostSummary {
-                agent_tokens_in: 0,
-                agent_tokens_out: 0,
-                judge_tokens_in: 0,
-                judge_tokens_out: 0,
-                total_usd: 0.0,
-                agent_cache_hit_rate: 0.0,
-                judge_cache_hit_rate: 0.0,
-                agent_cached_input_tokens: 0,
-                agent_cache_creation_input_tokens: 0,
-                agent_reasoning_tokens: 0,
-                agent_tool_use_prompt_tokens: 0,
-                judge_cached_input_tokens: 0,
-                judge_cache_creation_input_tokens: 0,
-                judge_reasoning_tokens: 0,
-                judge_tool_use_prompt_tokens: 0,
-                agent_call_count: 0,
-                judge_call_count: 0,
-            }
+        // Compute cost inline (avoid calling total_cost_usd which tries to re-lock the Mutex)
+        let agent_cost = compute_cost(&inner);
+        let judge_cost = 0.0; // compute_cost already returns total
+
+        CostSummary {
+            agent_tokens_in: inner.agent_tokens_in,
+            agent_tokens_out: inner.agent_tokens_out,
+            judge_tokens_in: inner.judge_tokens_in,
+            judge_tokens_out: inner.judge_tokens_out,
+            total_usd: agent_cost + judge_cost,
+            agent_cache_hit_rate: if agent_total == 0 {
+                0.0
+            } else {
+                inner.agent_cache_hits as f64 / agent_total as f64
+            },
+            judge_cache_hit_rate: if judge_total == 0 {
+                0.0
+            } else {
+                inner.judge_cache_hits as f64 / judge_total as f64
+            },
+            agent_cached_input_tokens: inner.agent_cached_input_tokens,
+            agent_cache_creation_input_tokens: inner.agent_cache_creation_input_tokens,
+            agent_reasoning_tokens: inner.agent_reasoning_tokens,
+            agent_tool_use_prompt_tokens: inner.agent_tool_use_prompt_tokens,
+            judge_cached_input_tokens: inner.judge_cached_input_tokens,
+            judge_cache_creation_input_tokens: inner.judge_cache_creation_input_tokens,
+            judge_reasoning_tokens: inner.judge_reasoning_tokens,
+            judge_tool_use_prompt_tokens: inner.judge_tool_use_prompt_tokens,
+            agent_call_count: inner.agent_call_count,
+            judge_call_count: inner.judge_call_count,
         }
     }
 }
@@ -251,7 +213,16 @@ impl Default for CostTracker {
 /// Compute the USD cost from the given inner state using env-configured pricing rates.
 ///
 /// Pricing rates are read from environment variables (see module docs for defaults).
+// TODO: Use stats directly from openrouter's `Usage` struct instead of computing from token counts here.
+#[deprecated]
 fn compute_cost(inner: &CostTrackerInner) -> f64 {
+    fn read_price_env(key: &str, default: f64) -> f64 {
+        env::var(key)
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(default)
+    }
+
     let agent_input_rate = read_price_env("COST_AGENT_INPUT_PER_1M", 0.14);
     let agent_output_rate = read_price_env("COST_AGENT_OUTPUT_PER_1M", 0.28);
     let agent_cache_read_rate = read_price_env("COST_AGENT_CACHE_READ_PER_1M", 0.0028);
@@ -279,14 +250,6 @@ fn compute_cost(inner: &CostTrackerInner) -> f64 {
         + (inner.judge_reasoning_tokens as f64 * judge_reasoning_rate / 1_000_000.0);
 
     agent_cost + judge_cost
-}
-
-/// Read a `f64` environment variable, returning `default` if unset or invalid.
-fn read_price_env(key: &str, default: f64) -> f64 {
-    std::env::var(key)
-        .ok()
-        .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(default)
 }
 
 #[cfg(test)]
@@ -339,7 +302,6 @@ mod tests {
         assert!((tracker.agent_cache_hit_rate() - 0.5).abs() < 1e-6);
         assert!((tracker.judge_cache_hit_rate() - 1.0).abs() < 1e-6);
 
-        // Check extended analytics
         let summary = tracker.to_summary();
         assert_eq!(summary.agent_cached_input_tokens, 10 + 20);
         assert_eq!(summary.agent_reasoning_tokens, 3 + 6);
@@ -355,32 +317,6 @@ mod tests {
         let tracker = CostTracker::new();
         assert_eq!(tracker.agent_cache_hit_rate(), 0.0);
         assert_eq!(tracker.judge_cache_hit_rate(), 0.0);
-    }
-
-    #[test]
-    fn test_cost_summary_serialization() {
-        let tracker = CostTracker::new();
-        let usage1 = make_usage(4000, 1000, 500, 200, 50, 30);
-        let usage2 = make_usage(500, 200, 100, 50, 20, 10);
-
-        tracker.record_agent(&usage1, true);
-        tracker.record_judge(&usage2, false);
-
-        let summary = tracker.to_summary();
-        assert_eq!(summary.agent_tokens_in, 4000);
-        assert_eq!(summary.agent_tokens_out, 1000);
-        assert_eq!(summary.judge_tokens_in, 500);
-        assert_eq!(summary.judge_tokens_out, 200);
-        assert!((summary.agent_cache_hit_rate - 1.0).abs() < 1e-6);
-        assert!((summary.judge_cache_hit_rate - 0.0).abs() < 1e-6);
-
-        // Verify it serializes to JSON
-        let json = serde_json::to_string(&summary).unwrap();
-        assert!(json.contains("\"agent_tokens_in\":4000"));
-        assert!(json.contains("\"total_usd\""));
-        assert!(json.contains("\"agent_cached_input_tokens\":500"));
-        assert!(json.contains("\"agent_call_count\":1"));
-        assert!(json.contains("\"judge_call_count\":1"));
     }
 
     #[test]

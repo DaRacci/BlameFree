@@ -1,5 +1,6 @@
 #[cfg(feature = "binary")]
 use clap::Parser;
+use crb_shared::DEFAULT_MODEL;
 use std::path::PathBuf;
 
 /// Arguments for the `review_diff` function.
@@ -21,9 +22,13 @@ pub struct ReviewArgs {
     /// Model to use for agent reviews.
     #[cfg_attr(
         feature = "binary",
-        arg(long, env = "MODEL", default_value = "deepseek/deepseek-v4-pro")
+        arg(long, env = "MODEL", default_value = "default_model")
     )]
     pub model: String,
+}
+
+fn default_model() -> String {
+    DEFAULT_MODEL.to_string()
 }
 
 #[cfg(test)]
@@ -33,9 +38,8 @@ mod tests {
 
     #[test]
     fn review_args_default_path_is_dot() {
-        use clap::Parser;
         // Simulate `--working` with no path specified
-        let args = crb_harness::config::ReviewArgs::parse_from(["test", "--working"]);
+        let args = ReviewArgs::parse_from(["test", "--working"]);
         assert_eq!(args.path, PathBuf::from("."));
         assert!(args.working);
         assert!(args.commits.is_none());
@@ -43,17 +47,14 @@ mod tests {
 
     #[test]
     fn review_args_commit_range() {
-        use clap::Parser;
-        let args =
-            crb_harness::config::ReviewArgs::parse_from(["test", "--commits", "HEAD~3..HEAD"]);
+        let args = ReviewArgs::parse_from(["test", "--commits", "HEAD~3..HEAD"]);
         assert_eq!(args.commits.as_deref(), Some("HEAD~3..HEAD"));
         assert!(!args.working);
     }
 
     #[test]
     fn review_args_custom_path() {
-        use clap::Parser;
-        let args = crb_harness::config::ReviewArgs::parse_from([
+        let args = ReviewArgs::parse_from([
             "test",
             "--working",
             "--path",

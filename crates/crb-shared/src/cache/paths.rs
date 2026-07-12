@@ -1,9 +1,6 @@
 //! Shared path constants used across crates for cache storage.
-//!
-//! Centralising these strings prevents drift between the write side
-//! (harness, cache) and the read side (webui API).
 
-/// Cache storage directory (flat, shared across runs).
+/// Cache storage directory.
 pub const CACHE_DIR_NAME: &str = "_cache";
 
 /// Agents sub-directory inside a PR's cache folder.

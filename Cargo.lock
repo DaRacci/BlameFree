@@ -708,6 +708,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crb-judge",
+ "crb-types",
  "crb-webui-shared",
  "regex",
  "rig-core",
@@ -728,6 +729,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "crb-shared",
+ "crb-types",
  "dunce",
  "reqwest 0.12.28",
  "rig-compose",

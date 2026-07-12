@@ -8,9 +8,7 @@ use regex::Regex;
 /// Accepts URLs of the form `https://github.com/{owner}/{repo}/pull/{number}`.
 /// Returns an error if the URL doesn't match the expected format.
 pub fn parse_github_url(url: &str) -> Result<(String, String, u32)> {
-    let re =
-        Regex::new(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)$")
-            .expect("hardcoded regex should compile");
+    let re = Regex::new(r"^https://github\.com/([^/]+)/([^/]+)/pull/(\d+)$")?;
     let caps = re
         .captures(url)
         .ok_or_else(|| anyhow!("Invalid GitHub PR URL: {url}"))?;

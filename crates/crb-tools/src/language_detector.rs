@@ -22,6 +22,8 @@
 
 use std::collections::HashMap;
 
+use crb_types::wrappers::Diff;
+
 /// Information about languages detected in a diff.
 #[derive(Debug, Clone, Default)]
 pub struct LanguageInfo {
@@ -206,13 +208,13 @@ fn extract_extension(path: &str) -> Option<&str> {
 ///
 /// Parses `diff --git` headers to identify file extensions, maps them to
 /// languages, and determines the primary language.
-pub fn detect_language(diff: &str) -> LanguageInfo {
+pub fn detect_language(diff: &Diff) -> LanguageInfo {
     let ext_map = extension_to_language();
     let mut lang_counts: HashMap<&'static str, usize> = HashMap::new();
     let mut extensions: Vec<String> = Vec::new();
     let mut seen_extensions: HashMap<String, bool> = HashMap::new();
 
-    for line in diff.lines() {
+    for line in diff.get().lines() {
         if let Some(path) = extract_path_from_diff_header(line) {
             if let Some(ext) = extract_extension(path) {
                 let ext_str = ext.to_lowercase();
@@ -237,7 +239,7 @@ pub fn detect_language(diff: &str) -> LanguageInfo {
     // Detect framework hints
     let framework_hints: Vec<String> = framework_patterns()
         .iter()
-        .filter(|(pattern, _)| diff.contains(pattern))
+        .filter(|(pattern, _)| diff.get().contains(pattern))
         .map(|(_, hint)| hint.to_string())
         .collect();
 
@@ -251,7 +253,7 @@ pub fn detect_language(diff: &str) -> LanguageInfo {
 /// Simplified detection that returns just the primary language string.
 ///
 /// Returns an empty string if no language can be determined.
-pub fn detect_primary_language(diff: &str) -> String {
+pub fn detect_primary_language(diff: &Diff) -> String {
     detect_language(diff).primary_language
 }
 
@@ -336,7 +338,7 @@ index 123..456 100644
  name = "test"
 +version = "0.2.0"
 "#;
-        assert_eq!(detect_primary_language(diff), "Rust");
+        assert_eq!(detect_primary_language(&Diff(diff.to_string())), "Rust");
     }
 
     #[test]
@@ -359,18 +361,21 @@ index 123..456 100644
 +    return a + b;
  }
 "#;
-        assert_eq!(detect_primary_language(diff), "TypeScript");
+        assert_eq!(
+            detect_primary_language(&Diff(diff.to_string())),
+            "TypeScript"
+        );
     }
 
     #[test]
     fn test_detect_primary_language_empty_diff() {
-        assert_eq!(detect_primary_language(""), "");
+        assert_eq!(detect_primary_language(&Diff("".to_string())), "");
     }
 
     #[test]
     fn test_detect_primary_language_no_diff_headers() {
         let diff = "Some random text\nwith no diff headers\n";
-        assert_eq!(detect_primary_language(diff), "");
+        assert_eq!(detect_primary_language(&Diff(diff.to_string())), "");
     }
 
     #[test]
@@ -390,7 +395,7 @@ diff --git a/lib.py b/lib.py
  def hello():
 +    pass
 "#;
-        let info = detect_language(diff);
+        let info = detect_language(&Diff(diff.to_string()));
         assert_eq!(info.primary_language, "Rust"); // .rs counted first
         assert!(info.file_extensions.contains(&"rs".to_string()));
         assert!(info.file_extensions.contains(&"py".to_string()));
@@ -426,7 +431,7 @@ diff --git a/app/models/user.rb b/app/models/user.rb
 +  validates :name, presence: true
  end
 "#;
-        let info = detect_language(diff);
+        let info = detect_language(&Diff(diff.to_string()));
         assert_eq!(info.primary_language, "Ruby");
         assert!(
             info.framework_hints.iter().any(|h| h.contains("Rails")),
@@ -444,6 +449,6 @@ diff --git a/cli.rs b/cli.rs
 diff --git a/server.ts b/server.ts
 diff --git a/client.ts b/client.ts
 "#;
-        assert_eq!(detect_primary_language(diff), "Rust"); // 3 Rust files > 2 TypeScript files
+        assert_eq!(detect_primary_language(&Diff(diff.to_string())), "Rust"); // 3 Rust files > 2 TypeScript files
     }
 }

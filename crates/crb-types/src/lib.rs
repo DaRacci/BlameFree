@@ -5,6 +5,8 @@
 //! previously defined in `crb-dashboard`, `crb-webui-backend`, and
 //! `crb-webui-frontend`.
 
+pub mod wrappers;
+
 use serde::{Deserialize, Serialize};
 
 /// Metrics data for a single PR evaluation.

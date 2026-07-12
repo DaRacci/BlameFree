@@ -2,8 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
+use crb_agents::prompts::AgentEntry;
+use crb_types::wrappers::Diff;
 use rig_core::agent::Agent;
 use rig_core::completion::Usage;
+use rig_core::model::Model;
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 
@@ -29,13 +32,13 @@ use crate::{CacheBackend, GoldenComment, ReviewerConfig, Role};
 #[allow(clippy::too_many_arguments)]
 pub async fn evaluate_pr_with_consensus(
     pr: &GoldenCommentEntry,
-    diff: &str,
+    diff: &Diff,
     client: &openai::Client,
-    model: &str,
+    model: &Model,
     judge: &Agent<ResponsesCompletionModel>,
     rules_preamble: Option<&str>,
     template_vars: Option<&HashMap<String, serde_json::Value>>,
-    available_roles: &[&str],
+    selected_agents: &[&'static AgentEntry],
     max_findings: usize,
     cache: Option<Arc<dyn CacheBackend>>,
     diff_hash: &str,
@@ -48,7 +51,7 @@ pub async fn evaluate_pr_with_consensus(
     additional_params: Option<serde_json::Value>,
     dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_types::RunEvent>>,
 ) -> Result<(PrResult, Usage, Usage, usize, usize, usize)> {
-    let roles = get_roles_for_diff(diff, available_roles);
+    let roles = get_roles_for_diff(diff, selected_agents);
 
     let reviewer_configs: Vec<ReviewerConfig> = roles
         .iter()

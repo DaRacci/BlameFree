@@ -1,4 +1,5 @@
 use crb_agents::prompts::{AgentEntry, PromptLibrary};
+use crb_types::wrappers::Diff;
 use tracing::{debug, warn};
 
 #[cfg(feature = "exp16_adaptive_agents")]
@@ -60,43 +61,44 @@ pub fn count_diff_lines(diff: &str) -> usize {
 /// If the diff is small enough, and a GEN agent is available, it will return only the GEN agent.
 /// Otherwise, it will return all available roles that are not generalist agents.
 pub fn get_roles_for_diff(
-    #[allow(unused_variables)] diff: &str, // This is only used when the `exp16_adaptive_agents` feature is enabled
-    available_roles: &[&str],
+    #[allow(unused_variables)] diff: &Diff, // This is only used when the `exp16_adaptive_agents` feature is enabled
+    selected_agents: &[&'static AgentEntry],
 ) -> Vec<&'static AgentEntry> {
     let library = PromptLibrary::get_instance();
 
-    let mut available_roles: Vec<&str> = available_roles.into();
-    if available_roles.is_empty() {
+    let mut selected_agents = selected_agents.to_vec();
+    if selected_agents.is_empty() {
         warn!(
-            "Adaptive dispatch: no available roles; using all available roles from `PromptLibrary`."
+            "Adaptive dispatch: no selected agents provided; using all available roles from `PromptLibrary`."
         );
 
-        available_roles = library.abbreviations();
+        selected_agents = library.roles();
     }
 
     #[cfg(feature = "exp16_adaptive_agents")]
-    if should_use_single_agent(diff, DEFAULT_MAX_FILES, DEFAULT_MAX_LINES) {
+    if should_use_single_agent(diff.get(), DEFAULT_MAX_FILES, DEFAULT_MAX_LINES) {
         if let Some(generalist) = library.generalist() {
-            if !available_roles.contains(&generalist.role_abbreviation.as_str()) {
+            use tracing::info;
+
+            if !selected_agents.iter().any(|agent| agent.generalist_agent) {
                 warn!(
-                    "Adaptive dispatch: small PR detected, but GEN agent is not in available roles; falling back to full panel"
+                    "Adaptive dispatch: small PR detected, but generalist agent is not in available roles; falling back to full panel"
                 );
             }
 
-            tracing::info!("Adaptive dispatch: small PR detected, using single GEN agent");
+            info!("Adaptive dispatch: small PR detected, using single generalist agent");
             return vec![generalist];
         }
 
         warn!(
-            "Adaptive Dispatch: small PR detected, but no GEN agent found; falling back to full panel"
+            "Adaptive Dispatch: small PR detected, but no generalist agent found; falling back to full panel"
         );
     }
 
-    PromptLibrary::get_instance()
-        .roles()
-        .into_iter()
-        .filter(|role| !role.generalist_agent)
-        .filter(|role| available_roles.contains(&role.role_abbreviation.as_str()))
+    selected_agents
+        .iter()
+        .filter(|agent| !agent.generalist_agent)
+        .copied()
         .collect()
 }
 

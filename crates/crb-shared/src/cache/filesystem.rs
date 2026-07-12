@@ -129,7 +129,7 @@ fn iter_subdir_files(pr_dir: &Path) -> Vec<(String, String, String)> {
 /// entries.  Cache keys are SHA256 hex digests of the inputs.
 pub struct LlmCache {
     dir: PathBuf,
-    _pr_key: String,
+    pr_key: String,
     index: Mutex<CacheIndex>,
 }
 
@@ -153,9 +153,14 @@ impl LlmCache {
 
         Ok(Self {
             dir,
-            _pr_key: pr_key.to_string(),
+            pr_key: pr_key.to_string(),
             index: Mutex::new(index),
         })
+    }
+
+    pub fn generate_cache_key(&self, role: &str, contents: &str) -> String {
+        let input_str = format!("{}:{}:{}", role, contents, self.pr_key);
+        sha256_hex(&input_str)
     }
 
     /// The directory path for this PR's cache.
@@ -194,6 +199,7 @@ impl LlmCache {
 
     /// Look up a cached agent response by cache key.
     /// Returns `Some(response_text)` on hit, `None` on miss.
+    #[deprecated]
     pub fn lookup_agent(&self, cache_key: &str) -> Option<String> {
         self.lookup_entry(cache_key)
     }
@@ -220,6 +226,7 @@ impl LlmCache {
 
     /// Save an agent prompt+response with its cache key and update the index.
     /// Also saves usage data as a separate JSON file if provided.
+    #[deprecated]
     pub fn save_agent_cached(
         &self,
         cache_key: &str,
@@ -306,12 +313,7 @@ impl LlmCache {
     }
 
     /// Save a context gatherer prompt+response with its cache key.
-    pub fn save_context_cached(
-        &self,
-        cache_key: &str,
-        prompt: &str,
-        response: &str,
-    ) -> Result<()> {
+    pub fn save_context_cached(&self, cache_key: &str, prompt: &str, response: &str) -> Result<()> {
         let prompt_path = self
             .dir
             .join("context")
@@ -687,9 +689,7 @@ impl LlmCache {
         let read_dir = match std::fs::read_dir(base_dir) {
             Ok(d) => d,
             Err(e) => {
-                return Err(
-                    format!("cannot read cache dir {}: {}", base_dir.display(), e).into(),
-                );
+                return Err(format!("cannot read cache dir {}: {}", base_dir.display(), e).into());
             }
         };
 
@@ -822,9 +822,7 @@ impl LlmCache {
             .map_err(|e| format!("failed to execute tar: {e}"))?;
 
         if !status.success() {
-            return Err(
-                format!("tar backup failed with exit code: {:?}", status.code()).into(),
-            );
+            return Err(format!("tar backup failed with exit code: {:?}", status.code()).into());
         }
         Ok(())
     }
@@ -846,9 +844,7 @@ impl LlmCache {
             .map_err(|e| format!("failed to execute tar: {e}"))?;
 
         if !status.success() {
-            return Err(
-                format!("tar restore failed with exit code: {:?}", status.code()).into(),
-            );
+            return Err(format!("tar restore failed with exit code: {:?}", status.code()).into());
         }
         Ok(())
     }
@@ -897,8 +893,7 @@ impl LlmCache {
                         let old_path = pr_dir.join(&entry_meta.file_path);
                         if old_path.exists() {
                             // Build new file path by replacing the old key in the path
-                            let new_file_path =
-                                entry_meta.file_path.replace(old_key, &new_key);
+                            let new_file_path = entry_meta.file_path.replace(old_key, &new_key);
                             let new_path = pr_dir.join(&new_file_path);
 
                             // Ensure parent directory exists
@@ -970,16 +965,10 @@ impl CacheBackend for LlmCache {
         result
     }
 
-    fn lookup_agent_by_key_with_usage(
-        &self,
-        cache_key: &str,
-    ) -> Option<(String, Option<Usage>)> {
+    fn lookup_agent_by_key_with_usage(&self, cache_key: &str) -> Option<(String, Option<Usage>)> {
         let result = self.lookup_agent_with_usage(cache_key);
         if result.is_some() {
-            tracing::debug!(
-                "Cache HIT for agent key={} (with usage)",
-                &cache_key[..12]
-            );
+            tracing::debug!("Cache HIT for agent key={} (with usage)", &cache_key[..12]);
         }
         result
     }
@@ -1460,11 +1449,11 @@ mod tests {
         // Create a PR with entries
         {
             let cache = LlmCache::new(base.path(), "test-pr").unwrap();
-            let key1 = crate::cache::compute_agent_cache_key("a", "b", "m", "SA", "r");
+            let key1 = compute_agent_cache_key("a", "b", "m", "SA", "r");
             cache
                 .save_agent_cached(&key1, "SA", "prompt", "response")
                 .unwrap();
-            let key2 = crate::cache::compute_judge_cache_key("jph", "f", "g", "jm");
+            let key2 = compute_judge_cache_key("jph", "f", "g", "jm");
             cache
                 .save_judge_cached(&key2, "g", "f", r#"{"match":true}"#)
                 .unwrap();

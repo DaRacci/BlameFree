@@ -5,3 +5,14 @@ pub fn sha256_hex(input: &str) -> String {
     hasher.update(input.as_bytes());
     format!("{:x}", hasher.finalize())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sha256_hex() {
+        let h = sha256_hex("hello");
+        assert_eq!(h.len(), 64); // SHA256 hex is 64 chars
+    }
+}

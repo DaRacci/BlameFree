@@ -18,7 +18,7 @@ use tracing::info;
 use crb_judge::{JudgeVerdict, Metrics};
 
 /// Summary of cost data for a single PR, suitable for JSON serialization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CostSummary {
     /// Total input tokens consumed by all agent calls.
     pub agent_tokens_in: usize,
@@ -131,10 +131,7 @@ impl crb_shared::benchmark_pipeline::HasEvalMetrics for PrResult {
     }
     fn total_tokens(&self) -> usize {
         self.cost.as_ref().map_or(0, |c| {
-            c.agent_tokens_in
-                + c.agent_tokens_out
-                + c.judge_tokens_in
-                + c.judge_tokens_out
+            c.agent_tokens_in + c.agent_tokens_out + c.judge_tokens_in + c.judge_tokens_out
         })
     }
     fn agent_calls(&self) -> usize {

@@ -1,26 +1,24 @@
 //! Model capability detection for reasoning/thinking support.
 //!
-//! Queries the OpenRouter models API to discover which models support
-//! reasoning, with a fallback heuristic when the API is unreachable.
-//! Results are cached via [`std::sync::OnceLock`] — initialised once,
-//! then read lock-free by all threads.
+//! Queries the OpenRouter models API to discover which models support reasoning, with a fallback heuristic when the API is unreachable.
+//! Results are cached via [`std::sync::OnceLock`]; Initialised once, then read lock-free by all threads.
 
+use crb_types::wrappers::Model;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
 /// Configuration for model reasoning/thinking support.
 ///
-/// Contains all the information needed to inject reasoning parameters
-/// into the API request body.
+/// Contains all the information needed to inject reasoning parameters into the API request body.
 #[derive(Debug, Clone, Serialize)]
 pub enum ReasoningConfig {
     /// OpenAI-style reasoning: `{"reasoning": {"effort": "low|medium|high"}}`
-    /// Used by OpenAI o-series and DeepSeek models.
     ReasoningEffort {
         /// The reasoning effort level.
         effort: ReasoningEffort,
     },
+
     /// Anthropic-style thinking: `{"thinking": {"type": "enabled", "budget_tokens": N}}`
     /// Used by Claude models with extended thinking.
     Thinking {
@@ -30,19 +28,23 @@ pub enum ReasoningConfig {
 }
 
 /// All supported reasoning effort levels.
+#[deprecated(note = "Use ReasoningEffort enum instead")]
 pub const REASONING_EFFORT_LEVELS: &[&str] = &["low", "medium", "high", "max"];
 
-/// The reasoning effort level for OpenAI/DeepSeek style reasoning.
+/// The reasoning effort level for OpenAI style reasoning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReasoningEffort {
-    /// Low reasoning effort — faster responses, less deep reasoning.
+    /// Faster responses, less deep reasoning.
     Low,
-    /// Medium reasoning effort — balanced depth and speed.
+
+    /// Balanced depth and speed.
     Medium,
-    /// High reasoning effort — more thorough reasoning.
+
+    /// More thorough reasoning.
     High,
-    /// Maximum reasoning effort — most thorough, slowest.
+
+    /// Most thorough, slowest.
     Max,
 }
 
@@ -226,22 +228,21 @@ fn fetch_reasoning_models_blocking() -> Result<HashSet<String>, String> {
 /// If the cache has been warmed (via [`warm_model_cache`] or
 /// [`warm_model_cache_blocking`]), uses the API result. Otherwise falls
 /// back to the heuristic immediately; no blocking I/O, safe in any context.
-pub fn supports_reasoning(model: &str) -> bool {
+pub fn supports_reasoning(model: &Model) -> bool {
     match REASONING_MODEL_IDS.get() {
         Some(Some(ids)) => {
-            ids.contains(model)
+            ids.contains(model.get())
                 || ids
                     .iter()
-                    .any(|id| model.ends_with(id) || id.ends_with(model))
+                    .any(|id| model.get().ends_with(id) || id.ends_with(model.get()))
         }
         _ => fallback_is_reasoning_model(model),
     }
 }
 
-/// Heuristic fallback: models whose names contain certain keywords are assumed
-/// to support reasoning.
-fn fallback_is_reasoning_model(model: &str) -> bool {
-    let model_lower = model.to_lowercase();
+/// Heuristic fallback: models whose names contain certain keywords are assumed to support reasoning.
+fn fallback_is_reasoning_model(model: &Model) -> bool {
+    let model_lower = model.get().to_lowercase();
     model_lower.contains("deepseek")
         || model_lower.starts_with("o1")
         || model_lower.starts_with("o3")
@@ -256,39 +257,30 @@ fn fallback_is_reasoning_model(model: &str) -> bool {
 /// appropriate [`ReasoningConfig`] if the model supports reasoning.
 ///
 /// Returns `None` if the model does not support reasoning.
-pub fn get_reasoning_config(model: &str, effort: Option<&str>) -> Option<ReasoningConfig> {
+pub fn get_reasoning_config(model: &Model, effort: ReasoningEffort) -> Option<ReasoningConfig> {
     if !supports_reasoning(model) {
         return None;
     }
 
     let model_lower = model.to_lowercase();
-
-    // Claude models use Anthropic-style thinking
     if model_lower.contains("claude") {
         return Some(ReasoningConfig::Thinking {
             budget_tokens: 2048,
         });
     }
 
-    // All other reasoning models (DeepSeek, OpenAI o-series, Gemini) use
-    // OpenAI-style reasoning effort
-    let effort = effort
-        .and_then(ReasoningEffort::from_str)
-        .unwrap_or(ReasoningEffort::Medium);
-
     Some(ReasoningConfig::ReasoningEffort { effort })
 }
 
 /// Build the `additional_params` JSON value for a reasoning model.
 ///
-/// If the model supports reasoning and `reasoning_effort` is `Some`, returns
-/// `Some({"reasoning": {"effort": "medium"}})` (or whatever effort level was
-/// specified).
+/// If the model supports reasoning and `reasoning_effort` is `Some`,
+/// returns `Some({"reasoning": {"effort": "medium"}})`
 ///
 /// If the model does NOT support reasoning, or `reasoning_effort` is `None`,
 /// returns `None`.
 pub fn make_additional_params(
-    model: &str,
+    model: &Model,
     reasoning_effort: Option<&str>,
 ) -> Option<serde_json::Value> {
     let effort = reasoning_effort?;
@@ -302,8 +294,8 @@ pub fn make_additional_params(
 ///
 /// This is the function used by [`crate::evaluate_pr_consensus`] and friends.
 pub fn reasoning_to_additional_params(
-    model: &str,
-    reasoning_effort: Option<&str>,
+    model: &Model,
+    reasoning_effort: ReasoningEffort,
 ) -> Option<serde_json::Value> {
     match reasoning_effort {
         None => None,

@@ -1,4 +1,6 @@
-use crate::cache::sha256::sha256_hex;
+use crb_types::wrappers::{Model, WrappedData};
+
+use crate::cache::{sha256::sha256_hex, traits::CachableData};
 
 /// Compute a content-addressed cache key for an agent LLM call.
 ///
@@ -18,6 +20,7 @@ pub fn compute_agent_cache_key(
 }
 
 /// Compute a content-addressed cache key for a judge LLM call.
+#[deprecated]
 pub fn compute_judge_cache_key(
     judge_prompt_hash: &str,
     finding_message: &str,
@@ -28,6 +31,29 @@ pub fn compute_judge_cache_key(
         "{}:{}:{}:{}",
         judge_prompt_hash, finding_message, golden_comment, judge_model
     ))
+}
+
+pub struct JudgeCacheKeyComponents<'a> {
+    pub judge_prompt_hash: &'a str,
+    pub finding_message: &'a str,
+    pub golden_comment: &'a str,
+    pub judge_model: &'a Model,
+}
+
+impl CachableData for JudgeCacheKeyComponents<'_> {
+    fn cache_key(&self) -> String {
+        sha256_hex(&format!(
+            "{}:{}:{}:{}",
+            self.judge_prompt_hash,
+            self.finding_message,
+            self.golden_comment,
+            self.judge_model.get()
+        ))
+    }
+
+    fn get_savable_data<T>(&self, cache: &dyn super::traits::CacheBackend) -> Option<T>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned;
 }
 
 /// Compute a content-addressed cache key for a context gatherer LLM call.
@@ -62,11 +88,5 @@ mod tests {
         let key1 = compute_judge_cache_key("jph", "finding msg", "golden comment", "gpt-4o-mini");
         let key2 = compute_judge_cache_key("jph", "finding msg", "golden comment", "gpt-4o-mini");
         assert_eq!(key1, key2);
-    }
-
-    #[test]
-    fn test_sha256_hex() {
-        let h = sha256_hex("hello");
-        assert_eq!(h.len(), 64); // SHA256 hex is 64 chars
     }
 }
