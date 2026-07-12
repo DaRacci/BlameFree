@@ -575,16 +575,13 @@ name = "crb-agents"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crb-tools",
  "handlebars",
  "include_dir",
  "rig-core",
- "schemars 0.8.22",
  "serde",
  "serde_fields",
  "serde_json",
  "serde_yaml",
- "tokio",
  "tracing",
 ]
 
@@ -592,12 +589,8 @@ dependencies = [
 name = "crb-auditor"
 version = "0.1.0"
 dependencies = [
- "crb-agents",
  "crb-shared",
- "crb-tools",
  "regex",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -634,6 +627,7 @@ dependencies = [
  "crb-judge",
  "crb-reporting",
  "crb-shared",
+ "crb-tools",
  "crb-types",
  "futures",
  "regex",

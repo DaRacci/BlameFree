@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crb_tools::build_tool_server;
 use rig_core::agent::Agent;
 use rig_core::completion::Usage;
 use rig_core::providers::openai;
@@ -34,7 +35,6 @@ pub async fn run_consensus(
     client: &openai::Client,
     judge: &Agent<ResponsesCompletionModel>,
     rules_preamble: Option<&str>,
-    prompt_lib: &PromptLibrary,
     template_vars: Option<&HashMap<String, serde_json::Value>>,
     cache: Option<Arc<dyn CacheBackend>>,
     diff_hash: &str,
@@ -47,6 +47,12 @@ pub async fn run_consensus(
     additional_params: Option<serde_json::Value>,
     dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_types::RunEvent>>,
 ) -> ConsensusReport {
+    #[cfg(feature = "exp14_submit_finding")]
+    let collector = Some(Arc::new(tokio::sync::Mutex::new(Vec::new())));
+    #[cfg(not(feature = "exp14_submit_finding"))]
+    let collector = None;
+    let tool_server = build_tool_server(workdir, collector).run();
+
     // Step 1: run all reviewers concurrently with content-addressed caching
     let (agents, agent_api_calls, agent_usage) = run_reviewers(
         reviewer_configs,
@@ -54,15 +60,14 @@ pub async fn run_consensus(
         diff_hash,
         client,
         rules_preamble,
-        prompt_lib,
         template_vars,
         cache.clone(),
         prompt_hash,
         rules_hash,
         tool_preamble,
-        workdir,
         additional_params,
         dashboard_tx,
+        tool_server.clone(),
     )
     .await;
 

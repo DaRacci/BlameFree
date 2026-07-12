@@ -20,6 +20,3 @@ pub const RUNS_FILE: &str = "_runs.json";
 
 /// Default output directory name.
 pub const OUTPUT_DIR_DEFAULT: &str = "output";
-
-/// Default cache directory name (legacy, used only by CLI defaults).
-pub const CACHE_DIR_DEFAULT: &str = "cache";

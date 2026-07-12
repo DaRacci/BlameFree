@@ -24,10 +24,10 @@ use tracing::info;
 use tracing::warn;
 
 use crate::api::BenchmarkConfig;
-use crb_types::AggregateMetrics;
-use crb_types::RunEvent;
 use crate::server::ActiveRun;
 use crate::server::AppState;
+use crb_types::AggregateMetrics;
+use crb_types::RunEvent;
 
 /// Run the harness inline, calling library functions directly.
 ///
@@ -63,7 +63,7 @@ pub async fn run_harness(
 
     let judge = build_judge(&client, &config.judge_model);
 
-    let prompt_lib = Arc::new(PromptLibrary::new().expect("Embedded prompts should be available"));
+    let prompt_lib = Arc::new(PromptLibrary::get_instance());
 
     let ruleset = {
         let rules_dir = Path::new(".crb/rules/");
@@ -119,7 +119,8 @@ pub async fn run_harness(
 
     if filtered_prs.is_empty() {
         warn!("No PRs to evaluate");
-        let _ = webui_tx.send(RunEvent::RunFinished { // Ignore — receiver may have disconnected
+        let _ = webui_tx.send(RunEvent::RunFinished {
+            // Ignore — receiver may have disconnected
             total_prs: 0,
             aggregated: AggregateMetrics::default(),
             total_cost: 0.0,
@@ -152,10 +153,12 @@ pub async fn run_harness(
     };
 
     // Pre-wrap values that need to be owned inside the spawn loop
-    let bench_dir = benchmark_dir.unwrap_or_else(|| {
-        warn!("No --benchmark-dir set; defaulting to 'benchmark/' directory");
-        Path::new("benchmark")
-    }).to_path_buf();
+    let bench_dir = benchmark_dir
+        .unwrap_or_else(|| {
+            warn!("No --benchmark-dir set; defaulting to 'benchmark/' directory");
+            Path::new("benchmark")
+        })
+        .to_path_buf();
     let model_owned = Arc::new(config.model.clone());
     let roles_owned = config.roles.clone();
     let reasoning_effort_owned = Arc::new(config.reasoning_effort.clone().unwrap_or_default());
@@ -187,7 +190,9 @@ pub async fn run_harness(
                 },
                 model: model.to_string(),
                 judge_model: String::new(), // not tracked in this path
-                reasoning_effort: if reasoning_effort.as_str().is_empty() || reasoning_effort.as_str() == "none" {
+                reasoning_effort: if reasoning_effort.as_str().is_empty()
+                    || reasoning_effort.as_str() == "none"
+                {
                     None
                 } else {
                     Some(reasoning_effort.to_string())
@@ -252,7 +257,8 @@ pub async fn run_harness(
                 }
 
                 // Send RunProgress
-                let _ = webui_tx.send(RunEvent::RunProgress { // Ignore — receiver may have disconnected
+                let _ = webui_tx.send(RunEvent::RunProgress {
+                    // Ignore — receiver may have disconnected
                     completed_prs,
                     total_prs,
                     elapsed_secs: start_time.elapsed().as_secs_f64(),
@@ -309,7 +315,8 @@ pub async fn run_harness(
         error!("Failed to write summary: {e}");
     }
 
-    let _ = webui_tx.send(RunEvent::RunFinished { // Ignore — receiver may have disconnected
+    let _ = webui_tx.send(RunEvent::RunFinished {
+        // Ignore — receiver may have disconnected
         total_prs: results.len(),
         aggregated: AggregateMetrics {
             true_positives: total_tp,

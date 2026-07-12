@@ -12,6 +12,7 @@ exp16_adaptive_agents = []
 [dependencies]
 anyhow = { workspace = true }
 crb-agents = { path = "../crb-agents" }
+crb-tools = { path = "../crb-tools" }
 crb-types = { path = "../crb-types" }
 crb-judge = { path = "../crb-judge" }
 crb-reporting = { path = "../crb-reporting" }

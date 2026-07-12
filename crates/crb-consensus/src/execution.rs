@@ -1,15 +1,14 @@
 //! Concurrent execution — spawn all reviewer agents and collect findings.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use rig_core::completion::{
-    AssistantContent, Message, PromptError, Usage,
-};
+use rig_core::completion::{AssistantContent, Message, PromptError, Usage};
 use rig_core::providers::openai;
 use rig_core::streaming::StreamingPrompt;
+use rig_core::tool::server::ToolServerHandle;
 use tokio::task::JoinSet;
 
 use crb_agents::prompts::PromptLibrary;
@@ -17,7 +16,9 @@ use crb_shared::cache::compute_agent_cache_key;
 use crb_shared::finding::Finding;
 
 use crate::agent::{TurnBudgetHook, build_reviewer_agent};
-use crate::{CacheBackend, ReviewerConfig, Role, extract_last_assistant_text, parse_findings_from_response};
+use crate::{
+    CacheBackend, ReviewerConfig, Role, extract_last_assistant_text, parse_findings_from_response,
+};
 
 /// Spawn all reviewer agents concurrently and collect their findings.
 ///
@@ -36,15 +37,14 @@ pub async fn run_reviewers(
     diff_hash: &str,
     client: &openai::Client,
     rules_preamble: Option<&str>,
-    prompt_lib: &PromptLibrary,
     template_vars: Option<&std::collections::HashMap<String, serde_json::Value>>,
     cache: Option<Arc<dyn CacheBackend>>,
     prompt_hash: &str,
     rules_hash: &str,
     tool_preamble: Option<&str>,
-    workdir: Option<&str>,
     additional_params: Option<serde_json::Value>,
     dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_types::RunEvent>>,
+    tool_server_handle: ToolServerHandle,
 ) -> (Vec<(Role, Vec<Finding>)>, usize, Usage) {
     let mut set = JoinSet::new();
     let agent_api_calls = Arc::new(AtomicUsize::new(0));
@@ -62,13 +62,10 @@ pub async fn run_reviewers(
             &client,
             &config,
             preamble.as_deref(),
-            prompt_lib,
             template_vars,
             tool_preamble.as_deref(),
-            workdir,
             additional_params.clone(),
-            #[cfg(feature = "exp14_submit_finding")]
-            None,
+            tool_server_handle.clone(),
         );
         let cache = cache.clone();
         let prompt_hash = prompt_hash.to_string();
@@ -160,7 +157,8 @@ pub async fn run_reviewers(
                             let chunk = text.text;
                             response.push_str(&chunk);
                             if let Some(ref tx) = dashboard_tx {
-                                let _ = tx.send(crb_types::RunEvent::AgentChunk { // Ignore — receiver may have disconnected
+                                let _ = tx.send(crb_types::RunEvent::AgentChunk {
+                                    // Ignore — receiver may have disconnected
                                     role: role.to_string(),
                                     chunk: chunk.clone(),
                                 });

@@ -1,33 +1,39 @@
 //! API handlers for ad-hoc PR reviews.
 //!
-//! Provides endpoints to submit a GitHub PR URL for ad-hoc review (read-only,
-//! no GitHub commenting), list previous ad-hoc reviews, and get their details.
+//! Provides endpoints to submit a GitHub PR URL for ad-hoc review,
+//! list previous ad-hoc reviews, and get their details.
 
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::{env, fs};
 
 use axum::Json;
 use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use crb_shared::DEFAULT_MODEL;
+use crb_agents::prompts;
 use crb_shared::sanitize_filename;
+use crb_shared::{DEFAULT_MODEL, cache};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use tracing::{info, warn};
 
 use crate::api::runs::{
-    AggregateMetrics, CostJson, MetricsJson, PrResult, PrResultJson, RunConfig, RunDetail,
+    self, AggregateMetrics, CostJson, MetricsJson, PrResult, PrResultJson, RunConfig, RunDetail,
     VerdictJson,
 };
 use crate::server::AppState;
 use rig_core::client::ProviderClient;
 
-/// Request body for POST /api/adhoc/review
+/// POST /api/adhoc/review
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdhocReviewRequest {
     pub url: String,
+
     #[serde(default = "default_adhoc_model")]
     pub model: String,
+
     #[serde(default = "default_adhoc_roles")]
     pub roles: Vec<String>,
 }
@@ -36,6 +42,7 @@ fn default_adhoc_model() -> String {
     DEFAULT_MODEL.to_string()
 }
 
+// TODO: No string defaults for dynamic roles.
 fn default_adhoc_roles() -> Vec<String> {
     vec!["SA".to_string(), "CL".to_string()]
 }
@@ -48,20 +55,17 @@ pub async fn start_adhoc_review(
     State(state): State<AppState>,
     Json(req): Json<AdhocReviewRequest>,
 ) -> impl IntoResponse {
-    tracing::info!(
+    info!(
         "POST /api/adhoc/review url={} model={} roles={:?}",
-        req.url,
-        req.model,
-        req.roles,
+        req.url, req.model, req.roles,
     );
 
-    // Validate URL
     let (owner, repo, pr_number) = match parse_github_url(&req.url) {
         Some(info) => info,
         None => {
             return (
                 StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({
+                Json(json!({
                     "error": "Invalid GitHub PR URL. Expected format: https://github.com/owner/repo/pull/123"
                 })),
             )
@@ -69,14 +73,13 @@ pub async fn start_adhoc_review(
         }
     };
 
-    // Fetch PR metadata and diff from GitHub API
     let (pr_title, diff) = match fetch_pr_diff(&state, &owner, &repo, pr_number).await {
         Ok(result) => result,
         Err(e) => {
             tracing::error!("Failed to fetch PR {}: {}", req.url, e);
             return (
                 StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({
+                Json(json!({
                     "error": format!("Failed to fetch PR: {}", e)
                 })),
             )
@@ -84,20 +87,17 @@ pub async fn start_adhoc_review(
         }
     };
 
-    // Create a unique run ID
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
     let run_id = format!("adhoc-{timestamp}");
 
-    // Spawn a background task for the actual review
     let state_clone = state.clone();
     let roles_str = req.roles.join(",");
     let model = req.model.clone();
     let run_id_bg = run_id.clone();
     let pr_title_bg = pr_title.clone();
-
     tokio::spawn(async move {
         if let Err(e) = run_adhoc_review_inner(
             &state_clone,
@@ -125,7 +125,7 @@ pub async fn start_adhoc_review(
         .into_response()
 }
 
-// ── GET /api/adhoc/runs ─────────────────────────────────────────────────
+/// GET /api/adhoc/runs
 ///
 /// List all previous ad-hoc review runs.
 pub async fn list_adhoc_runs(State(state): State<AppState>) -> impl IntoResponse {
@@ -133,7 +133,7 @@ pub async fn list_adhoc_runs(State(state): State<AppState>) -> impl IntoResponse
     let mut runs: Vec<AdhocRunSummary> = Vec::new();
 
     if adhoc_dir.exists() {
-        let entries = match std::fs::read_dir(&adhoc_dir) {
+        let entries = match fs::read_dir(&adhoc_dir) {
             Ok(entries) => entries,
             Err(_) => return Json(Vec::<AdhocRunSummary>::new()).into_response(),
         };
@@ -155,13 +155,11 @@ pub async fn list_adhoc_runs(State(state): State<AppState>) -> impl IntoResponse
         }
     }
 
-    // Sort by created_at descending (most recent first)
     runs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-
     Json(runs).into_response()
 }
 
-/// ── GET /api/adhoc/runs/:id ─────────────────────────────────────────────
+/// GET /api/adhoc/runs/:id
 ///
 /// Get details for a specific ad-hoc review run.
 pub async fn get_adhoc_run(
@@ -173,17 +171,16 @@ pub async fn get_adhoc_run(
     if !run_dir.exists() {
         return (
             StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "Ad-hoc run not found"})),
+            Json(json!({"error": "Ad-hoc run not found"})),
         )
             .into_response();
     }
 
     let summary_path = run_dir.join(crb_harness::paths::SUMMARY_FILE);
-    let summary_data: Option<serde_json::Value> = std::fs::read_to_string(&summary_path)
+    let summary_data: Option<serde_json::Value> = fs::read_to_string(&summary_path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok());
 
-    // Helper: extract a string field from summary_data
     let summary_str = |key: &str, default: &str| -> String {
         summary_data
             .as_ref()
@@ -192,7 +189,7 @@ pub async fn get_adhoc_run(
             .unwrap_or(default)
             .to_string()
     };
-    // Helper: extract a f64 field from summary_data
+
     let summary_f64 = |key: &str, default: f64| -> f64 {
         summary_data
             .as_ref()
@@ -219,7 +216,6 @@ pub async fn get_adhoc_run(
     };
     let total_cost = summary_f64("total_cost_usd", 0.0);
 
-    // Read per-PR result files
     let mut results: Vec<PrResult> = Vec::new();
     let mut aggregate_metrics = AggregateMetrics {
         avg_f1: 0.0,
@@ -233,8 +229,8 @@ pub async fn get_adhoc_run(
         duration_secs: duration_secs.unwrap_or(0.0),
     };
 
-    for (file_path, fname) in crate::api::runs::iter_json_files(&run_dir) {
-        if let Ok(content) = std::fs::read_to_string(&file_path) {
+    for (file_path, fname) in runs::iter_json_files(&run_dir) {
+        if let Ok(content) = fs::read_to_string(&file_path) {
             if let Ok(pr_json) = serde_json::from_str::<PrResultJson>(&content) {
                 let metrics = &pr_json.metrics;
                 results.push(PrResult {
@@ -256,7 +252,6 @@ pub async fn get_adhoc_run(
         }
     }
 
-    // Compute averages
     let n = results.len() as f64;
     if n > 0.0 {
         let sum_f1: f64 = results.iter().filter_map(|r| r.f1).sum();
@@ -289,14 +284,14 @@ pub async fn get_adhoc_run(
     Json(detail).into_response()
 }
 
-/// ── GET /api/adhoc/prs/:owner/:repo ──────────────────────────────────────────
+/// GET /api/adhoc/prs/:owner/:repo
 ///
 /// List open PRs from a GitHub repo (proxied to avoid CORS).
 pub async fn list_repo_prs(
     State(state): State<AppState>,
     AxumPath((owner, repo)): AxumPath<(String, String)>,
 ) -> impl IntoResponse {
-    tracing::info!("GET /api/adhoc/prs/{}/{}", owner, repo);
+    info!("GET /api/adhoc/prs/{}/{}", owner, repo);
 
     let page = match state
         .octocrab
@@ -311,7 +306,7 @@ pub async fn list_repo_prs(
         Err(e) => {
             return (
                 StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({ "error": format!("GitHub API error: {e}") })),
+                Json(json!({ "error": format!("GitHub API error: {e}") })),
             )
                 .into_response();
         }
@@ -347,7 +342,6 @@ async fn fetch_pr_diff(
     repo: &str,
     pr_number: u32,
 ) -> Result<(String, String), String> {
-    // Fetch PR metadata using octocrab's typed PullRequest API
     let pr = state
         .octocrab
         .pulls(owner, repo)
@@ -361,7 +355,7 @@ async fn fetch_pr_diff(
     // octocrab's typed methods don't support raw text responses, so we use reqwest directly
     // for this single endpoint. Auth is injected from GITHUB_TOKEN env var.
     let diff_client = reqwest::Client::new();
-    let token = std::env::var("GITHUB_TOKEN").ok();
+    let token = env::var("GITHUB_TOKEN").ok();
     let mut diff_req = diff_client
         .get(format!(
             "https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
@@ -393,9 +387,9 @@ async fn run_adhoc_review_inner(
     roles: &str,
 ) -> anyhow::Result<()> {
     let output_subdir = state.output_dir.join("adhoc").join(run_id);
-    let cache_dir = output_subdir.join(crb_shared::cache::paths::CACHE_DIR_NAME);
+    let cache_dir = output_subdir.join(cache::paths::CACHE_DIR_NAME);
 
-    tracing::info!(
+    info!(
         run_id = %run_id,
         pr_title = %pr_title,
         model = %model,
@@ -408,13 +402,9 @@ async fn run_adhoc_review_inner(
 
     let judge = crb_judge::build_judge(&client, model);
 
-    // ── Prompt library (embedded at compile time) ────────────────────
-    let prompt_lib = Arc::new(
-        crb_agents::prompts::PromptLibrary::new().expect("Embedded prompts should be available"),
-    );
+    let prompt_lib = Arc::new(prompts::PromptLibrary::get_instance());
 
-    // ── Create a GoldenCommentEntry with empty comments ────────────────
-    // (no golden data to compare against — just running agents on the diff)
+    // Create a GoldenCommentEntry with empty comments
     use crb_reporting::GoldenCommentEntry;
     let pr = GoldenCommentEntry {
         pr_title: pr_title.to_string(),
@@ -435,13 +425,12 @@ async fn run_adhoc_review_inner(
     let diff = crb_harness::preprocess_diff(diff);
 
     if diff.is_empty() {
-        tracing::warn!("Empty diff for PR: {}", pr_title);
+        warn!("Empty diff for PR: {}", pr_title);
     }
 
-    tracing::info!(
+    info!(
         "Running ad-hoc review with roles={}, model={}",
-        roles,
-        model
+        roles, model
     );
 
     let cost_tracker_arc = cost_tracker.clone();
@@ -473,9 +462,8 @@ async fn run_adhoc_review_inner(
 
     let total_cost = result.cost.as_ref().map(|c| c.total_usd).unwrap_or(0.0);
 
-    std::fs::create_dir_all(&output_subdir)?;
+    fs::create_dir_all(&output_subdir)?;
 
-    // Write per-PR result as JSON
     let pr_result_path = output_subdir.join(format!("{}.json", pr_key));
     let pr_json = PrResultJson {
         pr_title: result.pr_title.clone(),
@@ -508,16 +496,15 @@ async fn run_adhoc_review_inner(
             agent_call_count: c.agent_call_count as u64,
             judge_call_count: c.judge_call_count as u64,
         }),
-        findings: serde_json::json!([]),
+        findings: json!([]),
         agent_responses: vec![],
     };
 
     let pr_json_str = serde_json::to_string_pretty(&pr_json)?;
-    std::fs::write(&pr_result_path, &pr_json_str)?;
+    fs::write(&pr_result_path, &pr_json_str)?;
 
-    // Write _summary.json
-    let elapsed = std::time::Instant::now().elapsed();
-    let summary = serde_json::json!({
+    let elapsed = Instant::now().elapsed();
+    let summary = json!({
         "model": model,
         "judge_model": model,
         "roles": roles,
@@ -538,12 +525,12 @@ async fn run_adhoc_review_inner(
     });
 
     let summary_str = serde_json::to_string_pretty(&summary)?;
-    std::fs::write(
+    fs::write(
         output_subdir.join(crb_harness::paths::SUMMARY_FILE),
         &summary_str,
     )?;
 
-    tracing::info!(
+    info!(
         run_id = %run_id,
         pr_title = %pr_title,
         findings = result.findings_count,
@@ -575,7 +562,7 @@ fn summary_f64(data: &Option<serde_json::Value>, key: &str, default: f64) -> f64
 /// Load the JSON summary file for an ad-hoc run, if it exists.
 fn load_adhoc_summary(path: &Path) -> (Option<serde_json::Value>, bool) {
     let summary_path = path.join(crb_harness::paths::SUMMARY_FILE);
-    match std::fs::read_to_string(&summary_path) {
+    match fs::read_to_string(&summary_path) {
         Ok(content) => match serde_json::from_str(&content) {
             Ok(val) => (Some(val), true),
             Err(_) => (None, false),
@@ -599,11 +586,7 @@ fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<AdhocRunSummary> {
         .and_then(|v| v.as_str())
         .map(|s| s.split(',').map(|r| r.trim().to_string()).collect())
         .unwrap_or_default();
-
-    // Try to get created_at from the directory name (adhoc-{timestamp})
     let created_at = created_at_from_run_id(run_id);
-
-    // Count findings from the per-PR result file
     let findings_count = count_adhoc_findings(path);
 
     Some(AdhocRunSummary {
@@ -636,7 +619,7 @@ fn created_at_from_run_id(run_id: &str) -> String {
 
 /// Count findings from the per-PR result file in an ad-hoc run directory.
 fn count_adhoc_findings(path: &Path) -> usize {
-    let entries = match std::fs::read_dir(path) {
+    let entries = match fs::read_dir(path) {
         Ok(e) => e,
         Err(_) => return 0,
     };
@@ -652,7 +635,7 @@ fn count_adhoc_findings(path: &Path) -> usize {
         {
             continue;
         }
-        if let Ok(content) = std::fs::read_to_string(&fpath) {
+        if let Ok(content) = fs::read_to_string(&fpath) {
             if let Ok(pr_json) = serde_json::from_str::<PrResultJson>(&content) {
                 return pr_json.findings_count;
             }

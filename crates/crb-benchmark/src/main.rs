@@ -816,7 +816,7 @@ async fn run_benchmark(
         None
     };
 
-    let prompt_lib = Arc::new(PromptLibrary::new().expect("Embedded prompts should be available"));
+    let prompt_lib = Arc::new(PromptLibrary::get_instance());
 
     // Wrap linter_configs in Arc to avoid expensive per-PR clones
     let linter_configs = linter_configs.map(Arc::new);
@@ -910,7 +910,8 @@ async fn run_benchmark(
     }
 
     if let Some(tx) = &dashboard_tx {
-        let _ = tx.send(RunEvent::RunFinished { // Ignore — receiver may have disconnected
+        let _ = tx.send(RunEvent::RunFinished {
+            // Ignore — receiver may have disconnected
             total_prs: results.len(),
             aggregated: AggregateMetrics {
                 true_positives: agg.total_tp,
@@ -934,13 +935,7 @@ async fn run_benchmark(
     );
 
     crb_harness::print_terminal_summary(&results);
-    crb_harness::write_summary(
-        &cache_dir,
-        &model,
-        &judge_model,
-        &results,
-        eval_elapsed,
-    )?;
+    crb_harness::write_summary(&cache_dir, &model, &judge_model, &results, eval_elapsed)?;
 
     if ci {
         let metrics: Vec<crb_judge::Metrics> = results.iter().map(|r| r.metrics.clone()).collect();

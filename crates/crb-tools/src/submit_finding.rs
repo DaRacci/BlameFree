@@ -256,6 +256,7 @@ impl SubmitFindingTool {
             path_trace: None,
             confidence: None,
             found_by: None,
+            ..Default::default()
         };
 
         (Some(finding), errors, warnings)

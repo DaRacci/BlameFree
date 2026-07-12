@@ -11,13 +11,13 @@ use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 
 use crb_agents::prompts::PromptLibrary;
 use crb_judge::JudgeVerdict;
-use crb_reporting::golden::GoldenCommentEntry;
 use crb_reporting::PrResult;
+use crb_reporting::golden::GoldenCommentEntry;
 
-use crate::pipeline::run_consensus;
-use crate::{CacheBackend, GoldenComment, ReviewerConfig, Role};
 #[cfg(feature = "exp16_adaptive_agents")]
 use crate::adaptive::should_use_single_agent;
+use crate::pipeline::run_consensus;
+use crate::{CacheBackend, GoldenComment, ReviewerConfig, Role};
 
 /// Convenience function that matches the existing `evaluate_pr()` signature in
 /// `crb-harness` but uses the full consensus pipeline internally.
@@ -39,7 +39,6 @@ pub async fn evaluate_pr_with_consensus(
     model: &str,
     judge: &Agent<ResponsesCompletionModel>,
     rules_preamble: Option<&str>,
-    prompt_lib: &PromptLibrary,
     template_vars: Option<&HashMap<String, serde_json::Value>>,
     roles: &[&str],
     max_findings: usize,
@@ -102,7 +101,6 @@ pub async fn evaluate_pr_with_consensus(
         client,
         judge,
         rules_preamble,
-        prompt_lib,
         template_vars,
         cache,
         diff_hash,

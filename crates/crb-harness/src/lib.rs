@@ -4,6 +4,7 @@
 //! as the internal orchestration functions used by the `benchmark` subcommand.
 
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -13,19 +14,19 @@ use anyhow::{Context, Result, anyhow};
 use crb_agents::build_agent;
 use crb_agents::prompts::PromptLibrary;
 use crb_auditor::apply_severity_auditor;
-use crb_consensus::evaluate_pr_with_consensus;
+use crb_consensus::harness::evaluate_pr_with_consensus;
 use crb_judge::{compute_metrics, run_judge};
 use crb_reporting::PrResult;
 use crb_reporting::golden::GoldenCommentEntry;
 use crb_rules::RuleSet;
-use crb_shared::cache::CacheBackend;
+use crb_shared::cache::{CacheBackend, LlmCache, RunHistoryEntry};
 use crb_shared::deduplicate::semantic_dedup;
 use crb_shared::finding::Finding;
 use crb_shared::jaccard::jaccard_similarity;
 use crb_shared::sanitize_filename;
-use crb_tools::create_linter_tool;
 use crb_tools::linters::config::LinterConfig;
 use crb_tools::linters::tool::LinterArgs;
+use crb_tools::{build_tool_server, create_linter_tool};
 use crb_types::RunEvent;
 use regex::Regex;
 use rig_core::agent::{Agent, PromptResponse};
@@ -34,6 +35,7 @@ use rig_core::completion::{Prompt, Usage};
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use rig_core::tool::Tool;
+use rig_core::tool::server::ToolServerHandle;
 use tokio::sync::broadcast;
 use tracing::{info, info_span};
 
@@ -67,7 +69,7 @@ pub struct EvalConfig {
     pub client: Arc<openai::Client>,
     pub judge: Agent<ResponsesCompletionModel>,
     pub cache: Option<Arc<dyn CacheBackend>>,
-    pub prompt_lib: Arc<PromptLibrary>,
+    pub prompt_lib: Arc<&'static PromptLibrary>,
     pub cost_tracker: Arc<crate::cost::CostTracker>,
     pub dashboard_tx: Option<tokio::sync::broadcast::Sender<RunEvent>>,
 
@@ -517,14 +519,22 @@ async fn run_agent_roles(
     diff: &str,
     roles: &[&str],
     max_findings: usize,
-    prompt_lib: &PromptLibrary,
+    tool_server_handle: ToolServerHandle,
 ) -> Vec<Finding> {
     let mut all_findings = Vec::new();
 
     for &role in roles {
         // Build agent with embedded prompt library
         let agent = build_agent(
-            client, model, role, None, prompt_lib, None, None, None, None,
+            client,
+            model,
+            role,
+            None,
+            None,
+            None,
+            None,
+            tool_server_handle,
+            None,
         );
 
         // Call agent with the diff - get real token usage via extended_details
@@ -556,17 +566,19 @@ async fn run_agent_roles(
 /// Entry point for reviewing a PR given its diff as a string.
 ///
 /// Builds agents for each role, runs them with the diff, and returns findings.
-pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
+pub async fn review_pr(
+    params: ReviewParams,
+    tool_server_handle: ToolServerHandle,
+) -> Result<Vec<Finding>> {
     // Create OpenAI client from env
     let client = rig_core::providers::openai::Client::from_env()
         .map_err(|e| anyhow!("Failed to create OpenAI client: {e}"))?;
 
     // Parse roles
-    let prompt_lib =
-        crb_agents::prompts::PromptLibrary::new().expect("Embedded prompts should be available");
+    let prompt_lib = crb_agents::prompts::PromptLibrary::get_instance();
 
     let roles: Vec<&str> = if params.roles.is_empty() {
-        prompt_lib.roles()
+        prompt_lib.abbreviations()
     } else {
         params.roles.iter().map(|r| r.as_str()).collect()
     };
@@ -577,36 +589,7 @@ pub async fn review_pr(params: ReviewParams) -> Result<Vec<Finding>> {
         &params.diff,
         &roles,
         params.max_findings,
-        &prompt_lib,
-    )
-    .await;
-
-    Ok(findings)
-}
-
-/// Like `review_pr` but accepts a [`PromptLibrary`] for custom prompts.
-pub async fn review_pr_with_prompt_lib(
-    params: ReviewParams,
-    prompt_lib: &crb_agents::prompts::PromptLibrary,
-) -> Result<Vec<Finding>> {
-    // Create OpenAI client from env
-    let client = rig_core::providers::openai::Client::from_env()
-        .map_err(|e| anyhow!("Failed to create OpenAI client: {e}"))?;
-
-    // Parse roles
-    let roles: Vec<&str> = if params.roles.is_empty() {
-        prompt_lib.roles()
-    } else {
-        params.roles.iter().map(|r| r.as_str()).collect()
-    };
-
-    let mut all_findings = run_agent_roles(
-        &client,
-        &params.model,
-        &params.diff,
-        &roles,
-        params.max_findings,
-        prompt_lib,
+        tool_server_handle,
     )
     .await;
 
@@ -615,14 +598,14 @@ pub async fn review_pr_with_prompt_lib(
     Ok(all_findings)
 }
 
-/// Review a diff by running `git diff` in the given `path`, then
-/// call `review_pr()` with the diff to get agent findings.
+/// Review a diff by running `git diff` in the given `path`, then call `review_pr()` with the diff to get agent findings.
 ///
 /// - `ReviewMode::Commits { base, head }` -> `git diff base..head`
 /// - `ReviewMode::Working`                -> `git diff` (unstaged + staged)
 ///
 /// Returns a vector of agent findings parsed from the LLM response.
 pub async fn review_diff(args: ReviewArgs) -> Result<Vec<Finding>> {
+    let tool_server = build_tool_server(args.path.to_str(), collector).run();
     let diff = match args.commits {
         Some(ref range) => {
             let output = Command::new("git")
@@ -657,25 +640,17 @@ pub async fn review_diff(args: ReviewArgs) -> Result<Vec<Finding>> {
     // Preprocess: filter noise files and chunk oversized diffs
     let diff = crate::preprocess_diff(&diff);
 
-    let prompt_lib =
-        crb_agents::prompts::PromptLibrary::new().expect("Embedded prompts should be available");
-
     // Build ReviewParams and call review_pr
-    let roles = vec![
-        "SA".to_string(),
-        "CL".to_string(),
-        "ARCH".to_string(),
-        "SEC".to_string(),
-    ];
+    let roles = PromptLibrary::get_instance().abbreviations();
     let params = ReviewParams {
         diff: diff.clone(),
         model: args.model.clone(),
         pr_title: "review".to_string(),
-        roles,
+        roles: roles.iter().map(|s| s.to_string()).collect(),
         max_findings: 20,
         cache_dir: None,
     };
-    review_pr_with_prompt_lib(params, &prompt_lib).await
+    review_pr(params, tool_server).await
 }
 
 // =========================================================================
@@ -706,7 +681,7 @@ pub fn load_cached_diff(
 ) -> Option<String> {
     let diffs_dir = benchmark_dir.join("diffs");
     let diff_path = diffs_dir.join(format!("{}_{}_{}.diff", owner, repo, pr_num));
-    match std::fs::read_to_string(&diff_path) {
+    match fs::read_to_string(&diff_path) {
         Ok(content) => {
             info!(
                 "Loaded cached diff ({} bytes) from {}",
@@ -981,7 +956,6 @@ fn spawn_agent_task(
             model.as_str(),
             &role,
             preamble.as_deref(),
-            p_lib.as_ref(),
             None,
             Some(&tool_preamble),
             None,
@@ -1224,7 +1198,7 @@ async fn evaluate_pr_consensus(
     prompt_lib: &PromptLibrary,
     roles: &str,
     max_findings: usize,
-    cache: Option<Arc<crate::cache::LlmCache>>,
+    cache: Option<Arc<LlmCache>>,
     cost_tracker: Arc<crate::cost::CostTracker>,
     workdir: Option<&str>,
     reasoning_effort: Option<&str>,
@@ -1248,7 +1222,9 @@ async fn evaluate_pr_consensus(
     let parsed_roles: Vec<&str> = {
         // Only apply adaptive dispatch when user has explicitly opted in
         // by selecting only a single role; otherwise respect user's choice.
-        if parsed_roles.len() == 1 && crb_consensus::should_use_single_agent(diff, 3, 200) {
+
+        use crb_consensus::adaptive::should_use_single_agent;
+        if parsed_roles.len() == 1 && should_use_single_agent(diff, 3, 200) {
             info!("EXP-016 adaptive dispatch: small PR, using single GEN agent");
             vec!["GEN"]
         } else {
@@ -1323,7 +1299,6 @@ async fn evaluate_pr_consensus(
             model,
             judge,
             rules_preamble,
-            prompt_lib,
             template_vars,
             &parsed_roles,
             max_findings,
@@ -1686,18 +1661,17 @@ pub async fn evaluate_pr(
     })
 }
 
-/// Append a run history entry to the `_runs.json` file in the cache directory.
-#[doc(hidden)]
+/// Append a run history entry to the runs file in the cache directory.
 fn append_run_history(cache_dir: &Path, entry: &RunHistoryEntry) -> Result<()> {
     let path = cache_dir.join(crate::paths::RUNS_FILE);
     let mut runs: Vec<RunHistoryEntry> = if path.exists() {
-        let content = std::fs::read_to_string(&path).unwrap_or_else(|_| "[]".to_string());
+        let content = fs::read_to_string(&path).unwrap_or_else(|_| "[]".to_string());
         serde_json::from_str(&content).unwrap_or_else(|_| Vec::new())
     } else {
         Vec::new()
     };
     runs.push(entry.clone());
-    std::fs::write(&path, serde_json::to_string_pretty(&runs)?)?;
+    fs::write(&path, serde_json::to_string_pretty(&runs)?)?;
     info!("Appended run history to: {}", path.display());
     Ok(())
 }
@@ -1782,10 +1756,9 @@ pub fn write_summary(
     });
 
     let summary_path = cache_dir.join(crate::paths::SUMMARY_FILE);
-    std::fs::write(&summary_path, serde_json::to_string_pretty(&summary)?)?;
+    fs::write(&summary_path, serde_json::to_string_pretty(&summary)?)?;
     info!("Cache summary written to: {}", summary_path.display());
 
-    // Append a run history entry to _runs.json
     let run_entry = RunHistoryEntry {
         run_id: summary["run_id"].as_str().unwrap_or("").to_string(),
         timestamp: format!("{:?}", std::time::SystemTime::now()),
@@ -1902,7 +1875,7 @@ pub async fn run_validate(workspace_root: &Path, version: &str) -> Result<()> {
     };
 
     let mut loaded_results: Vec<crb_judge::Metrics> = Vec::new();
-    let mut entries: Vec<_> = std::fs::read_dir(&results_dir)?
+    let mut entries: Vec<_> = fs::read_dir(&results_dir)?
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().map_or(false, |ext| ext == "json"))
         .collect();
@@ -1910,7 +1883,7 @@ pub async fn run_validate(workspace_root: &Path, version: &str) -> Result<()> {
 
     for entry in &entries {
         let path = entry.path();
-        let content = std::fs::read_to_string(&path)
+        let content = fs::read_to_string(&path)
             .with_context(|| format!("Failed to read result: {}", path.display()))?;
         match serde_json::from_str::<crb_judge::Metrics>(&content) {
             Ok(metrics) => loaded_results.push(metrics),

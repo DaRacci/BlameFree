@@ -9,19 +9,14 @@ exp14_submit_finding = []
 
 [dependencies]
 anyhow = { workspace = true }
-crb-tools = { path = "../crb-tools" }
 handlebars = { workspace = true }
 include_dir = { workspace = true }
 rig-core = { workspace = true }
-schemars = { workspace = true }
 serde = { workspace = true }
 serde_fields = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tracing = { workspace = true }
-
-[dev-dependencies]
-tokio = { workspace = true, features = ["rt", "macros"] }
 
 [lints]
 workspace = true

@@ -51,59 +51,17 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
         .map(|d| d.id)
         .collect();
 
-    let roles: Vec<RoleInfo> = crb_agents::prompts::PromptLibrary::new()
-        .map(|lib| {
-            let mut role_infos: Vec<RoleInfo> = lib
-                .roles()
-                .iter()
-                .map(|abbr| {
-                    let config = lib.config(abbr);
-                    RoleInfo {
-                        abbreviation: abbr.to_string(),
-                        name: abbr.to_string(),
-                        incompatible_with_roles: config
-                            .map(|c| c.incompatible_with_roles.clone())
-                            .unwrap_or_default(),
-                    }
-                })
-                .collect();
-            role_infos.sort_by(|a, b| a.abbreviation.cmp(&b.abbreviation));
-            role_infos
+    let lib = crb_agents::prompts::PromptLibrary::get_instance();
+    let mut roles = lib
+        .roles()
+        .iter()
+        .map(|agent| RoleInfo {
+            abbreviation: agent.role_abbreviation,
+            name: agent.role_abbreviation,
+            incompatible_with_roles: agent.incompatible_with_roles,
         })
-        .unwrap_or_else(|_| {
-            vec![
-                RoleInfo {
-                    abbreviation: "ARCH".to_string(),
-                    name: "Architecture".to_string(),
-                    incompatible_with_roles: vec![],
-                },
-                RoleInfo {
-                    abbreviation: "CL".to_string(),
-                    name: "Code Logician".to_string(),
-                    incompatible_with_roles: vec![],
-                },
-                RoleInfo {
-                    abbreviation: "GEN".to_string(),
-                    name: "General".to_string(),
-                    incompatible_with_roles: vec![
-                        "SA".to_string(),
-                        "CL".to_string(),
-                        "ARCH".to_string(),
-                        "SEC".to_string(),
-                    ],
-                },
-                RoleInfo {
-                    abbreviation: "SA".to_string(),
-                    name: "Security Auditor".to_string(),
-                    incompatible_with_roles: vec![],
-                },
-                RoleInfo {
-                    abbreviation: "SEC".to_string(),
-                    name: "Security Evaluator".to_string(),
-                    incompatible_with_roles: vec![],
-                },
-            ]
-        });
+        .collect();
+    roles.sort_by(|a, b| a.abbreviation.cmp(&b.abbreviation));
 
     Json(ConfigResponse {
         models,

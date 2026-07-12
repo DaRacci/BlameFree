@@ -49,7 +49,6 @@ pub mod read_file;
 /// Execute shell commands tool for agent use.
 pub mod shell;
 
-#[cfg(feature = "exp14_submit_finding")]
 pub mod submit_finding;
 
 use crate::linters::config::{LinterConfig, OutputFormat};
@@ -58,15 +57,48 @@ use crate::linters::govet::parse_govet_output;
 use crate::linters::ruff::parse_ruff_output;
 use crate::linters::tool::LinterTool;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crb_shared::finding::Finding;
 pub use grep::GrepTool;
 pub use linters::config::load_linter_config;
 pub use list_dir::ListDirTool;
+use rig_core::tool::server::ToolServer;
 
 use crate::budget::ToolCallBudget;
 use crate::error::LinterError;
+
+pub fn build_tool_server(
+    workdir: Option<&str>,
+    collector: Option<Arc<Mutex<submit_finding::SubmitFindingCollector>>>,
+) -> ToolServer {
+    let mut tool_server = ToolServer::new();
+    if let Some(workdir) = workdir {
+        tool_server = tool_server
+            .tool(read_file::ReadFileTool {
+                repo_root: workdir.to_string(),
+                ..Default::default()
+            })
+            .tool(shell::ShellTool {
+                work_dir: workdir.to_string(),
+                ..Default::default()
+            })
+            .tool(grep::GrepTool {
+                workdir: workdir.to_string(),
+            })
+            .tool(list_dir::ListDirTool {
+                workdir: workdir.to_string(),
+            });
+    }
+
+    if let Some(collector) = collector {
+        let submit_tool = submit_finding::SubmitFindingTool::new(collector);
+        tool_server = tool_server.tool(submit_tool);
+    }
+
+    tool_server
+}
 
 /// Internal helper to create a [`LinterTool`] from a [`LinterConfig`] and a parser function.
 fn create_linter_tool_inner(

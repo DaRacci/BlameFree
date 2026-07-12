@@ -1,13 +1,14 @@
 //! Agent construction — building reviewer agents with turn-budget hooks.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use rig_core::agent::{Agent, HookAction, PromptHook, ToolCallHookAction};
 use rig_core::completion::{CompletionModel, CompletionResponse, Message};
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
+use rig_core::tool::server::ToolServerHandle;
 
 use crate::ReviewerConfig;
 
@@ -103,26 +104,19 @@ pub fn build_reviewer_agent(
     client: &openai::Client,
     config: &ReviewerConfig,
     rules_preamble: Option<&str>,
-    prompt_lib: &PromptLibrary,
     template_vars: Option<&HashMap<String, serde_json::Value>>,
     tool_preamble: Option<&str>,
-    workdir: Option<&str>,
     additional_params: Option<serde_json::Value>,
-    #[cfg(feature = "exp14_submit_finding")] collector: Option<
-        Arc<Mutex<crb_agents::submit_finding::SubmitFindingCollector>>,
-    >,
+    tool_server_handle: ToolServerHandle,
 ) -> Agent<ResponsesCompletionModel> {
     build_agent(
         client,
         &config.model,
         config.role.as_str(),
         rules_preamble,
-        prompt_lib,
         template_vars,
         tool_preamble,
-        workdir,
         additional_params,
-        #[cfg(feature = "exp14_submit_finding")]
-        collector,
+        tool_server_handle,
     )
 }

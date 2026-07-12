@@ -1,8 +1,7 @@
 //! Handlebars-based template engine for agent prompts.
 //!
-//! Provides [`TemplateEngine`] as a rich replacement for the simple
-//! `{variable}` substitution in [`PromptLibrary`].  Supports conditionals,
-//! loops, partials, and custom helpers via the Handlebars crate.
+//! Provides [`TemplateEngine`] as a rich replacement for the simple `{variable}` substitution in [`PromptLibrary`].
+//! Supports conditionals, loops, partials, and custom helpers via the Handlebars crate.
 
 use handlebars::Handlebars;
 use serde_json::Value;
@@ -20,9 +19,7 @@ macro_rules! register_simple_helper {
                  _: &handlebars::Context,
                  _: &mut handlebars::RenderContext,
                  $out: &mut dyn handlebars::Output|
-                 -> handlebars::HelperResult {
-                    $body
-                },
+                 -> handlebars::HelperResult { $body },
             ),
         );
     };
@@ -56,7 +53,6 @@ pub(crate) fn new_handlebars_registry() -> Handlebars<'static> {
         Ok(())
     });
 
-    // Register 'join' helper for arrays
     register_simple_helper!(registry, "join", |h, out| {
         let items = h
             .param(0)
@@ -75,7 +71,7 @@ pub(crate) fn new_handlebars_registry() -> Handlebars<'static> {
 ///
 /// Templates are registered by name (filename stem without `.hbs`).
 /// Use [`render`](Self::render) to produce the final prompt string.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct TemplateEngine {
     registry: Handlebars<'static>,
 }
@@ -83,17 +79,14 @@ pub struct TemplateEngine {
 impl TemplateEngine {
     /// Create a new empty template engine.
     ///
-    /// Strict mode is disabled so missing variables render as empty strings
-    /// rather than failing.  A `lowercase`, `uppercase`, and `join` helper are
-    /// registered by default.
+    /// Strict mode is disabled so missing variables render as empty strings rather than failing.
+    /// A `lowercase`, `uppercase`, and `join` helper are registered by default.
     pub fn new() -> Self {
         let registry = new_handlebars_registry();
         Self { registry }
     }
 
     /// Register a single template by name.
-    ///
-    /// # Errors
     ///
     /// Returns an error if the template content cannot be parsed.
     pub fn register_template(&mut self, name: &str, content: &str) -> anyhow::Result<()> {
@@ -103,13 +96,10 @@ impl TemplateEngine {
 
     /// Render a template with the given context variables.
     ///
-    /// Returns the rendered string or an error if the template is not found
-    /// or rendering fails.
+    /// Returns the rendered string or an error if the template is not found or rendering fails.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if the template name is not registered or if
-    /// rendering fails due to a syntax error in the template.
+    /// Returns an error if the template name is not registered,
+    /// or if rendering fails due to a syntax error in the template.
     pub fn render(&self, name: &str, vars: &Value) -> anyhow::Result<String> {
         Ok(self.registry.render(name, vars)?)
     }
@@ -126,12 +116,6 @@ impl TemplateEngine {
             .keys()
             .map(|k| k.to_string())
             .collect()
-    }
-}
-
-impl Default for TemplateEngine {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -168,7 +152,6 @@ pub fn build_template_context(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     #[test]
     fn test_template_engine_new() {
