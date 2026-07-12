@@ -1,8 +1,6 @@
-//! Agent construction — building reviewer agents with turn-budget hooks.
-
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 
 use rig_core::agent::{Agent, HookAction, PromptHook, ToolCallHookAction};
 use rig_core::completion::{CompletionModel, CompletionResponse, Message};
@@ -13,23 +11,23 @@ use rig_core::tool::server::ToolServerHandle;
 use crate::ReviewerConfig;
 
 use crb_agents::build_agent;
-use crb_agents::prompts::PromptLibrary;
 
-/// A [`PromptHook`] that skips tool calls with budget nudge messages when the
-/// agent is approaching its turn limit.
+/// A [`PromptHook`] that skips tool calls with budget nudge messages when the agent is approaching its turn limit.
 ///
 /// Mechanism:
 /// - Counts model-completion calls via [`on_completion_response`].
 /// - When ≤2 completions remain, [`on_tool_call`] returns `Skip` with a
-///   progressively firmer nudge ("X turns remaining…" -> "LAST TURN: …").
+///   progressively firmer nudge ("X turns remaining..." -> "LAST TURN: ...").
 /// - The skipped reason is fed back to the model as a synthetic tool result,
 ///   effectively "stripping tools" without requiring internal loop access.
 ///
-/// See arXiv:2510.16786 for the two-tier nudge pattern at ~70 % / ~90 % of
-/// the turn budget.
+/// See arXiv:2510.16786 for the two-tier nudge pattern at ~70 % / ~90 % of the turn budget.
 #[derive(Clone)]
 pub struct TurnBudgetHook {
+    /// The maximum number of turns the agent is allowed to take before it must stop calling tools and output its findings.
     max_turns: usize,
+
+    /// The number of model-completion calls made so far.
     completion_count: Arc<AtomicUsize>,
 }
 
@@ -54,10 +52,6 @@ impl<M: CompletionModel> PromptHook<M> for TurnBudgetHook {
     }
 
     /// Skip tool calls when the agent is close to exhausting its turn budget.
-    ///
-    /// The 70 % / 90 % pattern from arXiv:2510.16786 translates to:
-    /// - ≤2 remaining -> "You have X turns remaining."
-    /// - ≤1 remaining -> "LAST TURN: …"
     async fn on_tool_call(
         &self,
         _tool_name: &str,
@@ -66,28 +60,28 @@ impl<M: CompletionModel> PromptHook<M> for TurnBudgetHook {
         _args: &str,
     ) -> ToolCallHookAction {
         let calls_made = self.completion_count.load(Ordering::SeqCst);
-        // Total possible completion calls = max_turns + 1 (the final text-only
-        // turn before the error fires at max_turns + 2).
+        // Total possible completion calls = max_turns + 1
+        // the final text-only turn before the error fires at max_turns + 2.
         let total_possible = self.max_turns + 1;
         let remaining = total_possible.saturating_sub(calls_made);
 
         if remaining <= 1 {
-            ToolCallHookAction::Skip {
-                reason: "\
-LAST TURN: This is your final opportunity. Do NOT call any more tools. \
-Output your JSON findings directly."
-                    .to_string(),
-            }
-        } else if remaining <= 2 {
-            ToolCallHookAction::Skip {
+            const LAST_TURN_MSG: &str = "LAST TURN: This is your final opportunity. Do NOT call any more tools. Output your JSON findings directly.";
+            return ToolCallHookAction::Skip {
+                reason: LAST_TURN_MSG.to_string(),
+            };
+        }
+
+        if remaining <= 2 {
+            return ToolCallHookAction::Skip {
                 reason: format!(
                     "You have {} turns remaining. Stop exploring and output your JSON findings.",
                     remaining
                 ),
-            }
-        } else {
-            ToolCallHookAction::cont()
+            };
         }
+
+        ToolCallHookAction::cont()
     }
 }
 

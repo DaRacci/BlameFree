@@ -1,4 +1,5 @@
-//! Full pipeline — run reviewers, judge against goldens, compute metrics.
+//! The full consensus pipeline
+//! Run reviewers, judge against goldens, compute metrics.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -9,7 +10,6 @@ use rig_core::completion::Usage;
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 
-use crb_agents::prompts::PromptLibrary;
 use crb_shared::finding::Finding;
 
 use crate::execution::run_reviewers;
@@ -19,8 +19,7 @@ use crate::{CacheBackend, ConsensusReport, GoldenComment, MatchResult, ReviewerC
 /// Run the full multi-agent consensus pipeline.
 ///
 /// 1. Concurrently run all reviewer agents via [`run_reviewers`].
-/// 2. For each golden comment, attempt heuristic matching ([`judge_comment`])
-///    against all findings.
+/// 2. For each golden comment, attempt heuristic matching ([`judge_comment`]) against all findings.
 /// 3. Goldens that do not match heuristically fall back to the LLM judge.
 /// 4. Remaining unmatched findings are classified as false positives.
 /// 5. Compute precision / recall / F1 metrics.
@@ -52,8 +51,6 @@ pub async fn run_consensus(
     #[cfg(not(feature = "exp14_submit_finding"))]
     let collector = None;
     let tool_server = build_tool_server(workdir, collector).run();
-
-    // Step 1: run all reviewers concurrently with content-addressed caching
     let (agents, agent_api_calls, agent_usage) = run_reviewers(
         reviewer_configs,
         diff,
@@ -71,10 +68,7 @@ pub async fn run_consensus(
     )
     .await;
 
-    // Track aggregate judge usage
     let judge_usage = Usage::new();
-
-    // Flatten all findings into a single mutable pool, sorted for determinism
     let mut unmatched: Vec<Finding> = agents
         .iter()
         .flat_map(|(_, findings)| findings.iter())
@@ -92,7 +86,6 @@ pub async fn run_consensus(
     let mut judge_api_calls: usize = 0;
     let mut judge_cache_hits: usize = 0;
 
-    // Step 2 & 3: match each golden with LLM → Jaccard pipeline
     for golden in &goldens {
         let result = judge_comment(
             golden,
@@ -121,32 +114,28 @@ pub async fn run_consensus(
             }
             MatchResult::FalsePositive => {
                 // This variant isn't returned by judge_comment (it checks a golden
-                // against candidates, so it only yields TP or FN).  Defensively
-                // treat as FN.
+                // against candidates, so it only yields TP or FN).
+                // Defensively treat as FN.
                 false_negatives.push(golden.clone());
             }
         }
     }
 
-    // Step 4: whatever remains in unmatched are false positives
     let false_positives = unmatched;
-
-    // Step 5: compute metrics
-    let tp = true_positives.len();
-    let fp = false_positives.len();
+    let tp_count = true_positives.len();
+    let fp_count = false_positives.len();
     let fn_count = false_negatives.len();
 
-    let precision = if tp + fp > 0 {
-        tp as f64 / (tp + fp) as f64
+    let precision = if tp_count + fp_count > 0 {
+        tp_count as f64 / (tp_count + fp_count) as f64
     } else if goldens.is_empty() {
-        // No goldens and no findings -> perfect by definition
         1.0
     } else {
         0.0
     };
 
-    let recall = if tp + fn_count > 0 {
-        tp as f64 / (tp + fn_count) as f64
+    let recall = if tp_count + fn_count > 0 {
+        tp_count as f64 / (tp_count + fn_count) as f64
     } else {
         1.0
     };

@@ -1,5 +1,3 @@
-//! Harness integration — bridge between crb-harness and the consensus pipeline.
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -9,26 +7,23 @@ use rig_core::completion::Usage;
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 
-use crb_agents::prompts::PromptLibrary;
 use crb_judge::JudgeVerdict;
 use crb_reporting::PrResult;
 use crb_reporting::golden::GoldenCommentEntry;
 
-#[cfg(feature = "exp16_adaptive_agents")]
-use crate::adaptive::should_use_single_agent;
+use crate::adaptive::get_roles_for_diff;
 use crate::pipeline::run_consensus;
 use crate::{CacheBackend, GoldenComment, ReviewerConfig, Role};
 
-/// Convenience function that matches the existing `evaluate_pr()` signature in
-/// `crb-harness` but uses the full consensus pipeline internally.
+/// Convenience function that matches the existing `evaluate_pr()` signature in `crb-harness`
+/// but uses the full consensus pipeline internally.
 ///
 /// Bridges between `crb-reporting`'s [`GoldenCommentEntry`] / [`PrResult`] types
 /// and the consensus crate's richer golden-comment model so it can serve as a
 /// drop-in replacement for the single-agent evaluation.
 ///
-/// Because `crb-reporting::GoldenComment` lacks `file` / `line` fields, the
-/// conversion uses an empty file, line 0, and the comment text wrapped in
-/// [`regex::escape`] as the message regex.
+/// Because `crb-reporting::GoldenComment` lacks `file` / `line` fields,
+/// the conversion uses an empty file, line 0, and the comment text wrapped in [`regex::escape`] as the message regex.
 ///
 /// If `cache` is provided, agent interactions and judge calls are cached.
 #[allow(clippy::too_many_arguments)]
@@ -40,10 +35,9 @@ pub async fn evaluate_pr_with_consensus(
     judge: &Agent<ResponsesCompletionModel>,
     rules_preamble: Option<&str>,
     template_vars: Option<&HashMap<String, serde_json::Value>>,
-    roles: &[&str],
+    available_roles: &[&str],
     max_findings: usize,
     cache: Option<Arc<dyn CacheBackend>>,
-    // Content-addressed cache key components
     diff_hash: &str,
     prompt_hash: &str,
     rules_hash: &str,
@@ -54,26 +48,12 @@ pub async fn evaluate_pr_with_consensus(
     additional_params: Option<serde_json::Value>,
     dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_types::RunEvent>>,
 ) -> Result<(PrResult, Usage, Usage, usize, usize, usize)> {
-    // ── Adaptive agent dispatch (EXP-016) ──────────────────────────────
-    #[cfg(feature = "exp16_adaptive_agents")]
-    let roles: Vec<&str> = {
-        if should_use_single_agent(diff, 3, 200) {
-            tracing::info!(
-                "EXP-016: adaptive dispatch — small PR detected, using single GEN agent"
-            );
-            vec!["GEN"]
-        } else {
-            roles.to_vec()
-        }
-    };
-    #[cfg(not(feature = "exp16_adaptive_agents"))]
-    let roles = roles;
+    let roles = get_roles_for_diff(diff, available_roles);
 
-    // Build one reviewer config per selected role.
     let reviewer_configs: Vec<ReviewerConfig> = roles
         .iter()
-        .map(|role_str| ReviewerConfig {
-            role: Role(role_str.to_string()),
+        .map(|agent| ReviewerConfig {
+            role: Role(agent.role_abbreviation.to_string()),
             model: model.to_string(),
             max_findings,
         })
@@ -114,7 +94,7 @@ pub async fn evaluate_pr_with_consensus(
         dashboard_tx,
     )
     .await;
-    // Build verdicts for compatibility with crb-reporting::PrResult.
+
     let mut verdicts = Vec::new();
     for _ in &report.true_positives {
         verdicts.push(JudgeVerdict {

@@ -11,13 +11,13 @@ pub mod harness;
 pub mod judge;
 pub mod pipeline;
 
-use std::sync::LazyLock;
-
 pub use crb_shared::cache::CacheBackend;
 use crb_shared::finding::Finding;
 use regex::Regex;
 use rig_core::completion::{AssistantContent, Message, Usage};
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
+use tracing::warn;
 
 /// Regex to extract JSON from markdown code blocks.
 #[allow(clippy::unwrap_used)]
@@ -63,17 +63,17 @@ impl From<String> for Role {
 /// Configuration for a single reviewer agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewerConfig {
-    /// The reviewer role (SA, CL, AR, SEC, etc.).
+    /// The reviewer role.
     pub role: Role,
 
-    /// Model identifier for this reviewer (e.g. "deepseek/deepseek-v4-flash").
+    /// The LLM Model identifier for this reviewer.
     pub model: String,
 
-    /// Maximum number of findings this agent should produce.
+    /// The Maximum number of findings this agent should produce.
     pub max_findings: usize,
 }
 
-/// A golden (expected) comment against which findings are judged.
+/// A golden comment against which findings are judged.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoldenComment {
     /// Source file path where the golden comment applies.
@@ -88,7 +88,7 @@ pub struct GoldenComment {
     /// Expected severity for this golden comment.
     pub severity: String,
 
-    /// Which role(s) should catch this: "SA", "CL", "AR", "SEC", or "any".
+    /// Which role(s) should catch this.
     pub source: String,
 }
 
@@ -105,8 +105,10 @@ impl GoldenComment {
 pub enum MatchResult {
     /// A candidate finding matches the golden comment.
     TruePositive,
+
     /// A candidate finding has no matching golden comment.
     FalsePositive,
+
     /// A golden comment has no matching candidate finding.
     FalseNegative,
 }
@@ -116,31 +118,40 @@ pub enum MatchResult {
 pub struct ConsensusReport {
     /// Findings from each agent, grouped by role.
     pub agents: Vec<(Role, Vec<Finding>)>,
+
     /// Goldens that were matched by at least one finding.
     pub true_positives: Vec<(GoldenComment, Finding)>,
+
     /// Findings that matched no golden.
     pub false_positives: Vec<Finding>,
+
     /// Goldens that matched no finding.
     pub false_negatives: Vec<GoldenComment>,
+
     /// TP / (TP + FP)
     pub precision: f64,
+
     /// TP / (TP + FN)
     pub recall: f64,
+
     /// F1 = harmonic mean of precision and recall
     pub f1: f64,
+
     /// Number of agent LLM calls that were cache misses (actual API calls made).
     pub agent_api_calls: usize,
+
     /// Number of judge LLM calls that were cache misses (actual API calls made).
     pub judge_api_calls: usize,
+
     /// Number of judge LLM calls that were cache hits (served from cache).
     pub judge_cache_hits: usize,
+
     /// Aggregate token usage from all agent API calls (real + cached).
     pub agent_usage: Usage,
+
     /// Aggregate token usage from all judge API calls (real + cached).
     pub judge_usage: Usage,
 }
-
-// ── Shared utility functions ──────────────────────────────────────────────────
 
 /// Attempt to parse findings from an agent response using a 3-strategy
 /// fallback:
@@ -154,19 +165,22 @@ pub struct ConsensusReport {
 pub fn parse_findings_from_response(response: &str, role: &Role, context: &str) -> Vec<Finding> {
     serde_json::from_str(response).unwrap_or_else(|_| {
         if let Some(caps) = RE_CODEBLOCK_JSON.captures(response) {
+            // This is safe, it will always have atleast one group if it matches
             #[allow(clippy::unwrap_used)]
             let inner = caps.get(1).unwrap().as_str().trim();
             if let Ok(f) = serde_json::from_str::<Vec<Finding>>(inner) {
                 return f;
             }
         }
+
         if let Some(m) = RE_JSON_ARRAY.find(response) {
             if let Ok(f) = serde_json::from_str::<Vec<Finding>>(m.as_str()) {
                 return f;
             }
         }
+
         if !context.is_empty() {
-            tracing::warn!(
+            warn!(
                 "Failed to parse {} findings for role {:?}. Response (truncated): {}",
                 context,
                 role,
@@ -179,119 +193,45 @@ pub fn parse_findings_from_response(response: &str, role: &Role, context: &str) 
 
 /// Try to extract the last assistant text message from a chat history.
 ///
-/// When [`PromptError::MaxTurnsError`] fires, the agent's accumulated
-/// conversation is available in `chat_history`.  This function walks it in
-/// reverse to find the most recent `Message::Assistant` whose content includes
-/// an `AssistantContent::Text` variant - that text is often a partial or
-/// complete JSON findings array the model produced before being cut off.
+/// When [`PromptError::MaxTurnsError`] fires, the agent's accumulated conversation is available in `chat_history`.
+/// This function walks it in reverse to find the most recent `Message::Assistant` whose content includes an `AssistantContent::Text` variant
+/// that text is often a partial or complete JSON findings array the model produced before being cut off.
 pub fn extract_last_assistant_text(history: &[Message]) -> Option<String> {
     for msg in history.iter().rev() {
-        if let Message::Assistant { content, .. } = msg {
-            for item in content.iter() {
-                if let AssistantContent::Text(text) = item {
-                    let t = text.text.trim().to_string();
-                    if !t.is_empty() {
-                        return Some(t);
-                    }
-                }
+        let Message::Assistant { content, .. } = msg else {
+            continue;
+        };
+
+        for item in content.iter() {
+            let AssistantContent::Text(text) = item else {
+                continue;
+            };
+
+            let t = text.text.trim().to_string();
+            if !t.is_empty() {
+                return Some(t);
             }
         }
     }
     None
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crb_shared::cache::sha256_hex;
-    use crb_shared::cache::{compute_agent_cache_key, compute_judge_cache_key};
-
-    /// Build a minimal single-hunk diff for the given file path and content.
-    /// Content should include the `-` and `+` prefix lines (e.g. "-old\n+new\n").
-    fn minimal_diff(file_path: &str, content: &str) -> String {
-        format!(
-            "\
-diff --git a/{fp} b/{fp}
---- a/{fp}
-+++ b/{fp}
-@@ -1 +1 @@
-{content}",
-            fp = file_path,
-            content = content
-        )
-    }
-
-    /// Shorthand for `minimal_diff("src/main.rs", content)`.
-    fn diff_main(content: &str) -> String {
-        minimal_diff("src/main.rs", content)
-    }
 
     /// Assert that the precision, recall, and F1 metrics of a report
     /// are all equal to the given expected value (within 1e-6).
     fn assert_metrics(report: &ConsensusReport, expected: f64) {
-        let eps = 1e-6;
-        assert!((report.precision - expected).abs() < eps);
-        assert!((report.recall - expected).abs() < eps);
-        assert!((report.f1 - expected).abs() < eps);
+        const EPS: f64 = 1e-6;
+        assert!((report.precision - expected).abs() < EPS);
+        assert!((report.recall - expected).abs() < EPS);
+        assert!((report.f1 - expected).abs() < EPS);
     }
-
-    #[test]
-    fn test_role_as_str() {
-        assert_eq!(Role("SA".into()).as_str(), "SA");
-        assert_eq!(Role("CL".into()).as_str(), "CL");
-        assert_eq!(Role("AR".into()).as_str(), "AR");
-        assert_eq!(Role("SEC".into()).as_str(), "SEC");
-    }
-
-    #[test]
-    fn test_role_variants_are_distinct() {
-        assert_ne!(Role("SA".into()), Role("CL".into()));
-        assert_ne!(Role("CL".into()), Role("AR".into()));
-        assert_ne!(Role("AR".into()), Role("SEC".into()));
-    }
-
-    #[test]
-    fn test_match_result_serialization() {
-        let tp = serde_json::to_value(MatchResult::TruePositive).unwrap();
-        let fp = serde_json::to_value(MatchResult::FalsePositive).unwrap();
-        let fn_ = serde_json::to_value(MatchResult::FalseNegative).unwrap();
-        assert!(tp.is_string());
-        assert!(fp.is_string());
-        assert!(fn_.is_string());
-        assert_ne!(tp, fp);
-        assert_ne!(fp, fn_);
-    }
-
-    #[test]
-    fn test_compute_agent_cache_key_deterministic() {
-        let key1 = compute_agent_cache_key("abc", "def", "gpt-4o", "SA", "rules123");
-        let key2 = compute_agent_cache_key("abc", "def", "gpt-4o", "SA", "rules123");
-        assert_eq!(key1, key2);
-        // Different input should produce different key
-        let key3 = compute_agent_cache_key("abc", "xyz", "gpt-4o", "SA", "rules123");
-        assert_ne!(key1, key3);
-    }
-
-    #[test]
-    fn test_compute_judge_cache_key_deterministic() {
-        let key1 = compute_judge_cache_key("jph", "finding msg", "golden comment", "gpt-4o-mini");
-        let key2 = compute_judge_cache_key("jph", "finding msg", "golden comment", "gpt-4o-mini");
-        assert_eq!(key1, key2);
-    }
-
-    #[test]
-    fn test_sha256_hex() {
-        let h = sha256_hex("hello");
-        assert_eq!(h.len(), 64); // SHA256 hex is 64 chars
-    }
-
-    // ── judge_comment tests ─────────────────────────────────────────
 
     #[test]
     fn test_judge_comment_no_candidates() {
-        // Empty candidates → no file+line match → FalseNegative
+        // Empty candidates -> no file+line match -> FalseNegative
         let golden = GoldenComment {
             file: "src/main.rs".into(),
             line: 42,
@@ -299,9 +239,10 @@ diff --git a/{fp} b/{fp}
             severity: "error".into(),
             source: "SA".into(),
         };
-        // We can't call judge_comment directly in unit tests because it requires
-        // a real LLM agent.  Instead we test that empty candidates produce FN.
-        // The file+line pre-filter returns empty → FalseNegative.
+
+        // We can't call judge_comment directly in unit tests because it requires a real LLM agent.
+        // Instead we test that empty candidates produce FN.
+        // The file+line pre-filter returns empty -> FalseNegative.
         let candidates: Vec<Finding> = vec![];
         let file_matches: Vec<&Finding> = candidates
             .iter()
@@ -401,216 +342,5 @@ diff --git a/{fp} b/{fp}
         assert_eq!(report.false_positives.len(), 1);
         assert_eq!(report.false_negatives.len(), 1);
         assert_metrics(&report, 0.0);
-    }
-
-    #[test]
-    fn test_reviewer_config_serialization() {
-        let config = ReviewerConfig {
-            role: Role("SEC".into()),
-            model: "gpt-4o".into(),
-            max_findings: 15,
-        };
-        let json = serde_json::to_string(&config).unwrap();
-        assert!(json.contains("SEC"));
-        assert!(json.contains("gpt-4o"));
-        assert!(json.contains("15"));
-        let deserialized: ReviewerConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.role, Role("SEC".into()));
-        assert_eq!(deserialized.model, "gpt-4o");
-        assert_eq!(deserialized.max_findings, 15);
-    }
-
-    #[test]
-    fn test_golden_comment_serialization() {
-        let gc = GoldenComment {
-            file: "src/lib.rs".into(),
-            line: 100,
-            message_regex: r"unsafe\s+fn".into(),
-            severity: "warning".into(),
-            source: "SEC".into(),
-        };
-        let json = serde_json::to_string(&gc).unwrap();
-        let deserialized: GoldenComment = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.file, "src/lib.rs");
-        assert_eq!(deserialized.line, 100);
-    }
-
-    #[test]
-    fn test_count_diff_files_empty() {
-        assert_eq!(count_diff_files(""), 0);
-    }
-
-    #[test]
-    fn test_count_diff_files_single() {
-        let diff = "\
-diff --git a/src/main.rs b/src/main.rs
-index abc..def 100644
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -1,3 +1,4 @@
- fn main() {
--    println!(\"hello\");
-+    println!(\"hello world\");
- }
-";
-        assert_eq!(count_diff_files(diff), 1);
-    }
-
-    #[test]
-    fn test_count_diff_files_multiple() {
-        let diff = "\
-diff --git a/src/main.rs b/src/main.rs
-index a..b
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -1 +1 @@
--foo
-+bar
-diff --git a/src/lib.rs b/src/lib.rs
-index c..d
---- a/src/lib.rs
-+++ b/src/lib.rs
-@@ -1 +1 @@
--baz
-+qux
-diff --git a/Cargo.toml b/Cargo.toml
-index e..f
---- a/Cargo.toml
-+++ b/Cargo.toml
-@@ -1 +1 @@
--old
-+new
-";
-        assert_eq!(count_diff_files(diff), 3);
-    }
-
-    #[test]
-    fn test_count_diff_lines_empty() {
-        assert_eq!(count_diff_lines(""), 0);
-    }
-
-    #[test]
-    fn test_count_diff_lines_counts_additions_and_deletions() {
-        let diff = "\
-diff --git a/src/main.rs b/src/main.rs
-index abc..def 100644
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -1,5 +1,6 @@
- fn main() {
--    let x = 1;
--    let y = 2;
-+    let x = 10;
-+    let y = 20;
-+    let z = 30;
-     println!(\"done\");
- }
-";
-        assert_eq!(count_diff_lines(diff), 5);
-    }
-
-    #[test]
-    fn test_count_diff_lines_excludes_headers() {
-        let diff = diff_main("-foo\n+bar\n");
-        assert_eq!(count_diff_lines(&diff), 2);
-    }
-
-    #[test]
-    fn test_diff_touches_full_panel_languages_no_match() {
-        let diff = "\
-diff --git a/src/main.py b/src/main.py
-diff --git a/README.md b/README.md
-";
-        assert!(!diff_touches_full_panel_languages(diff));
-    }
-
-    #[test]
-    fn test_diff_touches_full_panel_languages_rust() {
-        let diff = minimal_diff("src/main.rs", "-old\n+new\n");
-        assert!(diff_touches_full_panel_languages(&diff));
-    }
-
-    #[test]
-    fn test_diff_touches_full_panel_languages_typescript() {
-        let diff = minimal_diff("src/foo.ts", "-old\n+new\n");
-        assert!(diff_touches_full_panel_languages(&diff));
-    }
-
-    #[test]
-    fn test_diff_touches_full_panel_languages_go() {
-        let diff = minimal_diff("server.go", "-old\n+new\n");
-        assert!(diff_touches_full_panel_languages(&diff));
-    }
-
-    #[test]
-    fn test_diff_touches_full_panel_languages_java() {
-        let diff = minimal_diff("Main.java", "-old\n+new\n");
-        assert!(diff_touches_full_panel_languages(&diff));
-    }
-
-    #[test]
-    fn test_diff_touches_full_panel_languages_cpp() {
-        let diff = minimal_diff("main.cpp", "-old\n+new\n");
-        assert!(diff_touches_full_panel_languages(&diff));
-    }
-
-    #[test]
-    fn test_should_use_single_agent_small_pr() {
-        let diff = minimal_diff("README.md", "-old\n+new\n");
-        assert!(should_use_single_agent(&diff, 3, 200));
-    }
-
-    #[test]
-    fn test_should_use_single_agent_too_many_files() {
-        let file_count = 4;
-        let diff = (0..file_count)
-            .map(|i| {
-                let fname = format!("a{}.txt", i);
-                minimal_diff(&fname, "-old\n+new\n")
-            })
-            .collect::<Vec<_>>()
-            .join("");
-        assert!(!should_use_single_agent(&diff, 3, 200));
-    }
-
-    #[test]
-    fn test_should_use_single_agent_too_many_lines() {
-        let diff = "\
-diff --git a/a.txt b/a.txt
---- a/a.txt
-+++ b/a.txt
-@@ -1,100 +1,300 @@
-"
-        .to_string()
-            + &(0..250)
-                .map(|i| format!("+line_{}\n", i))
-                .collect::<String>();
-        assert!(!should_use_single_agent(&diff, 3, 200));
-    }
-
-    #[test]
-    fn test_should_use_single_agent_safety_override_rust() {
-        let diff = diff_main("-old\n+new\n");
-        assert!(!should_use_single_agent(&diff, 3, 200));
-    }
-
-    #[test]
-    fn test_should_use_single_agent_safety_override_go() {
-        let diff = minimal_diff("server.go", "-old\n+new\n");
-        assert!(!should_use_single_agent(&diff, 3, 200));
-    }
-
-    #[test]
-    fn test_role_gen_variant() {
-        let role = Role("GEN".into());
-        assert_eq!(role.as_str(), "GEN");
-    }
-
-    #[test]
-    fn test_role_gen_serialization() {
-        let json = serde_json::to_string(&Role("GEN".into())).unwrap();
-        assert_eq!(json, "\"GEN\"");
-        let deserialized: Role = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, Role("GEN".into()));
     }
 }

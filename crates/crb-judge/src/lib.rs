@@ -1,8 +1,6 @@
-use rig_core::agent::Agent;
-use rig_core::agent::PromptResponse;
+use rig_core::agent::{Agent, PromptResponse};
 use rig_core::client::CompletionClient;
-use rig_core::completion::Prompt;
-use rig_core::completion::Usage;
+use rig_core::completion::{Prompt, Usage};
 use rig_core::providers::openai::{Client, responses_api::ResponsesCompletionModel};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -46,14 +44,19 @@ pub struct JudgeVerdict {
 pub struct Metrics {
     /// Number of true positives (agent findings that matched a golden comment).
     pub true_positives: usize,
+
     /// Number of false positives (agent findings that matched no golden comment).
     pub false_positives: usize,
+
     /// Number of false negatives (golden comments that matched no finding).
     pub false_negatives: usize,
+
     /// Precision = tp / (tp + fp).
     pub precision: f64,
+
     /// Recall = tp / (tp + fn).
     pub recall: f64,
+
     /// F1 score (harmonic mean of precision and recall).
     pub f1: f64,
 }
