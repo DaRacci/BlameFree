@@ -1,10 +1,14 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
+use crb_agents::agent::AgentEntry;
 use crb_consensus::CacheBackend;
-use crb_rules::RuleSet;
+use crb_reporting::cost::CostTracker;
 use crb_tools::linters::config::LinterConfig;
-use crb_types::RunEvent;
-use rig_core::{agent::Agent, providers::openai};
+use crb_types::{
+    RunEvent,
+    wrappers::{Model, WrappedData},
+};
+use rig_core::{agent::Agent, providers::openai, tool::server::ToolServerHandle};
 
 use crate::{cost, model_capabilities::ReasoningEffort};
 
@@ -12,62 +16,63 @@ use crate::{cost, model_capabilities::ReasoningEffort};
 #[derive(Debug, Clone, PartialEq)]
 pub enum EvalStrategy {
     /// Run a single-agent evaluation with a single generalised expert.
-    SingleAgent,
+    Single,
 
-    /// Run a full multi-agent evalutation with domain experts and a consensus judge.
-    Consensus,
+    /// Run a full multi-agent evaluation with domain experts.
+    Panel,
+}
+
+pub trait EvalIdentifier: Send + Sync + Sized {
+    fn id(&self) -> &str;
 }
 
 /// Configuration for an evaluation run.
 #[derive(Clone)]
 pub struct EvalConfig {
-    // Strategy selection
+    /// Unique identifier for the run.
+    pub identifier: Box<dyn EvalIdentifier>,
+
+    /// The strategy to use.
     pub strategy: EvalStrategy,
 
-    // Model/LLM config
-    pub model: String,
-    pub judge_model: String,
+    /// The model to use for each agent.
+    pub model: Model,
+
+    /// The reasoning level to use for each agent.
     pub reasoning_effort: Option<ReasoningEffort>,
 
-    // Shared services
+    /// A Shared API client for spawning requests to the LLM provider.
     pub client: Arc<openai::Client>,
-    pub judge: Agent<openai::responses_api::ResponsesCompletionModel>,
-    pub cache: Option<Arc<dyn CacheBackend>>,
-    pub cost_tracker: Arc<cost::CostTracker>,
+
+    /// Cache backend for storing and retrieving results, along with all responses from the LLM provider.
+    pub cache: Arc<dyn CacheBackend>,
+
+    /// Cost tracker for use during the run.
+    pub cost_tracker: Arc<CostTracker>,
+
+    /// A shared tool handle for shared use across agents.
+    pub tool_handle: ToolServerHandle,
+
+    /// Optional broadcast channel for sending run events to a dashboard.
     pub dashboard_tx: Option<tokio::sync::broadcast::Sender<RunEvent>>,
 
-    // Evaluation parameters
-    pub roles: String,
-    pub max_findings: usize,
-    pub linters_only: bool,
-    pub linter_configs: Option<HashMap<String, LinterConfig>>,
-    pub ruleset: Option<RuleSet>,
-    pub cache_dir: Option<PathBuf>,
-    pub benchmark_dir: Option<PathBuf>,
+    /// The available agents for the evaluation.
+    ///
+    /// An agent being available does not mean it will be used in the evaluation.
+    /// The agents used will depend on the strategy and the roles defined.
+    pub agents: &'static [&'static AgentEntry],
 
-    // Consensus-specific
-    pub workdir: Option<String>,
-
-    // Other options
-    pub template_vars: Option<HashMap<String, serde_json::Value>>,
+    /// The repository root path for the evaluation.
+    pub repo_root: PathBuf,
 }
 
 impl std::fmt::Debug for EvalConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EvalConfig")
             .field("strategy", &self.strategy)
-            .field("model", &self.model)
-            .field("judge_model", &self.judge_model)
+            .field("model", &self.model.get())
             .field("reasoning_effort", &self.reasoning_effort)
-            .field("roles", &self.roles)
-            .field("max_findings", &self.max_findings)
-            .field("linters_only", &self.linters_only)
-            .field("linter_configs", &self.linter_configs)
-            .field("ruleset", &self.ruleset)
-            .field("cache_dir", &self.cache_dir)
-            .field("benchmark_dir", &self.benchmark_dir)
-            .field("workdir", &self.workdir)
-            .field("template_vars", &self.template_vars)
+            .field("agents", &self.agents)
             .finish_non_exhaustive()
     }
 }

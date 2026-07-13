@@ -3,7 +3,7 @@
 //! Queries the OpenRouter models API to discover which models support reasoning, with a fallback heuristic when the API is unreachable.
 //! Results are cached via [`std::sync::OnceLock`]; Initialised once, then read lock-free by all threads.
 
-use crb_types::wrappers::Model;
+use crb_types::wrappers::{Model, WrappedData};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -262,7 +262,7 @@ pub fn get_reasoning_config(model: &Model, effort: ReasoningEffort) -> Option<Re
         return None;
     }
 
-    let model_lower = model.to_lowercase();
+    let model_lower = model.get().to_lowercase();
     if model_lower.contains("claude") {
         return Some(ReasoningConfig::Thinking {
             budget_tokens: 2048,
@@ -270,6 +270,92 @@ pub fn get_reasoning_config(model: &Model, effort: ReasoningEffort) -> Option<Re
     }
 
     Some(ReasoningConfig::ReasoningEffort { effort })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Compile-time check: verify reasoning_effort accepts Option<ReasoningEffort>, not String.
+    /// If the field type regresses back to Option<String>, this won't compile.
+    fn assert_reasoning_effort_type(val: Option<ReasoningEffort>) -> Option<ReasoningEffort> {
+        val
+    }
+
+    #[test]
+    fn test_reasoning_effort_enum_values() {
+        // All variants
+        assert_reasoning_effort_type(Some(ReasoningEffort::Low));
+        assert_reasoning_effort_type(Some(ReasoningEffort::Medium));
+        assert_reasoning_effort_type(Some(ReasoningEffort::High));
+        assert_reasoning_effort_type(Some(ReasoningEffort::Max));
+        assert_reasoning_effort_type(None);
+    }
+
+    #[test]
+    fn test_reasoning_effort_display() {
+        assert_eq!(format!("{}", ReasoningEffort::Low), "low");
+        assert_eq!(format!("{}", ReasoningEffort::Medium), "medium");
+        assert_eq!(format!("{}", ReasoningEffort::High), "high");
+        assert_eq!(format!("{}", ReasoningEffort::Max), "max");
+    }
+
+    #[test]
+    fn test_reasoning_effort_from_str() {
+        assert_eq!(ReasoningEffort::from_str("low"), Some(ReasoningEffort::Low));
+        assert_eq!(ReasoningEffort::from_str("medium"), Some(ReasoningEffort::Medium));
+        assert_eq!(ReasoningEffort::from_str("med"), Some(ReasoningEffort::Medium));
+        assert_eq!(ReasoningEffort::from_str("high"), Some(ReasoningEffort::High));
+        assert_eq!(ReasoningEffort::from_str("max"), Some(ReasoningEffort::Max));
+        assert_eq!(ReasoningEffort::from_str(""), None);
+        assert_eq!(ReasoningEffort::from_str("none"), None);
+        assert_eq!(ReasoningEffort::from_str("NONE"), None);
+    }
+
+    #[test]
+    fn test_make_additional_params_with_enum() {
+        let model = Model("deepseek/deepseek-v4-flash".to_string());
+        let params = make_additional_params(&model, Some(ReasoningEffort::Medium));
+        assert!(params.is_some(), "DeepSeek should support reasoning");
+        assert_eq!(
+            params.unwrap(),
+            serde_json::json!({"reasoning": {"effort": "medium"}})
+        );
+    }
+
+    #[test]
+    fn test_make_additional_params_none() {
+        let model = Model("deepseek/deepseek-v4-flash".to_string());
+        let params = make_additional_params(&model, None);
+        assert!(params.is_none(), "None effort should produce no params");
+    }
+
+    #[test]
+    fn test_benchmark_cli_parsing_flow() {
+        // Simulates the benchmark CLI parsing pattern used in main.rs
+        let cli_input = "high".to_string();
+        let parsed = if cli_input.is_empty() || cli_input == "none" {
+            None
+        } else {
+            ReasoningEffort::from_str(&cli_input)
+        };
+        assert_eq!(parsed, Some(ReasoningEffort::High));
+
+        let empty = String::new();
+        let parsed_empty = if empty.is_empty() || empty == "none" {
+            None
+        } else {
+            ReasoningEffort::from_str(&empty)
+        };
+        assert_eq!(parsed_empty, None);
+    }
+
+    #[test]
+    fn test_reasoning_to_additional_params() {
+        let model = Model("deepseek/deepseek-v4-flash".to_string());
+        let result = reasoning_to_additional_params(&model, Some(ReasoningEffort::Low));
+        assert!(result.is_some());
+    }
 }
 
 /// Build the `additional_params` JSON value for a reasoning model.
@@ -281,25 +367,19 @@ pub fn get_reasoning_config(model: &Model, effort: ReasoningEffort) -> Option<Re
 /// returns `None`.
 pub fn make_additional_params(
     model: &Model,
-    reasoning_effort: Option<&str>,
+    reasoning_effort: Option<ReasoningEffort>,
 ) -> Option<serde_json::Value> {
     let effort = reasoning_effort?;
-    let config = get_reasoning_config(model, Some(effort))?;
+    let config = get_reasoning_config(model, effort)?;
     Some(config.to_additional_params_json())
 }
 
-/// Convert a `reasoning_effort: Option<String>` plus a `model: &str` into
+/// Convert a `reasoning_effort: Option<ReasoningEffort>` plus a `model: &Model` into
 /// the `additional_params: Option<serde_json::Value>` that should be passed
 /// down the agent call chain.
-///
-/// This is the function used by [`crate::evaluate_pr_consensus`] and friends.
 pub fn reasoning_to_additional_params(
     model: &Model,
-    reasoning_effort: ReasoningEffort,
+    reasoning_effort: Option<ReasoningEffort>,
 ) -> Option<serde_json::Value> {
-    match reasoning_effort {
-        None => None,
-        Some(effort) if effort.is_empty() => None,
-        Some(effort) => make_additional_params(model, Some(effort)),
-    }
+    make_additional_params(model, reasoning_effort)
 }

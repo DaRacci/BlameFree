@@ -129,12 +129,15 @@ pub struct ConsensusReport {
     pub false_negatives: Vec<GoldenComment>,
 
     /// TP / (TP + FP)
+    #[deprecated(note = "Use the `precision()` method instead.")]
     pub precision: f64,
 
     /// TP / (TP + FN)
+    #[deprecated(note = "Use the `recall()` method instead.")]
     pub recall: f64,
 
     /// F1 = harmonic mean of precision and recall
+    #[deprecated(note = "Use the `f1()` method instead.")]
     pub f1: f64,
 
     /// Number of agent LLM calls that were cache misses (actual API calls made).

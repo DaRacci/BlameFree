@@ -6,10 +6,13 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+crb-agents = { path = "../crb-agents" }
 crb-shared = { path = "../crb-shared" }
 crb-types = { path = "../crb-types" }
+rig-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 
 [lints]

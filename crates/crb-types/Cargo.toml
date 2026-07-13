@@ -8,8 +8,6 @@ license.workspace = true
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-crb-cache = { path = "../crb-cache" }
-sha2 = { workspace = true }
 
 [lints]
 workspace = true

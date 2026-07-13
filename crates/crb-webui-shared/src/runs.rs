@@ -1,3 +1,4 @@
+use crb_types::benchmark::Metrics;
 use serde::{Deserialize, Serialize};
 
 use crate::config::RoleInfo;
@@ -68,7 +69,7 @@ pub struct RunDetail {
     pub results: Vec<PrResult>,
     /// Aggregate metrics across all PRs.
     #[serde(default)]
-    pub aggregate: Option<AggregateMetrics>,
+    pub aggregate: Option<Metrics>,
     /// Total cost in USD.
     #[serde(default)]
     pub total_cost: Option<f64>,
@@ -114,35 +115,6 @@ pub struct PrResult {
     /// Whether this PR has agent data available.
     #[serde(default)]
     pub has_agents: bool,
-}
-
-/// Aggregate metrics across all PRs.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct AggregateMetrics {
-    /// Average F1 score across all evaluated PRs.
-    pub avg_f1: f64,
-    /// Average precision across all evaluated PRs.
-    pub avg_precision: f64,
-    /// Average recall across all evaluated PRs.
-    pub avg_recall: f64,
-    /// Total true positives.
-    #[serde(default)]
-    pub total_tp: usize,
-    /// Total false positives.
-    #[serde(default)]
-    pub total_fp: usize,
-    /// Total false negatives.
-    #[serde(default)]
-    pub total_fn: usize,
-    /// Total cost in USD.
-    #[serde(default)]
-    pub total_cost: f64,
-    /// Total number of PRs evaluated.
-    #[serde(default)]
-    pub total_prs: u32,
-    /// Duration of the run in seconds.
-    #[serde(default)]
-    pub duration_secs: f64,
 }
 
 /// Run config returned in the run detail response.

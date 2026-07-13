@@ -339,6 +339,7 @@ pub fn LivePage() -> impl IntoView {
 
 /// Look up the PR key for a given role and update agent state within that PR.
 /// Helper that avoids duplicating the `role_current_pr` → `set_states` lookup chain.
+#[deprecated = "This is fucking stupid and should be refactored to avoid this kind of nested state mutation. Use a more functional approach."]
 fn with_role_pr(
     role_current_pr: &ReadSignal<HashMap<String, String>>,
     set_states: &WriteSignal<HashMap<String, PrState>>,
@@ -372,39 +373,39 @@ fn handle_event(
     roles: &[RoleInfo],
 ) {
     match ev {
-        RunEvent::AgentStarted { pr_key, role } => {
+        RunEvent::AgentStarted { identifier, agent } => {
             // Ensure PR state exists
             set_states.update(|states| {
-                if !states.contains_key(&pr_key) {
+                if !states.contains_key(&identifier) {
                     let role_abbrs: Vec<String> =
                         roles.iter().map(|r| r.abbreviation.clone()).collect();
-                    states.insert(pr_key.clone(), PrState::new(&role_abbrs));
+                    states.insert(identifier.clone(), PrState::new(&role_abbrs));
                 }
-                if let Some(pr) = states.get_mut(&pr_key) {
+                if let Some(pr) = states.get_mut(&identifier) {
                     // Dynamically add agent if it doesn't exist yet (roles may have been
                     // empty when the PrState was created, e.g. during the async roles fetch)
-                    if !pr.agents.contains_key(&role) {
-                        pr.agents.insert(role.clone(), PerAgentState::new());
+                    if !pr.agents.contains_key(&agent) {
+                        pr.agents.insert(agent.clone(), PerAgentState::new());
                     }
-                    if let Some(agent) = pr.agents.get_mut(&role) {
+                    if let Some(agent) = pr.agents.get_mut(&agent) {
                         agent.status = "reviewing".into();
                     }
                 }
             });
             // Track which PR this role is working on
             set_role_pr.update(|rp| {
-                rp.insert(role, pr_key.clone());
+                rp.insert(agent, identifier.clone());
             });
             // Add to order list if new
             set_order.update(|order| {
-                if !order.contains(&pr_key) {
-                    order.push(pr_key.clone());
+                if !order.contains(&identifier) {
+                    order.push(identifier.clone());
                 }
             });
             // Auto-select: pick the first PR, or switch to this PR if the
             // currently selected PR is already completed.
             set_selected.update(|sel| match sel {
-                None => *sel = Some(pr_key.clone()),
+                None => *sel = Some(identifier.clone()),
                 Some(current) => {
                     let should_switch = pr_states
                         .get()
@@ -412,20 +413,23 @@ fn handle_event(
                         .map(|s| s.completed)
                         .unwrap_or(true);
                     if should_switch {
-                        *sel = Some(pr_key.clone());
+                        *sel = Some(identifier.clone());
                     }
                 }
             });
         }
 
-        RunEvent::AgentChunk { role, chunk } => {
+        RunEvent::AgentChunk {
+            identifier: role,
+            chunk,
+        } => {
             with_role_pr(role_current_pr, set_states, &role, |agent| {
                 agent.response.push_str(&chunk);
             });
         }
 
         RunEvent::AgentFinished {
-            role,
+            identifier: role,
             findings,
             success,
         } => {
@@ -480,7 +484,9 @@ fn handle_event(
             }
         }
 
-        RunEvent::PrCompleted { pr_key, .. } => {
+        RunEvent::ReviewCompleted {
+            identifier: pr_key, ..
+        } => {
             set_states.update(|states| {
                 if let Some(pr) = states.get_mut(&pr_key) {
                     pr.completed = true;

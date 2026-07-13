@@ -16,6 +16,7 @@ use crb_agents::prompts;
 use crb_shared::sanitize_filename;
 use crb_shared::url::parse_github_url;
 use crb_shared::{DEFAULT_MODEL, cache};
+use crb_types::Metrics;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{info, warn};
@@ -447,14 +448,13 @@ async fn run_adhoc_review_inner(
 
     let cost_tracker_arc = cost_tracker.clone();
     let cfg = crb_harness::EvalConfig {
-        strategy: crb_harness::EvalStrategy::Consensus,
+        strategy: crb_harness::EvalStrategy::Panel,
         model: model.to_string(),
         judge_model: model.to_string(),
         reasoning_effort: None,
         client: Arc::new(client),
         judge,
         cache: None,
-        prompt_lib,
         cost_tracker: cost_tracker_arc,
         dashboard_tx: None,
         roles: roles.to_string(),
@@ -462,9 +462,6 @@ async fn run_adhoc_review_inner(
         linters_only: false,
         linter_configs: None,
         ruleset: None,
-        cache_dir: Some(cache_dir),
-        benchmark_dir: None,
-        workdir: None,
         template_vars: None,
     };
 

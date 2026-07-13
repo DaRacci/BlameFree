@@ -1,8 +1,6 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use tracing::{debug, warn};
-
-use crate::{parse_diff_git_path, split_diff_sections};
+use tracing::warn;
 
 /// Groups of file path patterns whose entire diff sections are always stripped.
 static FILTERED_FILE_PATTERNS: LazyLock<Vec<FilteredPath>> = LazyLock::new(|| {
@@ -94,12 +92,6 @@ impl FilteredPath {
     }
 }
 
-/// Check whether `path` (from a `diff --git a/path b/path` header) matches any of the filtered patterns.
-#[deprecated = "Use FilteredPath::is_filtered instead"]
-pub fn is_filtered_path(path: &str) -> bool {
-    FilteredPath::is_filtered(path)
-}
-
 /// Count the categories of filtered files.
 #[derive(Default)]
 pub struct FilterCounts {
@@ -162,44 +154,4 @@ impl FilterCounts {
             detail
         )
     }
-}
-
-/// Filter out files matching `FILTERED_FILE_PATTERNS` from a raw diff.
-///
-/// Returns the filtered diff with a summary note at the top.
-pub fn filter_files(diff: &str) -> String {
-    let sections = split_diff_sections(diff);
-    let mut counts = FilterCounts::default();
-    let mut kept_sections: Vec<String> = Vec::new();
-
-    for (header, body) in &sections {
-        let path = parse_diff_git_path(header).unwrap_or_default();
-        if counts.check_and_add(path) {
-            debug!("Filtering out path: {}", path);
-        }
-
-        let mut section = header.clone();
-        if !body.is_empty() {
-            section.push('\n');
-            section.push_str(body);
-        }
-        kept_sections.push(section);
-    }
-
-    let note = counts.fmt_note();
-    let mut result = String::new();
-    if !note.is_empty() {
-        result.push_str(&note);
-        result.push('\n');
-    }
-    // Add a blank line after the note if we have content
-    if !note.is_empty() && !kept_sections.is_empty() {
-        result.push('\n');
-    }
-    for section in &kept_sections {
-        result.push_str(section);
-        result.push('\n');
-    }
-
-    result
 }

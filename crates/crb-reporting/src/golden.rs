@@ -104,7 +104,7 @@ pub fn load_golden_datasets(dataset_dir: &Path) -> Result<Vec<GoldenCommentEntry
     Ok(entries)
 }
 
-impl crb_shared::benchmark_pipeline::HasUrl for GoldenCommentEntry {
+impl crb_shared::url::HasUrl for GoldenCommentEntry {
     fn url(&self) -> &str {
         &self.url
     }

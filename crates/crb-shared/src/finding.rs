@@ -1,22 +1,63 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
+use crate::severity::Severity;
+
+/// A finding that has been reported by an agent.
+///
+/// A finding is not a definitive report but an observation an LLM has produced.
+///
+/// We support an array of aliases for each field so to give the LLM output
+/// a better chance of matching the expected severity level.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
 pub struct Finding {
     /// Source file path where the issue was found, if available.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "component",
+        alias = "source_file",
+        alias = "source_path",
+        alias = "source_name",
+        alias = "source",
+        alias = "file_source",
+        alias = "file_path",
+        alias = "file_name",
+        alias = "path"
+    )]
     pub file: Option<String>,
 
     /// Line number in the source file, if available.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "line_number"
+    )]
     pub line: Option<u32>,
 
     /// Human-readable description of the finding.
+    #[serde(
+        default,
+        alias = "description",
+        alias = "details",
+        alias = "text",
+        alias = "body"
+    )]
     pub message: String,
 
-    /// Severity label (e.g. "critical", "high", "medium", "low", "info").
-    pub severity: String,
+    /// The agents claimed severity level of the finding.
+    #[serde(default, alias = "severity_level", alias = "level", alias = "priority")]
+    pub severity: Severity,
 
+    // TODO: Well typed enum or struct
     /// Optional rule or check identifier (e.g. "S001", "R101").
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "rule_id",
+        alias = "check_id",
+        alias = "category"
+    )]
     pub rule_code: Option<String>,
 
     /// Whether the severity has been audited/downgraded by the severity auditor.
@@ -65,32 +106,10 @@ pub struct Finding {
 pub enum ConfidenceLevel {
     /// The finding is confirmed with high certainty.
     Confirmed,
+
     /// The finding is likely but not certain.
     Likely,
+
     /// The finding is uncertain or speculative.
     Uncertain,
-}
-
-/// Deduplicate a list of findings by (file, line) pairs.
-///
-/// When two findings share the same file path and line number, only the first
-/// occurrence is kept. This avoids double-counting findings that multiple
-/// agents or chunks produced for the same location.
-///
-/// # Ordering
-///
-/// The deduplication is stable: the first occurrence of each (file, line) pair
-/// is retained, and subsequent duplicates are dropped.
-pub fn deduplicate_findings(findings: Vec<Finding>) -> Vec<Finding> {
-    let mut seen: HashSet<(String, u32)> = HashSet::new();
-    let mut result = Vec::with_capacity(findings.len());
-
-    for f in findings {
-        let key = (f.file.clone().unwrap_or_default(), f.line.unwrap_or(0));
-        if seen.insert(key) {
-            result.push(f);
-        }
-    }
-
-    result
 }

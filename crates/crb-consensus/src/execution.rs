@@ -19,6 +19,7 @@ use crate::{
 };
 
 /// Compute a content-addressed cache key for an agent review call.
+#[deprecated]
 fn compute_agent_cache_key(
     prompt_hash: &str,
     diff_hash: &str,
@@ -26,11 +27,14 @@ fn compute_agent_cache_key(
     role: &str,
     rules_hash: &str,
 ) -> String {
-    sha256_hex(&format!("{prompt_hash}{diff_hash}{model}{role}{rules_hash}"))
+    sha256_hex(&format!(
+        "{prompt_hash}{diff_hash}{model}{role}{rules_hash}"
+    ))
 }
 
 /// Serializable snapshot of agent cache data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated]
 struct CachedAgentData {
     response: String,
     #[serde(default)]
@@ -182,7 +186,7 @@ pub async fn run_reviewers(
                             if let Some(ref tx) = dashboard_tx {
                                 // Ignore; receiver may have disconnected
                                 let _ = tx.send(crb_types::RunEvent::AgentChunk {
-                                    role: role.to_string(),
+                                    identifier: role.to_string(),
                                     chunk: chunk.clone(),
                                 });
                             }

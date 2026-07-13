@@ -1,14 +1,14 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::Result;
 use handlebars::Handlebars;
 use include_dir::{Dir, include_dir};
-use serde::Deserialize;
-use serde_fields::SerdeField;
 use std::collections::HashMap;
+use tracing::warn;
 
-use crate::templates;
+use crate::{agent::AgentEntry, templates};
 
 static PROMPT_LIBRARY: Option<PromptLibrary> = None;
 static PROMPTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../prompts");
+
 const AGENT_TEMPLATE_PATH: &str = "agent.hbs";
 const AGENTS_DIR: &str = "agents";
 const SECTIONS_DIR: &str = "sections";
@@ -114,7 +114,7 @@ impl PromptLibrary {
         self.agents.get(&role.to_uppercase())
     }
 
-    /// Render a role's prompt through the agent template.
+    /// Render an agents prompt through the agent template.
     ///
     /// `vars` provides runtime variables like `diff`, `file_list`, `language`
     ///
@@ -123,12 +123,7 @@ impl PromptLibrary {
     /// Section content (output_format, max_findings, submit_finding) is
     /// rendered with the current context and injected as variables so that
     /// `agent.hbs` can reference them with `{{output_format}}` etc.
-    pub fn render(&self, role: &str, vars: HashMap<String, serde_json::Value>) -> String {
-        let entry = match self.agents.get(&role.to_uppercase()) {
-            Some(e) => e,
-            None => return format!("Unknown role: {}", role),
-        };
-
+    pub fn render(&self, agent: &AgentEntry, vars: HashMap<String, serde_json::Value>) -> String {
         let mut ctx = serde_json::Map::new();
         vars.into_iter().for_each(|(k, v)| {
             ctx.insert(k, v);
@@ -139,17 +134,17 @@ impl PromptLibrary {
             ctx.insert(
                 field.to_string(),
                 match *field {
-                    "role_name" => entry.role_name.clone(),
-                    "role_abbreviation" => entry.role_abbreviation.clone(),
-                    "role_domain" => entry.role_domain.clone(),
-                    "role_anti_hallucination_rules" => entry
+                    "role_name" => agent.role_name.clone(),
+                    "role_abbreviation" => agent.role_abbreviation.clone(),
+                    "role_domain" => agent.role_domain.clone(),
+                    "role_anti_hallucination_rules" => agent
                         .role_anti_hallucination_rules
                         .clone()
                         .unwrap_or_default(),
                     "role_review_methodology" => {
-                        entry.role_review_methodology.clone().unwrap_or_default()
+                        agent.role_review_methodology.clone().unwrap_or_default()
                     }
-                    "role_prompt" => entry.role_prompt.clone(),
+                    "role_prompt" => agent.role_prompt.clone(),
                     _ => continue,
                 }
                 .into(),
@@ -173,13 +168,16 @@ impl PromptLibrary {
         self.handlebars
             .render("agent", &ctx_value)
             .unwrap_or_else(|e| {
-                tracing::warn!("Failed to render agent template for '{}': {e}", role);
-                format!("Error rendering prompt for {role}: {e}")
+                warn!(
+                    "Failed to render agent template for '{}': {e}",
+                    agent.role_name
+                );
+                format!("Error rendering prompt for {}: {e}", agent.role_name)
             })
     }
 
     /// List all known agent entries.
-    pub fn roles(&self) -> Vec<&AgentEntry> {
+    pub fn agents(&self) -> Vec<&AgentEntry> {
         self.agents.values().collect()
     }
 
@@ -194,77 +192,6 @@ impl PromptLibrary {
     }
 }
 
-/// A single agent entry parsed from a markdown manifest file.
-#[derive(Debug, Clone, Deserialize, SerdeField, Default)]
-pub struct AgentEntry {
-    /// Human-readable role name.
-    pub role_name: String,
-
-    /// Short abbreviation.
-    pub role_abbreviation: String,
-
-    /// Description of the role's domain.
-    pub role_domain: String,
-
-    /// Additional rules to append to the Anti-hallucination rules section.
-    #[serde(default)]
-    pub role_anti_hallucination_rules: Option<String>,
-
-    /// Review methodology text.
-    #[serde(default)]
-    pub role_review_methodology: Option<String>,
-
-    /// Whether this agent is the generalist.
-    #[serde(default)]
-    pub generalist_agent: bool,
-
-    /// Roles this agent is incompatible with.
-    #[serde(default)]
-    pub incompatible_with_roles: Vec<String>,
-
-    /// The markdown body after YAML frontmatter.
-    ///
-    /// This section is only filled after parsing the markdown file and is not part of the YAML frontmatter.
-    #[serde(skip)]
-    pub role_prompt: String,
-}
-
-impl AgentEntry {
-    /// Parse YAML frontmatter and markdown body from a `.md` file.
-    pub(crate) fn new(content: &str) -> Result<AgentEntry> {
-        let (yaml_str, body) = split_frontmatter(content)
-            .ok_or_else(|| anyhow!("Agent does not start with YAML frontmatter (`---`)",))?;
-
-        let mut entry: AgentEntry = serde_yaml::from_str(yaml_str)
-            .map_err(|e| anyhow!("Failed to parse YAML frontmatter: {e}"))?;
-
-        let role_prompt = body.trim().to_string();
-        entry.role_prompt = role_prompt.clone();
-
-        if entry.role_abbreviation.is_empty() {
-            bail!("Agent has empty `role_abbreviation`",);
-        }
-
-        Ok(entry)
-    }
-}
-
-/// Split YAML frontmatter from a `.md` file.
-///
-/// Returns `Some((yaml_str, body))` if the file starts with `---`,
-/// or `None` if no frontmatter is found.
-fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
-    let content = content.trim();
-    if !content.starts_with("---") {
-        return None;
-    }
-    let rest = &content[3..];
-    let end = rest.find("\n---")?;
-    let yaml = rest[..end].trim();
-    let body = rest[end + 4..].trim();
-    Some((yaml, body))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,58 +199,7 @@ mod tests {
     #[test]
     fn test_prompt_library_loads() {
         let lib = PromptLibrary::get_instance();
-        assert!(!lib.roles().is_empty());
+        assert!(!lib.agents().is_empty());
         assert!(lib.get("SA").is_some() || lib.get("GEN").is_some());
-    }
-
-    #[test]
-    fn test_frontmatter_parsing() {
-        let content = r#"---
-role_name: Test
-role_abbreviation: TEST
-role_domain: testing
----
-Body content here
-"#;
-        let entry = AgentEntry::new(content).unwrap();
-        assert_eq!(entry.role_name, "Test");
-        assert_eq!(entry.role_abbreviation, "TEST");
-        assert_eq!(entry.role_prompt, "Body content here");
-        assert!(!entry.generalist_agent);
-    }
-
-    #[test]
-    fn test_invalid_file_no_frontmatter() {
-        let content = "Just a plain file without frontmatter";
-        let result = AgentEntry::new(content);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("does not start with YAML frontmatter"));
-    }
-
-    #[test]
-    fn test_invalid_yaml() {
-        let content = r#"---
-role_name: Test
-role_abbreviation:
-  - invalid: yaml
----
-body
-"#;
-        let result = AgentEntry::new(content);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_split_frontmatter_valid() {
-        let content = "---\nkey: value\n---\n\nbody text";
-        let (yaml, body) = split_frontmatter(content).unwrap();
-        assert_eq!(yaml, "key: value");
-        assert_eq!(body, "body text");
-    }
-
-    #[test]
-    fn test_split_frontmatter_no_frontmatter() {
-        assert!(split_frontmatter("plain text").is_none());
     }
 }

@@ -9,6 +9,7 @@ exp14_submit_finding = []
 
 [dependencies]
 anyhow = { workspace = true }
+crb-types = { path = "../crb-types" }
 handlebars = { workspace = true }
 include_dir = { workspace = true }
 rig-core = { workspace = true }

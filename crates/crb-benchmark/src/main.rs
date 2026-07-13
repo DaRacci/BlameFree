@@ -8,14 +8,19 @@ use std::{process, time};
 use anyhow::{Context, Result, anyhow};
 use clap::{Parser, Subcommand};
 use crb_agents::prompts::PromptLibrary;
-use crb_harness::{model_capabilities, validation};
 use crb_benchmark::judge::build_judge;
-use crb_reporting::{GoldenCommentEntry, load_golden_datasets, write_report};
+use crb_benchmark::pr;
+use crb_harness::eval::EvalConfig;
+use crb_harness::{EvalStrategy, model_capabilities, validation};
+use crb_reporting::cost::CostTracker;
+use crb_reporting::{
+    GoldenCommentEntry, load_golden_datasets, print_terminal_summary, write_report,
+};
 use crb_rules::RuleSet;
-use crb_shared::cache::LlmCache;
 use crb_shared::metrics::MetricsOutput;
-use crb_shared::{benchmark_pipeline, sanitize_filename};
-use crb_types::{AggregateMetrics, RunEvent};
+use crb_shared::{benchmark, sanitize_filename};
+use crb_types::benchmark::Metrics;
+use crb_types::{Metrics, RunEvent};
 use rig_core::client::ProviderClient;
 use tokio::sync::broadcast;
 use tracing::{error, info, info_span, warn};
@@ -698,7 +703,7 @@ async fn run_benchmark(
     info!("Loaded {} PR entries total", all_prs.len());
 
     let all_prs = if let Some(ref filter) = pr_filter {
-        benchmark_pipeline::filter_prs_by_pattern(all_prs, filter)
+        pr::filter_prs_by_pattern(all_prs, filter)
     } else {
         all_prs
     };
@@ -824,7 +829,7 @@ async fn run_benchmark(
         });
     }
 
-    let pipeline_cfg = benchmark_pipeline::PipelineConfig::new(concurrency);
+    let pipeline_cfg = benchmark::PipelineConfig::new(concurrency);
     let eval_cache_dir = cache_dir.clone();
     let eval_model = model.clone();
     let eval_judge_model = judge_model.clone();
@@ -843,64 +848,50 @@ async fn run_benchmark(
         let dashboard_tx = eval_dashboard_tx.clone();
         let reasoning_effort = reasoning_effort.clone();
         async move {
-            let cost_tracker = Arc::new(crb_harness::CostTracker::new());
-            let cfg = crb_harness::EvalConfig {
+            let cost_tracker = Arc::new(CostTracker::new());
+            let cfg = EvalConfig {
                 strategy: if skip_consensus {
-                    crb_harness::EvalStrategy::SingleAgent
+                    EvalStrategy::Single
                 } else {
-                    crb_harness::EvalStrategy::Consensus
+                    EvalStrategy::Panel
                 },
                 model: model.clone(),
-                judge_model: judge_model.clone(),
                 reasoning_effort: if reasoning_effort.is_empty() || reasoning_effort == "none" {
                     None
                 } else {
-                    Some(reasoning_effort.clone())
+                    model_capabilities::ReasoningEffort::from_str(&reasoning_effort)
                 },
                 client: Arc::new(client.clone()),
-                judge: judge.clone(),
                 cache: None,
-                prompt_lib: prompt_lib.clone(),
                 cost_tracker: cost_tracker.clone(),
                 dashboard_tx: dashboard_tx.clone(),
-                roles: roles.clone(),
-                max_findings,
-                linters_only,
-                linter_configs: linter_configs.as_ref().map(|a| (**a).clone()),
-                ruleset: ruleset.as_ref().map(|a| (**a).clone()),
-                cache_dir: Some(cache_dir.clone()),
-                benchmark_dir: Some(benchmark_dir.clone()),
-                workdir: None,
-                template_vars: None,
+                identifier: todo!(),
+                agents: todo!(),
+                repo_root: todo!(),
             };
             let diff = crb_harness::load_pr_diff(&pr, &benchmark_dir).await?;
             crb_harness::evaluate_pr(&pr, &diff, &cfg).await
         }
     });
 
-    let (results, eval_elapsed) =
-        benchmark_pipeline::run_concurrent_eval(prs_to_evaluate, &pipeline_cfg, eval_fn).await;
+    // TODO - Run reviewer agents and judge.
 
-    let mut agg = benchmark_pipeline::AggregateResults::new();
+    let (results, eval_elapsed) =
+        benchmark::run_concurrent_eval(prs_to_evaluate, &pipeline_cfg, eval_fn).await;
+
+    let mut aggregated = Metrics::new();
     for r in &results {
-        agg.add(r);
+        aggregated.add(r);
     }
 
     if let Some(tx) = &dashboard_tx {
         // Ignore; receiver may have disconnected
         let _ = tx.send(RunEvent::RunFinished {
             total_prs: results.len(),
-            aggregated: AggregateMetrics {
-                true_positives: agg.total_tp,
-                false_positives: agg.total_fp,
-                false_negatives: agg.total_fn,
-                precision: agg.precision(),
-                recall: agg.recall(),
-                f1: agg.f1(),
-            },
-            total_cost: agg.total_cost,
-            total_tokens: agg.total_tokens,
-            total_agent_calls: agg.total_agent_calls,
+            aggregated: aggregated.clone(),
+            total_cost: aggregated.total_cost,
+            total_tokens: aggregated.total_tokens,
+            total_agent_calls: aggregated.total_agent_calls,
         });
     }
 
@@ -911,11 +902,11 @@ async fn run_benchmark(
         output_dir.display()
     );
 
-    crb_harness::print_terminal_summary(&results);
+    print_terminal_summary(&results);
     crb_harness::write_summary(&cache_dir, &model, &judge_model, &results, eval_elapsed)?;
 
     if ci {
-        let metrics: Vec<crb_reporting::Metrics> = results.iter().map(|r| r.metrics.clone()).collect();
+        let metrics: Vec<Metrics> = results.iter().map(|r| r.metrics.clone()).collect();
         let (avg_precision, avg_recall, avg_f1) = validation::compute_average_metrics(&metrics);
         let baseline = validation::load_baseline(&workspace_root, "5.14")?;
         let val_result = validation::validate_against_baseline(

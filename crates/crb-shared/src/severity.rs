@@ -1,25 +1,48 @@
+use std::default;
+
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter};
 
 /// Severity levels for findings, ordered from most to least severe.
 ///
-/// # Ord
-///
-/// `Critical < High < Medium < Low < Info`
+/// We support an array of aliases for each level so to give the LLM output
+/// a better chance of matching the expected severity level.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, EnumIter, Display,
+    Default,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    EnumIter,
+    Display,
+    JsonSchema,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
-    /// Critical severity — security vulnerabilities or correctness bugs.
+    /// Security vulnerabilities or correctness bugs.
+    #[serde(alias = "crit")]
     Critical = 0,
-    /// High severity — significant issues that should be addressed soon.
+
+    /// Significant issues that should be addressed soon.
     High = 1,
-    /// Medium severity — moderate issues that should be reviewed.
+
+    /// Moderate issues that should be reviewed.
+    #[default]
+    #[serde(alias = "med")]
     Medium = 2,
-    /// Low severity — minor issues or style concerns.
+
+    /// Minor issues or style concerns.
+    #[serde(alias = "minor")]
     Low = 3,
-    /// Informational — observations without actionable impact.
+
+    /// Observations without actionable impact.
+    #[serde(alias = "information", alias = "informational", alias = "trivial")]
     Info = 4,
 }
 

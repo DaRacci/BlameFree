@@ -18,6 +18,11 @@ pub fn parse_github_url(url: &str) -> Result<(String, String, u32)> {
     Ok((owner, repo, pr_number))
 }
 
+/// A type that exposes a PR/issue URL string.
+pub trait HasUrl {
+    fn url(&self) -> &str;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

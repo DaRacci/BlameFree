@@ -11,10 +11,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crb_agents::prompts::PromptLibrary;
+use crb_benchmark::pr;
 use crb_harness::{EvalConfig, EvalStrategy, evaluate_pr, load_pr_diff};
 use crb_reporting::{PrResult, load_golden_datasets, write_report};
 use crb_rules::RuleSet;
-use crb_shared::benchmark_pipeline;
+use crb_shared::benchmark;
 use crb_shared::metrics::MetricsOutput;
 use rig_core::client::ProviderClient;
 use tokio::sync::{RwLock, broadcast};
@@ -25,7 +26,7 @@ use tracing::warn;
 use crate::api::BenchmarkConfig;
 use crate::server::ActiveRun;
 use crate::server::AppState;
-use crb_types::AggregateMetrics;
+use crb_types::Metrics;
 use crb_types::RunEvent;
 
 /// Run the harness inline, calling library functions directly.
@@ -130,7 +131,7 @@ pub async fn run_harness(
     info!("Loaded {} PR entries total", all_prs.len());
 
     let filtered_prs = if let Some(ref filter) = config.pr_filter {
-        benchmark_pipeline::filter_prs_by_pattern(all_prs, filter)
+        pr::filter_prs_by_pattern(all_prs, filter)
     } else {
         all_prs
     };
@@ -204,23 +205,23 @@ pub async fn run_harness(
             let cost_tracker = Arc::new(crb_harness::CostTracker::new());
             let cfg = crb_harness::EvalConfig {
                 strategy: if skip_consensus {
-                    crb_harness::EvalStrategy::SingleAgent
+                    crb_harness::EvalStrategy::Single
                 } else {
-                    crb_harness::EvalStrategy::Consensus
+                    crb_harness::EvalStrategy::Panel
                 },
                 model: model.to_string(),
                 judge_model: String::new(), // not tracked in this path
-                reasoning_effort: if reasoning_effort.as_str().is_empty()
-                    || reasoning_effort.as_str() == "none"
-                {
-                    None
-                } else {
-                    Some(reasoning_effort.to_string())
+                reasoning_effort: {
+                    let s = reasoning_effort.as_str();
+                    if s.is_empty() || s == "none" {
+                        None
+                    } else {
+                        crb_harness::model_capabilities::ReasoningEffort::from_str(s)
+                    }
                 },
                 client: client.clone(),
                 judge: judge.clone(),
                 cache: None,
-                prompt_lib: prompt_lib.clone(),
                 cost_tracker: cost_tracker.clone(),
                 dashboard_tx: dashboard_tx.clone(),
                 roles: roles.clone(),
@@ -228,9 +229,6 @@ pub async fn run_harness(
                 linters_only: false,
                 linter_configs: linter_configs.as_ref().map(|a| (*a).clone()),
                 ruleset: ruleset.as_ref().map(|a| (*a).clone()),
-                cache_dir: cache_dir_opt.clone(),
-                benchmark_dir: Some(bench_dir.clone()),
-                workdir: None,
                 template_vars: None,
             };
             let diff = crb_harness::load_pr_diff(&pr, &bench_dir).await?;

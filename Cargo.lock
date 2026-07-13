@@ -575,6 +575,7 @@ name = "crb-agents"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crb-types",
  "handlebars",
  "include_dir",
  "rig-core",
@@ -624,6 +625,7 @@ name = "crb-cache"
 version = "0.1.0"
 dependencies = [
  "crb-macros",
+ "crb-types",
  "serde",
  "serde_json",
  "sha2",
@@ -691,10 +693,13 @@ name = "crb-reporting"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crb-agents",
  "crb-shared",
  "crb-types",
+ "rig-core",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
 ]
 
@@ -719,7 +724,6 @@ dependencies = [
  "crb-types",
  "crb-webui-shared",
  "regex",
- "rig-core",
  "schemars 0.8.22",
  "serde",
  "serde_json",
@@ -757,11 +761,9 @@ dependencies = [
 name = "crb-types"
 version = "0.1.0"
 dependencies = [
- "crb-cache",
  "schemars 0.8.22",
  "serde",
  "serde_json",
- "sha2",
 ]
 
 [[package]]
@@ -773,6 +775,7 @@ dependencies = [
  "chrono",
  "clap",
  "crb-agents",
+ "crb-benchmark",
  "crb-cache",
  "crb-harness",
  "crb-reporting",
@@ -832,6 +835,7 @@ dependencies = [
 name = "crb-webui-shared"
 version = "0.1.0"
 dependencies = [
+ "crb-types",
  "serde",
  "serde_json",
 ]

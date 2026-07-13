@@ -2,4 +2,5 @@
 
 pub mod diffs;
 pub mod judge;
+pub mod pr;
 pub mod scaffold;

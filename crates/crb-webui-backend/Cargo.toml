@@ -21,6 +21,7 @@ axum = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 crb-agents = { path = "../crb-agents" }
+crb-benchmark = { path = "../crb-benchmark" }
 crb-types = { path = "../crb-types" }
 crb-cache = { path = "../crb-cache" }
 crb-harness = { path = "../crb-harness" }

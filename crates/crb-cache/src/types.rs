@@ -1,11 +1,12 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fs, path::Path, time};
 
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 /// Current timestamp as a formatted string.
 pub fn now() -> String {
-    let dur = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let dur = time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)
         .unwrap_or_default();
     format!("{}.{:09}", dur.as_secs(), dur.subsec_nanos())
 }
@@ -33,10 +34,10 @@ impl CacheIndex {
     }
 
     /// Load the index from a JSON file, returning an empty index on failure.
-    pub fn load(path: &std::path::Path) -> Self {
-        match std::fs::read_to_string(path) {
+    pub fn load(path: &Path) -> Self {
+        match fs::read_to_string(path) {
             Ok(content) => serde_json::from_str(&content).unwrap_or_else(|e| {
-                tracing::warn!("Failed to parse cache index at {}: {e}", path.display());
+                warn!("Failed to parse cache index at {}: {e}", path.display());
                 Self::new()
             }),
             Err(_) => Self::new(),
@@ -44,12 +45,9 @@ impl CacheIndex {
     }
 
     /// Persist the index to a JSON file.
-    pub fn save(&self, path: &std::path::Path) {
-        if let Err(e) = std::fs::write(
-            path,
-            serde_json::to_string_pretty(self).unwrap_or_default(),
-        ) {
-            tracing::warn!("Failed to write cache index: {e}");
+    pub fn save(&self, path: &Path) {
+        if let Err(e) = fs::write(path, serde_json::to_string_pretty(self).unwrap_or_default()) {
+            warn!("Failed to write cache index: {e}");
         }
     }
 }

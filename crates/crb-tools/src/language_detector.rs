@@ -22,7 +22,7 @@
 
 use std::collections::HashMap;
 
-use crb_types::wrappers::Diff;
+use crb_types::wrappers::{Diff, WrappedData};
 
 /// Information about languages detected in a diff.
 #[derive(Debug, Clone, Default)]

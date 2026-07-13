@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -19,7 +20,7 @@ impl FilesystemBackend {
     /// Any existing index stored under [`paths::INDEX_FILE`] is loaded on construction.
     pub fn new(base_dir: &Path) -> Self {
         let dir = base_dir.to_path_buf();
-        std::fs::create_dir_all(&dir).ok();
+        fs::create_dir_all(&dir).ok();
         let index_path = dir.join(paths::INDEX_FILE);
         let index = CacheIndex::load(&index_path);
         Self {
@@ -32,7 +33,7 @@ impl FilesystemBackend {
 impl CacheBackend for FilesystemBackend {
     fn store_raw(&self, key: &str, value: &str) {
         let path = self.base_dir.join(format!("{key}.json"));
-        std::fs::write(&path, value).ok();
+        fs::write(&path, value).ok();
 
         if let Ok(mut idx) = self.index.lock() {
             idx.entries.insert(
@@ -50,6 +51,6 @@ impl CacheBackend for FilesystemBackend {
 
     fn load_raw(&self, key: &str) -> String {
         let path = self.base_dir.join(format!("{key}.json"));
-        std::fs::read_to_string(&path).unwrap_or_default()
+        fs::read_to_string(&path).unwrap_or_default()
     }
 }

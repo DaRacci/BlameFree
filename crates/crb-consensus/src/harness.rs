@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use crb_agents::prompts::AgentEntry;
+use crb_agents::agent::AgentEntry;
+use crb_types::benchmark::Metrics;
 use crb_types::wrappers::{Diff, WrappedData};
 use rig_core::agent::Agent;
 use rig_core::completion::Usage;
@@ -11,10 +12,10 @@ use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 
 use crb_reporting::PrResult;
-use crb_types::JudgeVerdict;
 use crb_reporting::golden::GoldenCommentEntry;
+use crb_types::JudgeVerdict;
 
-use crate::adaptive::get_roles_for_diff;
+use crate::adaptive::get_agents_for_diff;
 use crate::pipeline::run_consensus;
 use crate::{CacheBackend, GoldenComment, ReviewerConfig, Role};
 
@@ -51,7 +52,7 @@ pub async fn evaluate_pr_with_consensus(
     additional_params: Option<serde_json::Value>,
     dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_types::RunEvent>>,
 ) -> Result<(PrResult, Usage, Usage, usize, usize, usize)> {
-    let roles = get_roles_for_diff(diff, selected_agents);
+    let roles = get_agents_for_diff(diff, selected_agents);
 
     let reviewer_configs: Vec<ReviewerConfig> = roles
         .iter()
@@ -126,13 +127,11 @@ pub async fn evaluate_pr_with_consensus(
             url: pr.url.clone(),
             findings_count: total_findings,
             golden_count: pr.comments.len(),
-            metrics: crb_reporting::Metrics {
+            metrics: Metrics {
                 true_positives: report.true_positives.len(),
                 false_positives: report.false_positives.len(),
                 false_negatives: report.false_negatives.len(),
-                precision: report.precision,
-                recall: report.recall,
-                f1: report.f1,
+                duration_secs: 0.0, // TODO: Add timing metrics to the consensus report
             },
             verdicts,
             cost: None,

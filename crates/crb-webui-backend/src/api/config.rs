@@ -53,7 +53,7 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
 
     let lib = crb_agents::prompts::PromptLibrary::get_instance();
     let mut roles = lib
-        .roles()
+        .agents()
         .iter()
         .map(|agent| RoleInfo {
             abbreviation: agent.role_abbreviation,

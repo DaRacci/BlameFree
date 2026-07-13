@@ -1,5 +1,5 @@
 use crb_agents::prompts::{AgentEntry, PromptLibrary};
-use crb_types::wrappers::Diff;
+use crb_types::wrappers::{Diff, WrappedData};
 use tracing::{debug, warn};
 
 #[cfg(feature = "exp16_adaptive_agents")]
@@ -60,7 +60,7 @@ pub fn count_diff_lines(diff: &str) -> usize {
 ///
 /// If the diff is small enough, and a GEN agent is available, it will return only the GEN agent.
 /// Otherwise, it will return all available roles that are not generalist agents.
-pub fn get_roles_for_diff(
+pub fn get_agents_for_diff(
     #[allow(unused_variables)] diff: &Diff, // This is only used when the `exp16_adaptive_agents` feature is enabled
     selected_agents: &[&'static AgentEntry],
 ) -> Vec<&'static AgentEntry> {
@@ -72,7 +72,7 @@ pub fn get_roles_for_diff(
             "Adaptive dispatch: no selected agents provided; using all available roles from `PromptLibrary`."
         );
 
-        selected_agents = library.roles();
+        selected_agents = library.agents();
     }
 
     #[cfg(feature = "exp16_adaptive_agents")]
