@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use crb_agents::prompts::AgentEntry;
-use crb_types::wrappers::Diff;
+use crb_types::wrappers::{Diff, WrappedData};
 use rig_core::agent::Agent;
 use rig_core::completion::Usage;
 use rig_core::model::Model;
@@ -78,7 +78,7 @@ pub async fn evaluate_pr_with_consensus(
         .collect();
 
     let report = run_consensus(
-        diff,
+        diff.get(),
         consensus_goldens,
         reviewer_configs,
         client,

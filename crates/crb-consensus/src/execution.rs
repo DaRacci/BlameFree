@@ -3,12 +3,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crb_agents::build_agent;
-use crb_shared::cache::compute_agent_cache_key;
+use crb_cache::sha256::sha256_hex;
 use crb_shared::finding::Finding;
 use rig_core::completion::{AssistantContent, Message, PromptError, Usage};
 use rig_core::providers::openai;
 use rig_core::streaming::StreamingPrompt;
 use rig_core::tool::server::ToolServerHandle;
+use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 use tracing::{info, warn};
 
@@ -16,6 +17,37 @@ use crate::agent::TurnBudgetHook;
 use crate::{
     CacheBackend, ReviewerConfig, Role, extract_last_assistant_text, parse_findings_from_response,
 };
+
+/// Compute a content-addressed cache key for an agent review call.
+fn compute_agent_cache_key(
+    prompt_hash: &str,
+    diff_hash: &str,
+    model: &str,
+    role: &str,
+    rules_hash: &str,
+) -> String {
+    sha256_hex(&format!("{prompt_hash}{diff_hash}{model}{role}{rules_hash}"))
+}
+
+/// Serializable snapshot of agent cache data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedAgentData {
+    response: String,
+    #[serde(default)]
+    input_tokens: u64,
+    #[serde(default)]
+    output_tokens: u64,
+    #[serde(default)]
+    total_tokens: u64,
+    #[serde(default)]
+    cached_input_tokens: u64,
+    #[serde(default)]
+    cache_creation_input_tokens: u64,
+    #[serde(default)]
+    reasoning_tokens: u64,
+    #[serde(default)]
+    tool_use_prompt_tokens: u64,
+}
 
 /// Spawn all reviewer agents concurrently and collect their findings.
 ///
@@ -84,42 +116,43 @@ pub async fn run_reviewers(
             );
 
             if let Some(ref cache) = cache {
-                if let Some((cached_response, cached_usage_opt)) =
-                    cache.lookup_agent_by_key_with_usage(&cache_key)
-                {
-                    info!("CACHE HIT for role {:?} (key={})", role, &cache_key[..12]);
-                    if let Some(cached_usage) = cached_usage_opt {
-                        if let Ok(mut agg) = aggregate_usage.lock() {
-                            agg.input_tokens += cached_usage.input_tokens;
-                            agg.output_tokens += cached_usage.output_tokens;
-                            agg.total_tokens += cached_usage.total_tokens;
-                            agg.cached_input_tokens += cached_usage.cached_input_tokens;
-                            agg.cache_creation_input_tokens +=
-                                cached_usage.cache_creation_input_tokens;
-                            agg.reasoning_tokens += cached_usage.reasoning_tokens;
-                            agg.tool_use_prompt_tokens += cached_usage.tool_use_prompt_tokens;
+                let raw = cache.load_raw(&cache_key);
+                if !raw.is_empty() {
+                    if let Ok(cached) = serde_json::from_str::<CachedAgentData>(&raw) {
+                        info!("CACHE HIT for role {:?} (key={})", role, &cache_key[..12]);
+                        if cached.input_tokens > 0 || cached.output_tokens > 0 {
+                            if let Ok(mut agg) = aggregate_usage.lock() {
+                                agg.input_tokens += cached.input_tokens;
+                                agg.output_tokens += cached.output_tokens;
+                                agg.total_tokens += cached.total_tokens;
+                                agg.cached_input_tokens += cached.cached_input_tokens;
+                                agg.cache_creation_input_tokens +=
+                                    cached.cache_creation_input_tokens;
+                                agg.reasoning_tokens += cached.reasoning_tokens;
+                                agg.tool_use_prompt_tokens += cached.tool_use_prompt_tokens;
+                            }
                         }
-                    }
 
-                    let response = cached_response;
-                    let preview_len = std::cmp::min(500, response.len());
-                    info!(
-                        "Agent cached response (first 500 chars): {}",
-                        &response[..preview_len]
-                    );
-
-                    let mut findings: Vec<Finding> =
-                        parse_findings_from_response(&response, &role, "CACHED");
-                    if findings.len() > max_findings {
-                        warn!(
-                            "Role {:?} produced {} findings (cached), capping at {}",
-                            role,
-                            findings.len(),
-                            max_findings,
+                        let response = &cached.response;
+                        let preview_len = std::cmp::min(500, response.len());
+                        info!(
+                            "Agent cached response (first 500 chars): {}",
+                            &response[..preview_len]
                         );
-                        findings.truncate(max_findings);
+
+                        let mut findings: Vec<Finding> =
+                            parse_findings_from_response(response, &role, "CACHED");
+                        if findings.len() > max_findings {
+                            warn!(
+                                "Role {:?} produced {} findings (cached), capping at {}",
+                                role,
+                                findings.len(),
+                                max_findings,
+                            );
+                            findings.truncate(max_findings);
+                        }
+                        return (role, findings);
                     }
-                    return (role, findings);
                 }
             }
 
@@ -202,7 +235,8 @@ pub async fn run_reviewers(
                 }
 
                 if let (Some(cache), Some(reasoning)) = (&cache, &reasoning_text) {
-                    cache.save_agent_reasoning_with_key(&cache_key, role.as_str(), reasoning);
+                    let reasoning_key = format!("{}_reasoning", cache_key);
+                    cache.store_raw(&reasoning_key, reasoning);
                 }
 
                 if let Ok(mut agg) = aggregate_usage.lock() {
@@ -216,13 +250,19 @@ pub async fn run_reviewers(
                 }
 
                 if let Some(ref cache) = cache {
-                    cache.save_agent_with_key_and_usage(
-                        &cache_key,
-                        role.as_str(),
-                        &diff,
-                        &response,
-                        &usage,
-                    );
+                    let cached = CachedAgentData {
+                        response: response.clone(),
+                        input_tokens: usage.input_tokens,
+                        output_tokens: usage.output_tokens,
+                        total_tokens: usage.total_tokens,
+                        cached_input_tokens: usage.cached_input_tokens,
+                        cache_creation_input_tokens: usage.cache_creation_input_tokens,
+                        reasoning_tokens: usage.reasoning_tokens,
+                        tool_use_prompt_tokens: usage.tool_use_prompt_tokens,
+                    };
+                    if let Ok(json) = serde_json::to_string(&cached) {
+                        cache.store_raw(&cache_key, &json);
+                    }
                 }
 
                 let preview_len = std::cmp::min(500, response.len());

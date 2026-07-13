@@ -25,6 +25,7 @@ crb-harness = { path = "../crb-harness" }
 crb-judge = { path = "../crb-judge" }
 crb-reporting = { path = "../crb-reporting" }
 crb-rules = { path = "../crb-rules" }
+crb-cache = { path = "../crb-cache" }
 crb-shared = { path = "../crb-shared" }
 crb-tools = { path = "../crb-tools" }
 dotenvy = { workspace = true }

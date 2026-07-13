@@ -20,6 +20,7 @@ exp16_adaptive_agents = ["crb-consensus/exp16_adaptive_agents"]
 anyhow = { workspace = true }
 crb-agents = { path = "../crb-agents" }
 crb-auditor = { path = "../crb-auditor" }
+crb-cache = { path = "../crb-cache" }
 crb-consensus = { path = "../crb-consensus" }
 crb-types = { path = "../crb-types" }
 crb-judge = { path = "../crb-judge" }

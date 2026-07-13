@@ -1,14 +1,12 @@
 [package]
-name = "crb-types"
+name = "crb-cache"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+crb-macros = { path = "../crb-macros" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-crb-cache = { path = "../crb-cache" }
 sha2 = { workspace = true }
-
-[lints]
-workspace = true
+tracing = { workspace = true }

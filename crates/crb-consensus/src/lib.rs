@@ -11,7 +11,7 @@ pub mod harness;
 pub mod judge;
 pub mod pipeline;
 
-pub use crb_shared::cache::CacheBackend;
+pub use crb_cache::traits::CacheBackend;
 use crb_shared::finding::Finding;
 use regex::Regex;
 use rig_core::completion::{AssistantContent, Message, Usage};

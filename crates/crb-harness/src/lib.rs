@@ -14,8 +14,8 @@ use crb_consensus::harness::evaluate_pr_with_consensus;
 use crb_judge::{compute_metrics, run_judge};
 use crb_reporting::PrResult;
 use crb_reporting::golden::GoldenCommentEntry;
-use crb_shared::cache::keys::compute_judge_cache_key;
-use crb_shared::cache::{CacheBackend, LlmCache, RunHistoryEntry};
+use crb_cache::traits::CacheBackend;
+use crb_cache::sha256::sha256_hex;
 use crb_shared::deduplicate::semantic_dedup;
 use crb_shared::finding::Finding;
 use crb_shared::jaccard::jaccard_similarity;
@@ -398,9 +398,9 @@ struct AgentCacheKeys {
 #[deprecated]
 fn compute_cache_keys(diff: &str, rules_preamble: Option<&str>) -> AgentCacheKeys {
     AgentCacheKeys {
-        diff_hash: crb_shared::cache::sha256_hex(diff),
-        rules_hash: crb_shared::cache::sha256_hex(rules_preamble.unwrap_or("")),
-        judge_prompt_hash: crb_shared::cache::sha256_hex(crb_judge::JUDGE_PROMPT),
+        diff_hash: sha256_hex(diff),
+        rules_hash: sha256_hex(rules_preamble.unwrap_or("")),
+        judge_prompt_hash: sha256_hex(crb_judge::JUDGE_PROMPT),
         judge_model: String::new(),
     }
 }
@@ -425,7 +425,7 @@ fn spawn_agent_task(
         let span = info_span!("agent", role = %role);
         let _guard = span.enter();
 
-        let prompt_hash = crb_shared::cache::sha256_hex(prompt_library.get(&role).unwrap_or(""));
+        let prompt_hash = sha256_hex(prompt_library.get(&role).unwrap_or(""));
         let agent_cache_key = crb_shared::cache::compute_agent_cache_key(
             &prompt_hash,
             &diff_hash,
@@ -841,10 +841,10 @@ async fn evaluate_pr_consensus(
 
     // ── Pre-compute content-addressed cache key components ──────────────
     let first_role = parsed_roles.first().copied().unwrap_or("SA");
-    let prompt_hash = crb_shared::cache::sha256_hex(prompt_lib.get(first_role).unwrap_or(""));
-    let rules_hash = crb_shared::cache::sha256_hex(rules_preamble.unwrap_or(""));
-    let judge_prompt_hash = crb_shared::cache::sha256_hex(crb_judge::JUDGE_PROMPT);
-    let diff_hash = crb_shared::cache::sha256_hex(diff);
+    let prompt_hash = sha256_hex(prompt_lib.get(first_role).unwrap_or(""));
+    let rules_hash = sha256_hex(rules_preamble.unwrap_or(""));
+    let judge_prompt_hash = sha256_hex(crb_judge::JUDGE_PROMPT);
+    let diff_hash = sha256_hex(diff);
     let judge_model = "";
 
     // Compute tool preamble only when workdir is provided

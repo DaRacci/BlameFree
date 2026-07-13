@@ -7,9 +7,6 @@ pub const DEFAULT_MODEL_PRO: &str = "deepseek/deepseek-v4-pro";
 /// Shared concurrent evaluation loop, metrics aggregation, and PR filtering.
 pub mod benchmark_pipeline;
 
-/// Content-addressed LLM interaction cache (filesystem-backed).
-pub mod cache;
-
 /// Finding deduplication utilities (by file+line, semantic overlap).
 pub mod deduplicate;
 
