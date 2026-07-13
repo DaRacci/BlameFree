@@ -15,7 +15,7 @@ use crb_shared::sanitize_filename;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use crb_judge::{JudgeVerdict, Metrics};
+use crb_types::JudgeVerdict;
 
 /// Summary of cost data for a single PR, suitable for JSON serialization.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -74,6 +74,28 @@ pub struct CostSummary {
     #[serde(default)]
     /// Number of judge API calls made (excluding cache hits).
     pub judge_call_count: usize,
+}
+
+/// Aggregated evaluation metrics computed from judge verdicts.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Metrics {
+    /// Number of true positives (agent findings that matched a golden comment).
+    pub true_positives: usize,
+
+    /// Number of false positives (agent findings that matched no golden comment).
+    pub false_positives: usize,
+
+    /// Number of false negatives (golden comments that matched no finding).
+    pub false_negatives: usize,
+
+    /// Precision = tp / (tp + fp).
+    pub precision: f64,
+
+    /// Recall = tp / (tp + fn).
+    pub recall: f64,
+
+    /// F1 score (harmonic mean of precision and recall).
+    pub f1: f64,
 }
 
 /// Result of evaluating a single PR.

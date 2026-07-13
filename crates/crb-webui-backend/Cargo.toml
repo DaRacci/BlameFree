@@ -24,7 +24,6 @@ crb-agents = { path = "../crb-agents" }
 crb-types = { path = "../crb-types" }
 crb-cache = { path = "../crb-cache" }
 crb-harness = { path = "../crb-harness" }
-crb-judge = { path = "../crb-judge" }
 crb-reporting = { path = "../crb-reporting" }
 crb-rules = { path = "../crb-rules" }
 crb-shared = { path = "../crb-shared" }

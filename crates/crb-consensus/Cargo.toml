@@ -14,7 +14,6 @@ anyhow = { workspace = true }
 crb-agents = { path = "../crb-agents" }
 crb-tools = { path = "../crb-tools" }
 crb-types = { path = "../crb-types" }
-crb-judge = { path = "../crb-judge" }
 crb-reporting = { path = "../crb-reporting" }
 crb-cache = { path = "../crb-cache" }
 crb-shared = { path = "../crb-shared" }

@@ -11,8 +11,7 @@ use crb_agents::prompts::{AgentEntry, PromptLibrary};
 use crb_auditor::apply_severity_auditor;
 use crb_consensus::adaptive::get_roles_for_diff;
 use crb_consensus::harness::evaluate_pr_with_consensus;
-use crb_judge::{compute_metrics, run_judge};
-use crb_reporting::PrResult;
+use crb_reporting::{Metrics, PrResult};
 use crb_reporting::golden::GoldenCommentEntry;
 use crb_cache::traits::CacheBackend;
 use crb_cache::sha256::sha256_hex;
@@ -24,6 +23,7 @@ use crb_shared::url::parse_github_url;
 use crb_tools::linters::tool::LinterArgs;
 use crb_tools::{build_tool_server, create_linter_tool, language_detector};
 use crb_types::RunEvent;
+use crb_types::JudgeVerdict;
 use crb_types::wrappers::{Diff, Model};
 use regex::Regex;
 use rig_core::agent::{Agent, PromptResponse};
@@ -386,25 +386,6 @@ where
     }
 }
 
-/// Pre-computed cache key parts used by the single-agent pipeline.
-#[deprecated]
-struct AgentCacheKeys {
-    diff_hash: String,
-    rules_hash: String,
-    judge_prompt_hash: String,
-    judge_model: String,
-}
-
-#[deprecated]
-fn compute_cache_keys(diff: &str, rules_preamble: Option<&str>) -> AgentCacheKeys {
-    AgentCacheKeys {
-        diff_hash: sha256_hex(diff),
-        rules_hash: sha256_hex(rules_preamble.unwrap_or("")),
-        judge_prompt_hash: sha256_hex(crb_judge::JUDGE_PROMPT),
-        judge_model: String::new(),
-    }
-}
-
 /// Spawn a single agent task for one role, with caching and retry.
 #[allow(clippy::too_many_arguments)]
 fn spawn_agent_task(
@@ -556,92 +537,6 @@ fn spawn_agent_task(
     }
 }
 
-/// Run the judge evaluation loop comparing findings against golden comments,
-/// using Jaccard pre-filtering and then LLM judge with caching.
-async fn run_judge_evaluation(
-    findings: &[Finding],
-    pr: &GoldenCommentEntry,
-    judge: &Agent<ResponsesCompletionModel>,
-    cache_keys: &AgentCacheKeys,
-    cache: Option<Arc<LlmCache>>,
-    cost_tracker: &CostTracker,
-) -> Vec<crb_judge::JudgeVerdict> {
-    let jaccard_threshold = 0.12;
-    let mut verdicts = Vec::new();
-
-    for finding in findings {
-        for gc in &pr.comments {
-            let score = jaccard_similarity(&finding.message, &gc.comment, false);
-            if score >= jaccard_threshold {
-                info!(
-                    "Jaccard match: finding='{}' golden='{}' score={:.2}",
-                    &finding.message[..std::cmp::min(60, finding.message.len())],
-                    &gc.comment[..std::cmp::min(60, gc.comment.len())],
-                    score
-                );
-                verdicts.push(crb_judge::JudgeVerdict {
-                    reasoning: format!(
-                        "Matched by {:.0}% word overlap (Jaccard heuristic)",
-                        score * 100.0
-                    ),
-                    match_: true,
-                    confidence: score,
-                });
-                continue;
-            }
-
-            // File/line pre-filter
-            if let Some(golden_file) = &gc.file {
-                if let Some(finding_file) = &finding.file {
-                    if golden_file != finding_file {
-                        continue;
-                    }
-                }
-            }
-
-            // Judge cache key
-            let judge_key = compute_judge_cache_key(
-                &cache_keys.judge_prompt_hash,
-                &finding.message,
-                &gc.comment,
-                &cache_keys.judge_model,
-            );
-
-            // Check judge cache
-            if let Some(ref c) = cache {
-                if let Some(cached_verdict) = c.lookup_judge_by_key(&judge_key) {
-                    info!("CACHE HIT for judge (key={})", &judge_key[..12]);
-                    cost_tracker.record_judge_empty(true);
-                    verdicts.push(cached_verdict);
-                    continue;
-                }
-            }
-
-            // Cache miss - make API call
-            info!("CACHE MISS for judge (key={})", &judge_key[..12]);
-            match with_retry(|| run_judge(judge, &gc.comment, &finding.message), 3, 1000).await {
-                Ok((verdict, usage)) => {
-                    cost_tracker.record_judge(&usage, false);
-                    if let Some(ref c) = cache {
-                        let verdict_json = serde_json::to_string(&verdict).unwrap_or_default();
-                        let _ = c.save_judge_with_key(
-                            // Ignore — cache save is best-effort (non-critical)
-                            &judge_key,
-                            &gc.comment,
-                            &finding.message,
-                            &verdict_json,
-                        );
-                    }
-                    verdicts.push(verdict);
-                }
-                Err(e) => warn!("Judge call failed after retries: {e}"),
-            }
-        }
-    }
-
-    verdicts
-}
-
 /// Run the original single-agent evaluation with finding collection.
 /// (private) used by evaluate_pr
 #[doc(hidden)]
@@ -650,7 +545,6 @@ async fn evaluate_pr_single_agent(
     pr: &GoldenCommentEntry,
     client: &openai::Client,
     model: &str,
-    judge: &Agent<ResponsesCompletionModel>,
     diff: &str,
     linter_findings: Vec<Finding>,
     rules_preamble: Option<&str>,
@@ -659,8 +553,9 @@ async fn evaluate_pr_single_agent(
     cost_tracker: Arc<crate::cost::CostTracker>,
     dashboard_tx: Option<&broadcast::Sender<RunEvent>>,
     additional_params: Option<serde_json::Value>,
-) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
-    let cache_keys = compute_cache_keys(diff, rules_preamble);
+) -> Result<(Vec<Finding>, Vec<JudgeVerdict>)> {
+    let diff_hash = sha256_hex(diff);
+    let rules_hash = sha256_hex(rules_preamble.unwrap_or(""));
 
     // ── Phase 1: spawn one agent per role ─────────────────────────────────
     let mut agent_set = tokio::task::JoinSet::new();
@@ -668,8 +563,6 @@ async fn evaluate_pr_single_agent(
     let prompt_lib_arc = Arc::new(prompt_lib.clone());
     let diff_arc = Arc::new(diff.to_string());
     let model_arc = Arc::new(model.to_string());
-    let diff_hash = cache_keys.diff_hash.clone();
-    let rules_hash = cache_keys.rules_hash.clone();
     let rules_preamble_owned = rules_preamble.map(String::from);
     for role in prompt_lib.roles() {
         let cache_arc: Option<Arc<dyn CacheBackend>> =
@@ -700,11 +593,8 @@ async fn evaluate_pr_single_agent(
         }
     }
 
-    // ── Phase 3: judge evaluation ────────────────────────────────────────
-    let verdicts =
-        run_judge_evaluation(&all_findings, pr, judge, &cache_keys, cache, &cost_tracker).await;
-
-    Ok((all_findings, verdicts))
+    // ── Phase 3: return with empty verdicts (no judging) ─────────────────
+    Ok((all_findings, Vec::new()))
 }
 
 #[allow(trivial_casts)]
@@ -722,7 +612,7 @@ async fn evaluate_pr(
     cost_tracker: Arc<CostTracker>,
     reasoning_effort: ReasoningEffort,
     dashboard_tx: Option<&broadcast::Sender<RunEvent>>,
-) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
+) -> Result<(Vec<Finding>, Vec<JudgeVerdict>)> {
     if diff.is_empty() {
         info!("Diff is empty, returning empty result");
         return Ok((Vec::new(), Vec::new()));
@@ -805,13 +695,13 @@ async fn evaluate_pr_consensus(
     workdir: Option<&str>,
     reasoning_effort: Option<&str>,
     dashboard_tx: Option<&broadcast::Sender<RunEvent>>,
-) -> Result<(Vec<Finding>, Vec<crb_judge::JudgeVerdict>)> {
+) -> Result<(Vec<Finding>, Vec<JudgeVerdict>)> {
     // Parse comma-separated roles
-    // let parsed_roles: Vec<&str> = roles
-    //     .split(',')
-    //     .map(|r| r.trim())
-    //     .filter(|r| !r.is_empty())
-    //     .collect();
+    let parsed_roles: Vec<&str> = roles
+        .split(',')
+        .map(|r| r.trim())
+        .filter(|r| !r.is_empty())
+        .collect();
 
     // ── Adaptive agent dispatch (EXP-016) ──────────────────────────────
     // NOTE: This experimental feature is intentionally disabled because it
@@ -843,7 +733,7 @@ async fn evaluate_pr_consensus(
     let first_role = parsed_roles.first().copied().unwrap_or("SA");
     let prompt_hash = sha256_hex(prompt_lib.get(first_role).unwrap_or(""));
     let rules_hash = sha256_hex(rules_preamble.unwrap_or(""));
-    let judge_prompt_hash = sha256_hex(crb_judge::JUDGE_PROMPT);
+    let judge_prompt_hash = sha256_hex("");
     let diff_hash = sha256_hex(diff);
     let judge_model = "";
 
@@ -892,6 +782,8 @@ async fn evaluate_pr_consensus(
 
     // #[cfg(not(feature = "exp14_template_vars"))]
     // let template_vars = None;
+
+    let template_vars: Option<&HashMap<String, serde_json::Value>> = None;
 
     let (result, agent_usage, judge_usage, agent_api_calls, judge_api_calls, judge_cache_hits) =
         evaluate_pr_with_consensus(
@@ -1110,7 +1002,7 @@ pub async fn evaluate_pr(
             url: pr.url.clone(),
             findings_count: linter_findings.len(),
             golden_count: pr.comments.len(),
-            metrics: crb_judge::Metrics::default(),
+            metrics: Metrics::default(),
             verdicts: vec![],
             cost: Some(config.cost_tracker.to_summary()),
         });
@@ -1149,7 +1041,6 @@ pub async fn evaluate_pr(
                 pr,
                 &config.client,
                 &config.model,
-                &config.judge,
                 &diff,
                 linter_findings,
                 rules_preamble.as_deref(),
@@ -1200,7 +1091,7 @@ pub async fn evaluate_pr(
     }
 
     // ── Phase 10: Metrics ────────────────────────────────────────────────
-    let metrics = compute_metrics(&verdicts, pr.comments.len());
+    let metrics = Metrics::default();
 
     // ── Phase 11: Dashboard PrCompleted event ──────────────────────────
     if let Some(ref tx) = config.dashboard_tx {
@@ -1474,7 +1365,7 @@ pub async fn run_validate(workspace_root: &Path, version: &str) -> Result<()> {
         );
     };
 
-    let mut loaded_results: Vec<crb_judge::Metrics> = Vec::new();
+    let mut loaded_results: Vec<Metrics> = Vec::new();
     let mut entries: Vec<_> = fs::read_dir(&results_dir)?
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().map_or(false, |ext| ext == "json"))
@@ -1485,7 +1376,7 @@ pub async fn run_validate(workspace_root: &Path, version: &str) -> Result<()> {
         let path = entry.path();
         let content = fs::read_to_string(&path)
             .with_context(|| format!("Failed to read result: {}", path.display()))?;
-        match serde_json::from_str::<crb_judge::Metrics>(&content) {
+        match serde_json::from_str::<Metrics>(&content) {
             Ok(metrics) => loaded_results.push(metrics),
             Err(e) => {
                 warn!(

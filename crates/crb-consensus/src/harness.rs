@@ -10,8 +10,8 @@ use rig_core::model::Model;
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 
-use crb_judge::JudgeVerdict;
 use crb_reporting::PrResult;
+use crb_types::JudgeVerdict;
 use crb_reporting::golden::GoldenCommentEntry;
 
 use crate::adaptive::get_roles_for_diff;
@@ -126,7 +126,7 @@ pub async fn evaluate_pr_with_consensus(
             url: pr.url.clone(),
             findings_count: total_findings,
             golden_count: pr.comments.len(),
-            metrics: crb_judge::Metrics {
+            metrics: crb_reporting::Metrics {
                 true_positives: report.true_positives.len(),
                 false_positives: report.false_positives.len(),
                 false_negatives: report.false_negatives.len(),

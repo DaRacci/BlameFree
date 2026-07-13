@@ -23,7 +23,6 @@ crb-auditor = { path = "../crb-auditor" }
 crb-cache = { path = "../crb-cache" }
 crb-consensus = { path = "../crb-consensus" }
 crb-types = { path = "../crb-types" }
-crb-judge = { path = "../crb-judge" }
 crb-reporting = { path = "../crb-reporting" }
 crb-rules = { path = "../crb-rules" }
 crb-shared = { path = "../crb-shared" }

@@ -391,7 +391,28 @@ async fn run_adhoc_review_inner(
     let client = rig_core::providers::openai::Client::from_env()
         .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
 
-    let judge = crb_judge::build_judge(&client, model);
+    let judge = client
+        .agent(model)
+        .preamble(
+            "You are evaluating AI code review tools.\n\
+            Determine if the candidate issue matches the golden (expected) comment.\n\
+            \n\
+            Golden Comment (the issue we're looking for):\n\
+            {golden_comment}\n\
+            \n\
+            Candidate Issue (from the tool's review):\n\
+            {candidate}\n\
+            \n\
+            Instructions:\n\
+            - Determine if the candidate identifies the SAME underlying issue as the golden comment\n\
+            - Accept semantic matches - different wording is fine if it's the same problem\n\
+            - Focus on whether they point to the same bug, concern, or code issue\n\
+            \n\
+            Respond with ONLY a JSON object:\n\
+            {\"reasoning\": \"brief explanation\", \"match\": true/false, \"confidence\": 0.0-1.0}",
+        )
+        .temperature(0.3)
+        .build();
 
     let prompt_lib = Arc::new(prompts::PromptLibrary::get_instance());
 

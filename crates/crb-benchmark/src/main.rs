@@ -9,7 +9,7 @@ use anyhow::{Context, Result, anyhow};
 use clap::{Parser, Subcommand};
 use crb_agents::prompts::PromptLibrary;
 use crb_harness::{model_capabilities, validation};
-use crb_judge::build_judge;
+use crb_benchmark::judge::build_judge;
 use crb_reporting::{GoldenCommentEntry, load_golden_datasets, write_report};
 use crb_rules::RuleSet;
 use crb_shared::cache::LlmCache;
@@ -915,7 +915,7 @@ async fn run_benchmark(
     crb_harness::write_summary(&cache_dir, &model, &judge_model, &results, eval_elapsed)?;
 
     if ci {
-        let metrics: Vec<crb_judge::Metrics> = results.iter().map(|r| r.metrics.clone()).collect();
+        let metrics: Vec<crb_reporting::Metrics> = results.iter().map(|r| r.metrics.clone()).collect();
         let (avg_precision, avg_recall, avg_f1) = validation::compute_average_metrics(&metrics);
         let baseline = validation::load_baseline(&workspace_root, "5.14")?;
         let val_result = validation::validate_against_baseline(

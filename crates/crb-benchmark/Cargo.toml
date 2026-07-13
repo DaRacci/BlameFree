@@ -22,7 +22,6 @@ clap = { workspace = true }
 crb-agents = { path = "../crb-agents" }
 crb-types = { path = "../crb-types" }
 crb-harness = { path = "../crb-harness" }
-crb-judge = { path = "../crb-judge" }
 crb-reporting = { path = "../crb-reporting" }
 crb-rules = { path = "../crb-rules" }
 crb-cache = { path = "../crb-cache" }

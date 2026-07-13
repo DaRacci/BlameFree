@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde::Serialize;
 
-use crb_judge::Metrics;
+use crb_reporting::Metrics;
 
 /// Baseline expectations for a specific version.
 #[derive(Debug, Clone, Serialize, Deserialize)]

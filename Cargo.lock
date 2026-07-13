@@ -602,7 +602,6 @@ dependencies = [
  "crb-agents",
  "crb-cache",
  "crb-harness",
- "crb-judge",
  "crb-reporting",
  "crb-rules",
  "crb-shared",
@@ -638,7 +637,6 @@ dependencies = [
  "anyhow",
  "crb-agents",
  "crb-cache",
- "crb-judge",
  "crb-reporting",
  "crb-shared",
  "crb-tools",
@@ -662,7 +660,6 @@ dependencies = [
  "crb-auditor",
  "crb-cache",
  "crb-consensus",
- "crb-judge",
  "crb-reporting",
  "crb-rules",
  "crb-shared",
@@ -681,17 +678,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crb-judge"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "rig-core",
- "schemars 0.8.22",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "crb-macros"
 version = "0.1.0"
 dependencies = [
@@ -705,7 +691,6 @@ name = "crb-reporting"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crb-judge",
  "crb-shared",
  "crb-types",
  "serde",
@@ -731,7 +716,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crb-cache",
- "crb-judge",
  "crb-types",
  "crb-webui-shared",
  "regex",
@@ -774,6 +758,7 @@ name = "crb-types"
 version = "0.1.0"
 dependencies = [
  "crb-cache",
+ "schemars 0.8.22",
  "serde",
  "serde_json",
  "sha2",
@@ -790,7 +775,6 @@ dependencies = [
  "crb-agents",
  "crb-cache",
  "crb-harness",
- "crb-judge",
  "crb-reporting",
  "crb-rules",
  "crb-shared",

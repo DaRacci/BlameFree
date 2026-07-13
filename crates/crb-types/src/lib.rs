@@ -7,6 +7,7 @@
 
 pub mod wrappers;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Metrics data for a single PR evaluation.
@@ -102,6 +103,18 @@ pub enum RunEvent {
         total_tokens: usize,
         total_agent_calls: usize,
     },
+}
+
+/// The structured verdict returned by the judge LLM.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct JudgeVerdict {
+    /// Brief explanation of why the judge determined a match or no match.
+    pub reasoning: String,
+    /// Whether the candidate finding matches the golden comment.
+    #[serde(rename = "match")]
+    pub match_: bool,
+    /// Confidence level for this judgment (0.0–1.0).
+    pub confidence: f64,
 }
 
 /// Parse a single JSON line into a [`RunEvent`].

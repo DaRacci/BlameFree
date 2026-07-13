@@ -6,7 +6,6 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-crb-judge = { path = "../crb-judge" }
 crb-shared = { path = "../crb-shared" }
 crb-types = { path = "../crb-types" }
 serde = { workspace = true }

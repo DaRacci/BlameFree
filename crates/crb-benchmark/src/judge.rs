@@ -2,8 +2,9 @@ use rig_core::agent::{Agent, PromptResponse};
 use rig_core::client::CompletionClient;
 use rig_core::completion::{Prompt, Usage};
 use rig_core::providers::openai::{Client, responses_api::ResponsesCompletionModel};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+
+use crb_reporting::Metrics;
+use crb_types::JudgeVerdict;
 
 /// The Martian JUDGE_PROMPT template used for LLM-as-judge evaluation.
 ///
@@ -26,40 +27,6 @@ Instructions:
 
 Respond with ONLY a JSON object:
 {\"reasoning\": \"brief explanation\", \"match\": true/false, \"confidence\": 0.0-1.0}";
-
-/// The structured verdict returned by the judge LLM.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct JudgeVerdict {
-    /// Brief explanation of why the judge determined a match or no match.
-    pub reasoning: String,
-    /// Whether the candidate finding matches the golden comment.
-    #[serde(rename = "match")]
-    pub match_: bool,
-    /// Confidence level for this judgment (0.0–1.0).
-    pub confidence: f64,
-}
-
-/// Aggregated evaluation metrics computed from judge verdicts.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Metrics {
-    /// Number of true positives (agent findings that matched a golden comment).
-    pub true_positives: usize,
-
-    /// Number of false positives (agent findings that matched no golden comment).
-    pub false_positives: usize,
-
-    /// Number of false negatives (golden comments that matched no finding).
-    pub false_negatives: usize,
-
-    /// Precision = tp / (tp + fp).
-    pub precision: f64,
-
-    /// Recall = tp / (tp + fn).
-    pub recall: f64,
-
-    /// F1 score (harmonic mean of precision and recall).
-    pub f1: f64,
-}
 
 /// Build a judge agent with the Martian JUDGE_PROMPT as its preamble.
 pub fn build_judge(client: &Client, model: &str) -> Agent<ResponsesCompletionModel> {
@@ -201,7 +168,9 @@ pub fn compute_metrics(verdicts: &[JudgeVerdict], golden_count: usize) -> Metric
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::judge::{compute_metrics, jaccard_match};
+    use crb_reporting::Metrics;
+    use crb_types::JudgeVerdict;
 
     #[test]
     fn test_perfect_match() {
