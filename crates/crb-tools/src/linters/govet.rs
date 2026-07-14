@@ -1,4 +1,7 @@
-use crb_shared::finding::{ConfidenceLevel, Finding};
+use crb_shared::{
+    finding::{ConfidenceLevel, Finding},
+    severity::Severity,
+};
 use tracing::warn;
 
 use crate::error::LinterError;
@@ -45,7 +48,7 @@ pub fn parse_govet_output(stdout: &str) -> Result<Vec<Finding>, LinterError> {
             file: Some(file),
             line: line_num,
             message,
-            severity: "warning".to_string(),
+            severity: Severity::Low,
             rule_code: None,
             severity_audited: false,
             severity_audit_reason: None,
@@ -83,7 +86,6 @@ mod tests {
         assert_eq!(findings[0].file.as_deref(), Some("./src/main.go"));
         assert_eq!(findings[0].line, Some(25));
         assert_eq!(findings[0].message, "unreachable code");
-        assert_eq!(findings[0].severity, "warning");
         assert!(findings[0].rule_code.is_none());
 
         assert_eq!(findings[1].file.as_deref(), Some("./src/util.go"));

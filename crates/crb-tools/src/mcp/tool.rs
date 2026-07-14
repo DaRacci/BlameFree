@@ -41,8 +41,10 @@ pub struct McpArgs {
 pub struct McpResponse {
     /// Whether the call succeeded.
     pub success: bool,
+
     /// Result content (JSON string).
     pub result: String,
+
     /// Error message if not successful.
     pub error: Option<String>,
 }

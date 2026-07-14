@@ -6,11 +6,14 @@ use std::path::Path;
 pub struct McpServerConfig {
     /// Human-readable name for this server.
     pub name: String,
+
     /// Base URL for the MCP server endpoint.
     pub url: String,
+
     /// Transport protocol (HTTP or stdio).
     #[serde(default)]
     pub transport: McpTransportType,
+
     /// Whether this server is enabled at startup.
     #[serde(default)]
     pub enabled: bool,
@@ -23,6 +26,7 @@ pub enum McpTransportType {
     /// HTTP (or HTTPS) transport — the default.
     #[default]
     Http,
+
     /// Stdio transport — spawns a subprocess and communicates via stdin/stdout.
     Stdio,
 }

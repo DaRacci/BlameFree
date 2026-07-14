@@ -24,84 +24,77 @@ use crate::{
 /// 3. Check against INFLATED_PATTERNS; if matched, apply downgrade
 /// 4. Only downgrade - never upgrade
 /// 5. Add `severity_audited` and `severity_audit_reason` fields
-pub fn apply_severity_auditor(findings: Vec<Finding>) -> Vec<Finding> {
-    let mut modified_findings = Vec::new();
-
-    for mut finding in findings {
-        let finding_text = &finding.message;
+pub fn apply_severity_auditor(findings: &mut Vec<Finding>) {
+    findings.iter_mut().for_each(|finding| {
         let evidence = finding.evidence.clone().unwrap_or_default();
-        let current_severity = Severity::from_str(&finding.severity);
         let num_agents = finding.agent_count.unwrap_or(0);
 
-        finding.severity = current_severity.as_str();
-
-        if let Some((protection_category, _)) = has_never_downgrade_pattern(finding_text, &evidence)
+        if let Some((protection_category, _)) =
+            has_never_downgrade_pattern(&finding.message, &evidence)
         {
             finding.severity_audited = false;
             finding.severity_audit_reason = Some(format!(
                 "protected_by_never_downgrade_pattern: {}",
                 protection_category
             ));
-            modified_findings.push(finding);
-            continue;
+            return;
         }
 
-        if current_severity == Severity::Critical && num_agents >= 2 {
+        if finding.severity == Severity::Critical && num_agents >= 2 {
             finding.severity_audited = false;
             finding.severity_audit_reason = Some(format!(
                 "protected_by_multi_agent_critical: {}_agents",
                 num_agents
             ));
-            modified_findings.push(finding);
-            continue;
+            return;
         }
 
-        if let Some((match_category, match_pattern)) = has_inflated_pattern(finding_text, &evidence)
-        {
-            if let Some(quantum) = downgrade_quantum(match_category) {
-                let new_severity = current_severity.apply_quantum(quantum);
-
-                if new_severity >= current_severity {
-                    finding.severity = new_severity.as_str();
-                    finding.severity_audited = true;
-                    finding.severity_audit_reason = Some(format!(
-                        "downgraded: {}->{} by category='{}' pattern='{}' (quantum={})",
-                        current_severity.as_str(),
-                        new_severity.as_str(),
-                        match_category,
-                        match_pattern,
-                        quantum
-                    ));
-                } else {
-                    finding.severity_audited = true;
-                    finding.severity_audit_reason = Some(format!(
-                        "matched_category={} but no_downgrade_needed",
-                        match_category
-                    ));
-                }
-            } else {
-                finding.severity_audited = true;
-                finding.severity_audit_reason = Some("no_inflated_patterns_matched".to_string());
-            }
-        } else {
+        let Some((match_category, match_pattern)) =
+            has_inflated_pattern(&finding.message, &evidence)
+        else {
             finding.severity_audited = true;
             finding.severity_audit_reason = Some("no_inflated_patterns_matched".to_string());
+            return;
+        };
+
+        let Some(quantum) = downgrade_quantum(match_category) else {
+            finding.severity_audited = true;
+            finding.severity_audit_reason = Some("no_inflated_patterns_matched".to_string());
+            return;
+        };
+
+        let new_severity = finding.severity.apply_quantum(quantum);
+
+        if new_severity < finding.severity {
+            finding.severity_audited = true;
+            finding.severity_audit_reason = Some(format!(
+                "matched_category={} but no_downgrade_needed",
+                match_category
+            ));
+            return;
         }
 
-        modified_findings.push(finding);
-    }
-
-    modified_findings
+        finding.severity = new_severity;
+        finding.severity_audited = true;
+        finding.severity_audit_reason = Some(format!(
+            "downgraded: {}->{} by category='{}' pattern='{}' (quantum={})",
+            finding.severity.as_str(),
+            new_severity.as_str(),
+            match_category,
+            match_pattern,
+            quantum
+        ));
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_finding(text: &str, severity: &str, evidence: &str, num_agents: u64) -> Finding {
+    fn make_finding(text: &str, severity: Severity, evidence: &str, num_agents: u64) -> Finding {
         Finding {
             message: text.to_string(),
-            severity: severity.to_string(),
+            severity: severity,
             evidence: if evidence.is_empty() {
                 None
             } else {
@@ -113,7 +106,7 @@ mod tests {
     }
 
     fn assert_critical_protected_from_downgrade(result: &[Finding]) {
-        assert_eq!(result[0].severity, "critical");
+        assert_eq!(result[0].severity, Severity::Critical);
         let reason = result[0].severity_audit_reason.as_deref().unwrap_or("");
         assert!(reason.contains("protected_by_never_downgrade"));
     }
@@ -122,20 +115,20 @@ mod tests {
     fn test_apply_severity_auditor_srp() {
         let f = make_finding(
             "SRP violation in UserService class — should be refactored",
-            "high",
+            Severity::High,
             "UserService handles both auth and profile",
             1,
         );
-        let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, "low");
-        assert_eq!(result[0].severity_audited, true);
+        apply_severity_auditor(&mut vec![f]);
+        assert_eq!(f.severity, Severity::Low);
+        assert_eq!(f.severity_audited, true);
     }
 
     #[test]
     fn test_apply_severity_auditor_sql_injection() {
         let f = make_finding(
             "SQL injection vulnerability in login query",
-            "critical",
+            Severity::Critical,
             "Raw string concatenation with user input",
             1,
         );
@@ -147,12 +140,12 @@ mod tests {
     fn test_apply_severity_auditor_naming() {
         let f = make_finding(
             "The naming convention is inconsistent",
-            "high",
+            Severity::High,
             "camelCase vs snake_case",
             1,
         );
         let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, "low");
+        assert_eq!(result[0].severity, Severity::Low);
         assert_eq!(result[0].severity_audited, true);
     }
 
@@ -160,12 +153,12 @@ mod tests {
     fn test_apply_severity_auditor_hypothetical() {
         let f = make_finding(
             "Could cause a performance issue in production",
-            "high",
+            Severity::High,
             "If not careful, this could lead to slowness",
             2,
         );
         let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, "medium");
+        assert_eq!(result[0].severity, Severity::Medium);
         assert_eq!(result[0].severity_audited, true);
     }
 
@@ -186,12 +179,12 @@ mod tests {
     fn test_apply_severity_auditor_multi_agent_critical() {
         let f = make_finding(
             "Architecture abstraction leak",
-            "critical",
+            Severity::Critical,
             "Service layer directly accesses DB",
             3,
         );
         let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, "critical");
+        assert_eq!(result[0].severity, Severity::Critical);
         let reason = result[0].severity_audit_reason.as_deref().unwrap_or("");
         assert!(reason.contains("protected_by_multi_agent_critical"));
     }
@@ -200,7 +193,7 @@ mod tests {
     fn test_apply_severity_auditor_race_condition() {
         let f = make_finding(
             "Race condition in cache update logic",
-            "critical",
+            Severity::Critical,
             "Two concurrent writes without lock",
             1,
         );
@@ -218,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_empty_evidence() {
-        let f = make_finding("SRP violation", "high", "", 1);
+        let f = make_finding("SRP violation", Severity::High, "", 1);
         let result = apply_severity_auditor(vec![f]);
         assert_eq!(result[0].severity, "low");
     }
@@ -227,12 +220,12 @@ mod tests {
     fn test_no_match_no_change() {
         let f = make_finding(
             "This is a genuine comment about code",
-            "medium",
+            Severity::Medium,
             "Just a comment",
             1,
         );
         let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, "medium");
+        assert_eq!(result[0].severity, Severity::Medium);
         let reason = result[0].severity_audit_reason.as_deref().unwrap_or("");
         assert_eq!(reason, "no_inflated_patterns_matched");
     }

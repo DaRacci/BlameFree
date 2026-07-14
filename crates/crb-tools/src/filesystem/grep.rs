@@ -1,15 +1,14 @@
 //! Grep tool for searching file contents with regex.
 //!
-//! The [`GrepTool`] lets the agent search file contents using `grep -rn`,
+//! The [`GrepTool`] lets the agent search file contents using `rg -rn`,
 //! returning matching lines with file paths in `path:line:content` format.
 
-use std::fmt;
 use std::time::Duration;
 
-use rig_core::tool::Tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
+use crate::error::GrepError;
 use crate::impl_tool;
 
 /// Arguments for [`GrepTool`].
@@ -21,41 +20,16 @@ pub struct GrepArgs {
     /// Directory path to search in (relative to repo root, optional; defaults to repo root).
     pub path: Option<String>,
 
-    /// Optional file glob pattern to filter which files to search (e.g. "*.rs").
+    /// Optional file glob pattern to filter which files to search.
     pub file_glob: Option<String>,
 }
 
-/// Errors from the grep tool.
-#[derive(Debug)]
-pub enum GrepError {
-    /// The grep subprocess could not be spawned.
-    CommandFailed(String),
-    /// Grep exited with a non-zero exit status other than 1 (no matches).
-    NonZeroExit(i32, String),
-    /// The command exceeded its time limit.
-    TimeoutElapsed,
-}
-
-impl fmt::Display for GrepError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::CommandFailed(e) => write!(f, "grep command failed: {e}"),
-            Self::NonZeroExit(code, stderr) => {
-                write!(f, "grep exited with code {code}: {stderr}")
-            }
-            Self::TimeoutElapsed => write!(f, "grep command timed out"),
-        }
-    }
-}
-
-impl std::error::Error for GrepError {}
-
-/// Tool that searches file contents using `grep -rn --no-messages`.
+/// Tool that searches file contents using `rg -rn --no-messages`.
 ///
 /// Output is capped at 50 KB. Exit code 1 (no matches) returns an empty
 /// string rather than an error. Commands time out after 30 seconds.
 pub struct GrepTool {
-    /// Working directory (repo root) for the grep command.
+    /// Working directory to run the `rg` command in.
     pub workdir: String,
 }
 
@@ -65,9 +39,9 @@ impl GrepTool {
 }
 
 impl_tool! {GrepTool, GrepArgs, GrepError, String, "grep",
-    "Search file contents using regex. Returns matching lines with file paths in format \
-     path:line:content. Use before reading files to find relevant locations. Do NOT use \
-     the terminal tool for searches.",
+    "Search file contents using regex. Returns matching lines with file paths in format path:line:content.
+     Use before reading files to find relevant locations.",
+
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let workdir = self.workdir.clone();
         let pattern = args.pattern.clone();
@@ -135,6 +109,8 @@ impl_tool! {GrepTool, GrepArgs, GrepError, String, "grep",
 
 #[cfg(test)]
 mod tests {
+    use rig_core::tool::Tool;
+
     use super::*;
     use std::io::Write;
 

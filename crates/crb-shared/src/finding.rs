@@ -64,7 +64,8 @@ pub struct Finding {
     #[serde(default)]
     pub severity_audited: bool,
 
-    /// Reason for the severity audit result (e.g., downgrade category, protection reason).
+    //TODO: Well typed enum or struct
+    /// Reason for the severity audit result (e.g., downgrade category, protection reason).]
     #[serde(default)]
     pub severity_audit_reason: Option<String>,
 

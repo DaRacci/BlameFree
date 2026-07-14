@@ -15,6 +15,7 @@ async-trait = { workspace = true }
 crb-shared = { path = "../crb-shared" }
 crb-types = { path = "../crb-types" }
 dunce = { workspace = true }
+linguist = { workspace = true }
 reqwest = { workspace = true }
 rig-compose = { workspace = true }
 rig-core = { workspace = true }
@@ -23,6 +24,7 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }

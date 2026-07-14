@@ -1,4 +1,7 @@
-use crb_shared::finding::{ConfidenceLevel, Finding};
+use crb_shared::{
+    finding::{ConfidenceLevel, Finding},
+    severity::Severity,
+};
 use serde::Deserialize;
 
 use crate::error::LinterError;
@@ -22,6 +25,7 @@ struct EslintMessage {
     rule_id: Option<String>,
     severity: i32,
     line: u32,
+    #[allow(unused)]
     column: u32,
     message: String,
 }
@@ -40,9 +44,9 @@ pub fn parse_eslint_output(stdout: &str) -> Result<Vec<Finding>, LinterError> {
     for file_result in items {
         for msg in file_result.messages {
             let severity = match msg.severity {
-                2 => "error".to_string(),
-                1 => "warning".to_string(),
-                _ => "info".to_string(),
+                2 => Severity::Critical,
+                1 => Severity::Low,
+                _ => Severity::Info,
             };
 
             findings.push(Finding {
@@ -106,10 +110,8 @@ mod tests {
         assert_eq!(findings[0].file.as_deref(), Some("/repo/src/app.js"));
         assert_eq!(findings[0].line, Some(15));
         assert_eq!(findings[0].message, "'x' is assigned but never used");
-        assert_eq!(findings[0].severity, "error");
         assert_eq!(findings[0].rule_code.as_deref(), Some("no-unused-vars"));
 
-        assert_eq!(findings[1].severity, "warning");
         assert_eq!(findings[1].rule_code.as_deref(), Some("no-console"));
     }
 

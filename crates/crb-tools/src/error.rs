@@ -1,44 +1,86 @@
-use std::{
-    error::Error,
-    fmt::{self, Display},
-    io,
-};
+use std::io;
 
-/// Errors that can occur when running a linter subprocess.
-#[derive(Debug)]
+use thiserror::Error;
+
+#[derive(Error, Debug)]
 pub enum LinterError {
-    /// The subprocess could not be spawned or communicated with.
+    #[error("subprocess could not be spawned or communicated with: {0}")]
     SubprocessFailed(io::Error),
-    /// The linter exited with a non-zero exit code.
+
+    #[error("linter exited with code {0}: {1}")]
     NonZeroExit(i32, String),
-    /// The linter did not complete within the configured timeout.
+
+    #[error("linter operation did not complete within the configured timeout")]
     TimeoutElapsed,
-    /// The linter output could not be parsed into [`Finding`] values.
+
+    #[error("failed to parse linter output: {0}")]
     ParseFailed(String),
 }
 
-impl Display for LinterError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::SubprocessFailed(e) => write!(f, "linter subprocess failed: {e}"),
-            Self::NonZeroExit(code, stderr) => {
-                write!(f, "linter exited with code {code}: {stderr}")
-            }
-            Self::TimeoutElapsed => write!(f, "linter timed out"),
-            Self::ParseFailed(reason) => {
-                write!(f, "failed to parse linter output: {reason}")
-            }
-        }
-    }
+#[derive(Error, Debug)]
+pub enum GitError {
+    #[error("subprocess could not be spawned or communicated with: {0}")]
+    CommandFailed(io::Error),
+
+    #[error("git exited with code {0}: {1}")]
+    NonZeroExit(i32, String),
+
+    #[error("git operation did not complete within the configured timeout")]
+    TimeoutElapsed,
 }
 
-impl Error for LinterError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::SubprocessFailed(e) => Some(e),
-            _ => None,
-        }
-    }
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("configuration file could not be read: {0}")]
+    IoError(io::Error),
+
+    #[error("configuration file could not be parsed: {0}")]
+    ParseError(String),
+
+    #[error("configuration file validation error: {0}")]
+    ValidationError(String),
+}
+
+#[derive(Error, Debug)]
+pub enum McpError {
+    #[error("MCP transport error: {0}")]
+    TransportError(String),
+
+    #[error("MCP tool error: {0}")]
+    ToolError(String),
+
+    #[error("MCP configuration error: {0}")]
+    ConfigError(String),
+
+    #[error("MCP request timed out")]
+    TimeoutElapsed,
+}
+
+#[derive(Error, Debug)]
+pub enum GrepError {
+    #[error("subprocess could not be spawned or communicated with: {0}")]
+    CommandFailed(String),
+
+    #[error("grep exited with code {0}: {1}")]
+    NonZeroExit(i32, String),
+
+    #[error("grep operation did not complete within the configured timeout")]
+    TimeoutElapsed,
+}
+
+#[derive(Error, Debug)]
+pub enum ListDirError {
+    #[error("directory could not be read: {0}")]
+    IoError(String),
+}
+
+#[derive(Error, Debug)]
+pub enum ShellError {
+    #[error("shell command could not be spawned: {0}")]
+    SpawnFailed(String),
+
+    #[error("shell command timed out")]
+    TimeoutElapsed,
 }
 
 impl From<io::Error> for LinterError {
@@ -47,96 +89,8 @@ impl From<io::Error> for LinterError {
     }
 }
 
-/// Errors that can occur when running a git subprocess.
-#[derive(Debug)]
-pub enum GitError {
-    /// The git command could not be spawned or communicated with.
-    CommandFailed(io::Error),
-    /// Git exited with a non-zero exit code.
-    NonZeroExit(i32, String),
-    /// The git operation did not complete within the configured timeout.
-    TimeoutElapsed,
-}
-
-impl Display for GitError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::CommandFailed(e) => write!(f, "git command failed: {e}"),
-            Self::NonZeroExit(code, stderr) => {
-                write!(f, "git exited with code {code}: {stderr}")
-            }
-            Self::TimeoutElapsed => write!(f, "git operation timed out"),
-        }
-    }
-}
-
-impl Error for GitError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::CommandFailed(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
 impl From<io::Error> for GitError {
     fn from(e: io::Error) -> Self {
         Self::CommandFailed(e)
     }
 }
-
-/// Errors that can occur when loading linter configuration.
-#[derive(Debug)]
-pub enum ConfigError {
-    /// The configuration file could not be read.
-    IoError(io::Error),
-    /// The configuration file could not be parsed as TOML.
-    ParseError(String),
-    /// The configuration failed validation.
-    ValidationError(String),
-}
-
-impl Display for ConfigError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::IoError(e) => write!(f, "config I/O error: {e}"),
-            Self::ParseError(reason) => write!(f, "config parse error: {reason}"),
-            Self::ValidationError(reason) => write!(f, "config validation error: {reason}"),
-        }
-    }
-}
-
-impl Error for ConfigError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::IoError(e) => Some(e),
-            _ => None,
-        }
-    }
-}
-
-/// Errors from MCP tool operations.
-#[derive(Debug)]
-pub enum McpError {
-    /// Server connection or transport error.
-    TransportError(String),
-    /// The MCP tool call returned an error.
-    ToolError(String),
-    /// Configuration error.
-    ConfigError(String),
-    /// Request timed out.
-    TimeoutElapsed,
-}
-
-impl fmt::Display for McpError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::TransportError(e) => write!(f, "MCP transport error: {e}"),
-            Self::ToolError(e) => write!(f, "MCP tool error: {e}"),
-            Self::ConfigError(e) => write!(f, "MCP config error: {e}"),
-            Self::TimeoutElapsed => write!(f, "MCP request timed out"),
-        }
-    }
-}
-
-impl std::error::Error for McpError {}

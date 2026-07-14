@@ -1,16 +1,12 @@
 //! List-directory tool for exploring repository structure.
 //!
 //! The [`ListDirTool`] lets the agent list the contents of a directory,
-//! returning filenames with indicators: directories show '/', files show
-//! ' (file)'.
+//! returning filenames with indicators: directories show '/', files show '(file)'.
 
-use std::fmt;
-
-use rig_core::tool::Tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::impl_tool;
+use crate::{error::ListDirError, impl_tool};
 
 /// Arguments for [`ListDirTool`].
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -22,23 +18,6 @@ pub struct ListDirArgs {
     pub max_items: Option<usize>,
 }
 
-/// Errors from the list-dir tool.
-#[derive(Debug)]
-pub enum ListDirError {
-    /// Directory could not be read.
-    IoError(String),
-}
-
-impl fmt::Display for ListDirError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::IoError(e) => write!(f, "list directory error: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for ListDirError {}
-
 /// Tool that lists the contents of a directory (non-recursive).
 ///
 /// Returns filenames with '/' appended to directory names, sorted by name.
@@ -49,6 +28,7 @@ pub struct ListDirTool {
 
 impl_tool! {ListDirTool, ListDirArgs, ListDirError, String, "list_dir",
     "List the contents of a directory. Returns filenames with indicators: directories show '/', files show ' (file)'.",
+
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         // TODO:  check to ensure that the path does not contain '..' to prevent directory traversal attacks.
         if args.path.starts_with('/') {
@@ -97,6 +77,8 @@ impl_tool! {ListDirTool, ListDirArgs, ListDirError, String, "list_dir",
 
 #[cfg(test)]
 mod tests {
+    use rig_core::tool::Tool;
+
     use super::*;
     use std::io::Write;
 

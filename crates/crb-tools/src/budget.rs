@@ -1,6 +1,6 @@
 //! Tool call budget for agent tool usage.
 //!
-//! A `ToolCallBudget` limits how many tool invocations an agent can make
+//! A [`ToolCallBudget`] limits how many tool invocations an agent can make
 //! during a single review session, preventing runaway tool calls.
 
 use std::collections::HashMap;

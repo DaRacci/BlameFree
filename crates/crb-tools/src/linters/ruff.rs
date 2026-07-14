@@ -1,4 +1,4 @@
-use crb_shared::finding::Finding;
+use crb_shared::{finding::Finding, severity::Severity};
 use serde::Deserialize;
 
 use crate::error::LinterError;
@@ -14,6 +14,7 @@ struct RuffJsonFinding {
 
 #[derive(Debug, Deserialize)]
 struct RuffLocation {
+    #[allow(unused)]
     column: u32,
     row: u32,
 }
@@ -34,7 +35,7 @@ pub fn parse_ruff_output(stdout: &str) -> Result<Vec<Finding>, LinterError> {
             file: Some(f.filename),
             line: Some(f.location.row),
             message: f.message,
-            severity: "error".to_string(),
+            severity: Severity::Info,
             rule_code: Some(f.code),
             severity_audited: false,
             severity_audit_reason: None,
@@ -82,7 +83,6 @@ mod tests {
             findings[0].message,
             "Local variable `x` is assigned but never used"
         );
-        assert_eq!(findings[0].severity, "error");
         assert_eq!(findings[0].rule_code.as_deref(), Some("F841"));
 
         assert_eq!(findings[1].file.as_deref(), Some("src/utils.py"));

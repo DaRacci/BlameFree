@@ -1,47 +1,25 @@
 //! Shell tool for running arbitrary shell commands.
 //!
-//! The [`ShellTool`] lets the agent execute shell commands on the repository
-//! checkout.  Commands are run inside a timeout with output capped to avoid
-//! blowing the context window.
+//! The [`ShellTool`] lets the agent execute shell commands on the repository checkout.
+//! Commands are run inside a timeout with output capped to avoid blowing the context window.
 
-use std::fmt;
 use std::time::Duration;
 
-/// Maximum output size in bytes (100 KB). Output beyond this is truncated.
+/// Maximum output size in bytes.
+/// Output beyond this is truncated.
 const MAX_OUTPUT: usize = 100_000;
 
-use rig_core::tool::Tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::impl_tool;
+use crate::{error::ShellError, impl_tool};
 
 /// Arguments for [`ShellTool`].
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct ShellArgs {
-    /// Shell command to run (e.g. "cat Cargo.toml", "make build").
+    /// Shell command to run
     pub command: String,
 }
-
-/// Errors from shell tool execution.
-#[derive(Debug)]
-pub enum ShellError {
-    /// The subprocess could not be spawned.
-    SpawnFailed(String),
-    /// The command exceeded its time limit.
-    TimeoutElapsed,
-}
-
-impl fmt::Display for ShellError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::SpawnFailed(e) => write!(f, "shell spawn failed: {e}"),
-            Self::TimeoutElapsed => write!(f, "shell command timed out"),
-        }
-    }
-}
-
-impl std::error::Error for ShellError {}
 
 /// Tool that runs a shell command via `sh -c`.
 ///
@@ -49,8 +27,10 @@ impl std::error::Error for ShellError {}
 pub struct ShellTool {
     /// Working directory for the command.
     pub work_dir: String,
+
     /// Per-invocation timeout.
     pub timeout: Duration,
+
     /// Max output bytes (capped to avoid context overflow).
     pub max_output: usize,
 }
@@ -66,7 +46,11 @@ impl Default for ShellTool {
 }
 
 impl_tool! {ShellTool, ShellArgs, ShellError, String, "shell",
-    "Execute a shell command in the repository working directory. Use for running tests, builds, linters, or any CLI operation. Output is capped at 100KB; very long output will be truncated with a note. IMPORTANT: Do NOT use this for reading files (use read_file), searching code (use grep), or listing directories (use list_dir).",
+    "Execute a shell command in the repository working directory.
+    Use for running tests, builds, linters, or any CLI operation.
+    Output is capped at 100KB; very long output will be truncated with a note.
+    IMPORTANT: Do NOT use this for reading files (use read_file), searching code (use grep), or listing directories (use list_dir).",
+
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
         let cmd = args.command;
         let work_dir = self.work_dir.clone();
@@ -128,6 +112,7 @@ impl_tool! {ShellTool, ShellArgs, ShellError, String, "shell",
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rig_core::tool::Tool;
 
     #[test]
     fn test_shell_error_display() {

@@ -1,5 +1,3 @@
-use std::default;
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter};

@@ -31,6 +31,7 @@ pub struct LinterConfig {
 pub enum OutputFormat {
     /// JSON output (used by ruff, ESLint with --format json).
     Json,
+
     /// Plain text output (used by go vet, etc.).
     Text,
 }

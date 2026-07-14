@@ -59,6 +59,7 @@ js-sys = "0.3"
 leptos = "0.6"
 leptos_meta = "0.6"
 leptos_router = "0.6"
+linguist = "0.1"
 log = "0.4"
 oauth2 = { version = "4", features = ["reqwest"] }
 octocrab = "0.41"
@@ -72,7 +73,7 @@ rig-core = "0.39"
 rig-mcp = "0.2.5"
 rust-embed = "8"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
-schemars = "0.8"
+schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_fields = "0.1"
 serde_json = "1"
@@ -81,6 +82,7 @@ sha2 = "0.10"
 strum = { version = "0.28", features = ["derive"] }
 syn = "2"
 tempfile = "3"
+thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 tokio-stream = "0.1"
 toml = "0.8"

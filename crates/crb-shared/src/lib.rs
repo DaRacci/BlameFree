@@ -1,4 +1,3 @@
-pub mod benchmark;
 pub mod deduplicate;
 pub mod diff;
 pub mod filter;

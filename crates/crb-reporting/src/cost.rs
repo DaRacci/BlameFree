@@ -99,46 +99,6 @@ struct CostTrackerInner {
     sessions: HashMap<String, SessionUsage>,
 
     cache_usage: HashMap<String, CacheUsage>,
-
-    #[deprecated]
-    agent_tokens_in: usize,
-    #[deprecated]
-    agent_tokens_out: usize,
-    #[deprecated]
-    judge_tokens_in: usize,
-    #[deprecated]
-    judge_tokens_out: usize,
-
-    #[deprecated]
-    agent_cached_input_tokens: usize,
-    #[deprecated]
-    agent_cache_creation_input_tokens: usize,
-    #[deprecated]
-    agent_reasoning_tokens: usize,
-    #[deprecated]
-    agent_tool_use_prompt_tokens: usize,
-    #[deprecated]
-    judge_cached_input_tokens: usize,
-    #[deprecated]
-    judge_cache_creation_input_tokens: usize,
-    #[deprecated]
-    judge_reasoning_tokens: usize,
-    #[deprecated]
-    judge_tool_use_prompt_tokens: usize,
-
-    #[deprecated]
-    agent_call_count: usize,
-    #[deprecated]
-    judge_call_count: usize,
-
-    #[deprecated]
-    agent_cache_hits: usize,
-    #[deprecated]
-    agent_cache_misses: usize,
-    #[deprecated]
-    judge_cache_hits: usize,
-    #[deprecated]
-    judge_cache_misses: usize,
 }
 
 impl CostTracker {
@@ -186,81 +146,6 @@ impl CostTracker {
                 }
             });
         }
-    }
-
-    /// Record an agent LLM call with real API usage data.
-    ///
-    /// `usage` contains the token counts reported by the API.
-    /// Pass `cache_hit = true` if the call was served from cache,
-    /// `false` if it was a fresh API call.  On cache hits, usage is still
-    /// recorded so analytics show token counts (cost is computed as 0).
-    #[deprecated]
-    pub fn record_agent(&self, usage: &Usage, cache_hit: bool) {
-        unimplemented!()
-    }
-
-    /// Record a judge LLM call with real API usage data.
-    ///
-    /// `usage` contains the token counts reported by the API.
-    /// Pass `cache_hit = true` if the call was served from cache,
-    /// `false` if it was a fresh API call.  On cache hits, usage is still
-    /// recorded so analytics show token counts (cost is computed as 0).
-    #[deprecated]
-    pub fn record_judge(&self, usage: &Usage, cache_hit: bool) {
-        unimplemented!()
-    }
-
-    /// Record an agent call with a default (zero) Usage.
-    /// Used when usage data isn't available (e.g., legacy cache hits that have no stored usage).
-    #[deprecated]
-    pub fn record_agent_empty(&self, cache_hit: bool) {
-        unimplemented!()
-    }
-
-    /// Record a judge call with a default (zero) Usage.
-    #[deprecated]
-    pub fn record_judge_empty(&self, cache_hit: bool) {
-        unimplemented!()
-    }
-
-    /// Total estimated cost in USD, computed from env-configured pricing rates.
-    ///
-    /// Pricing rates are read from environment variables (see module docs for defaults).
-    /// The formula is:
-    /// ```text
-    /// cost = (tokens_in * input_price_per_token) + (tokens_out * output_price_per_token)
-    /// ```
-    /// where prices are per-token (derived from per-1M-token rates).
-    #[deprecated]
-    pub fn total_cost(&self) -> f64 {
-        unimplemented!()
-    }
-
-    /// Cache hit rate for agent calls (0.0 to 1.0).
-    /// Returns 0.0 if no calls were made.
-    #[deprecated]
-    pub async fn agent_cache_hit_rate(&self) -> f64 {
-        unimplemented!()
-    }
-
-    /// Cache hit rate for judge calls (0.0 to 1.0).
-    /// Returns 0.0 if no calls were made.
-    #[deprecated]
-    pub fn judge_cache_hit_rate(&self) -> f64 {
-        unimplemented!()
-    }
-
-    /// Total token counts across both agent and judge calls.
-    /// Returns `(total_tokens_in, total_tokens_out)`.
-    #[deprecated]
-    pub async fn total_tokens(&self) -> (u64, u64) {
-        let inner = self.inner.lock().await;
-        inner
-            .sessions
-            .iter()
-            .fold((0, 0), |(acc_in, acc_out), (_, usage)| {
-                (acc_in + usage.input_tokens, acc_out + usage.output_tokens)
-            })
     }
 
     /// Build a [`CostSnapshot`] of the current state.

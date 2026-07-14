@@ -232,18 +232,13 @@ fn spawn_agent_task(
             &agent_cache_key[..12]
         );
 
-        let tool_preamble = crb_tools::tool_prompt_section(
-            &role,
-            &crb_tools::budget::ToolCallBudget::default(),
-            &[],
-        );
         let agent = build_agent(
             &client,
             model.as_str(),
             &role,
             rules_preamble.as_deref(),
             None,
-            Some(&tool_preamble),
+            None,
             additional_params.clone(),
             tool_server_handle.clone(),
         );
@@ -446,12 +441,6 @@ async fn evaluate_pr_consensus(
     let diff_hash = sha256_hex(diff);
     let judge_model = "";
 
-    // Compute tool preamble only when workdir is provided
-    let tool_preamble = workdir.map(|_| {
-        let default_budget = crb_tools::budget::ToolCallBudget::default();
-        crb_tools::tool_prompt_section(first_role, &default_budget, &[])
-    });
-
     info!(
         "Consensus pipeline: {} agent role(s), max {} findings per role",
         parsed_roles.len(),
@@ -493,7 +482,7 @@ async fn evaluate_pr_consensus(
             &rules_hash,
             &judge_prompt_hash,
             judge_model,
-            tool_preamble.as_deref(),
+            None,
             workdir,
             additional_params,
             dashboard_tx.map(|t| t.clone()),

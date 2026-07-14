@@ -876,8 +876,7 @@ async fn run_benchmark(
 
     // TODO - Run reviewer agents and judge.
 
-    let (results, eval_elapsed) =
-        benchmark::run_concurrent_eval(prs_to_evaluate, &pipeline_cfg, eval_fn).await;
+    let (results, eval_elapsed) = run_concurrent(prs_to_evaluate, &pipeline_cfg, eval_fn).await;
 
     let mut aggregated = Metrics::new();
     for r in &results {

@@ -6,7 +6,7 @@
 //! - [`PromptLibrary`] loads and renders agent prompts from embedded Handlebars templates.
 
 use crb_types::wrappers::{Model, WrappedData};
-use rig_core::agent::{Agent, AgentBuilder, WithToolServerHandle};
+use rig_core::agent::{AgentBuilder, WithToolServerHandle};
 use rig_core::client::CompletionClient;
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
