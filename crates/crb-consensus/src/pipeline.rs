@@ -4,6 +4,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crb_reporting::cost::AnalyticsSnapshot;
+use crb_reporting::golden::GoldenComment;
 use crb_tools::build_tool_server;
 use rig_core::agent::Agent;
 use rig_core::completion::Usage;
@@ -14,7 +16,7 @@ use crb_shared::finding::Finding;
 
 use crate::execution::run_reviewers;
 use crate::judge::judge_comment;
-use crate::{CacheBackend, ConsensusReport, GoldenComment, MatchResult, ReviewerConfig};
+use crate::{CacheBackend, ConsensusReport, MatchResult, ReviewerConfig};
 
 /// Run the full multi-agent consensus pipeline.
 ///
@@ -27,6 +29,7 @@ use crate::{CacheBackend, ConsensusReport, GoldenComment, MatchResult, ReviewerC
 /// If `cache` is provided, agent interactions and judge calls are cached
 /// using content-addressed keys derived from prompt hashes, diff hash, etc.
 #[allow(clippy::too_many_arguments)]
+#[deprecated = "Needs rewrite to use new types, apis and patterns."]
 pub async fn run_consensus(
     diff: &str,
     goldens: Vec<GoldenComment>,
@@ -46,11 +49,7 @@ pub async fn run_consensus(
     additional_params: Option<serde_json::Value>,
     dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_types::RunEvent>>,
 ) -> ConsensusReport {
-    #[cfg(feature = "exp14_submit_finding")]
-    let collector = Some(Arc::new(tokio::sync::Mutex::new(Vec::new())));
-    #[cfg(not(feature = "exp14_submit_finding"))]
-    let collector = None;
-    let tool_server = build_tool_server(workdir, collector).run();
+    let tool_server = build_tool_server(workdir).run();
     let (agents, agent_api_calls, agent_usage) = run_reviewers(
         reviewer_configs,
         diff,
@@ -126,38 +125,14 @@ pub async fn run_consensus(
     let fp_count = false_positives.len();
     let fn_count = false_negatives.len();
 
-    let precision = if tp_count + fp_count > 0 {
-        tp_count as f64 / (tp_count + fp_count) as f64
-    } else if goldens.is_empty() {
-        1.0
-    } else {
-        0.0
-    };
-
-    let recall = if tp_count + fn_count > 0 {
-        tp_count as f64 / (tp_count + fn_count) as f64
-    } else {
-        1.0
-    };
-
-    let f1 = if (precision + recall) > 0.0 {
-        2.0 * precision * recall / (precision + recall)
-    } else {
-        0.0
-    };
-
     ConsensusReport {
         agents,
         true_positives,
         false_positives,
         false_negatives,
-        precision,
-        recall,
-        f1,
-        agent_api_calls,
-        judge_api_calls,
-        judge_cache_hits,
-        agent_usage,
-        judge_usage,
+        analytics: AnalyticsSnapshot {
+            ..Default::default() // TODO
+        },
+        ..Default::default()
     }
 }

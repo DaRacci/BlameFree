@@ -12,7 +12,7 @@ use crb_benchmark::judge::build_judge;
 use crb_benchmark::pr;
 use crb_harness::eval::EvalConfig;
 use crb_harness::{EvalStrategy, model_capabilities, validation};
-use crb_reporting::cost::CostTracker;
+use crb_reporting::cost::AnalyticsTracker;
 use crb_reporting::{
     GoldenCommentEntry, load_golden_datasets, print_terminal_summary, write_report,
 };
@@ -848,7 +848,7 @@ async fn run_benchmark(
         let dashboard_tx = eval_dashboard_tx.clone();
         let reasoning_effort = reasoning_effort.clone();
         async move {
-            let cost_tracker = Arc::new(CostTracker::new());
+            let cost_tracker = Arc::new(AnalyticsTracker::new());
             let cfg = EvalConfig {
                 strategy: if skip_consensus {
                     EvalStrategy::Single

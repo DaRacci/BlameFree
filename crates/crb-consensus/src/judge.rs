@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use crb_reporting::golden::GoldenComment;
+use crb_types::benchmark::JudgeVerdict;
 use rig_core::agent::Agent;
 use rig_core::completion::Prompt;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
@@ -12,9 +14,10 @@ use crb_shared::finding::Finding;
 use crb_shared::jaccard::jaccard_similarity;
 use tracing::{info, warn};
 
-use crate::{CacheBackend, GoldenComment, MatchResult};
+use crate::{CacheBackend, MatchResult};
 
 /// Compute a content-addressed cache key for a judge call.
+#[deprecated = "Use [`crb_shared::cache`]"]
 fn compute_judge_cache_key(
     judge_prompt_hash: &str,
     finding_message: &str,
@@ -63,14 +66,14 @@ pub async fn judge_comment(
         let judge_key = compute_judge_cache_key(
             judge_prompt_hash,
             &finding.message,
-            &golden.message_regex,
+            &golden.comment,
             judge_model,
         );
 
         if let Some(ref c) = cache {
             let cached = c.load_raw(&judge_key);
             if !cached.is_empty() {
-                if let Ok(cached_verdict) = serde_json::from_str::<crb_types::JudgeVerdict>(&cached) {
+                if let Ok(cached_verdict) = serde_json::from_str::<JudgeVerdict>(&cached) {
                     info!("CACHE HIT for judge (key={})", &judge_key[..12]);
                     *judge_cache_hits += 1;
                     if cached_verdict.match_ {
@@ -83,12 +86,15 @@ pub async fn judge_comment(
 
         info!("CACHE MISS for judge (key={})", &judge_key[..12]);
         *judge_api_calls += 1;
-        let prompt = format_judge_prompt(&golden.message_regex, &finding.message);
+        let prompt = format_judge_prompt(&golden.comment, &finding.message);
         match judge.prompt(&prompt).extended_details().await {
             Ok(resp) => {
-                if let Ok(verdict) = serde_json::from_str::<crb_types::JudgeVerdict>(&resp.output) {
+                if let Ok(verdict) = serde_json::from_str::<JudgeVerdict>(&resp.output) {
                     if let Some(ref c) = cache {
-                        c.store_raw(&judge_key, &serde_json::to_string(&verdict).unwrap_or_default());
+                        c.store_raw(
+                            &judge_key,
+                            &serde_json::to_string(&verdict).unwrap_or_default(),
+                        );
                     }
                     if verdict.match_ {
                         return MatchResult::TruePositive;
@@ -103,7 +109,7 @@ pub async fn judge_comment(
 
     // Try Jaccard word-overlap fallback
     for finding in &file_matches {
-        if jaccard_similarity(&finding.message, &golden.message_regex, false) >= 0.3 {
+        if jaccard_similarity(&finding.message, &golden.comment, false) >= 0.3 {
             return MatchResult::TruePositive;
         }
     }

@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// Compute a content-addressed cache key for an agent review call.
-#[deprecated]
+#[deprecated = "Use new cache system instead."]
 fn compute_agent_cache_key(
     prompt_hash: &str,
     diff_hash: &str,
@@ -34,7 +34,7 @@ fn compute_agent_cache_key(
 
 /// Serializable snapshot of agent cache data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[deprecated]
+#[deprecated = "Use new cache system instead."]
 struct CachedAgentData {
     response: String,
     #[serde(default)]
@@ -64,6 +64,7 @@ struct CachedAgentData {
 /// - On cache hit: skips API call, logs "CACHE HIT", uses cached response
 /// - On cache miss: makes API call, saves response, logs "CACHE MISS"
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[deprecated = "needs full rewrite to use new cache, agent builder, and apis."]
 pub async fn run_reviewers(
     configs: Vec<ReviewerConfig>,
     diff: &str,
@@ -163,7 +164,7 @@ pub async fn run_reviewers(
             agent_api_calls.fetch_add(1, Ordering::SeqCst);
             info!("CACHE MISS for role {:?} (key={})", role, &cache_key[..12]);
 
-            let turn_budget_hook = TurnBudgetHook::new(agent.default_max_turns.unwrap_or(6));
+            let turn_budget_hook = TurnBudgetHook::new(agent);
 
             let role_async = role.clone();
             let outcome = tokio::time::timeout(Duration::from_secs(900), async {
@@ -171,7 +172,11 @@ pub async fn run_reviewers(
                 use rig_core::agent::MultiTurnStreamItem;
 
                 let role = role_async;
-                let mut stream = agent.stream_prompt(&diff).with_hook(turn_budget_hook).await;
+                let mut stream = agent
+                    .build()
+                    .stream_prompt(&diff)
+                    .with_hook(turn_budget_hook)
+                    .await;
                 let mut response = String::new();
                 let mut usage = Usage::new();
                 let mut reasoning_text: Option<String> = None;

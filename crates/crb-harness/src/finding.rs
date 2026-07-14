@@ -11,15 +11,15 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
         return findings.to_vec();
     }
 
-    let deduped = semantic_dedup(findings.to_vec());
-    let audited = apply_severity_auditor(deduped);
+    let mut findings = semantic_dedup(findings.to_vec());
+    apply_severity_auditor(&mut findings);
     let capped = {
         let max = MAX_FINDINGS;
-        if audited.len() > max {
-            info!("capping {} findings to {} candidates", audited.len(), max);
-            audited.into_iter().take(max).collect()
+        if findings.len() > max {
+            info!("capping {} findings to {} candidates", findings.len(), max);
+            findings.into_iter().take(max).collect()
         } else {
-            audited
+            findings
         }
     };
 
@@ -34,6 +34,7 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
 /// 3. Find any JSON array in the response.
 ///
 /// If all strategies fail, returns an empty `Vec`.
+#[deprecated = "Use the `TypedPrompt` from rig instead of parsing raw LLM responses."]
 pub fn parse_agent_findings(response: &str) -> Result<Vec<Finding>, String> {
     let preview_len = std::cmp::min(MAX_RESPONSE_PREVIEW, response.len());
     info!(

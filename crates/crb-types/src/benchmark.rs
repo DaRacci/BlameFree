@@ -2,28 +2,6 @@ use std::ops::AddAssign;
 
 use serde::{Deserialize, Serialize};
 
-/// Metrics data for a single PR evaluation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetricsData {
-    /// True positives count.
-    pub true_positives: usize,
-
-    /// False positives count.
-    pub false_positives: usize,
-
-    /// False negatives count.
-    pub false_negatives: usize,
-
-    /// Precision score.
-    pub precision: f64,
-
-    /// Recall score.
-    pub recall: f64,
-
-    /// F1 score.
-    pub f1: f64,
-}
-
 /// Aggregate metrics across all PRs.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Metrics {
@@ -45,27 +23,31 @@ pub struct Metrics {
     pub duration_secs: f64,
 }
 
-impl Metrics {
+pub trait MetricsProvider {
+    fn true_positives(&self) -> usize;
+    fn false_positives(&self) -> usize;
+    fn false_negatives(&self) -> usize;
+
     /// Aggregate precision across all evaluated items.
-    pub fn precision(&self) -> f64 {
-        if self.true_positives + self.false_positives > 0 {
-            self.true_positives as f64 / (self.true_positives + self.false_positives) as f64
+    fn precision(&self) -> f64 {
+        if self.true_positives() + self.false_positives() > 0 {
+            self.true_positives() as f64 / (self.true_positives() + self.false_positives()) as f64
         } else {
             0.0
         }
     }
 
     /// Aggregate recall across all evaluated items.
-    pub fn recall(&self) -> f64 {
-        if self.true_positives + self.false_negatives > 0 {
-            self.true_positives as f64 / (self.true_positives + self.false_negatives) as f64
+    fn recall(&self) -> f64 {
+        if self.true_positives() + self.false_negatives() > 0 {
+            self.true_positives() as f64 / (self.true_positives() + self.false_negatives()) as f64
         } else {
             0.0
         }
     }
 
     /// Aggregate F1 score across all evaluated items.
-    pub fn f1(&self) -> f64 {
+    fn f1(&self) -> f64 {
         let p = self.precision();
         let r = self.recall();
         if (p + r) > 0.0 {
@@ -76,6 +58,20 @@ impl Metrics {
     }
 }
 
+impl MetricsProvider for Metrics {
+    fn true_positives(&self) -> usize {
+        self.true_positives
+    }
+
+    fn false_positives(&self) -> usize {
+        self.false_positives
+    }
+
+    fn false_negatives(&self) -> usize {
+        self.false_negatives
+    }
+}
+
 impl AddAssign for Metrics {
     fn add_assign(&mut self, other: Self) {
         self.true_positives += other.true_positives;
@@ -83,4 +79,18 @@ impl AddAssign for Metrics {
         self.false_negatives += other.false_negatives;
         self.duration_secs += other.duration_secs;
     }
+}
+
+/// The structured verdict returned by the judge LLM.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JudgeVerdict {
+    /// Brief explanation of why the judge determined a match or no match.
+    pub reasoning: String,
+
+    /// Whether the candidate finding matches the golden comment.
+    #[serde(rename = "match")]
+    pub match_: bool,
+
+    /// Confidence level for this judgment
+    pub confidence: f32,
 }

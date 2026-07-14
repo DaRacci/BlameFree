@@ -2,7 +2,7 @@
 
 pub mod cost;
 pub mod golden;
-pub mod metrics;
+pub mod history;
 
 pub use golden::{GoldenCommentEntry, load_golden_datasets};
 
@@ -10,29 +10,12 @@ use std::{fs, path::Path};
 
 use anyhow::Result;
 use crb_shared::{sanitize_filename, url::parse_github_url};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tracing::info;
 
-use crb_types::{JudgeVerdict, benchmark::Metrics};
+use crb_types::benchmark::{JudgeVerdict, Metrics, MetricsProvider};
 
-use crate::cost::CostSnapshot;
-
-/// A single run entry appended to `_runs.json` in the cache directory.
-///
-/// Records metadata about each review-harness run for historical tracking.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RunHistoryEntry {
-    pub run_id: String,
-    pub timestamp: String,
-    pub model: String,
-    pub judge_model: String,
-    pub total_prs: usize,
-    pub duration_secs: f64,
-    pub total_cost_usd: f64,
-    pub total_tokens: usize,
-    pub agent_cache_hit_rate: f64,
-    pub judge_cache_hit_rate: f64,
-}
+use crate::cost::AnalyticsSnapshot;
 
 /// Result of evaluating a single PR.
 #[derive(Debug, Clone, Serialize)]
@@ -57,7 +40,7 @@ pub struct PrResult {
 
     /// Cost tracking data for this PR evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cost: Option<CostSnapshot>,
+    pub cost: Option<AnalyticsSnapshot>,
 }
 
 /// Write per-PR JSON result files to `output_dir`.
@@ -79,7 +62,7 @@ pub fn write_report(results: &[PrResult], output_dir: &Path) -> Result<()> {
 }
 
 /// Print a terminal summary of cost and cache hit rates for all PRs.
-#[deprecated]
+#[deprecated = "Needs either a rewrite, or to be refacotred to use the new cost tracking system."]
 pub async fn print_terminal_summary(results: &[PrResult]) {
     let separator = "═══════════════════════════════════════════════";
     println!("\n{separator}");
@@ -92,7 +75,7 @@ pub async fn print_terminal_summary(results: &[PrResult]) {
             .map(|(owner, repo, num)| format!("{owner}/{repo}/{num}"))
             .unwrap_or_else(|_| result.pr_title.clone());
 
-        let f1 = result.metrics.f1;
+        let f1 = result.metrics.f1();
         let findings_count = result.findings_count;
 
         if let Some(ref cost) = result.cost {
@@ -121,22 +104,12 @@ pub async fn print_terminal_summary(results: &[PrResult]) {
     let total_agent_rate: f64 = results
         .iter()
         .filter_map(|r| r.cost.as_ref())
-        .map(|c| c.agent_cache_hit_rate)
-        .sum();
-    let total_judge_rate: f64 = results
-        .iter()
-        .filter_map(|r| r.cost.as_ref())
-        .map(|c| c.judge_cache_hit_rate)
+        .map(|c| c.hit_rate())
         .sum();
     let pr_count_with_cost = results.iter().filter(|r| r.cost.is_some()).count();
 
     let avg_agent_rate = if pr_count_with_cost > 0 {
         total_agent_rate / pr_count_with_cost as f64
-    } else {
-        0.0
-    };
-    let avg_judge_rate = if pr_count_with_cost > 0 {
-        total_judge_rate / pr_count_with_cost as f64
     } else {
         0.0
     };
@@ -149,6 +122,5 @@ pub async fn print_terminal_summary(results: &[PrResult]) {
         grand_total_cost,
     );
     println!(" Agent cache hit rate: {:.1}%", avg_agent_rate * 100.0);
-    println!(" Judge cache hit rate: {:.1}%", avg_judge_rate * 100.0);
     println!("{separator}");
 }

@@ -3,21 +3,21 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use crb_agents::agent::AgentEntry;
+use crb_shared::diff::Diff;
 use crb_types::benchmark::Metrics;
-use crb_types::wrappers::{Diff, WrappedData};
+use crb_types::wrappers::WrappedData;
 use rig_core::agent::Agent;
-use rig_core::completion::Usage;
 use rig_core::model::Model;
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 
 use crb_reporting::PrResult;
 use crb_reporting::golden::GoldenCommentEntry;
-use crb_types::JudgeVerdict;
+use crb_types::benchmark::JudgeVerdict;
 
 use crate::adaptive::get_agents_for_diff;
 use crate::pipeline::run_consensus;
-use crate::{CacheBackend, GoldenComment, ReviewerConfig, Role};
+use crate::{CacheBackend, ReviewerConfig, Role};
 
 /// Convenience function that matches the existing `evaluate_pr()` signature in `crb-harness`
 /// but uses the full consensus pipeline internally.
@@ -31,6 +31,7 @@ use crate::{CacheBackend, GoldenComment, ReviewerConfig, Role};
 ///
 /// If `cache` is provided, agent interactions and judge calls are cached.
 #[allow(clippy::too_many_arguments)]
+#[deprecated = "Run a normal review first and then implement a new function to evaluate the results only."]
 pub async fn evaluate_pr_with_consensus(
     pr: &GoldenCommentEntry,
     diff: &Diff,
@@ -51,7 +52,7 @@ pub async fn evaluate_pr_with_consensus(
     workdir: Option<&str>,
     additional_params: Option<serde_json::Value>,
     dashboard_tx: Option<tokio::sync::broadcast::Sender<crb_types::RunEvent>>,
-) -> Result<(PrResult, Usage, Usage, usize, usize, usize)> {
+) -> Result<PrResult> {
     let roles = get_agents_for_diff(diff, selected_agents);
 
     let reviewer_configs: Vec<ReviewerConfig> = roles
@@ -63,24 +64,9 @@ pub async fn evaluate_pr_with_consensus(
         })
         .collect();
 
-    // Convert crb-reporting GoldenComments to consensus GoldenComments.
-    // crb-reporting's GoldenComment lacks file/line, so we use
-    // empty file + line 0 and escape the comment text as a regex.
-    let consensus_goldens: Vec<GoldenComment> = pr
-        .comments
-        .iter()
-        .map(|gc| GoldenComment {
-            file: String::new(),
-            line: 0,
-            message_regex: regex::escape(&gc.comment),
-            severity: gc.severity.clone(),
-            source: "any".to_string(),
-        })
-        .collect();
-
     let report = run_consensus(
         diff.get(),
-        consensus_goldens,
+        pr.comments.clone(),
         reviewer_configs,
         client,
         judge,
@@ -121,25 +107,18 @@ pub async fn evaluate_pr_with_consensus(
         .map(|(_, findings)| findings.len())
         .sum();
 
-    Ok((
-        PrResult {
-            pr_title: pr.pr_title.clone(),
-            url: pr.url.clone(),
-            findings_count: total_findings,
-            golden_count: pr.comments.len(),
-            metrics: Metrics {
-                true_positives: report.true_positives.len(),
-                false_positives: report.false_positives.len(),
-                false_negatives: report.false_negatives.len(),
-                duration_secs: 0.0, // TODO: Add timing metrics to the consensus report
-            },
-            verdicts,
-            cost: None,
+    Ok(PrResult {
+        pr_title: pr.pr_title.clone(),
+        url: pr.url.clone(),
+        findings_count: total_findings,
+        golden_count: pr.comments.len(),
+        metrics: Metrics {
+            true_positives: report.true_positives.len(),
+            false_positives: report.false_positives.len(),
+            false_negatives: report.false_negatives.len(),
+            duration_secs: 0.0, // TODO: Add timing metrics to the consensus report
         },
-        report.agent_usage,
-        report.judge_usage,
-        report.agent_api_calls,
-        report.judge_api_calls,
-        report.judge_cache_hits,
-    ))
+        verdicts,
+        cost: None, // TODO: Add cost metrics to the consensus report
+    })
 }

@@ -708,7 +708,6 @@ name = "crb-reporting"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crb-agents",
  "crb-shared",
  "crb-types",
  "rig-core",
@@ -776,7 +775,6 @@ dependencies = [
 name = "crb-types"
 version = "0.1.0"
 dependencies = [
- "schemars",
  "serde",
  "serde_json",
 ]

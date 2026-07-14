@@ -1,10 +1,9 @@
-use crb_agents::prompts::{AgentEntry, PromptLibrary};
-use crb_types::wrappers::{Diff, WrappedData};
+use crb_agents::{agent::AgentEntry, prompts::PromptLibrary};
+use crb_shared::diff::Diff;
+use crb_types::wrappers::WrappedData;
 use tracing::{debug, warn};
 
-#[cfg(feature = "exp16_adaptive_agents")]
 const DEFAULT_MAX_FILES: usize = 3;
-#[cfg(feature = "exp16_adaptive_agents")]
 const DEFAULT_MAX_LINES: usize = 200;
 
 /// Languages that always trigger the full 4-agent panel regardless of PR size.
@@ -15,6 +14,7 @@ const FULL_PANEL_LANGUAGES: &[&str] = &[
 /// Determine whether the given diff touches any of the full-panel languages.
 ///
 /// Scans each `diff --git` line for file paths ending with one of the `FULL_PANEL_LANGUAGES` extensions.
+//TODO: Rewrite to use `Diff` struct instead.
 pub fn diff_touches_full_panel_languages(diff: &str) -> bool {
     for line in diff.lines() {
         if line.starts_with("diff --git ") {
@@ -36,6 +36,7 @@ pub fn diff_touches_full_panel_languages(diff: &str) -> bool {
 }
 
 /// Parse a unified diff to count the number of changed files.
+#[deprecated = "Use `Diff` instead"]
 pub fn count_diff_files(diff: &str) -> usize {
     diff.lines()
         .filter(|line| line.starts_with("diff --git "))
@@ -45,6 +46,7 @@ pub fn count_diff_files(diff: &str) -> usize {
 /// Parse a unified diff to count the total number of changed lines.
 ///
 /// Counts additions and deletions, excluding `---`/`+++` hunk headers and `diff --git` lines.
+#[deprecated = "Use `Diff` instead"]
 pub fn count_diff_lines(diff: &str) -> usize {
     diff.lines()
         .filter(|line| {
@@ -75,7 +77,6 @@ pub fn get_agents_for_diff(
         selected_agents = library.agents();
     }
 
-    #[cfg(feature = "exp16_adaptive_agents")]
     if should_use_single_agent(diff.get(), DEFAULT_MAX_FILES, DEFAULT_MAX_LINES) {
         if let Some(generalist) = library.generalist() {
             use tracing::info;

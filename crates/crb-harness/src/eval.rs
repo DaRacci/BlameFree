@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use crb_agents::agent::AgentEntry;
 use crb_consensus::CacheBackend;
-use crb_reporting::cost::CostTracker;
+use crb_reporting::cost::AnalyticsTracker;
 use crb_tools::linters::config::LinterConfig;
 use crb_types::{
     RunEvent,
@@ -48,7 +48,7 @@ pub struct EvalConfig {
     pub cache: Arc<dyn CacheBackend>,
 
     /// Cost tracker for use during the run.
-    pub cost_tracker: Arc<CostTracker>,
+    pub cost_tracker: Arc<AnalyticsTracker>,
 
     /// A shared tool handle for shared use across agents.
     pub tool_handle: ToolServerHandle,

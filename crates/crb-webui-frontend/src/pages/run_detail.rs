@@ -1,5 +1,6 @@
 use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
+use crb_types::benchmark::MetricsProvider;
 use crb_webui_shared::runs::{PrResult, RunDetail};
 use leptos::{
     DynAttrs, IntoView, SignalGet, SignalSet, component, create_local_resource, create_signal, view,
@@ -138,9 +139,9 @@ pub fn RunDetailPage() -> impl IntoView {
                             {move || {
                                 if let Some(ref agg) = detail_clone.aggregate {
                                     view! {
-                                        <MetricsCard value={format!("{:.3}", agg.avg_f1)} label="F1 Score" value_style="color: var(--accent-blue, #58a6ff);"/>
-                                        <MetricsCard value={format!("{:.3}", agg.avg_precision)} label="Precision" value_style="color: var(--accent-green, #3fb950);"/>
-                                        <MetricsCard value={format!("{:.3}", agg.avg_recall)} label="Recall" value_style="color: var(--accent-orange, #f0883e);"/>
+                                        <MetricsCard value={format!("{:.3}", agg.f1())} label="F1 Score" value_style="color: var(--accent-blue, #58a6ff);"/>
+                                        <MetricsCard value={format!("{:.3}", agg.precision())} label="Precision" value_style="color: var(--accent-green, #3fb950);"/>
+                                        <MetricsCard value={format!("{:.3}", agg.recall())} label="Recall" value_style="color: var(--accent-orange, #f0883e);"/>
                                         <MetricsCard value={format!("${:.4}", agg.total_cost)} label="Total Cost" />
                                         <MetricsCard value={format!("{:.0}s", agg.duration_secs)} label="Duration" />
                                     }.into_view()

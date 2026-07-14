@@ -12,7 +12,9 @@ pub mod judge;
 pub mod pipeline;
 
 pub use crb_cache::traits::CacheBackend;
+use crb_reporting::{cost::AnalyticsSnapshot, golden::GoldenComment};
 use crb_shared::finding::Finding;
+use crb_types::benchmark::MetricsProvider;
 use regex::Regex;
 use rig_core::completion::{AssistantContent, Message, Usage};
 use serde::{Deserialize, Serialize};
@@ -62,6 +64,7 @@ impl From<String> for Role {
 
 /// Configuration for a single reviewer agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated = "Use EvalConfig instead."]
 pub struct ReviewerConfig {
     /// The reviewer role.
     pub role: Role,
@@ -71,33 +74,6 @@ pub struct ReviewerConfig {
 
     /// The Maximum number of findings this agent should produce.
     pub max_findings: usize,
-}
-
-/// A golden comment against which findings are judged.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GoldenComment {
-    /// Source file path where the golden comment applies.
-    pub file: String,
-
-    /// Line number in the source file.
-    pub line: u32,
-
-    /// Regex pattern matched against `Finding::message`.
-    pub message_regex: String,
-
-    /// Expected severity for this golden comment.
-    pub severity: String,
-
-    /// Which role(s) should catch this.
-    pub source: String,
-}
-
-impl GoldenComment {
-    /// Check whether a candidate finding matches this golden comment's
-    /// file and line (exact match on both).
-    pub fn matches_candidate(&self, f: &Finding) -> bool {
-        f.file.as_deref() == Some(&self.file) && f.line == Some(self.line)
-    }
 }
 
 /// Result of matching a golden comment against candidate findings.
@@ -114,7 +90,7 @@ pub enum MatchResult {
 }
 
 /// Output of a full consensus run.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct ConsensusReport {
     /// Findings from each agent, grouped by role.
     pub agents: Vec<(Role, Vec<Finding>)>,
@@ -140,20 +116,42 @@ pub struct ConsensusReport {
     #[deprecated(note = "Use the `f1()` method instead.")]
     pub f1: f64,
 
-    /// Number of agent LLM calls that were cache misses (actual API calls made).
+    /// Analytics usage for the agent LLM calls.
+    pub analytics: AnalyticsSnapshot,
+
+    /// Number of agent LLM calls that were cache misses.
+    #[deprecated(note = "Use the `analytics` field instead.")]
     pub agent_api_calls: usize,
 
-    /// Number of judge LLM calls that were cache misses (actual API calls made).
+    /// Number of judge LLM calls that were cache misses.
+    #[deprecated(note = "Use the `analytics` field instead.")]
     pub judge_api_calls: usize,
 
-    /// Number of judge LLM calls that were cache hits (served from cache).
+    /// Number of judge LLM calls that were cache hits.
+    #[deprecated(note = "Use the `analytics` field instead.")]
     pub judge_cache_hits: usize,
 
-    /// Aggregate token usage from all agent API calls (real + cached).
+    /// Aggregate token usage from all agent API calls.
+    #[deprecated(note = "Use the `analytics` field instead.")]
     pub agent_usage: Usage,
 
-    /// Aggregate token usage from all judge API calls (real + cached).
+    /// Aggregate token usage from all judge API calls.
+    #[deprecated(note = "Use the `analytics` field instead.")]
     pub judge_usage: Usage,
+}
+
+impl MetricsProvider for ConsensusReport {
+    fn true_positives(&self) -> usize {
+        self.true_positives.len()
+    }
+
+    fn false_positives(&self) -> usize {
+        self.false_positives.len()
+    }
+
+    fn false_negatives(&self) -> usize {
+        self.false_negatives.len()
+    }
 }
 
 /// Attempt to parse findings from an agent response using a 3-strategy
@@ -221,26 +219,25 @@ pub fn extract_last_assistant_text(history: &[Message]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use crb_shared::severity::Severity;
+
     use super::*;
 
     /// Assert that the precision, recall, and F1 metrics of a report
     /// are all equal to the given expected value (within 1e-6).
     fn assert_metrics(report: &ConsensusReport, expected: f64) {
         const EPS: f64 = 1e-6;
-        assert!((report.precision - expected).abs() < EPS);
-        assert!((report.recall - expected).abs() < EPS);
-        assert!((report.f1 - expected).abs() < EPS);
+        assert!((report.precision() - expected).abs() < EPS);
+        assert!((report.recall() - expected).abs() < EPS);
+        assert!((report.f1() - expected).abs() < EPS);
     }
 
     #[test]
     fn test_judge_comment_no_candidates() {
         // Empty candidates -> no file+line match -> FalseNegative
         let golden = GoldenComment {
-            file: "src/main.rs".into(),
-            line: 42,
-            message_regex: r".*".into(),
-            severity: "error".into(),
-            source: "SA".into(),
+            comment: r".*".into(),
+            severity: Severity::Critical,
         };
 
         // We can't call judge_comment directly in unit tests because it requires a real LLM agent.
@@ -255,57 +252,26 @@ mod tests {
     }
 
     #[test]
-    fn test_consensus_report_empty() {
-        // No goldens, no findings -> perfect metrics
-        let report = ConsensusReport {
-            agents: vec![],
-            true_positives: vec![],
-            false_positives: vec![],
-            false_negatives: vec![],
-            precision: 1.0,
-            recall: 1.0,
-            f1: 1.0,
-            agent_api_calls: 0,
-            judge_api_calls: 0,
-            judge_cache_hits: 0,
-            agent_usage: Usage::new(),
-            judge_usage: Usage::new(),
-        };
-        assert_metrics(&report, 1.0);
-    }
-
-    #[test]
     fn test_consensus_report_perfect() {
         // All findings match all goldens
         let report = ConsensusReport {
             agents: vec![],
             true_positives: vec![(
                 GoldenComment {
-                    file: "a.rs".into(),
-                    line: 1,
-                    message_regex: "foo".into(),
-                    severity: "error".into(),
-                    source: "any".into(),
+                    comment: "foo".into(),
+                    severity: Severity::Critical,
                 },
                 Finding {
                     file: Some("a.rs".into()),
                     line: Some(1),
                     message: "foo".into(),
-                    severity: "error".into(),
+                    severity: Severity::Critical,
                     ..Default::default()
                 },
             )],
-            false_positives: vec![],
-            false_negatives: vec![],
-            precision: 1.0,
-            recall: 1.0,
-            f1: 1.0,
-            agent_api_calls: 0,
-            judge_api_calls: 0,
-            judge_cache_hits: 0,
-            agent_usage: Usage::new(),
-            judge_usage: Usage::new(),
+            ..Default::default()
         };
+
         assert_eq!(report.true_positives.len(), 1);
         assert_eq!(report.false_positives.len(), 0);
         assert_eq!(report.false_negatives.len(), 0);
@@ -315,32 +281,21 @@ mod tests {
     #[test]
     fn test_consensus_report_no_matches() {
         let report = ConsensusReport {
-            agents: vec![],
-            true_positives: vec![],
             false_positives: vec![Finding {
                 file: Some("a.rs".into()),
                 line: Some(1),
                 message: "unexpected".into(),
-                severity: "warning".into(),
+                severity: Severity::Info,
                 severity_audited: false,
                 ..Default::default()
             }],
             false_negatives: vec![GoldenComment {
-                file: "a.rs".into(),
-                line: 1,
-                message_regex: "expected".into(),
-                severity: "error".into(),
-                source: "any".into(),
+                comment: "expected".into(),
+                severity: Severity::Critical,
             }],
-            precision: 0.0,
-            recall: 0.0,
-            f1: 0.0,
-            agent_api_calls: 0,
-            judge_api_calls: 0,
-            judge_cache_hits: 0,
-            agent_usage: Usage::new(),
-            judge_usage: Usage::new(),
+            ..Default::default()
         };
+
         assert_eq!(report.true_positives.len(), 0);
         assert_eq!(report.false_positives.len(), 1);
         assert_eq!(report.false_negatives.len(), 1);

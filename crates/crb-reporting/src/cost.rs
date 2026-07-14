@@ -12,13 +12,13 @@ use tokio::sync::Mutex;
 ///
 /// Wraps all counters in a `Mutex` so it can be shared across concurrent agent calls via `Arc<CostTracker>`.
 #[derive(Debug, Default)]
-pub struct CostTracker {
-    inner: Mutex<CostTrackerInner>,
+pub struct AnalyticsTracker {
+    inner: Mutex<AnalyticsTrackerInner>,
 }
 
 /// Snapshot of cost and usage statistics.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct CostSnapshot {
+pub struct AnalyticsSnapshot {
     pub sessions: HashMap<String, SessionUsage>,
     pub cache_usage: HashMap<String, CacheUsage>,
 }
@@ -72,7 +72,7 @@ impl CacheUsage {
     }
 }
 
-trait SessionUsageProvider
+pub trait SessionUsageProvider
 where
     Self: Sized + Copy,
 {
@@ -95,17 +95,17 @@ impl SessionUsageProvider for Usage {
 }
 
 #[derive(Debug, Clone, Default)]
-struct CostTrackerInner {
+struct AnalyticsTrackerInner {
     sessions: HashMap<String, SessionUsage>,
 
     cache_usage: HashMap<String, CacheUsage>,
 }
 
-impl CostTracker {
+impl AnalyticsTracker {
     /// Create a new empty cost tracker.
     pub fn new() -> Self {
         Self {
-            inner: Mutex::new(CostTrackerInner::default()),
+            inner: Mutex::new(AnalyticsTrackerInner::default()),
         }
     }
 
@@ -149,16 +149,31 @@ impl CostTracker {
     }
 
     /// Build a [`CostSnapshot`] of the current state.
-    pub async fn to_snapshot(&self) -> CostSnapshot {
+    pub async fn to_snapshot(&self) -> AnalyticsSnapshot {
         let inner = self.inner.lock().await;
-        CostSnapshot {
+        AnalyticsSnapshot {
             sessions: inner.sessions.clone(),
             cache_usage: inner.cache_usage.clone(),
         }
     }
 }
 
-impl CostSnapshot {
+impl AnalyticsSnapshot {
+    /// Compute the cache hit rate for all sessions combined.
+    pub fn hit_rate(&self) -> f64 {
+        let total_hits: usize = self
+            .cache_usage
+            .values()
+            .map(|c| c.cache_hits as usize)
+            .sum();
+        let total_misses: usize = self
+            .cache_usage
+            .values()
+            .map(|c| c.cache_misses as usize)
+            .sum();
+        CacheUsage::hit_rate(total_hits, total_misses)
+    }
+
     /// Total estimated cost in USD, computed from env-configured pricing rates.
     ///
     /// Pricing rates are read from environment variables (see module docs for defaults).
@@ -207,7 +222,7 @@ mod tests {
 
     #[test]
     fn test_record_agent_and_judge() {
-        let tracker = CostTracker::new();
+        let tracker = AnalyticsTracker::new();
         let usage1 = make_usage(100, 50, 10, 5, 3, 2);
         let usage2 = make_usage(200, 100, 20, 10, 6, 4);
         let usage3 = make_usage(30, 20, 5, 0, 1, 0);
@@ -235,14 +250,14 @@ mod tests {
 
     #[test]
     fn test_cache_hit_rate_no_calls() {
-        let tracker = CostTracker::new();
+        let tracker = AnalyticsTracker::new();
         assert_eq!(tracker.agent_cache_hit_rate(), 0.0);
         assert_eq!(tracker.judge_cache_hit_rate(), 0.0);
     }
 
     #[test]
     fn test_usd_cost_with_default_rates() {
-        let tracker = CostTracker::new();
+        let tracker = AnalyticsTracker::new();
         // 1M tokens in @ $0.14/1M = $0.14; 500K out @ $0.28/1M = $0.14; total = $0.28
         let usage = make_usage(1_000_000, 500_000, 0, 0, 0, 0);
         tracker.record_agent(&usage, false);
@@ -252,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_record_empty_usage() {
-        let tracker = CostTracker::new();
+        let tracker = AnalyticsTracker::new();
         tracker.record_agent_empty(false);
         tracker.record_judge_empty(true);
 

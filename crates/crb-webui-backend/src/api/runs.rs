@@ -175,7 +175,9 @@ fn default_max_findings() -> usize {
     20
 }
 
-#[deprecated(note = "TODO")]
+#[deprecated(
+    note = "we should never hardcode roles, always use the available agents from the prompt library."
+)]
 fn default_roles() -> String {
     "SA,CL,AR,SEC".to_string()
 }
@@ -663,9 +665,10 @@ pub async fn get_run(
     }
 
     // Read summary metadata
-    let (model, mut duration_secs, mut total_cost, mut total_tokens) = read_summary_from_dir(&run_path)
-        .map(|s| (s.model, s.duration_secs, s.total_cost, s.total_tokens))
-        .unwrap_or_else(|| ("unknown".to_string(), 0.0, 0.0, 0));
+    let (model, mut duration_secs, mut total_cost, mut total_tokens) =
+        read_summary_from_dir(&run_path)
+            .map(|s| (s.model, s.duration_secs, s.total_cost, s.total_tokens))
+            .unwrap_or_else(|| ("unknown".to_string(), 0.0, 0.0, 0));
 
     // Resolve cache dir once for agent checking
     let cache_dir = resolve_cache_dir(&state.output_dir, &id);

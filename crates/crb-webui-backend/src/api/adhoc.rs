@@ -422,8 +422,6 @@ async fn run_adhoc_review_inner(
     let pr = GoldenCommentEntry {
         pr_title: pr_title.to_string(),
         url: pr_url.to_string(),
-        original_url: None,
-        az_comment: None,
         comments: vec![],
     };
 
@@ -433,7 +431,7 @@ async fn run_adhoc_review_inner(
             .expect("Failed to create LLM cache directory"),
     );
 
-    let cost_tracker = Arc::new(crb_harness::CostTracker::new());
+    let cost_tracker = Arc::new(crb_harness::AnalyticsTracker::new());
 
     let diff = crb_harness::preprocess_diff(diff);
 

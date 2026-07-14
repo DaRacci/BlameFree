@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
+use crb_shared::{finding::Finding, severity::Severity};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -10,25 +11,16 @@ struct DatasetFile {
     entries: Vec<GoldenCommentEntry>,
 }
 
-/// A single entry from a golden-comments dataset, representing one PR's
-/// expected review findings.
+/// A single entry from a golden-comments dataset, representing one PRs expected review findings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoldenCommentEntry {
-    /// The PR title (used as a human-readable identifier).
+    /// The PR title.
     pub pr_title: String,
 
-    /// URL to the PR (e.g. `https://github.com/owner/repo/pull/N`).
+    /// URL to the PR.
     pub url: String,
 
-    /// Original URL for the PR before any dataset migration.
-    #[serde(default)]
-    pub original_url: Option<String>,
-
-    /// Azure DevOps comment identifier, if sourced from Azure.
-    #[serde(default)]
-    pub az_comment: Option<String>,
-
-    /// The list of golden (expected) comments for this PR.
+    /// The list of golden comments for this PR.
     pub comments: Vec<GoldenComment>,
 }
 
@@ -39,16 +31,14 @@ pub struct GoldenComment {
     pub comment: String,
 
     /// The expected severity of the comment
-    pub severity: String,
+    pub severity: Severity,
+}
 
-    /// Source file path, if the dataset includes it (e.g. from `path` field
-    /// in benchmark_data.json or `golden_comments` entries).
-    #[serde(default)]
-    pub file: Option<String>,
-
-    /// Line number in the source file, if the dataset includes it.
-    #[serde(default)]
-    pub line: Option<u32>,
+impl GoldenComment {
+    #[deprecated = "This was never an effective filter."]
+    pub fn matches_candidate(&self, _: &Finding) -> bool {
+        false
+    }
 }
 
 /// Load all golden-comment entries from every `.json` file under `dataset_dir`.

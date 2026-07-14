@@ -2,15 +2,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use rig_core::agent::{Agent, HookAction, PromptHook, ToolCallHookAction};
+use rig_core::agent::{
+    AgentBuilder, HookAction, PromptHook, ToolCallHookAction, WithToolServerHandle,
+};
 use rig_core::completion::{CompletionModel, CompletionResponse, Message};
 use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use rig_core::tool::server::ToolServerHandle;
 
 use crate::ReviewerConfig;
-
-use crb_agents::build_agent;
 
 /// A [`PromptHook`] that skips tool calls with budget nudge messages when the agent is approaching its turn limit.
 ///
@@ -94,23 +94,15 @@ impl<M: CompletionModel> PromptHook<M> for TurnBudgetHook {
 /// `prompt_lib` and `template_vars` are forwarded to [`crb_agents::build_agent`]
 /// to support file-based prompt loading and template substitution.
 #[allow(clippy::too_many_arguments)]
+#[deprecated = "Use [`crb_agents::build_agent`] directly"]
 pub fn build_reviewer_agent(
-    client: &openai::Client,
-    config: &ReviewerConfig,
-    rules_preamble: Option<&str>,
-    template_vars: Option<&HashMap<String, serde_json::Value>>,
-    tool_preamble: Option<&str>,
-    additional_params: Option<serde_json::Value>,
-    tool_server_handle: ToolServerHandle,
-) -> Agent<ResponsesCompletionModel> {
-    build_agent(
-        client,
-        &config.model,
-        config.role.as_str(),
-        rules_preamble,
-        template_vars,
-        tool_preamble,
-        additional_params,
-        tool_server_handle,
-    )
+    _client: &openai::Client,
+    _config: &ReviewerConfig,
+    _rules_preamble: Option<&str>,
+    _template_vars: Option<&HashMap<String, serde_json::Value>>,
+    _tool_preamble: Option<&str>,
+    _additional_params: Option<serde_json::Value>,
+    _tool_server_handle: ToolServerHandle,
+) -> AgentBuilder<ResponsesCompletionModel, (), WithToolServerHandle> {
+    unimplemented!()
 }

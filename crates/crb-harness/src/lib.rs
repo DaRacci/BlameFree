@@ -12,9 +12,9 @@ use crb_auditor::apply_severity_auditor;
 use crb_cache::sha256::sha256_hex;
 use crb_cache::traits::CacheBackend;
 use crb_consensus::harness::evaluate_pr_with_consensus;
-use crb_reporting::RunHistoryEntry;
-use crb_reporting::cost::CostTracker;
+use crb_reporting::cost::AnalyticsTracker;
 use crb_reporting::golden::GoldenCommentEntry;
+use crb_reporting::history::{RunHistoryEntry, append_run_history};
 use crb_reporting::{Metrics, PrResult};
 use crb_shared::deduplicate::semantic_dedup;
 use crb_shared::finding::Finding;
@@ -23,8 +23,8 @@ use crb_shared::url::parse_github_url;
 use crb_shared::{diff, sanitize_filename};
 use crb_tools::linters::tool::LinterArgs;
 use crb_tools::{build_tool_server, create_linter_tool};
-use crb_types::JudgeVerdict;
 use crb_types::RunEvent;
+use crb_types::benchmark::JudgeVerdict;
 use crb_types::wrappers::{Diff, Model};
 use regex::Regex;
 use rig_core::agent::{Agent, PromptResponse};
@@ -156,7 +156,7 @@ fn spawn_agent_task(
     rules_hash: String,
     rules_preamble: Option<String>,
     cache: Option<Arc<dyn CacheBackend>>,
-    cost_tracker: Arc<CostTracker>,
+    cost_tracker: Arc<AnalyticsTracker>,
     dashboard_tx: Option<broadcast::Sender<RunEvent>>,
     additional_params: Option<serde_json::Value>,
     tool_server_handle: ToolServerHandle,
@@ -334,7 +334,7 @@ async fn evaluate_pr_single_agent(
     linter_findings: Vec<Finding>,
     rules_preamble: Option<&str>,
     cache: Option<Arc<dyn CacheBackend>>,
-    cost_tracker: Arc<CostTracker>,
+    cost_tracker: Arc<AnalyticsTracker>,
     dashboard_tx: Option<&broadcast::Sender<RunEvent>>,
     additional_params: Option<serde_json::Value>,
 ) -> Result<(Vec<Finding>, Vec<JudgeVerdict>)> {
@@ -394,7 +394,7 @@ async fn evaluate_pr_consensus(
     roles: &str,
     max_findings: usize,
     cache: Option<Arc<dyn CacheBackend>>,
-    cost_tracker: Arc<CostTracker>,
+    cost_tracker: Arc<AnalyticsTracker>,
     workdir: Option<&str>,
     reasoning_effort: Option<ReasoningEffort>,
     dashboard_tx: Option<&broadcast::Sender<RunEvent>>,

@@ -202,7 +202,7 @@ pub async fn run_harness(
 
         set.spawn(async move {
             let _permit = permit;
-            let cost_tracker = Arc::new(crb_harness::CostTracker::new());
+            let cost_tracker = Arc::new(crb_harness::AnalyticsTracker::new());
             let cfg = crb_harness::EvalConfig {
                 strategy: if skip_consensus {
                     crb_harness::EvalStrategy::Single

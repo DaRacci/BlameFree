@@ -24,7 +24,7 @@ use strum::{Display, EnumIter};
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     /// Security vulnerabilities or correctness bugs.
-    #[serde(alias = "crit")]
+    #[serde(alias = "crit", alias = "error")]
     Critical = 0,
 
     /// Significant issues that should be addressed soon.
