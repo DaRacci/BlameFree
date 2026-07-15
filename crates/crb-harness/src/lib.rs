@@ -38,7 +38,6 @@ use tokio::sync::broadcast;
 use tracing::{info, info_span, warn};
 
 use crate::eval::{EvalConfig, EvalStrategy};
-use crate::finding::post_process_findings;
 use crate::model_capabilities::ReasoningEffort;
 
 pub mod eval;
@@ -477,7 +476,7 @@ pub async fn evaluate_pr(
         }
     }
 
-    let (all_findings, verdicts) = match config.strategy {
+    let (_all_findings, verdicts) = match config.strategy {
         EvalStrategy::Single => {
             let reasoning_params = config.reasoning_effort.and_then(|re| {
                 model_capabilities::make_additional_params(&config.model, Some(re))
@@ -516,19 +515,11 @@ pub async fn evaluate_pr(
         }
     };
 
-    let processed_findings = post_process_findings(&all_findings);
-
-    if let Some(ref tx) = config.dashboard_tx {
-        let prompt_library = PromptLibrary::get_instance();
-        let agent_count = prompt_library.agents().len().max(1);
-        for entry in prompt_library.agents() {
-            let _ = tx.send(RunEvent::AgentFinished {
-                identifier: entry.role_abbreviation.to_string(),
-                findings: processed_findings.len() / agent_count,
-                success: true,
-            });
-        }
-    }
+    // Per-agent AgentFinished events are already sent by spawn_agent_task
+    // with accurate per-agent findings counts (see lines 220-225, 307-311).
+    // Do NOT send a second batch here that divides total findings by agent count —
+    // that would overwrite accurate per-agent data with an incorrect average.
+    // processed_findings are computed later if needed for metrics/caching.
 
     // ── Phase 10: Metrics ────────────────────────────────────────────────
     let metrics = crb_types::benchmark::Metrics::default();
