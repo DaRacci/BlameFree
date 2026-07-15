@@ -17,7 +17,8 @@ use crb_types::benchmark::JudgeVerdict;
 
 use crate::adaptive::get_agents_for_diff;
 use crate::pipeline::run_consensus;
-use crate::{CacheBackend, ReviewerConfig, Role};
+use crate::{ReviewerConfig, Role};
+use crb_cache::traits::CacheBackend;
 
 /// Convenience function that matches the existing `evaluate_pr()` signature in `crb-harness`
 /// but uses the full consensus pipeline internally.

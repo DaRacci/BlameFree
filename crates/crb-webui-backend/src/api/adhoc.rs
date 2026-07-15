@@ -16,6 +16,7 @@ use crb_agents::prompts;
 use crb_shared::sanitize_filename;
 use crb_shared::url::parse_github_url;
 use crb_shared::{DEFAULT_MODEL, cache};
+use crb_shared::{AdhocReviewResponse, AdhocRunSummary, GithubPrListItem};
 use crb_types::Metrics;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -27,7 +28,6 @@ use crate::api::runs::{
 };
 use crate::server::AppState;
 use rig_core::client::ProviderClient;
-
 /// POST /api/adhoc/review
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdhocReviewRequest {
@@ -48,8 +48,6 @@ fn default_adhoc_model() -> String {
 fn default_adhoc_roles() -> Vec<String> {
     vec!["SA".to_string(), "CL".to_string()]
 }
-
-pub use crb_shared::{AdhocReviewResponse, AdhocRunSummary, GithubPrListItem};
 
 /// Submit a GitHub PR URL for ad-hoc review. Fetches the PR diff + metadata
 /// from the GitHub API, runs the harness agents, and stores results.
@@ -418,7 +416,7 @@ async fn run_adhoc_review_inner(
     let prompt_lib = Arc::new(prompts::PromptLibrary::get_instance());
 
     // Create a GoldenCommentEntry with empty comments
-    use crb_reporting::GoldenCommentEntry;
+    use crb_reporting::golden::GoldenCommentEntry;
     let pr = GoldenCommentEntry {
         pr_title: pr_title.to_string(),
         url: pr_url.to_string(),

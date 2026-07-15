@@ -14,7 +14,8 @@ use crb_shared::finding::Finding;
 use crb_shared::jaccard::jaccard_similarity;
 use tracing::{info, warn};
 
-use crate::{CacheBackend, MatchResult};
+use crate::MatchResult;
+use crb_cache::traits::CacheBackend;
 
 /// Compute a content-addressed cache key for a judge call.
 #[deprecated = "Use [`crb_shared::cache`]"]

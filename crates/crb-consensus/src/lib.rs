@@ -11,7 +11,6 @@ pub mod harness;
 pub mod judge;
 pub mod pipeline;
 
-pub use crb_cache::traits::CacheBackend;
 use crb_reporting::{cost::AnalyticsSnapshot, golden::GoldenComment};
 use crb_shared::finding::Finding;
 use crb_types::benchmark::MetricsProvider;
@@ -163,6 +162,7 @@ impl MetricsProvider for ConsensusReport {
 ///
 /// If `context` is non-empty, a warning is logged with that context on
 /// failure (e.g. `"CACHED"`, `""` for silent failure).
+#[deprecated = "Use output_schema::<Vec<Finding>>() from rig instead of manual JSON parsing."]
 pub fn parse_findings_from_response(response: &str, role: &Role, context: &str) -> Vec<Finding> {
     serde_json::from_str(response).unwrap_or_else(|_| {
         if let Some(caps) = RE_CODEBLOCK_JSON.captures(response) {

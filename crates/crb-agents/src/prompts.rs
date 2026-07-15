@@ -42,7 +42,6 @@ impl PromptLibrary {
     ///
     /// This function will initialise the static `PROMPT_LIBRARY` if it hasn't been initialised yet, and return a reference to it.
     /// Returns error if agent.hbs is missing or no agents are found.
-    #[deprecated = "Use PromptLibrary::get_instance() instead."]
     pub fn new() -> Result<&'static Self, String> {
         if PROMPT_LIBRARY.is_some() {
             return Ok(Self::get_instance());

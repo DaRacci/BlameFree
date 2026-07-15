@@ -12,12 +12,6 @@ pub mod matcher;
 pub mod parser;
 pub mod preamble;
 
-pub use matcher::{
-    Language, detect_language, detect_repo_languages, language_from_str, language_to_extension,
-};
-pub use parser::parse_rule_file;
-pub use preamble::format_preamble;
-
 use std::path::{Path, PathBuf};
 
 // ── Core Types ───────────────────────────────────────────────────────────
@@ -100,7 +94,7 @@ impl RuleSet {
                 }
             };
 
-            match parse_rule_file(&content, &path) {
+            match crate::parser::parse_rule_file(&content, &path) {
                 Ok(rule) => rules.push(rule),
                 Err(e) => {
                     tracing::warn!("Failed to parse rule file {}: {e}", path.display());

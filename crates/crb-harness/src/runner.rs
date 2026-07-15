@@ -19,6 +19,7 @@ use crate::{eval::EvalConfig, send_event};
 const MAX_CONCURRENT_AGENTS: usize = 4;
 static SEMAPHORE: Arc<Semaphore> = Arc::new(Semaphore::const_new(4));
 
+#[deprecated = "Incomplete scaffolding — finish or remove."]
 /// Run the shared agent loop for a set of roles, collecting findings.
 async fn run_agents(diff: &Diff, config: &EvalConfig) -> Vec<Finding> {
     let mut all_findings = Vec::new();

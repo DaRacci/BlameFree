@@ -2,7 +2,8 @@ use crate::components::agent_pane::AgentPane;
 use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crate::sse;
-use crate::{AppConfig, RunEvent};
+use crate::AppConfig;
+use crb_types::RunEvent;
 use crb_webui_shared::config::RoleInfo;
 use leptos::{
     IntoView, ReadSignal, SignalGet, SignalGetUntracked, SignalSet, SignalUpdate, WriteSignal,

@@ -147,6 +147,7 @@ where
 
 /// Spawn a single agent task for one role, with caching and retry.
 #[allow(clippy::too_many_arguments)]
+#[deprecated = "Use typed agents with output_schema and EvalConfig.cache instead."]
 fn spawn_agent_task(
     role: String,
     client: openai::Client,
@@ -325,6 +326,7 @@ fn spawn_agent_task(
 /// Run the original single-agent evaluation with finding collection.
 /// (private) used by evaluate_pr
 #[doc(hidden)]
+#[deprecated = "Use EvalConfig-based evaluate_pr() instead."]
 #[allow(trivial_casts)]
 async fn evaluate_pr_single_agent(
     pr: &GoldenCommentEntry,
@@ -553,6 +555,7 @@ async fn evaluate_pr_consensus(
 ///
 /// Tries the persistent worktree first, then falls back to cached diff files
 /// at `{benchmark_dir}/diffs/{owner}_{repo}_{pr_num}.diff`.
+#[deprecated = "Use load_cached_diff directly."]
 pub async fn load_pr_diff(pr: &GoldenCommentEntry, benchmark_dir: &Path) -> Result<String> {
     match parse_github_url(&pr.url) {
         Ok((owner, repo, pr_num)) => {
@@ -787,6 +790,7 @@ pub async fn evaluate_pr(
 
 /// Write the `_summary.json` aggregate statistics file to the cache directory.
 #[doc(hidden)]
+#[deprecated = "Use AnalyticsSnapshot / Metrics serialization instead."]
 pub fn write_summary(
     cache_dir: &PathBuf,
     model: &str,

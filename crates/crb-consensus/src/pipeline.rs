@@ -16,7 +16,8 @@ use crb_shared::finding::Finding;
 
 use crate::execution::run_reviewers;
 use crate::judge::judge_comment;
-use crate::{CacheBackend, ConsensusReport, MatchResult, ReviewerConfig};
+use crate::{ConsensusReport, MatchResult, ReviewerConfig};
+use crb_cache::traits::CacheBackend;
 
 /// Run the full multi-agent consensus pipeline.
 ///

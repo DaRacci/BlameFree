@@ -14,7 +14,7 @@ use tracing::{info, warn};
 /// 3. Each golden comment has non-empty `comment` and valid `severity`
 /// 4. Report total PRs, golden comments, unique repos
 pub(crate) fn run_validate(dataset_dir: &Path) -> Result<()> {
-    let entries = crb_reporting::load_golden_datasets(dataset_dir)?;
+    let entries = crb_reporting::golden::load_golden_datasets(dataset_dir)?;
 
     if entries.is_empty() {
         bail!("No entries found in dataset: {}", dataset_dir.display());

@@ -4,8 +4,6 @@ pub mod cost;
 pub mod golden;
 pub mod history;
 
-pub use golden::{GoldenCommentEntry, load_golden_datasets};
-
 use std::{fs, path::Path};
 
 use anyhow::Result;

@@ -6,6 +6,7 @@ use crate::{config::ReviewArgs, eval::EvalConfig, run_agent_roles};
 /// Entry point for reviewing a PR given its diff as a string.
 ///
 /// Builds agents for each role, runs them with the diff, and returns findings.
+#[deprecated = "This function references a non-existent run_agent_roles function. Use the EvalConfig-based pipeline instead."]
 pub async fn review_pr(
     config: &EvalConfig,
     tool_server_handle: ToolServerHandle,
@@ -40,6 +41,7 @@ pub async fn review_pr(
 /// - `ReviewMode::Working`                -> `git diff` (unstaged + staged)
 ///
 /// Returns a vector of agent findings parsed from the LLM response.
+#[deprecated = "Uses deprecated ReviewParams and broken review_pr."]
 pub async fn review_diff(args: ReviewArgs) -> Result<Vec<Finding>> {
     let tool_server = build_tool_server(args.path.to_str(), None).run();
 

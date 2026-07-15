@@ -13,18 +13,23 @@ use serde::{Deserialize, Serialize};
 
 use crate::harness;
 use crate::server::{ActiveRun, AppState};
+use crb_shared::AggregateMetrics;
+use crb_shared::AgentLogResponse;
+use crb_shared::CostJson;
+use crb_shared::DEFAULT_MODEL;
+use crb_shared::LogsListResponse;
+use crb_shared::MetricsJson;
+use crb_shared::PrAgentEntry;
+use crb_shared::PrAgentsResponse;
+use crb_shared::PrDetailResponse;
+use crb_shared::PrLogsEntry;
+use crb_shared::PrResult;
+use crb_shared::RunConfig;
+use crb_shared::RunDetail;
+use crb_shared::RunSummary;
+use crb_shared::VerdictJson;
 use crb_webui_shared::config::RoleInfo;
 use rustls::pki_types::UnixTime;
-
-pub use crb_shared::CostJson;
-pub use crb_shared::DEFAULT_MODEL;
-pub use crb_shared::RunDetail;
-pub use crb_shared::RunSummary;
-pub use crb_shared::{
-    AgentLogResponse, LogsListResponse, PrAgentEntry, PrAgentsResponse, PrDetailResponse,
-    PrLogsEntry,
-};
-pub use crb_shared::{AggregateMetrics, MetricsJson, PrResult, RunConfig, VerdictJson};
 
 /// Helper to build a JSON error response with a given status code and message.
 pub fn err_json(status: StatusCode, msg: impl std::fmt::Display) -> Response {

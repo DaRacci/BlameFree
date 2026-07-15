@@ -377,6 +377,7 @@ pub fn make_additional_params(
 /// Convert a `reasoning_effort: Option<ReasoningEffort>` plus a `model: &Model` into
 /// the `additional_params: Option<serde_json::Value>` that should be passed
 /// down the agent call chain.
+#[deprecated = "Use make_additional_params instead."]
 pub fn reasoning_to_additional_params(
     model: &Model,
     reasoning_effort: Option<ReasoningEffort>,

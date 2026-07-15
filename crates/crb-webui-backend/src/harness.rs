@@ -13,7 +13,8 @@ use std::sync::Arc;
 use crb_agents::prompts::PromptLibrary;
 use crb_benchmark::pr;
 use crb_harness::{EvalConfig, EvalStrategy, evaluate_pr, load_pr_diff};
-use crb_reporting::{PrResult, load_golden_datasets, write_report};
+use crb_reporting::golden::load_golden_datasets;
+use crb_reporting::{PrResult, write_report};
 use crb_rules::RuleSet;
 use crb_shared::benchmark;
 use crb_shared::metrics::MetricsOutput;
@@ -23,7 +24,7 @@ use tracing::error;
 use tracing::info;
 use tracing::warn;
 
-use crate::api::BenchmarkConfig;
+use crate::api::runs::BenchmarkConfig;
 use crate::server::ActiveRun;
 use crate::server::AppState;
 use crb_types::Metrics;

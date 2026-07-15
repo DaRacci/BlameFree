@@ -13,9 +13,8 @@ use crb_benchmark::pr;
 use crb_harness::eval::EvalConfig;
 use crb_harness::{EvalStrategy, model_capabilities, validation};
 use crb_reporting::cost::AnalyticsTracker;
-use crb_reporting::{
-    GoldenCommentEntry, load_golden_datasets, print_terminal_summary, write_report,
-};
+use crb_reporting::golden::{GoldenCommentEntry, load_golden_datasets};
+use crb_reporting::{print_terminal_summary, write_report};
 use crb_rules::RuleSet;
 use crb_shared::metrics::MetricsOutput;
 use crb_shared::{benchmark, sanitize_filename};

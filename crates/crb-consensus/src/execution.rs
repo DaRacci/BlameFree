@@ -15,8 +15,9 @@ use tracing::{info, warn};
 
 use crate::agent::TurnBudgetHook;
 use crate::{
-    CacheBackend, ReviewerConfig, Role, extract_last_assistant_text, parse_findings_from_response,
+    ReviewerConfig, Role, extract_last_assistant_text, parse_findings_from_response,
 };
+use crb_cache::traits::CacheBackend;
 
 /// Compute a content-addressed cache key for an agent review call.
 #[deprecated = "Use new cache system instead."]

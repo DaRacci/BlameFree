@@ -55,8 +55,6 @@ pub struct AppConfig {
     pub auth_enabled: bool,
 }
 
-pub use crb_types::RunEvent;
-
 /// Deterministic HSL color from a role abbreviation — no hardcoded color map.
 /// Each role gets a unique hue via a simple hash of its abbreviation bytes.
 pub fn role_color(role: &str) -> String {

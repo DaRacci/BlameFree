@@ -7,6 +7,11 @@ use axum::extract::{Path as AxumPath, State};
 use serde::Serialize;
 
 use crate::server::AppState;
+use crb_shared::DatasetConfig;
+use crb_shared::DatasetInfo;
+use crb_shared::PrEntry;
+use crb_shared::ReasoningEffortsResponse;
+use crb_shared::RoleInfo;
 
 /// Available configuration options.
 #[derive(Debug, Clone, Serialize)]
@@ -21,20 +26,12 @@ pub struct ConfigResponse {
     pub auth_enabled: bool,
 }
 
-pub use crb_shared::ReasoningEffortsResponse;
-pub use crb_shared::RoleInfo;
-
 /// Information about an available model.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelInfo {
     pub id: String,
     pub name: String,
 }
-
-pub use crb_shared::DatasetConfig;
-pub use crb_shared::DatasetDefaults;
-pub use crb_shared::DatasetInfo;
-pub use crb_shared::PrEntry;
 
 /// GET /api/config — list available models, datasets, and roles.
 pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
