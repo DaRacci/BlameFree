@@ -205,8 +205,16 @@ pub async fn get_adhoc_run(
     let roles: Vec<String> = summary_data
         .as_ref()
         .and_then(|s| s.get("roles"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.split(',').map(|r| r.trim().to_string()).collect())
+        .and_then(|v| {
+            if let Some(arr) = v.as_array() {
+                Some(arr.iter().filter_map(|r| r.as_str().map(String::from)).collect())
+            } else if let Some(s) = v.as_str() {
+                // Backward compat: old format stored comma-separated string
+                Some(s.split(',').map(|r| r.trim().to_string()).collect())
+            } else {
+                None
+            }
+        })
         .unwrap_or_default();
     let status = summary_str("status", "unknown");
     let duration_secs = match summary_data
@@ -514,7 +522,7 @@ async fn run_adhoc_review_inner(
     let summary = json!({
         "model": model,
         "judge_model": model,
-        "roles": roles.join(","),
+        "roles": roles,
         "status": "completed",
         "pr_url": pr_url,
         "pr_title": pr_title,
@@ -590,8 +598,16 @@ fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<AdhocRunSummary> {
     let roles: Vec<String> = summary_data
         .as_ref()
         .and_then(|s| s.get("roles"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.split(',').map(|r| r.trim().to_string()).collect())
+        .and_then(|v| {
+            if let Some(arr) = v.as_array() {
+                Some(arr.iter().filter_map(|r| r.as_str().map(String::from)).collect())
+            } else if let Some(s) = v.as_str() {
+                // Backward compat: old format stored comma-separated string
+                Some(s.split(',').map(|r| r.trim().to_string()).collect())
+            } else {
+                None
+            }
+        })
         .unwrap_or_default();
     let created_at = created_at_from_run_id(run_id);
     let findings_count = count_adhoc_findings(path);

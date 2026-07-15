@@ -31,7 +31,7 @@ pub async fn run_consensus_post(
     goldens: Vec<GoldenComment>,
     judge: &Agent<ResponsesCompletionModel>,
     judge_model: &str,
-    cache: Option<Arc<dyn CacheBackend>>,
+    cache: Arc<dyn CacheBackend>,
     judge_prompt_hash: &str,
 ) -> ConsensusReport {
     let mut unmatched: Vec<Finding> = agents
@@ -49,7 +49,6 @@ pub async fn run_consensus_post(
     let mut true_positives: Vec<(GoldenComment, Finding)> = Vec::new();
     let mut false_negatives: Vec<GoldenComment> = Vec::new();
     let mut judge_api_calls: usize = 0;
-    let mut judge_cache_hits: usize = 0;
 
     for golden in &goldens {
         let result = judge_comment(
@@ -60,7 +59,6 @@ pub async fn run_consensus_post(
             cache.clone(),
             judge_prompt_hash,
             &mut judge_api_calls,
-            &mut judge_cache_hits,
         )
         .await;
 

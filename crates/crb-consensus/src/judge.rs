@@ -52,58 +52,54 @@ pub async fn judge_comment(
     candidates: &[Finding],
     judge: &Agent<ResponsesCompletionModel>,
     judge_model: &str,
-    cache: Option<Arc<dyn CacheBackend>>,
+    cache: Arc<dyn CacheBackend>,
     judge_prompt_hash: &str,
     judge_api_calls: &mut usize,
-    judge_cache_hits: &mut usize,
 ) -> MatchResult {
     // All candidates are passed directly to the LLM judge loop.
     let file_matches: Vec<_> = candidates.iter().collect();
 
-    // LLM judge on each pre-filtered candidate
+    // LLM judge on each candidate, with cache-or-compute dispatch
     for finding in &file_matches {
-        let judge_key = JudgeCacheKey {
+        let cache_key = JudgeCacheKey {
             judge_prompt_hash: judge_prompt_hash.to_string(),
             finding_message: finding.message.clone(),
             golden_message_regex: golden.comment.clone(),
             judge_model: judge_model.to_string(),
-        }
-        .cache_key();
+        };
 
-        if let Some(ref c) = cache {
-            let cached = c.load_raw(&judge_key);
-            if !cached.is_empty() {
-                if let Ok(cached_verdict) = serde_json::from_str::<JudgeVerdict>(&cached) {
-                    info!("CACHE HIT for judge (key={})", &judge_key[..12]);
-                    *judge_cache_hits += 1;
-                    if cached_verdict.match_ {
-                        return MatchResult::TruePositive;
-                    }
-                    continue;
-                }
-            }
-        }
-
-        info!("CACHE MISS for judge (key={})", &judge_key[..12]);
-        *judge_api_calls += 1;
-        let prompt = format_judge_prompt(&golden.comment, &finding.message);
-        match judge.prompt(&prompt).extended_details().await {
-            Ok(resp) => {
-                if let Ok(verdict) = serde_json::from_str::<JudgeVerdict>(&resp.output) {
-                    if let Some(ref c) = cache {
-                        c.store_raw(
-                            &judge_key,
-                            &serde_json::to_string(&verdict).unwrap_or_default(),
-                        );
-                    }
-                    if verdict.match_ {
-                        return MatchResult::TruePositive;
+        let calls = &mut *judge_api_calls;
+        let compute_verdict = move || {
+            let comment = golden.comment.clone();
+            let msg = finding.message.clone();
+            async move {
+                *calls += 1;
+                let prompt = format_judge_prompt(&comment, &msg);
+                match judge.prompt(&prompt).extended_details().await {
+                    Ok(resp) => serde_json::from_str::<JudgeVerdict>(&resp.output)
+                        .unwrap_or(JudgeVerdict {
+                            match_: false,
+                            reasoning: String::new(),
+                            confidence: 0.0,
+                        }),
+                    Err(e) => {
+                        warn!("Judge call failed: {e}");
+                        JudgeVerdict {
+                            match_: false,
+                            reasoning: String::new(),
+                            confidence: 0.0,
+                        }
                     }
                 }
             }
-            Err(e) => {
-                warn!("Judge call failed: {e}");
-            }
+        };
+
+        let verdict = cache
+            .get_or_compute(&cache_key, compute_verdict)
+            .await;
+
+        if verdict.match_ {
+            return MatchResult::TruePositive;
         }
     }
 

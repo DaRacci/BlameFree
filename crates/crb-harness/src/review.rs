@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::{Context, Result};
 use crb_shared::{diff::Diff, finding::Finding};
 use crb_types::wrappers::WrappedData;
@@ -17,16 +15,7 @@ impl EvalIdentifier for ReviewIdentifier {
     }
 }
 
-/// Review a PR diff using the typed pipeline.
-///
-/// Dispatches the diff through `pipeline::evaluate()` which handles linters,
-/// agent reviewers, post-processing, and metrics reporting. Uses the new
-/// typed dispatch with `&EvalConfig` containing proper typed identifiers
-/// and `AgentEntry` references resolved through `PromptLibrary`.
-///
-/// Takes ownership of the `Diff` because `pipeline::evaluate()` mutates it
-/// in-place (preprocessing). Use `Diff::new(diff.raw.clone())` if you need
-/// to retain the original.
+/// Review a PR diff.
 pub async fn review_pr(diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> {
     info!(
         "Reviewing diff ({} bytes, {} sections) with {} agents, model={}",
@@ -45,14 +34,6 @@ pub async fn review_pr(diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> 
 }
 
 /// Build an `EvalConfig` from `ReviewArgs` for a one-shot review.
-///
-/// Constructs the full config with:
-/// - OpenAI client from environment
-/// - Tool server for filesystem tools
-/// - Agent entries resolved through `PromptLibrary` (typed, not String)
-/// - A minimal judge agent (required by `EvalConfig` but unused by the review pipeline)
-///
-/// Requires the `binary` feature because it depends on `ReviewArgs` (which uses clap).
 #[cfg(feature = "binary")]
 pub fn build_review_config(args: &crate::config::ReviewArgs) -> Result<EvalConfig> {
     use crb_agents::AgentEntry;
@@ -71,7 +52,19 @@ pub fn build_review_config(args: &crate::config::ReviewArgs) -> Result<EvalConfi
     let tool_server = ToolServer::new().run();
 
     // Resolve typed agent entries through PromptLibrary
-    let agents = args.resolve_agents();
+    let agents: Vec<&'static AgentEntry> = match &args.roles {
+        Some(abbrevs) => {
+            let lib = crb_agents::prompts::PromptLibrary::get_instance();
+            abbrevs
+                .iter()
+                .filter_map(|a| lib.config(a.trim()))
+                .collect()
+        }
+        None => crb_agents::prompts::PromptLibrary::get_instance()
+            .agents()
+            .into_iter()
+            .collect(),
+    };
     // Leak to get 'static lifetime required by EvalConfig.agents
     let agents: &'static [&'static AgentEntry] = Box::leak(agents.into_boxed_slice());
 
