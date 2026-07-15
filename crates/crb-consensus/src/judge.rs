@@ -15,19 +15,23 @@ use crb_shared::jaccard::jaccard_similarity;
 use tracing::{info, warn};
 
 use crate::MatchResult;
-use crb_cache::traits::CacheBackend;
+use crb_cache::traits::{CacheBackend, CacheKey};
 
-/// Compute a content-addressed cache key for a judge call.
-#[deprecated = "Use [`crb_shared::cache`]"]
-fn compute_judge_cache_key(
-    judge_prompt_hash: &str,
-    finding_message: &str,
-    golden_message_regex: &str,
-    judge_model: &str,
-) -> String {
-    sha256_hex(&format!(
-        "{judge_prompt_hash}{finding_message}{golden_message_regex}{judge_model}"
-    ))
+/// Content-addressed cache key for a judge call.
+struct JudgeCacheKey {
+    judge_prompt_hash: String,
+    finding_message: String,
+    golden_message_regex: String,
+    judge_model: String,
+}
+
+impl CacheKey for JudgeCacheKey {
+    fn cache_key(&self) -> String {
+        sha256_hex(&format!(
+            "{}{}{}{}",
+            self.judge_prompt_hash, self.finding_message, self.golden_message_regex, self.judge_model
+        ))
+    }
 }
 
 /// Judge a single golden comment against a set of candidate findings using
@@ -58,12 +62,13 @@ pub async fn judge_comment(
 
     // LLM judge on each pre-filtered candidate
     for finding in &file_matches {
-        let judge_key = compute_judge_cache_key(
-            judge_prompt_hash,
-            &finding.message,
-            &golden.comment,
-            judge_model,
-        );
+        let judge_key = JudgeCacheKey {
+            judge_prompt_hash: judge_prompt_hash.to_string(),
+            finding_message: finding.message.clone(),
+            golden_message_regex: golden.comment.clone(),
+            judge_model: judge_model.to_string(),
+        }
+        .cache_key();
 
         if let Some(ref c) = cache {
             let cached = c.load_raw(&judge_key);

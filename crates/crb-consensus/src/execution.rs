@@ -16,33 +16,35 @@ use tracing::{info, warn};
 
 use crate::agent::TurnBudgetHook;
 use crate::{Role, extract_last_assistant_text, parse_findings_from_response};
-use crb_cache::traits::CacheBackend;
+use crb_cache::traits::{CacheBackend, CacheKey, Cacheable};
 
-/// Compute a content-addressed cache key for an agent review call.
-#[deprecated = "Use new cache system instead."]
-fn compute_agent_cache_key(
-    prompt_hash: &str,
-    diff_hash: &str,
-    model: &str,
-    role: &str,
-    rules_hash: &str,
-) -> String {
-    sha256_hex(&format!(
-        "{prompt_hash}{diff_hash}{model}{role}{rules_hash}"
-    ))
+/// Content-addressed cache key for an agent review call.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentCacheKey {
+    pub prompt_hash: String,
+    pub diff_hash: String,
+    pub model: String,
+    pub role: String,
+    pub rules_hash: String,
+}
+
+impl CacheKey for AgentCacheKey {
+    fn cache_key(&self) -> String {
+        sha256_hex(&format!(
+            "{}{}{}{}{}",
+            self.prompt_hash, self.diff_hash, self.model, self.role, self.rules_hash
+        ))
+    }
 }
 
 /// Serializable snapshot of agent cache data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[deprecated = "Use new cache system instead."]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct CachedAgentData {
     response: String,
     #[serde(default)]
     input_tokens: u64,
     #[serde(default)]
     output_tokens: u64,
-    #[serde(default)]
-    total_tokens: u64,
     #[serde(default)]
     cached_input_tokens: u64,
     #[serde(default)]
@@ -51,6 +53,24 @@ struct CachedAgentData {
     reasoning_tokens: u64,
     #[serde(default)]
     tool_use_prompt_tokens: u64,
+    #[serde(default)]
+    key: AgentCacheKey,
+}
+
+impl Cacheable for CachedAgentData {
+    type RefForm = AgentCacheKey;
+
+    fn into_ref(self, backend: &dyn CacheBackend) -> Self::RefForm {
+        if let Ok(json) = serde_json::to_string(&self) {
+            backend.store_raw(&self.key.cache_key(), &json);
+        }
+        self.key
+    }
+
+    fn from_ref(form: Self::RefForm, backend: &dyn CacheBackend) -> Self {
+        let raw = backend.load_raw(&form.cache_key());
+        serde_json::from_str(&raw).unwrap_or_default()
+    }
 }
 
 /// Spawn all reviewer agents concurrently and collect their findings.
@@ -110,13 +130,14 @@ pub async fn run_reviewers(
         let dashboard_tx = dashboard_tx.clone();
 
         set.spawn(async move {
-            let cache_key = compute_agent_cache_key(
-                &prompt_hash,
-                &diff_hash,
-                &model_name,
-                role.as_str(),
-                &rules_hash,
-            );
+            let agent_cache_key = AgentCacheKey {
+                prompt_hash: prompt_hash.clone(),
+                diff_hash: diff_hash.clone(),
+                model: model_name.clone(),
+                role: role.to_string(),
+                rules_hash: rules_hash.clone(),
+            };
+            let cache_key = agent_cache_key.cache_key();
 
             if let Some(ref cache) = cache {
                 let raw = cache.load_raw(&cache_key);
@@ -127,7 +148,6 @@ pub async fn run_reviewers(
                             if let Ok(mut agg) = aggregate_usage.lock() {
                                 agg.input_tokens += cached.input_tokens;
                                 agg.output_tokens += cached.output_tokens;
-                                agg.total_tokens += cached.total_tokens;
                                 agg.cached_input_tokens += cached.cached_input_tokens;
                                 agg.cache_creation_input_tokens +=
                                     cached.cache_creation_input_tokens;
@@ -258,18 +278,16 @@ pub async fn run_reviewers(
 
                 if let Some(ref cache) = cache {
                     let cached = CachedAgentData {
+                        key: agent_cache_key,
                         response: response.clone(),
                         input_tokens: usage.input_tokens,
                         output_tokens: usage.output_tokens,
-                        total_tokens: usage.total_tokens,
                         cached_input_tokens: usage.cached_input_tokens,
                         cache_creation_input_tokens: usage.cache_creation_input_tokens,
                         reasoning_tokens: usage.reasoning_tokens,
                         tool_use_prompt_tokens: usage.tool_use_prompt_tokens,
                     };
-                    if let Ok(json) = serde_json::to_string(&cached) {
-                        cache.store_raw(&cache_key, &json);
-                    }
+                    cached.into_ref(&**cache);
                 }
 
                 let preview_len = std::cmp::min(500, response.len());
