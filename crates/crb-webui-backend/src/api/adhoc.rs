@@ -435,16 +435,19 @@ async fn run_adhoc_review_inner(
     };
 
     let pr_key = sanitize_filename(pr_title);
-    let cache: Arc<crb_harness::LlmCache> = Arc::new(
-        crb_harness::LlmCache::new(&cache_dir, &pr_key)
-            .expect("Failed to create LLM cache directory"),
-    );
+    use crb_agents::AgentEntry;
+    use crb_cache::filesystem::FilesystemBackend;
+    use crb_cache::traits::CacheBackend;
+    use crb_reporting::cost::AnalyticsTracker;
+    use crb_shared::diff::Diff;
+    use crb_types::wrappers::Model;
+    use rig_core::tool::server::ToolServer;
 
-    let cost_tracker = Arc::new(crb_harness::AnalyticsTracker::new());
+    let cost_tracker = Arc::new(AnalyticsTracker::new());
 
-    let diff = crb_harness::preprocess_diff(diff);
+    let diff = Diff::new(diff.to_string());
 
-    if diff.is_empty() {
+    if diff.sections.is_empty() {
         warn!("Empty diff for PR: {}", pr_title);
     }
 
@@ -453,18 +456,38 @@ async fn run_adhoc_review_inner(
         roles, model
     );
 
-    let cost_tracker_arc = cost_tracker.clone();
-    let cfg = crb_harness::EvalConfig {
-        strategy: crb_harness::EvalStrategy::Panel,
-        model: model.to_string(),
-        judge_model: model.to_string(),
+    let cache_backend: Option<Arc<dyn CacheBackend>> =
+        Some(Arc::new(FilesystemBackend::new(&cache_dir)));
+
+    let tool_server = ToolServer::new().run();
+
+    let agents: Vec<&'static AgentEntry> = if roles.is_empty() {
+        prompt_lib.agents().into_iter().collect()
+    } else {
+        roles
+            .iter()
+            .filter_map(|r| prompt_lib.config(r.trim()))
+            .collect()
+    };
+    let agents: &'static [&'static AgentEntry] = Box::leak(agents.into_boxed_slice());
+
+    let wrapped_model = Model(model.to_string());
+
+    let cfg = crb_harness::eval::EvalConfig {
+        identifier: format!("adhoc-{}", run_id),
+        strategy: crb_harness::eval::EvalStrategy::Panel,
+        model: wrapped_model,
         reasoning_effort: None,
         client: Arc::new(client),
-        judge,
-        cache: None,
-        cost_tracker: cost_tracker_arc,
+        cache: cache_backend,
+        cost_tracker,
+        tool_handle: tool_server,
         dashboard_tx: None,
+        agents,
+        repo_root: output_subdir.clone(),
         max_findings: 20,
+        judge_model: model.to_string(),
+        judge,
         linters_only: false,
         linter_configs: None,
         ruleset: None,
