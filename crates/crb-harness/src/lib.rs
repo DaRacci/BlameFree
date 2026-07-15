@@ -32,28 +32,6 @@ pub enum ReviewMode {
     Working,
 }
 
-/// Parameters for a full PR review.
-#[deprecated = "Use EvalConfig and evaluate_pr() instead"]
-pub struct ReviewParams {
-    /// Unified diff of the PR to review.
-    pub diff: String,
-
-    /// Model identifier.
-    pub model: String,
-
-    /// Title of the PR being reviewed.
-    pub pr_title: String,
-
-    /// Reviewer role abbreviations.
-    pub roles: Vec<String>,
-
-    /// Maximum number of findings to return per agent.
-    pub max_findings: usize,
-
-    /// Optional cache directory for LLM response caching.
-    pub cache_dir: Option<PathBuf>,
-}
-
 /// Call an async function with exponential backoff retry.
 #[doc(hidden)]
 pub async fn with_retry<F, Fut, T, E>(f: F, max_retries: usize, base_delay_ms: u64) -> Result<T, E>

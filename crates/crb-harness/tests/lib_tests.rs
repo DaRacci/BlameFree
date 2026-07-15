@@ -1,45 +1,4 @@
-//! Tests for `ReviewParams`, `ReviewMode`, and public helpers.
-
-use crb_agents::prompts::PromptLibrary;
-
-// ---------------------------------------------------------------------------
-// ReviewParams
-// ---------------------------------------------------------------------------
-
-#[test]
-fn review_params_default_roles_when_empty() {
-    let params = crb_harness::ReviewParams {
-        diff: "some diff".to_string(),
-        model: "test-model".to_string(),
-        pr_title: "Test PR".to_string(),
-        roles: vec![],
-        max_findings: 20,
-        cache_dir: None,
-    };
-    assert_eq!(params.diff, "some diff");
-    assert_eq!(params.model, "test-model");
-    assert!(params.roles.is_empty());
-    assert!(params.cache_dir.is_none());
-}
-
-#[test]
-fn review_params_custom_roles() {
-    let params = crb_harness::ReviewParams {
-        diff: String::new(),
-        model: "m".to_string(),
-        pr_title: "t".to_string(),
-        roles: PromptLibrary::get_instance()
-            .abbreviations()
-            .into_iter()
-            .take(2)
-            .map(|s| s.to_string())
-            .collect(),
-        max_findings: 10,
-        cache_dir: None,
-    };
-    assert_eq!(params.roles.len(), 2);
-    assert_eq!(params.max_findings, 10);
-}
+//! Tests for `ReviewMode` and public helpers.
 
 // ---------------------------------------------------------------------------
 // ReviewMode
