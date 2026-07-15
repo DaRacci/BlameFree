@@ -158,6 +158,24 @@ impl AnalyticsTracker {
     }
 }
 
+/// Default pricing: $0.14 per 1M input tokens, $0.28 per 1M output tokens.
+/// Override via `CRB_INPUT_PRICE_PER_M` and `CRB_OUTPUT_PRICE_PER_M` env vars.
+fn default_input_price_per_token() -> f64 {
+    let price_per_m = std::env::var("CRB_INPUT_PRICE_PER_M")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.14);
+    price_per_m / 1_000_000.0
+}
+
+fn default_output_price_per_token() -> f64 {
+    let price_per_m = std::env::var("CRB_OUTPUT_PRICE_PER_M")
+        .ok()
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.28);
+    price_per_m / 1_000_000.0
+}
+
 impl AnalyticsSnapshot {
     /// Compute the cache hit rate for all sessions combined.
     pub fn hit_rate(&self) -> f64 {
@@ -183,7 +201,15 @@ impl AnalyticsSnapshot {
     /// ```
     /// where prices are per-token (derived from per-1M-token rates).
     pub fn total_cost(&self) -> f64 {
-        todo!()
+        let input_price = default_input_price_per_token();
+        let output_price = default_output_price_per_token();
+
+        self.sessions
+            .values()
+            .fold(0.0, |acc, usage| {
+                acc + usage.input_tokens as f64 * input_price
+                    + usage.output_tokens as f64 * output_price
+            })
     }
 
     // Total token counts across both agent and judge calls.

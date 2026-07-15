@@ -10,8 +10,6 @@ use rig_core::providers::openai;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 use rig_core::tool::server::ToolServerHandle;
 
-use crate::ReviewerConfig;
-
 /// A [`PromptHook`] that skips tool calls with budget nudge messages when the agent is approaching its turn limit.
 ///
 /// Mechanism:

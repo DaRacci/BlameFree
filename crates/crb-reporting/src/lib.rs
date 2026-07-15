@@ -60,12 +60,12 @@ pub fn write_report(results: &[PrResult], output_dir: &Path) -> Result<()> {
 }
 
 /// Print a terminal summary of cost and cache hit rates for all PRs.
-#[deprecated = "Needs either a rewrite, or to be refacotred to use the new cost tracking system."]
 pub async fn print_terminal_summary(results: &[PrResult]) {
     let separator = "═══════════════════════════════════════════════";
     println!("\n{separator}");
 
-    let mut grand_total_tokens = 0usize;
+    let mut grand_total_tokens_in = 0u64;
+    let mut grand_total_tokens_out = 0u64;
     let mut grand_total_cost = 0.0f64;
 
     for result in results {
@@ -80,16 +80,14 @@ pub async fn print_terminal_summary(results: &[PrResult]) {
             let (tokens_in, tokens_out) = cost.total_tokens().await;
             let pr_cost = cost.total_cost();
 
-            grand_total_tokens += (tokens_in + tokens_out) as usize;
+            grand_total_tokens_in += tokens_in;
+            grand_total_tokens_out += tokens_out;
             grand_total_cost += pr_cost;
 
+            let total_tokens_k = (tokens_in + tokens_out) as f64 / 1000.0;
             println!(
                 " {}: F1={:.3}, {} findings, {:.1}K tokens, ${:.4}",
-                pr_label,
-                f1,
-                findings_count,
-                tokens_in as f64 / 1000.0,
-                pr_cost,
+                pr_label, f1, findings_count, total_tokens_k, pr_cost,
             );
         } else {
             println!(
@@ -112,6 +110,7 @@ pub async fn print_terminal_summary(results: &[PrResult]) {
         0.0
     };
 
+    let grand_total_tokens = grand_total_tokens_in + grand_total_tokens_out;
     println!("{separator}");
     println!(
         " TOTAL: {} PR(s), {:.1}K tokens, ${:.4}",

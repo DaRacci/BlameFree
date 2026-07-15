@@ -54,7 +54,7 @@ pub async fn run_harness(
         run_id = %run_id,
         output_dir = %output_subdir.display(),
         dataset = %dataset_dir.display(),
-        roles = %config.roles,
+        roles = %config.roles.as_deref().unwrap_or(""),
         concurrency = config.concurrency,
         "Starting harness run via library"
     );
@@ -350,7 +350,7 @@ pub async fn run_harness(
         total_agent_calls,
     });
 
-    crb_harness::print_terminal_summary(&results);
+    crb_reporting::print_terminal_summary(&results).await;
 
     Ok(())
 }

@@ -117,8 +117,8 @@ pub struct BenchmarkConfig {
 
     pub cache_dir: Option<String>,
 
-    #[serde(default = "default_roles", deserialize_with = "deserialize_roles")]
-    pub roles: String,
+    #[serde(default)]
+    pub roles: Option<String>,
 
     #[serde(default)]
     pub skip_consensus: bool,
@@ -141,29 +141,6 @@ fn default_use_cache() -> bool {
     true
 }
 
-/// Deserialize `roles` from either a comma-separated string or a Vec<String>.
-fn deserialize_roles<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
-    use serde::de;
-    struct RolesVisitor;
-    impl<'de> de::Visitor<'de> for RolesVisitor {
-        type Value = String;
-        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-            f.write_str("a string or array of strings")
-        }
-        fn visit_str<E: de::Error>(self, v: &str) -> Result<String, E> {
-            Ok(v.to_string())
-        }
-        fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<String, A::Error> {
-            let mut parts = Vec::new();
-            while let Some(s) = seq.next_element::<String>()? {
-                parts.push(s);
-            }
-            Ok(parts.join(","))
-        }
-    }
-    d.deserialize_any(RolesVisitor)
-}
-
 fn default_judge_model() -> String {
     DEFAULT_MODEL.to_string()
 }
@@ -178,13 +155,6 @@ fn default_concurrency() -> usize {
 
 fn default_max_findings() -> usize {
     20
-}
-
-#[deprecated(
-    note = "we should never hardcode roles, always use the available agents from the prompt library."
-)]
-fn default_roles() -> String {
-    "SA,CL,AR,SEC".to_string()
 }
 
 /// Response returned when a benchmark is started.
@@ -479,8 +449,11 @@ fn format_running_response(id: &str, active_run: &ActiveRun) -> impl IntoRespons
     let roles: Vec<String> = active_run
         .config
         .roles
+        .as_deref()
+        .unwrap_or("")
         .split(',')
         .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
         .collect();
     let detail = RunDetail {
         id: id.to_string(),
@@ -714,8 +687,11 @@ pub async fn get_run(
         roles: ar
             .config
             .roles
+            .as_deref()
+            .unwrap_or("")
             .split(',')
             .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
             .collect(),
     });
 
@@ -747,7 +723,7 @@ pub async fn start_run(
         "POST /api/runs — model={}, dataset={}, roles={}",
         config.model,
         config.dataset_dir,
-        config.roles
+        config.roles.as_deref().unwrap_or("")
     );
     let run_id = format!(
         "run-{}",

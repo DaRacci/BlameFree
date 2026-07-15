@@ -16,7 +16,8 @@ use crb_shared::finding::Finding;
 
 use crate::execution::run_reviewers;
 use crate::judge::judge_comment;
-use crate::{ConsensusReport, MatchResult, ReviewerConfig};
+use crate::{ConsensusReport, MatchResult};
+use crate::Role;
 use crb_cache::traits::CacheBackend;
 
 /// Run the full multi-agent consensus pipeline.
@@ -34,7 +35,7 @@ use crb_cache::traits::CacheBackend;
 pub async fn run_consensus(
     diff: &str,
     goldens: Vec<GoldenComment>,
-    reviewer_configs: Vec<ReviewerConfig>,
+    reviewer_configs: Vec<(Role, String, usize)>,
     client: &openai::Client,
     judge: &Agent<ResponsesCompletionModel>,
     rules_preamble: Option<&str>,

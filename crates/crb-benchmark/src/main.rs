@@ -865,8 +865,17 @@ async fn run_benchmark(
                 cost_tracker: cost_tracker.clone(),
                 dashboard_tx: dashboard_tx.clone(),
                 identifier: todo!(),
+                tool_handle: todo!(),
                 agents: todo!(),
                 repo_root: todo!(),
+                roles: roles.clone(),
+                max_findings: 20,
+                judge_model: judge_model.clone(),
+                judge: todo!(),
+                linters_only: false,
+                linter_configs: None,
+                ruleset: None,
+                template_vars: None,
             };
             let diff = crb_harness::load_pr_diff(&pr, &benchmark_dir).await?;
             crb_harness::evaluate_pr(&pr, &diff, &cfg).await

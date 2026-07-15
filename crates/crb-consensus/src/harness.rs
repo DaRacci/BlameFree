@@ -17,7 +17,7 @@ use crb_types::benchmark::JudgeVerdict;
 
 use crate::adaptive::get_agents_for_diff;
 use crate::pipeline::run_consensus;
-use crate::{ReviewerConfig, Role};
+use crate::Role;
 use crb_cache::traits::CacheBackend;
 
 /// Convenience function that matches the existing `evaluate_pr()` signature in `crb-harness`
@@ -56,12 +56,10 @@ pub async fn evaluate_pr_with_consensus(
 ) -> Result<PrResult> {
     let roles = get_agents_for_diff(diff, selected_agents);
 
-    let reviewer_configs: Vec<ReviewerConfig> = roles
+    let reviewer_configs: Vec<(Role, String, usize)> = roles
         .iter()
-        .map(|agent| ReviewerConfig {
-            role: Role(agent.role_abbreviation.to_string()),
-            model: model.to_string(),
-            max_findings,
+        .map(|agent| {
+            (Role(agent.role_abbreviation.to_string()), model.to_string(), max_findings)
         })
         .collect();
 

@@ -710,11 +710,6 @@ pub fn write_summary(
         model: model.to_string(),
         judge_model: judge_model.to_string(),
         total_prs: results.len(),
-        duration_secs: duration.as_secs_f64(),
-        total_cost_usd,
-        total_tokens,
-        agent_cache_hit_rate: avg_agent_cache_hit_rate,
-        judge_cache_hit_rate: avg_judge_cache_hit_rate,
     };
     append_run_history(cache_dir, &run_entry)?;
 

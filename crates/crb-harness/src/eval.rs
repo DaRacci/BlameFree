@@ -1,8 +1,9 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use crb_agents::agent::AgentEntry;
-use crb_consensus::CacheBackend;
+use crb_cache::traits::CacheBackend;
 use crb_reporting::cost::AnalyticsTracker;
+use crb_rules::RuleSet;
 use crb_tools::linters::config::LinterConfig;
 use crb_types::{
     RunEvent,
@@ -45,7 +46,7 @@ pub struct EvalConfig {
     pub client: Arc<openai::Client>,
 
     /// Cache backend for storing and retrieving results, along with all responses from the LLM provider.
-    pub cache: Arc<dyn CacheBackend>,
+    pub cache: Option<Arc<dyn CacheBackend>>,
 
     /// Cost tracker for use during the run.
     pub cost_tracker: Arc<AnalyticsTracker>,
@@ -64,6 +65,30 @@ pub struct EvalConfig {
 
     /// The repository root path for the evaluation.
     pub repo_root: PathBuf,
+
+    /// Comma-separated role abbreviations for the evaluation.
+    pub roles: String,
+
+    /// Maximum number of findings per agent.
+    pub max_findings: usize,
+
+    /// The model to use for the judge.
+    pub judge_model: String,
+
+    /// Judge agent for evaluating findings against goldens.
+    pub judge: Agent<openai::responses_api::ResponsesCompletionModel>,
+
+    /// Only run linters, skip LLM agents.
+    pub linters_only: bool,
+
+    /// Linter configurations.
+    pub linter_configs: Option<Arc<HashMap<String, LinterConfig>>>,
+
+    /// Ruleset for formatting additional context.
+    pub ruleset: Option<Arc<RuleSet>>,
+
+    /// Template variables for the agent prompts.
+    pub template_vars: Option<HashMap<String, serde_json::Value>>,
 }
 
 impl std::fmt::Debug for EvalConfig {
@@ -73,6 +98,8 @@ impl std::fmt::Debug for EvalConfig {
             .field("model", &self.model.get())
             .field("reasoning_effort", &self.reasoning_effort)
             .field("agents", &self.agents)
+            .field("roles", &self.roles)
+            .field("max_findings", &self.max_findings)
             .finish_non_exhaustive()
     }
 }

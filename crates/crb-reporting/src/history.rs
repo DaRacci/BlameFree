@@ -17,21 +17,6 @@ pub struct RunHistoryEntry {
     pub model: String,
     pub judge_model: String,
     pub total_prs: usize,
-
-    #[deprecated = "This is handled by [`crb_types::benchmark::Metrics`]"]
-    pub duration_secs: f64,
-
-    #[deprecated = "This is handled by [`crb_reporting::cost::CostSnapshot`]"]
-    pub total_cost_usd: f64,
-
-    #[deprecated = "This is handled by [`crb_types::benchmark::Metrics`]"]
-    pub total_tokens: usize,
-
-    #[deprecated = "This is handled by [`crb_types::benchmark::Metrics`]"]
-    pub agent_cache_hit_rate: f64,
-
-    #[deprecated = "This is handled by [`crb_types::benchmark::Metrics`]"]
-    pub judge_cache_hit_rate: f64,
 }
 
 // TODO: Is this needed or does the new cache system handle this automatically?

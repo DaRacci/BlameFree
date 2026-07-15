@@ -17,7 +17,7 @@ pub async fn review_pr(
     let roles: Vec<&str> = if config.roles.is_empty() {
         PromptLibrary::get_instance().abbreviations()
     } else {
-        config.roles.iter().map(|r| r.as_str()).collect()
+        config.roles.split(',').map(|r| r.trim()).collect()
     };
 
     let findings = run_agent_roles(
@@ -25,7 +25,7 @@ pub async fn review_pr(
         &config.model,
         &config.diff,
         &roles,
-        params.max_findings,
+        config.max_findings,
         tool_server_handle,
     )
     .await;

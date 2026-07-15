@@ -14,9 +14,7 @@ use tokio::task::JoinSet;
 use tracing::{info, warn};
 
 use crate::agent::TurnBudgetHook;
-use crate::{
-    ReviewerConfig, Role, extract_last_assistant_text, parse_findings_from_response,
-};
+use crate::{Role, extract_last_assistant_text, parse_findings_from_response};
 use crb_cache::traits::CacheBackend;
 
 /// Compute a content-addressed cache key for an agent review call.
@@ -67,7 +65,7 @@ struct CachedAgentData {
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 #[deprecated = "needs full rewrite to use new cache, agent builder, and apis."]
 pub async fn run_reviewers(
-    configs: Vec<ReviewerConfig>,
+    configs: Vec<(Role, String, usize)>,
     diff: &str,
     diff_hash: &str,
     client: &openai::Client,
@@ -85,18 +83,16 @@ pub async fn run_reviewers(
     let agent_api_calls = Arc::new(AtomicUsize::new(0));
     let aggregate_usage = Arc::new(Mutex::new(Usage::new()));
 
-    for config in configs {
+    for (role, model, max_findings) in configs {
         let client = client.clone();
         let diff = diff.to_string();
         let diff_hash = diff_hash.to_string();
-        let role = config.role.clone();
-        let max_findings = config.max_findings;
         let preamble = rules_preamble.map(String::from);
         let tool_preamble = tool_preamble.map(String::from);
         let agent = build_agent(
             &client,
-            &config.model,
-            config.role.as_str(),
+            &model,
+            role.as_str(),
             preamble.as_deref(),
             template_vars,
             tool_preamble.as_deref(),
@@ -107,7 +103,7 @@ pub async fn run_reviewers(
         let cache = cache.clone();
         let prompt_hash = prompt_hash.to_string();
         let rules_hash = rules_hash.to_string();
-        let model_name = config.model.clone();
+        let model_name = model.clone();
         let agent_api_calls = Arc::clone(&agent_api_calls);
         let aggregate_usage = Arc::clone(&aggregate_usage);
         let dashboard_tx = dashboard_tx.clone();

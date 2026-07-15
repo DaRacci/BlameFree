@@ -61,20 +61,6 @@ impl From<String> for Role {
     }
 }
 
-/// Configuration for a single reviewer agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[deprecated = "Use EvalConfig instead."]
-pub struct ReviewerConfig {
-    /// The reviewer role.
-    pub role: Role,
-
-    /// The LLM Model identifier for this reviewer.
-    pub model: String,
-
-    /// The Maximum number of findings this agent should produce.
-    pub max_findings: usize,
-}
-
 /// Result of matching a golden comment against candidate findings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MatchResult {
