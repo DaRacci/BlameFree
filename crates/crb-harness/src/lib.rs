@@ -506,15 +506,11 @@ pub async fn evaluate_pr(
     let linter_findings: Vec<Finding> = Vec::new();
     let pr_key = sanitize_filename(&pr.pr_title);
     if let Some(ref tx) = config.dashboard_tx {
-        for role in config
-            .roles
-            .split(',')
-            .map(|r| r.trim())
-            .filter(|r| !r.is_empty())
-        {
+        let prompt_library = PromptLibrary::get_instance();
+        for entry in prompt_library.agents() {
             let _ = tx.send(RunEvent::AgentStarted {
                 identifier: pr_key.clone(),
-                agent: role.to_string(),
+                agent: entry.role_abbreviation.to_string(),
             });
         }
     }
@@ -561,10 +557,12 @@ pub async fn evaluate_pr(
     let processed_findings = post_process_findings(&all_findings);
 
     if let Some(ref tx) = config.dashboard_tx {
-        for (_i, role) in ["SA", "CL", "AR", "SEC"].iter().enumerate() {
+        let prompt_library = PromptLibrary::get_instance();
+        let agent_count = prompt_library.agents().len().max(1);
+        for entry in prompt_library.agents() {
             let _ = tx.send(RunEvent::AgentFinished {
-                identifier: role.to_string(),
-                findings: processed_findings.len() / 4,
+                identifier: entry.role_abbreviation.to_string(),
+                findings: processed_findings.len() / agent_count,
                 success: true,
             });
         }
@@ -579,7 +577,7 @@ pub async fn evaluate_pr(
         let (total_tokens_in, total_tokens_out) = snapshot.total_tokens().await;
         let total_tokens = (total_tokens_in + total_tokens_out) as usize;
         let cost_usd = snapshot.total_cost();
-        let total_agent_calls = 4;
+        let total_agent_calls = PromptLibrary::get_instance().agents().len();
         let _ = tx.send(RunEvent::ReviewCompleted {
             identifier: pr_key,
             metrics: crb_types::benchmark::Metrics {

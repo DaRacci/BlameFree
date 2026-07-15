@@ -450,11 +450,8 @@ fn format_running_response(id: &str, active_run: &ActiveRun) -> impl IntoRespons
         .config
         .roles
         .as_deref()
-        .unwrap_or("")
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+        .map(|s| vec![s.to_string()])
+        .unwrap_or_default();
     let detail = RunDetail {
         id: id.to_string(),
         name: id.to_string(),
@@ -688,11 +685,8 @@ pub async fn get_run(
             .config
             .roles
             .as_deref()
-            .unwrap_or("")
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect(),
+            .map(|s| vec![s.to_string()])
+            .unwrap_or_default(),
     });
 
     let aggregate = compute_aggregate_metrics(&results, total_cost, duration_secs);

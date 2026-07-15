@@ -46,7 +46,11 @@ fn default_adhoc_model() -> String {
 
 // TODO: No string defaults for dynamic roles.
 fn default_adhoc_roles() -> Vec<String> {
-    vec!["SA".to_string(), "CL".to_string()]
+    crb_agents::prompts::PromptLibrary::get_instance()
+        .abbreviations()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 /// Submit a GitHub PR URL for ad-hoc review. Fetches the PR diff + metadata
@@ -203,7 +207,7 @@ pub async fn get_adhoc_run(
         .as_ref()
         .and_then(|s| s.get("roles"))
         .and_then(|v| v.as_str())
-        .map(|s| s.split(',').map(|r| r.trim().to_string()).collect())
+        .map(|s| vec![s.to_string()])
         .unwrap_or_default();
     let status = summary_str("status", "unknown");
     let duration_secs = match summary_data
