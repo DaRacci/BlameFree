@@ -132,9 +132,9 @@ fn load_dataset_config(dir: &Path) -> Option<DatasetConfig> {
 
 /// GET /api/config/reasoning-efforts — list available reasoning effort levels.
 pub async fn list_reasoning_efforts() -> Json<ReasoningEffortsResponse> {
-    let levels: Vec<String> = crb_harness::model_capabilities::REASONING_EFFORT_LEVELS
+    let levels: Vec<String> = crb_harness::model_capabilities::ReasoningEffort::variants()
         .iter()
-        .map(|s| s.to_string())
+        .map(|v| v.to_string())
         .collect();
     Json(ReasoningEffortsResponse { levels })
 }

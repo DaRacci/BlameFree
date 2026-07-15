@@ -35,29 +35,6 @@ pub fn diff_touches_full_panel_languages(diff: &str) -> bool {
     false
 }
 
-/// Parse a unified diff to count the number of changed files.
-#[deprecated = "Use `Diff` instead"]
-pub fn count_diff_files(diff: &str) -> usize {
-    diff.lines()
-        .filter(|line| line.starts_with("diff --git "))
-        .count()
-}
-
-/// Parse a unified diff to count the total number of changed lines.
-///
-/// Counts additions and deletions, excluding `---`/`+++` hunk headers and `diff --git` lines.
-#[deprecated = "Use `Diff` instead"]
-pub fn count_diff_lines(diff: &str) -> usize {
-    diff.lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            (trimmed.starts_with('+') || trimmed.starts_with('-'))
-                && !trimmed.starts_with("+++")
-                && !trimmed.starts_with("---")
-        })
-        .count()
-}
-
 /// Determine which roles to use for a given diff, based on the available roles and the diff size.
 ///
 /// If the diff is small enough, and a GEN agent is available, it will return only the GEN agent.
@@ -77,7 +54,7 @@ pub fn get_agents_for_diff(
         selected_agents = library.agents();
     }
 
-    if should_use_single_agent(diff.get(), DEFAULT_MAX_FILES, DEFAULT_MAX_LINES) {
+    if should_use_single_agent(diff, DEFAULT_MAX_FILES, DEFAULT_MAX_LINES) {
         if let Some(generalist) = library.generalist() {
             use tracing::info;
 
@@ -111,16 +88,20 @@ pub fn get_agents_for_diff(
 /// - The diff does NOT touch any full-panel languages
 ///
 /// Returns `false` (full 4-agent panel) otherwise.
-pub fn should_use_single_agent(diff: &str, max_files: usize, max_lines: usize) -> bool {
-    let file_count = count_diff_files(diff);
-    let line_count = count_diff_lines(diff);
+pub fn should_use_single_agent(diff: &Diff, max_files: usize, max_lines: usize) -> bool {
+    let file_count = diff.sections.len();
+    let line_count = diff.sections
+        .iter()
+        .flat_map(|s| s.body.lines())
+        .filter(|line| line.starts_with('+') || line.starts_with('-'))
+        .count();
 
     debug!(
         "Adaptive dispatch: {} files, {} changed lines (threshold: {} files / {} lines)",
         file_count, line_count, max_files, max_lines,
     );
 
-    if diff_touches_full_panel_languages(diff) {
+    if diff_touches_full_panel_languages(diff.get()) {
         debug!("Adaptive dispatch: full panel forced (diff touches safety-override language)");
         return false;
     }
@@ -151,86 +132,6 @@ diff --git a/{fp} b/{fp}
             fp = file_path,
             content = content
         )
-    }
-
-    #[test]
-    fn test_count_diff_files_empty() {
-        assert_eq!(count_diff_files(""), 0);
-    }
-
-    #[test]
-    fn test_count_diff_files_single() {
-        let diff = "\
-diff --git a/src/main.rs b/src/main.rs
-index abc..def 100644
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -1,3 +1,4 @@
-fn main() {
--    println!(\"hello\");
-+    println!(\"hello world\");
-}
-";
-        assert_eq!(count_diff_files(diff), 1);
-    }
-
-    #[test]
-    fn test_count_diff_files_multiple() {
-        let diff = "\
-diff --git a/src/main.rs b/src/main.rs
-index a..b
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -1 +1 @@
--foo
-+bar
-diff --git a/src/lib.rs b/src/lib.rs
-index c..d
---- a/src/lib.rs
-+++ b/src/lib.rs
-@@ -1 +1 @@
--baz
-+qux
-diff --git a/Cargo.toml b/Cargo.toml
-index e..f
---- a/Cargo.toml
-+++ b/Cargo.toml
-@@ -1 +1 @@
--old
-+new
-";
-        assert_eq!(count_diff_files(diff), DEFAULT_MAX_LINES);
-    }
-
-    #[test]
-    fn test_count_diff_lines_empty() {
-        assert_eq!(count_diff_lines(""), 0);
-    }
-
-    #[test]
-    fn test_count_diff_lines_counts_additions_and_deletions() {
-        let diff = "\
-diff --git a/src/main.rs b/src/main.rs
-index abc..def 100644
---- a/src/main.rs
-+++ b/src/main.rs
-@@ -1,5 +1,6 @@
-fn main() {
--    let x = 1;
--    let y = 2;
-+    let x = 10;
-+    let y = 20;
-+    let z = 30;
-   println!(\"done\");
-}
-";
-        assert_eq!(count_diff_lines(diff), 5);
-    }
-
-    #[test]
-    fn test_count_diff_lines_excludes_headers() {
-        let diff = minimal_diff("src/main.rs", "-foo\n+bar\n");
-        assert_eq!(count_diff_lines(&diff), 2);
     }
 
     #[test]
@@ -274,7 +175,8 @@ diff --git a/README.md b/README.md
 
     #[test]
     fn test_should_use_single_agent_small_pr() {
-        let diff = minimal_diff("README.md", "-old\n+new\n");
+        let raw = minimal_diff("README.md", "-old\n+new\n");
+        let diff = Diff::new(raw);
         assert!(should_use_single_agent(
             &diff,
             DEFAULT_MAX_FILES,
@@ -285,13 +187,14 @@ diff --git a/README.md b/README.md
     #[test]
     fn test_should_use_single_agent_too_many_files() {
         let file_count = 4;
-        let diff = (0..file_count)
+        let raw = (0..file_count)
             .map(|i| {
                 let fname = format!("a{}.txt", i);
                 minimal_diff(&fname, "-old\n+new\n")
             })
             .collect::<Vec<_>>()
             .join("");
+        let diff = Diff::new(raw);
         assert!(!should_use_single_agent(
             &diff,
             DEFAULT_MAX_FILES,
@@ -301,7 +204,7 @@ diff --git a/README.md b/README.md
 
     #[test]
     fn test_should_use_single_agent_too_many_lines() {
-        let diff = "\
+        let raw = "\
 diff --git a/a.txt b/a.txt
 --- a/a.txt
 +++ b/a.txt
@@ -311,6 +214,7 @@ diff --git a/a.txt b/a.txt
             + &(0..250)
                 .map(|i| format!("+line_{}\n", i))
                 .collect::<String>();
+        let diff = Diff::new(raw);
         assert!(!should_use_single_agent(
             &diff,
             DEFAULT_MAX_FILES,
@@ -320,7 +224,8 @@ diff --git a/a.txt b/a.txt
 
     #[test]
     fn test_should_use_single_agent_safety_override_rust() {
-        let diff = minimal_diff("src/main.rs", "-old\n+new\n");
+        let raw = minimal_diff("src/main.rs", "-old\n+new\n");
+        let diff = Diff::new(raw);
         assert!(!should_use_single_agent(
             &diff,
             DEFAULT_MAX_FILES,
@@ -330,7 +235,8 @@ diff --git a/a.txt b/a.txt
 
     #[test]
     fn test_should_use_single_agent_safety_override_go() {
-        let diff = minimal_diff("server.go", "-old\n+new\n");
+        let raw = minimal_diff("server.go", "-old\n+new\n");
+        let diff = Diff::new(raw);
         assert!(!should_use_single_agent(
             &diff,
             DEFAULT_MAX_FILES,

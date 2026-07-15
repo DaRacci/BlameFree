@@ -27,10 +27,6 @@ pub enum ReasoningConfig {
     },
 }
 
-/// All supported reasoning effort levels.
-#[deprecated(note = "Use ReasoningEffort enum instead")]
-pub const REASONING_EFFORT_LEVELS: &[&str] = &["low", "medium", "high", "max"];
-
 /// The reasoning effort level for OpenAI style reasoning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -46,6 +42,13 @@ pub enum ReasoningEffort {
 
     /// Most thorough, slowest.
     Max,
+}
+
+impl ReasoningEffort {
+    /// Return all variants as a slice.
+    pub fn variants() -> &'static [Self] {
+        &[Self::Low, Self::Medium, Self::High, Self::Max]
+    }
 }
 
 impl std::fmt::Display for ReasoningEffort {

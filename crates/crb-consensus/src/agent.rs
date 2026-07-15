@@ -84,25 +84,3 @@ impl<M: CompletionModel> PromptHook<M> for TurnBudgetHook {
         ToolCallHookAction::cont()
     }
 }
-
-/// Build a reviewer agent for the given role.
-///
-/// Delegates to [`crb_agents::build_agent`] with the role's string identifier
-/// and an optional rules preamble.  The returned agent should be prompted with
-/// the diff to produce structured findings (parsed via `serde_json`).
-///
-/// `prompt_lib` and `template_vars` are forwarded to [`crb_agents::build_agent`]
-/// to support file-based prompt loading and template substitution.
-#[allow(clippy::too_many_arguments)]
-#[deprecated = "Use [`crb_agents::build_agent`] directly"]
-pub fn build_reviewer_agent(
-    _client: &openai::Client,
-    _config: &ReviewerConfig,
-    _rules_preamble: Option<&str>,
-    _template_vars: Option<&HashMap<String, serde_json::Value>>,
-    _tool_preamble: Option<&str>,
-    _additional_params: Option<serde_json::Value>,
-    _tool_server_handle: ToolServerHandle,
-) -> AgentBuilder<ResponsesCompletionModel, (), WithToolServerHandle> {
-    unimplemented!()
-}

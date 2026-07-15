@@ -15,7 +15,7 @@ use crb_reporting::{cost::AnalyticsSnapshot, golden::GoldenComment};
 use crb_shared::finding::Finding;
 use crb_types::benchmark::MetricsProvider;
 use regex::Regex;
-use rig_core::completion::{AssistantContent, Message, Usage};
+use rig_core::completion::{AssistantContent, Message};
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 use tracing::warn;
@@ -103,40 +103,8 @@ pub struct ConsensusReport {
     /// Goldens that matched no finding.
     pub false_negatives: Vec<GoldenComment>,
 
-    /// TP / (TP + FP)
-    #[deprecated(note = "Use the `precision()` method instead.")]
-    pub precision: f64,
-
-    /// TP / (TP + FN)
-    #[deprecated(note = "Use the `recall()` method instead.")]
-    pub recall: f64,
-
-    /// F1 = harmonic mean of precision and recall
-    #[deprecated(note = "Use the `f1()` method instead.")]
-    pub f1: f64,
-
     /// Analytics usage for the agent LLM calls.
     pub analytics: AnalyticsSnapshot,
-
-    /// Number of agent LLM calls that were cache misses.
-    #[deprecated(note = "Use the `analytics` field instead.")]
-    pub agent_api_calls: usize,
-
-    /// Number of judge LLM calls that were cache misses.
-    #[deprecated(note = "Use the `analytics` field instead.")]
-    pub judge_api_calls: usize,
-
-    /// Number of judge LLM calls that were cache hits.
-    #[deprecated(note = "Use the `analytics` field instead.")]
-    pub judge_cache_hits: usize,
-
-    /// Aggregate token usage from all agent API calls.
-    #[deprecated(note = "Use the `analytics` field instead.")]
-    pub agent_usage: Usage,
-
-    /// Aggregate token usage from all judge API calls.
-    #[deprecated(note = "Use the `analytics` field instead.")]
-    pub judge_usage: Usage,
 }
 
 impl MetricsProvider for ConsensusReport {

@@ -243,7 +243,12 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
                 total_cost: Some(0.0),
                 total_tokens: 0,
                 duration_secs: Some(0.0),
-                created_at: format_timestamp(ar.created_at),
+                created_at: {
+                    let secs = ar.created_at.as_secs();
+                    chrono::DateTime::from_timestamp(secs as i64, 0)
+                        .map(|dt| dt.to_rfc3339())
+                        .unwrap_or_else(|| "unknown".to_string())
+                },
                 model: Some(ar.config.model.clone()),
                 status: if ar.finished {
                     "completed".to_string()
@@ -269,47 +274,6 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
     Json(runs).into_response()
 }
 
-/// Format a Unix timestamp seconds as an RFC 3339 string.
-#[deprecated(note = "TODO: use UnixTime or chrono::DateTime directly")]
-fn format_timestamp(time: UnixTime) -> String {
-    let secs = time.as_secs();
-    chrono::DateTime::from_timestamp(secs as i64, 0)
-        .map(|dt| dt.to_rfc3339())
-        .unwrap_or_else(|| "unknown".to_string())
-}
-
-/// Compute duration from the newest and oldest file timestamps in a directory.
-#[deprecated(note = "TODO: use chrono or std::fs::metadata directly")]
-fn compute_duration_from_timestamps(path: &Path) -> f64 {
-    use std::fs;
-    let mut oldest = f64::MAX;
-    let mut newest = 0.0f64;
-    if let Ok(entries) = fs::read_dir(path) {
-        for entry in entries.flatten() {
-            if let Ok(meta) = entry.path().metadata() {
-                if let Ok(modified) = meta.modified() {
-                    let secs = modified
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs_f64();
-                    if secs > 0.0 {
-                        if secs < oldest {
-                            oldest = secs;
-                        }
-                        if secs > newest {
-                            newest = secs;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if newest > oldest && oldest < f64::MAX {
-        newest - oldest
-    } else {
-        0.0
-    }
-}
 
 /// Scan a run directory and compute summary metrics.
 fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
@@ -448,7 +412,35 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
 
     // Fallback: compute duration from file timestamps if not found in summary
     if duration_secs == 0.0 && !has_summary {
-        duration_secs = compute_duration_from_timestamps(path);
+        duration_secs = {
+            let mut oldest = f64::MAX;
+            let mut newest = 0.0f64;
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    if let Ok(meta) = entry.path().metadata() {
+                        if let Ok(modified) = meta.modified() {
+                            let secs = modified
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs_f64();
+                            if secs > 0.0 {
+                                if secs < oldest {
+                                    oldest = secs;
+                                }
+                                if secs > newest {
+                                    newest = secs;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if newest > oldest && oldest < f64::MAX {
+                newest - oldest
+            } else {
+                0.0
+            }
+        };
     }
 
     Ok(RunSummary {
@@ -684,7 +676,35 @@ pub async fn get_run(
 
     // Fallback: compute duration from file timestamps if not found in summary
     if duration_secs == 0.0 {
-        duration_secs = compute_duration_from_timestamps(&run_path);
+        duration_secs = {
+            let mut oldest = f64::MAX;
+            let mut newest = 0.0f64;
+            if let Ok(entries) = std::fs::read_dir(&run_path) {
+                for entry in entries.flatten() {
+                    if let Ok(meta) = entry.path().metadata() {
+                        if let Ok(modified) = meta.modified() {
+                            let secs = modified
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs_f64();
+                            if secs > 0.0 {
+                                if secs < oldest {
+                                    oldest = secs;
+                                }
+                                if secs > newest {
+                                    newest = secs;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if newest > oldest && oldest < f64::MAX {
+                newest - oldest
+            } else {
+                0.0
+            }
+        };
     }
 
     // Merge config from active run state if available (it isn't stored on disk)

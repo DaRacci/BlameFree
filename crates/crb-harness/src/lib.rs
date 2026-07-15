@@ -383,173 +383,6 @@ async fn evaluate_pr_single_agent(
     Ok((all_findings, Vec::new()))
 }
 
-#[deprecated = "Use evaluate_pr() with EvalStrategy::Consensus instead"]
-#[allow(trivial_casts)]
-async fn evaluate_pr_consensus(
-    pr: &GoldenCommentEntry,
-    client: &openai::Client,
-    model: &str,
-    judge: &Agent<ResponsesCompletionModel>,
-    diff: &str,
-    linter_findings: Vec<Finding>,
-    rules_preamble: Option<&str>,
-    roles: &str,
-    max_findings: usize,
-    cache: Option<Arc<dyn CacheBackend>>,
-    cost_tracker: Arc<AnalyticsTracker>,
-    workdir: Option<&str>,
-    reasoning_effort: Option<ReasoningEffort>,
-    dashboard_tx: Option<&broadcast::Sender<RunEvent>>,
-) -> Result<(Vec<Finding>, Vec<JudgeVerdict>)> {
-    // Parse comma-separated roles
-    let parsed_roles: Vec<&str> = roles
-        .split(',')
-        .map(|r| r.trim())
-        .filter(|r| !r.is_empty())
-        .collect();
-
-    // ── Adaptive agent dispatch (EXP-016) ──────────────────────────────
-    // NOTE: This experimental feature is intentionally disabled because it
-    // overrides user-selected roles with a single GEN agent, which:
-    //   (a) violates user role selection expectations, and
-    //   (b) prevents ARCH/AR agents from appearing in the results.
-    // Feature flag is kept to avoid breaking builds that enable it,
-    // but the override is suppressed to respect user-selected roles.
-    // #[cfg(feature = "exp16_adaptive_agents")]
-    // let parsed_roles: Vec<&str> = {
-    //     // Only apply adaptive dispatch when user has explicitly opted in
-    //     // by selecting only a single role; otherwise respect user's choice.
-
-    //     use crb_consensus::adaptive::should_use_single_agent;
-    //     if parsed_roles.len() == 1 && should_use_single_agent(diff, 3, 200) {
-    //         info!("EXP-016 adaptive dispatch: small PR, using single GEN agent");
-    //         vec!["GEN"]
-    //     } else {
-    //         parsed_roles
-    //     }
-    // };
-
-    // if diff.is_empty() {
-    //     info!("No diff - returning empty result");
-    //     return Ok((Vec::new(), Vec::new()));
-    // }
-
-    // ── Pre-compute content-addressed cache key components ──────────────
-    let prompt_lib = PromptLibrary::get_instance();
-    let first_role = parsed_roles.first().copied().unwrap_or("SA");
-    let prompt_hash = sha256_hex(prompt_lib.get(first_role).unwrap_or(""));
-    let rules_hash = sha256_hex(rules_preamble.unwrap_or(""));
-    let judge_prompt_hash = sha256_hex("");
-    let diff_hash = sha256_hex(diff);
-    let judge_model = "";
-
-    info!(
-        "Consensus pipeline: {} agent role(s), max {} findings per role",
-        parsed_roles.len(),
-        max_findings,
-    );
-
-    // ── Convert reasoning_effort to additional_params ──────────────────
-    let additional_params =
-        model_capabilities::make_additional_params(&Model(model.to_string()), reasoning_effort);
-    if additional_params.is_some() {
-        info!("Reasoning effort enabled: {:?}", reasoning_effort);
-    }
-
-    // ── Build template variables from diff and PR context (EXP-014) ──
-    let template_vars: Option<&HashMap<String, serde_json::Value>> = None;
-
-    // Convert parsed role abbreviations to AgentEntry references
-    let selected_agents: Vec<&'static AgentEntry> = parsed_roles
-        .iter()
-        .filter_map(|r| prompt_lib.config(r))
-        .collect();
-
-    let diff_wrapped = Diff(diff.to_string());
-
-    let (result, agent_usage, judge_usage, agent_api_calls, judge_api_calls, judge_cache_hits) =
-        evaluate_pr_with_consensus(
-            pr,
-            &diff_wrapped,
-            client,
-            &rig_core::model::Model::from_id(model.to_string()),
-            judge,
-            rules_preamble,
-            template_vars,
-            &selected_agents,
-            max_findings,
-            cache.clone().map(|c| c as Arc<dyn CacheBackend>),
-            &diff_hash,
-            &prompt_hash,
-            &rules_hash,
-            &judge_prompt_hash,
-            judge_model,
-            None,
-            workdir,
-            additional_params,
-            dashboard_tx.map(|t| t.clone()),
-        )
-        .await?;
-
-    let role_count = parsed_roles.len();
-    if role_count > 0 {
-        let per_agent = Usage {
-            input_tokens: agent_usage.input_tokens / role_count as u64,
-            output_tokens: agent_usage.output_tokens / role_count as u64,
-            total_tokens: agent_usage.total_tokens / role_count as u64,
-            cached_input_tokens: agent_usage.cached_input_tokens / role_count as u64,
-            cache_creation_input_tokens: agent_usage.cache_creation_input_tokens
-                / role_count as u64,
-            reasoning_tokens: agent_usage.reasoning_tokens / role_count as u64,
-            tool_use_prompt_tokens: agent_usage.tool_use_prompt_tokens / role_count as u64,
-        };
-        // First agent_api_calls are cache misses, the rest are cache hits
-        for i in 0..role_count {
-            let cache_hit = i >= agent_api_calls;
-            cost_tracker.record_agent(&per_agent, cache_hit);
-        }
-    }
-
-    // Judge usage: only cache misses have real usage data
-    let judge_total = judge_api_calls + judge_cache_hits;
-    if judge_total > 0 {
-        let per_judge = if judge_api_calls > 0 {
-            Usage {
-                input_tokens: judge_usage.input_tokens / judge_api_calls as u64,
-                output_tokens: judge_usage.output_tokens / judge_api_calls as u64,
-                total_tokens: judge_usage.total_tokens / judge_api_calls as u64,
-                cached_input_tokens: judge_usage.cached_input_tokens / judge_api_calls as u64,
-                cache_creation_input_tokens: judge_usage.cache_creation_input_tokens
-                    / judge_api_calls as u64,
-                reasoning_tokens: judge_usage.reasoning_tokens / judge_api_calls as u64,
-                tool_use_prompt_tokens: judge_usage.tool_use_prompt_tokens / judge_api_calls as u64,
-            }
-        } else {
-            Usage::new()
-        };
-        for _ in 0..judge_api_calls {
-            cost_tracker.record_judge(&per_judge, false);
-        }
-        // Cache hits have zero usage (no stored data)
-        for _ in 0..judge_cache_hits {
-            cost_tracker.record_judge_empty(true);
-        }
-    }
-
-    info!(
-        "Consensus pipeline: {} agent findings, {} linter findings, {} goldens",
-        result.findings_count,
-        linter_findings.len(),
-        result.golden_count
-    );
-
-    // The consensus crate's PrResult contains the actual findings count.
-    // We still need to return `all_findings` for post-processing compat,
-    // but note that all_findings is empty when linters are skipped -
-    // the findings_count will be derived from verdicts in the caller.
-    let all_findings: Vec<Finding> = Vec::new();
-    Ok((all_findings, result.verdicts))
-}
 
 /// Load the diff for a PR from pre-extracted cached diff files.
 ///
@@ -693,21 +526,20 @@ pub async fn evaluate_pr(
             .await?
         }
         EvalStrategy::Panel => {
-            let reasoning = config.reasoning_effort;
-            evaluate_pr_consensus(
+            let reasoning_params = config.reasoning_effort.and_then(|re| {
+                model_capabilities::make_additional_params(&Model(config.model.clone()), Some(re))
+            });
+            evaluate_pr_single_agent(
                 pr,
                 &config.client,
                 &config.model,
-                &config.judge,
                 &diff,
                 linter_findings,
                 rules_preamble.as_deref(),
-                &config.roles,
-                config.max_findings,
                 cache.clone(),
                 config.cost_tracker.clone(),
-                reasoning,
                 config.dashboard_tx.as_ref(),
+                reasoning_params,
             )
             .await?
         }

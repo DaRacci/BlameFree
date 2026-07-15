@@ -60,15 +60,3 @@ pub enum RunEvent {
         total_agent_calls: usize,
     },
 }
-
-/// Parse a single JSON line into a [`RunEvent`].
-///
-/// Returns `None` if the line is empty or not valid JSON.
-#[deprecated = "Use `serde_json::from_str` directly instead of this helper function."]
-pub fn parse_event_line(line: &str) -> Option<RunEvent> {
-    let line = line.trim();
-    if line.is_empty() {
-        return None;
-    }
-    serde_json::from_str(line).ok()
-}
