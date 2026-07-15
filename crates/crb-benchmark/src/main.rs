@@ -14,9 +14,11 @@ use crb_harness::eval::EvalConfig;
 use crb_harness::{EvalStrategy, model_capabilities, validation};
 use crb_reporting::cost::AnalyticsTracker;
 use crb_reporting::golden::{GoldenCommentEntry, load_golden_datasets};
+use crb_reporting::history::{RunHistoryEntry, append_run_history};
 use crb_reporting::{print_terminal_summary, write_report};
 use crb_rules::RuleSet;
 use crb_shared::metrics::MetricsOutput;
+use crb_shared::url::parse_github_url;
 use crb_shared::{benchmark, sanitize_filename};
 use crb_types::benchmark::Metrics;
 use crb_types::RunEvent;
@@ -877,7 +879,22 @@ async fn run_benchmark(
                 ruleset: None,
                 template_vars: None,
             };
-            let diff = crb_harness::load_pr_diff(&pr, &benchmark_dir).await?;
+            let diff_str = match parse_github_url(&pr.url) {
+                Ok((owner, repo, pr_num)) => {
+                    let d = crb_harness::load_cached_diff(&benchmark_dir, &owner, &repo, pr_num).unwrap_or_default();
+                    if d.is_empty() {
+                        warn!("Empty diff for PR: {} (url: {})", pr.pr_title, pr.url);
+                    } else {
+                        info!("Loaded diff ({} bytes) for PR: {}", d.len(), pr.pr_title);
+                    }
+                    d
+                }
+                Err(_) => {
+                    warn!("Could not extract PR info from URL '{}'. Using empty diff.", pr.url);
+                    String::new()
+                }
+            };
+            let diff = crb_shared::diff::Diff::new(diff_str);
             crb_harness::evaluate_pr(&pr, &diff, &cfg).await
         }
     });
@@ -910,7 +927,84 @@ async fn run_benchmark(
     );
 
     print_terminal_summary(&results);
-    crb_harness::write_summary(&cache_dir, &model, &judge_model, &results, eval_elapsed)?;
+    // Write _summary.json
+    let total_llm_calls: usize = results.iter().map(|r| r.findings_count).sum();
+    let total_judge_calls: usize = results.iter().map(|r| r.verdicts.len()).sum();
+    let total_tokens: u64 = results
+        .iter()
+        .filter_map(|r| r.cost.as_ref())
+        .map(|c| {
+            c.sessions
+                .values()
+                .map(|s| s.input_tokens + s.output_tokens)
+                .sum::<u64>()
+        })
+        .sum();
+    let total_cost_usd: f64 = results
+        .iter()
+        .filter_map(|r| r.cost.as_ref())
+        .map(|c| c.total_cost())
+        .sum();
+    let avg_agent_cache_hit_rate = if results.is_empty() {
+        0.0
+    } else {
+        results
+            .iter()
+            .filter_map(|r| r.cost.as_ref())
+            .map(|c| c.hit_rate())
+            .sum::<f64>()
+            / results.len() as f64
+    };
+    let avg_judge_cache_hit_rate = avg_agent_cache_hit_rate;
+
+    let aggregate_metrics = if results.is_empty() {
+        serde_json::json!({})
+    } else {
+        let avg_precision =
+            results.iter().map(|r| r.metrics.precision()).sum::<f64>() / results.len() as f64;
+        let avg_recall =
+            results.iter().map(|r| r.metrics.recall()).sum::<f64>() / results.len() as f64;
+        let avg_f1 = results.iter().map(|r| r.metrics.f1()).sum::<f64>() / results.len() as f64;
+        serde_json::json!({
+            "avg_precision": avg_precision,
+            "avg_recall": avg_recall,
+            "avg_f1": avg_f1,
+            "total_true_positives": results.iter().map(|r| r.metrics.true_positives).sum::<usize>(),
+            "total_false_positives": results.iter().map(|r| r.metrics.false_positives).sum::<usize>(),
+            "total_false_negatives": results.iter().map(|r| r.metrics.false_negatives).sum::<usize>(),
+        })
+    };
+
+    let summary = serde_json::json!({
+        "run_id": std::env::current_dir()
+            .ok()
+            .and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string()))
+            .unwrap_or_default(),
+        "model": model,
+        "judge_model": judge_model,
+        "total_prs": results.len(),
+        "total_llm_calls": total_llm_calls,
+        "total_judge_calls": total_judge_calls,
+        "duration_secs": eval_elapsed.as_secs_f64(),
+        "aggregate_metrics": aggregate_metrics,
+        "total_tokens": total_tokens,
+        "total_cost_usd": total_cost_usd,
+        "agent_cache_hit_rate": avg_agent_cache_hit_rate,
+        "judge_cache_hit_rate": avg_judge_cache_hit_rate,
+    });
+
+    let summary_path = cache_dir.join(crb_harness::paths::SUMMARY_FILE);
+    fs::write(&summary_path, serde_json::to_string_pretty(&summary)?)?;
+    info!("Cache summary written to: {}", summary_path.display());
+
+    let run_entry = RunHistoryEntry {
+        run_id: summary["run_id"].as_str().unwrap_or("").to_string(),
+        timestamp: format!("{:?}", std::time::SystemTime::now()),
+        model: model.clone(),
+        judge_model: judge_model.clone(),
+        total_prs: results.len(),
+    };
+    append_run_history(&cache_dir, &run_entry)?;
 
     if ci {
         let metrics: Vec<Metrics> = results.iter().map(|r| r.metrics.clone()).collect();

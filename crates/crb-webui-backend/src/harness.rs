@@ -12,12 +12,14 @@ use std::sync::Arc;
 
 use crb_agents::prompts::PromptLibrary;
 use crb_benchmark::pr;
-use crb_harness::{EvalConfig, EvalStrategy, evaluate_pr, load_pr_diff};
+use crb_harness::{EvalConfig, EvalStrategy, evaluate_pr};
 use crb_reporting::golden::load_golden_datasets;
+use crb_reporting::history::{RunHistoryEntry, append_run_history};
 use crb_reporting::{PrResult, write_report};
 use crb_rules::RuleSet;
 use crb_shared::benchmark;
 use crb_shared::metrics::MetricsOutput;
+use crb_shared::url::parse_github_url;
 use rig_core::client::ProviderClient;
 use tokio::sync::{RwLock, broadcast};
 use tracing::error;
@@ -232,7 +234,22 @@ pub async fn run_harness(
                 ruleset: ruleset.as_ref().map(|a| (*a).clone()),
                 template_vars: None,
             };
-            let diff = crb_harness::load_pr_diff(&pr, &bench_dir).await?;
+            let diff_str = match parse_github_url(&pr.url) {
+                Ok((owner, repo, pr_num)) => {
+                    let d = crb_harness::load_cached_diff(&bench_dir, &owner, &repo, pr_num).unwrap_or_default();
+                    if d.is_empty() {
+                        warn!("Empty diff for PR: {} (url: {})", pr.pr_title, pr.url);
+                    } else {
+                        info!("Loaded diff ({} bytes) for PR: {}", d.len(), pr.pr_title);
+                    }
+                    d
+                }
+                Err(_) => {
+                    warn!("Could not extract PR info from URL '{}'. Using empty diff.", pr.url);
+                    String::new()
+                }
+            };
+            let diff = crb_shared::diff::Diff::new(diff_str);
             crb_harness::evaluate_pr(&pr, &diff, &cfg).await
         });
     }
@@ -324,13 +341,94 @@ pub async fn run_harness(
         error!("Failed to write per-PR results: {e}");
     }
 
-    if let Err(e) = crb_harness::write_summary(
-        &output_subdir,
-        &config.model,
-        &config.judge_model,
-        &results,
-        elapsed,
-    ) {
+    // Write _summary.json
+    let total_llm_calls: usize = results.iter().map(|r| r.findings_count).sum();
+    let total_judge_calls: usize = results.iter().map(|r| r.verdicts.len()).sum();
+    let total_tokens: u64 = results
+        .iter()
+        .filter_map(|r| r.cost.as_ref())
+        .map(|c| {
+            c.sessions
+                .values()
+                .map(|s| s.input_tokens + s.output_tokens)
+                .sum::<u64>()
+        })
+        .sum();
+    let total_cost_usd: f64 = results
+        .iter()
+        .filter_map(|r| r.cost.as_ref())
+        .map(|c| c.total_cost())
+        .sum();
+    let avg_agent_cache_hit_rate = if results.is_empty() {
+        0.0
+    } else {
+        results
+            .iter()
+            .filter_map(|r| r.cost.as_ref())
+            .map(|c| c.hit_rate())
+            .sum::<f64>()
+            / results.len() as f64
+    };
+    let avg_judge_cache_hit_rate = avg_agent_cache_hit_rate;
+
+    let aggregate_metrics = if results.is_empty() {
+        serde_json::json!({})
+    } else {
+        let avg_precision =
+            results.iter().map(|r| r.metrics.precision()).sum::<f64>() / results.len() as f64;
+        let avg_recall =
+            results.iter().map(|r| r.metrics.recall()).sum::<f64>() / results.len() as f64;
+        let avg_f1 = results.iter().map(|r| r.metrics.f1()).sum::<f64>() / results.len() as f64;
+        serde_json::json!({
+            "avg_precision": avg_precision,
+            "avg_recall": avg_recall,
+            "avg_f1": avg_f1,
+            "total_true_positives": results.iter().map(|r| r.metrics.true_positives).sum::<usize>(),
+            "total_false_positives": results.iter().map(|r| r.metrics.false_positives).sum::<usize>(),
+            "total_false_negatives": results.iter().map(|r| r.metrics.false_negatives).sum::<usize>(),
+        })
+    };
+
+    let summary = serde_json::json!({
+        "run_id": std::env::current_dir()
+            .ok()
+            .and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string()))
+            .unwrap_or_default(),
+        "model": config.model,
+        "judge_model": config.judge_model,
+        "total_prs": results.len(),
+        "total_llm_calls": total_llm_calls,
+        "total_judge_calls": total_judge_calls,
+        "duration_secs": elapsed.as_secs_f64(),
+        "aggregate_metrics": aggregate_metrics,
+        "total_tokens": total_tokens,
+        "total_cost_usd": total_cost_usd,
+        "agent_cache_hit_rate": avg_agent_cache_hit_rate,
+        "judge_cache_hit_rate": avg_judge_cache_hit_rate,
+    });
+
+    let summary_path = output_subdir.join(crb_harness::paths::SUMMARY_FILE);
+    match serde_json::to_string_pretty(&summary) {
+        Ok(json_str) => {
+            if let Err(e) = std::fs::write(&summary_path, &json_str) {
+                error!("Failed to write summary: {e}");
+            } else {
+                info!("Cache summary written to: {}", summary_path.display());
+            }
+        }
+        Err(e) => {
+            error!("Failed to write summary: {e}");
+        }
+    }
+
+    let run_entry = RunHistoryEntry {
+        run_id: summary["run_id"].as_str().unwrap_or("").to_string(),
+        timestamp: format!("{:?}", std::time::SystemTime::now()),
+        model: config.model.clone(),
+        judge_model: config.judge_model.clone(),
+        total_prs: results.len(),
+    };
+    if let Err(e) = append_run_history(&output_subdir, &run_entry) {
         error!("Failed to write summary: {e}");
     }
 
