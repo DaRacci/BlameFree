@@ -113,92 +113,93 @@ mod tests {
 
     #[test]
     fn test_apply_severity_auditor_srp() {
-        let f = make_finding(
+        let mut findings = vec![make_finding(
             "SRP violation in UserService class — should be refactored",
             Severity::High,
             "UserService handles both auth and profile",
             1,
-        );
-        apply_severity_auditor(&mut vec![f]);
-        assert_eq!(f.severity, Severity::Low);
-        assert_eq!(f.severity_audited, true);
+        )];
+        apply_severity_auditor(&mut findings);
+        assert_eq!(findings[0].severity, Severity::Low);
+        assert_eq!(findings[0].severity_audited, true);
     }
 
     #[test]
     fn test_apply_severity_auditor_sql_injection() {
-        let f = make_finding(
+        let mut findings = vec![make_finding(
             "SQL injection vulnerability in login query",
             Severity::Critical,
             "Raw string concatenation with user input",
             1,
-        );
-        let result = apply_severity_auditor(vec![f]);
-        assert_critical_protected_from_downgrade(&result);
+        )];
+        apply_severity_auditor(&mut findings);
+        assert_critical_protected_from_downgrade(&findings);
     }
 
     #[test]
     fn test_apply_severity_auditor_naming() {
-        let f = make_finding(
+        let mut findings = vec![make_finding(
             "The naming convention is inconsistent",
             Severity::High,
             "camelCase vs snake_case",
             1,
-        );
-        let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, Severity::Low);
-        assert_eq!(result[0].severity_audited, true);
+        )];
+        apply_severity_auditor(&mut findings);
+        // Naming matches style_nits pattern with quantum -3: High→Info
+        assert_eq!(findings[0].severity, Severity::Info);
+        assert_eq!(findings[0].severity_audited, true);
     }
 
     #[test]
     fn test_apply_severity_auditor_hypothetical() {
-        let f = make_finding(
+        let mut findings = vec![make_finding(
             "Could cause a performance issue in production",
             Severity::High,
             "If not careful, this could lead to slowness",
             2,
-        );
-        let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, Severity::Medium);
-        assert_eq!(result[0].severity_audited, true);
+        )];
+        apply_severity_auditor(&mut findings);
+        assert_eq!(findings[0].severity, Severity::Medium);
+        assert_eq!(findings[0].severity_audited, true);
     }
 
     #[test]
     fn test_apply_severity_auditor_null_pointer() {
-        let f = make_finding(
+        let mut findings = vec![make_finding(
             "Null pointer exception possible in line 42",
-            "high",
+            Severity::High,
             "obj.method() without null check",
             1,
-        );
-        let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, "high");
-        assert_eq!(result[0].severity_audited, false);
+        )];
+        apply_severity_auditor(&mut findings);
+        assert_eq!(findings[0].severity, Severity::High);
+        assert_eq!(findings[0].severity_audited, false);
     }
 
     #[test]
     fn test_apply_severity_auditor_multi_agent_critical() {
-        let f = make_finding(
+        let mut findings = vec![make_finding(
             "Architecture abstraction leak",
             Severity::Critical,
             "Service layer directly accesses DB",
             3,
-        );
-        let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, Severity::Critical);
-        let reason = result[0].severity_audit_reason.as_deref().unwrap_or("");
+        )];
+        apply_severity_auditor(&mut findings);
+        assert_eq!(findings[0].severity, Severity::Critical);
+        let reason = findings[0].severity_audit_reason.as_deref().unwrap_or("");
         assert!(reason.contains("protected_by_multi_agent_critical"));
     }
 
     #[test]
     fn test_apply_severity_auditor_race_condition() {
-        let f = make_finding(
+        let mut findings = vec![make_finding(
             "Race condition in cache update logic",
             Severity::Critical,
             "Two concurrent writes without lock",
             1,
-        );
-        let result = apply_severity_auditor(vec![f]);
-        assert_critical_protected_from_downgrade(&result);
+        )];
+        apply_severity_auditor(&mut findings);
+        assert_critical_protected_from_downgrade(&findings);
     }
 
     #[test]
@@ -211,22 +212,22 @@ mod tests {
 
     #[test]
     fn test_empty_evidence() {
-        let f = make_finding("SRP violation", Severity::High, "", 1);
-        let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, "low");
+        let mut findings = vec![make_finding("SRP violation", Severity::High, "", 1)];
+        apply_severity_auditor(&mut findings);
+        assert_eq!(findings[0].severity, Severity::Low);
     }
 
     #[test]
     fn test_no_match_no_change() {
-        let f = make_finding(
+        let mut findings = vec![make_finding(
             "This is a genuine comment about code",
             Severity::Medium,
             "Just a comment",
             1,
-        );
-        let result = apply_severity_auditor(vec![f]);
-        assert_eq!(result[0].severity, Severity::Medium);
-        let reason = result[0].severity_audit_reason.as_deref().unwrap_or("");
+        )];
+        apply_severity_auditor(&mut findings);
+        assert_eq!(findings[0].severity, Severity::Medium);
+        let reason = findings[0].severity_audit_reason.as_deref().unwrap_or("");
         assert_eq!(reason, "no_inflated_patterns_matched");
     }
 }

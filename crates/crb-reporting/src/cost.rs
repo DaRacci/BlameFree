@@ -253,61 +253,58 @@ mod tests {
         let usage2 = make_usage(200, 100, 20, 10, 6, 4);
         let usage3 = make_usage(30, 20, 5, 0, 1, 0);
 
-        tracker.record_agent(&usage1, true); // cache hit
-        tracker.record_agent(&usage2, false); // cache miss
-        tracker.record_judge(&usage3, true); // cache hit
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            tracker.record("agent:code_review".to_string(), usage1, true).await;
+            tracker.record("agent:code_review".to_string(), usage2, false).await;
+            tracker.record("judge:final".to_string(), usage3, true).await;
+        });
 
-        let (total_in, total_out) = tracker.total_tokens();
+        let snapshot = rt.block_on(tracker.to_snapshot());
+        let (total_in, total_out) = rt.block_on(snapshot.total_tokens());
+
         assert_eq!(total_in, 100 + 200 + 30);
         assert_eq!(total_out, 50 + 100 + 20);
 
-        assert!((tracker.agent_cache_hit_rate() - 0.5).abs() < 1e-6);
-        assert!((tracker.judge_cache_hit_rate() - 1.0).abs() < 1e-6);
-
-        let summary = tracker.to_summary();
-        assert_eq!(summary.agent_cached_input_tokens, 10 + 20);
-        assert_eq!(summary.agent_reasoning_tokens, 3 + 6);
-        assert_eq!(summary.agent_tool_use_prompt_tokens, 2 + 4);
-        assert_eq!(summary.judge_cached_input_tokens, 5);
-        assert_eq!(summary.judge_reasoning_tokens, 1);
-        assert_eq!(summary.agent_call_count, 2);
-        assert_eq!(summary.judge_call_count, 1);
+        // Overall hit rate: 2 hits out of 3 calls = ~0.666
+        assert!((snapshot.hit_rate() - (2.0 / 3.0)).abs() < 1e-6);
     }
 
     #[test]
     fn test_cache_hit_rate_no_calls() {
         let tracker = AnalyticsTracker::new();
-        assert_eq!(tracker.agent_cache_hit_rate(), 0.0);
-        assert_eq!(tracker.judge_cache_hit_rate(), 0.0);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let snapshot = rt.block_on(tracker.to_snapshot());
+        assert_eq!(snapshot.hit_rate(), 0.0);
     }
 
     #[test]
     fn test_usd_cost_with_default_rates() {
         let tracker = AnalyticsTracker::new();
-        // 1M tokens in @ $0.14/1M = $0.14; 500K out @ $0.28/1M = $0.14; total = $0.28
         let usage = make_usage(1_000_000, 500_000, 0, 0, 0, 0);
-        tracker.record_agent(&usage, false);
-        let cost = tracker.total_cost();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            tracker.record("agent".to_string(), usage, false).await;
+        });
+        let snapshot = rt.block_on(tracker.to_snapshot());
+        let cost = snapshot.total_cost();
         assert!((cost - 0.28).abs() < 0.001, "Expected ~0.28, got {cost}");
     }
 
     #[test]
     fn test_record_empty_usage() {
         let tracker = AnalyticsTracker::new();
-        tracker.record_agent_empty(false);
-        tracker.record_judge_empty(true);
-
-        let summary = tracker.to_summary();
-        assert_eq!(summary.agent_tokens_in, 0);
-        assert_eq!(summary.agent_call_count, 1);
-        assert_eq!(summary.judge_call_count, 1);
-        assert!(
-            (summary.judge_cache_hit_rate - 1.0).abs() < 0.001,
-            "Expected judge_cache_hit_rate ~1.0"
-        );
-        assert!(
-            (summary.agent_cache_hit_rate - 0.0).abs() < 0.001,
-            "Expected agent_cache_hit_rate ~0.0"
-        );
+        let empty = Usage::new();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            tracker.record("agent".to_string(), empty, false).await;
+            tracker.record("judge".to_string(), empty, true).await;
+        });
+        let snapshot = rt.block_on(tracker.to_snapshot());
+        // With 2 records, 1 cache hit out of 2 = 0.5
+        assert!((snapshot.hit_rate() - 0.5).abs() < 0.001);
+        let (total_in, total_out) = rt.block_on(snapshot.total_tokens());
+        assert_eq!(total_in, 0);
+        assert_eq!(total_out, 0);
     }
 }

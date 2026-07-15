@@ -166,7 +166,7 @@ pub fn compute_metrics(verdicts: &[JudgeVerdict], golden_count: usize) -> Metric
 #[cfg(test)]
 mod tests {
     use crate::judge::{compute_metrics, jaccard_match};
-    use crb_types::benchmark::{JudgeVerdict, Metrics};
+    use crb_types::benchmark::{JudgeVerdict, Metrics, MetricsProvider};
 
     #[test]
     fn test_perfect_match() {
@@ -186,9 +186,9 @@ mod tests {
         assert_eq!(m.true_positives, 2);
         assert_eq!(m.false_positives, 0);
         assert_eq!(m.false_negatives, 0);
-        assert!((m.precision - 1.0).abs() < 1e-6);
-        assert!((m.recall - 1.0).abs() < 1e-6);
-        assert!((m.f1 - 1.0).abs() < 1e-6);
+        assert!((m.precision() - 1.0).abs() < 1e-6);
+        assert!((m.recall() - 1.0).abs() < 1e-6);
+        assert!((m.f1() - 1.0).abs() < 1e-6);
     }
 
     #[test]
@@ -202,9 +202,9 @@ mod tests {
         assert_eq!(m.true_positives, 0);
         assert_eq!(m.false_positives, 1);
         assert_eq!(m.false_negatives, 1);
-        assert!((m.precision - 0.0).abs() < 1e-6);
-        assert!((m.recall - 0.0).abs() < 1e-6);
-        assert!((m.f1 - 0.0).abs() < 1e-6);
+        assert!((m.precision() - 0.0).abs() < 1e-6);
+        assert!((m.recall() - 0.0).abs() < 1e-6);
+        assert!((m.f1() - 0.0).abs() < 1e-6);
     }
 
     #[test]
@@ -225,9 +225,9 @@ mod tests {
         assert_eq!(m.true_positives, 1);
         assert_eq!(m.false_positives, 1);
         assert_eq!(m.false_negatives, 1);
-        assert!((m.precision - 0.5).abs() < 1e-6);
-        assert!((m.recall - 0.5).abs() < 1e-6);
-        assert!((m.f1 - 0.5).abs() < 1e-6);
+        assert!((m.precision() - 0.5).abs() < 1e-6);
+        assert!((m.recall() - 0.5).abs() < 1e-6);
+        assert!((m.f1() - 0.5).abs() < 1e-6);
     }
 
     const THRESHOLD: f64 = 0.12;

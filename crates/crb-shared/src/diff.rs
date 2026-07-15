@@ -50,8 +50,7 @@ impl WrappedData for Diff {
 
 impl Diff {
     pub fn new(raw: String) -> Self {
-        let stripped = strip_diff_metadata(&raw);
-        let sections = DiffSection::get_hunks(&stripped);
+        let sections = DiffSection::get_hunks(&raw);
         Self {
             raw,
             sections,
@@ -71,7 +70,16 @@ impl DiffSection {
         let mut current_body = String::new();
 
         for line in diff.lines() {
-            if !line.starts_with("diff --git ") {
+            if line.starts_with("diff --git ") {
+                if !current_header.is_empty() || !current_body.is_empty() {
+                    sections.push(DiffSection {
+                        path: parse_diff_git_path(&current_header).unwrap(),
+                        body: mem::take(&mut current_body),
+                        header: mem::take(&mut current_header),
+                    });
+                }
+                current_header = line.to_string();
+            } else {
                 if !current_header.is_empty() {
                     if !current_body.is_empty() {
                         current_body.push('\n');
@@ -79,15 +87,6 @@ impl DiffSection {
                     current_body.push_str(line);
                 }
             }
-
-            if !current_header.is_empty() || !current_body.is_empty() {
-                sections.push(DiffSection {
-                    path: parse_diff_git_path(&current_header).unwrap(),
-                    body: mem::take(&mut current_body),
-                    header: mem::take(&mut current_header),
-                });
-            }
-            current_header = line.to_string();
         }
 
         // We have reached the end of the diff; if we have a current section, push it.
@@ -118,36 +117,35 @@ fn parse_diff_git_path(line: &str) -> Option<String> {
 /// 3. Strips `index` lines
 /// 4. Strips trailing hunk context text (after `@@` line-count portion)
 /// 5. Keeps `--- a/path`, `+++ b/path`, `new file mode`, `deleted file mode`, `@@` hunk headers
-fn strip_diff_metadata(diff: &str) -> String {
+pub fn strip_diff_metadata(diff: &str) -> String {
     let mut result = Vec::new();
     let mut current_hunk_lines: Vec<&str> = Vec::new();
     let mut in_hunk = false;
 
     for line in diff.lines() {
-        const SKIP_PREFIXES: [&str; 2] = ["diff --git", "index "];
-        if SKIP_PREFIXES.iter().any(|prefix| line.starts_with(prefix)) {
+        // Skip diff --git and index lines
+        if line.starts_with("diff --git") || line.starts_with("index ") {
             continue;
         }
 
-        if !(line.starts_with("@@ ") && line.contains(" @@")) {
-            match in_hunk {
-                // collect body lines
-                true => current_hunk_lines.push(line),
-                // pass through (e.g. ---, +++, new file mode, deleted file mode)
-                false => result.push(line.to_string()),
+        if line.starts_with("@@ ") && line.contains(" @@") {
+            // Start of a new hunk; flush previous hunk if any
+            if in_hunk && !current_hunk_lines.is_empty() {
+                flush_hunk(&current_hunk_lines, &mut result, CONTEXT_LINES);
+                current_hunk_lines.clear();
             }
+            in_hunk = true;
+            current_hunk_lines.push(line);
+        } else if in_hunk {
+            // Inside a hunk — collect body lines
+            current_hunk_lines.push(line);
+        } else {
+            // Before the first hunk — pass through (---, +++, etc.)
+            result.push(line.to_string());
         }
-
-        // Start of a new hunk; flush previous hunk if any
-        if in_hunk && !current_hunk_lines.is_empty() {
-            flush_hunk(&current_hunk_lines, &mut result, CONTEXT_LINES);
-            current_hunk_lines.clear();
-        }
-
-        in_hunk = true;
-        current_hunk_lines.push(line);
     }
 
+    // Flush the last hunk
     if !current_hunk_lines.is_empty() {
         flush_hunk(&current_hunk_lines, &mut result, CONTEXT_LINES);
     }
@@ -235,7 +233,7 @@ mod tests {
 
     #[test]
     fn debug_minified_coverage() {
-        let diff = Diff::new(
+        let mut diff = Diff::new(
             concat!(
                 "diff --git a/dist/bundle.min.js b/dist/bundle.min.js\n",
                 "index a..b 100644\n",
@@ -262,20 +260,20 @@ mod tests {
             .to_string(),
         );
 
-        let result = preprocess_diff(&diff);
-        println!("RESULT:\n---\n{}---\n", result);
+        preprocess_diff(&mut diff);
+        println!("RESULT:\n---\n{}---\n", diff.raw);
         println!(
             "Contains 'bundle.min.js': {}",
-            result.contains("bundle.min.js")
+            diff.raw.contains("bundle.min.js")
         );
-        println!("Contains 'coverage': {}", result.contains("coverage"));
-        println!("Contains 'src/lib.rs': {}", result.contains("src/lib.rs"));
-        println!("Contains 'filtered': {}", result.contains("filtered"));
+        println!("Contains 'coverage': {}", diff.raw.contains("coverage"));
+        println!("Contains 'src/lib.rs': {}", diff.raw.contains("src/lib.rs"));
+        println!("Contains 'filtered': {}", diff.raw.contains("filtered"));
 
         // Check what the note says
-        if let Some(start) = result.find('[') {
-            if let Some(end) = result[start..].find(']') {
-                let note = &result[start..start + end + 1];
+        if let Some(start) = diff.raw.find('[') {
+            if let Some(end) = diff.raw[start..].find(']') {
+                let note = &diff.raw[start..start + end + 1];
                 println!("FILTER NOTE: {:?}", note);
             }
         }

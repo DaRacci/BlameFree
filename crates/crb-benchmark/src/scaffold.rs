@@ -208,11 +208,12 @@ pub fn run(dataset_dir: &Path, benchmark_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crb_harness::test_utils::setup_temp_repo;
     use std::fs;
 
     #[test]
     fn worktree_add_and_remove() {
-        let (_, repo_path) = setup_git_repo();
+        let (_, repo_path) = setup_temp_repo();
         let worktree_dir = tempfile::TempDir::new().expect("worktree temp dir");
         let wt_path = worktree_dir.path().join("wt");
 

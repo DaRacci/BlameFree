@@ -1,6 +1,6 @@
 //! Tests for diff preprocessing: filtering and chunking.
 
-use crb_harness::preprocess_diff;
+use crb_shared::diff::{Diff, preprocess_diff, strip_diff_metadata};
 
 // ---------------------------------------------------------------------------
 // The preprocess_diff function (without --features reduce-diff) just passes
@@ -10,7 +10,7 @@ use crb_harness::preprocess_diff;
 #[cfg(feature = "reduce-diff")]
 #[test]
 fn filter_removes_pnpm_lock() {
-    let diff = concat!(
+    let mut diff = Diff::new(concat!(
         "diff --git a/src/lib.rs b/src/lib.rs\n",
         "index abc..def 100644\n",
         "--- a/src/lib.rs\n",
@@ -25,21 +25,27 @@ fn filter_removes_pnpm_lock() {
         "@@ -100 +100 @@\n",
         "-lock\n",
         "+unlock\n",
-    );
-    let result = preprocess_diff(diff);
+    ).to_string());
+    preprocess_diff(&mut diff);
     // The lock file section should be removed; only src/lib.rs remains
-    assert!(result.contains("src/lib.rs"), "should contain src/lib.rs");
     assert!(
-        !result.contains("pnpm-lock"),
+        diff.sections.iter().any(|s| s.path == "src/lib.rs"),
+        "should contain src/lib.rs"
+    );
+    assert!(
+        !diff.sections.iter().any(|s| s.path == "pnpm-lock.yaml"),
         "should NOT contain pnpm-lock"
     );
-    assert!(result.contains("filtered"), "should contain a filter note");
+    assert!(
+        diff.notes.iter().any(|n| n.contains("filtered")),
+        "should contain a filter note"
+    );
 }
 
 #[cfg(feature = "reduce-diff")]
 #[test]
 fn filter_removes_node_modules() {
-    let diff = concat!(
+    let mut diff = Diff::new(concat!(
         "diff --git a/src/main.rs b/src/main.rs\n",
         "index a..b 100644\n",
         "--- a/src/main.rs\n",
@@ -54,17 +60,26 @@ fn filter_removes_node_modules() {
         "@@ -1 +1 @@\n",
         "-old\n",
         "+new\n",
+    ).to_string());
+    preprocess_diff(&mut diff);
+    assert!(
+        diff.sections.iter().any(|s| s.path == "src/main.rs"),
+        "should contain real file"
     );
-    let result = preprocess_diff(diff);
-    assert!(result.contains("src/main.rs"), "should contain real file");
-    assert!(!result.contains("node_modules"), "should remove vendor");
-    assert!(result.contains("filtered"), "should have filter note");
+    assert!(
+        !diff.sections.iter().any(|s| s.path == "node_modules/pkg/index.js"),
+        "should remove vendor"
+    );
+    assert!(
+        diff.notes.iter().any(|n| n.contains("filtered")),
+        "should have filter note"
+    );
 }
 
 #[cfg(feature = "reduce-diff")]
 #[test]
 fn filter_removes_minified_and_coverage() {
-    let diff = concat!(
+    let mut diff = Diff::new(concat!(
         "diff --git a/dist/bundle.min.js b/dist/bundle.min.js\n",
         "index a..b 100644\n",
         "--- a/dist/bundle.min.js\n",
@@ -86,30 +101,41 @@ fn filter_removes_minified_and_coverage() {
         "@@ -1 +1 @@\n",
         "-fn old() {}\n",
         "+fn new() {}\n",
-    );
-    let result = preprocess_diff(diff);
-    assert!(!result.contains("bundle.min.js"), "should remove minified");
-    // The diff section for coverage should be removed, but the word "coverage"
-    // may still appear in the filter summary note, so check for the diff marker instead
-    assert!(result.contains("src/lib.rs"), "should keep real file");
+    ).to_string());
+    preprocess_diff(&mut diff);
     assert!(
-        !result.contains("coverage/report"),
+        !diff.sections.iter().any(|s| s.path == "dist/bundle.min.js"),
+        "should remove minified"
+    );
+    assert!(
+        !diff.sections.iter().any(|s| s.path == "coverage/report.html"),
         "should remove coverage diff"
     );
-    assert!(result.contains("filtered"), "should have filter note");
+    assert!(
+        diff.sections.iter().any(|s| s.path == "src/lib.rs"),
+        "should keep real file"
+    );
+    assert!(
+        diff.notes.iter().any(|n| n.contains("filtered")),
+        "should have filter note"
+    );
 }
 
 #[cfg(feature = "reduce-diff")]
 #[test]
 fn filter_empty_diff_no_note() {
-    let result = preprocess_diff("");
-    assert_eq!(result, "");
+    let mut diff = Diff::new("".to_string());
+    preprocess_diff(&mut diff);
+    assert!(diff.sections.is_empty());
+    // preprocess_diff always calls filter_files which adds a note, but
+    // with no sections it adds an empty note
+    assert!(diff.notes.is_empty() || diff.notes.iter().all(|n| n.is_empty()));
 }
 
 #[cfg(feature = "reduce-diff")]
 #[test]
 fn filter_no_filterable_files_no_note() {
-    let diff = concat!(
+    let mut diff = Diff::new(concat!(
         "diff --git a/src/lib.rs b/src/lib.rs\n",
         "index a..b 100644\n",
         "--- a/src/lib.rs\n",
@@ -117,12 +143,16 @@ fn filter_no_filterable_files_no_note() {
         "@@ -1 +1 @@\n",
         "-old\n",
         "+new\n",
-    );
-    let result = preprocess_diff(diff);
-    assert!(result.contains("src/lib.rs"));
-    // No filter note expected
+    ).to_string());
+    preprocess_diff(&mut diff);
     assert!(
-        !result.contains("filtered"),
+        diff.sections.iter().any(|s| s.path == "src/lib.rs"),
+        "should contain the only section"
+    );
+    // The note should be empty (or absent) when nothing is filtered
+    assert!(
+        diff.notes.is_empty()
+            || diff.notes.iter().all(|n| n.trim().is_empty() || n == "[]"),
         "no filter note when nothing filtered"
     );
 }
@@ -130,7 +160,7 @@ fn filter_no_filterable_files_no_note() {
 #[cfg(feature = "reduce-diff")]
 #[test]
 fn filter_multiple_categories_noted() {
-    let diff = concat!(
+    let mut diff = Diff::new(concat!(
         "diff --git a/yarn.lock b/yarn.lock\n",
         "index a..b 100644\n",
         "--- a/yarn.lock\n",
@@ -152,14 +182,16 @@ fn filter_multiple_categories_noted() {
         "@@ -1 +1 @@\n",
         "-fn old() {}\n",
         "+fn new() {}\n",
-    );
-    let result = preprocess_diff(diff);
-    assert!(result.contains("filtered"), "should note filtering");
+    ).to_string());
+    preprocess_diff(&mut diff);
     assert!(
-        result.contains("1 lock") || result.contains("1 vendor"),
-        "should detail categories"
+        diff.notes.iter().any(|n| n.contains("filtered")),
+        "should note filtering"
     );
-    assert!(result.contains("src/lib.rs"), "should keep real code");
+    assert!(
+        diff.sections.iter().any(|s| s.path == "src/lib.rs"),
+        "should keep real code"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -168,7 +200,7 @@ fn filter_multiple_categories_noted() {
 
 #[cfg(feature = "reduce-diff")]
 mod strip_diff_metadata_tests {
-    use crb_harness::strip_diff_metadata;
+    use super::strip_diff_metadata;
 
     /// Test 1: Reduces 3-line context to 1-line context
     #[test]

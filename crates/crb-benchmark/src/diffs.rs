@@ -259,6 +259,7 @@ fn extract_diff_for_pr(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crb_harness::test_utils::{setup_empty_commit_repo, setup_repo_with_diffs};
 
     #[test]
     fn git_diff_between_commits() {
