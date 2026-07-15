@@ -229,7 +229,7 @@ fn create_config_resource(
             let set_effort_loading = set_effort_loading;
             let reasoning_effort = reasoning_effort;
             let set_reasoning_effort = set_reasoning_effort;
-            let fetch_prs = fetch_prs;
+            let fetch_prs = fetch_prs.clone();
             async move {
                 set_loading.set(true);
                 set_datasets_loading.set(true);
@@ -292,15 +292,14 @@ fn create_config_resource(
                 match get_reasoning_efforts().await {
                     Ok(levels) => {
                         let has_medium = levels.contains(&"medium".to_string());
-                        set_effort_levels.set(levels);
                         let current = reasoning_effort.get();
                         if current == Some("medium".to_string()) && !has_medium {
-                            let first = set_effort_levels.get();
-                            let first_level = first.first().cloned();
-                            if let Some(l) = first_level {
+                            let first = levels.first().cloned();
+                            if let Some(l) = first {
                                 set_reasoning_effort.set(Some(l));
                             }
                         }
+                        set_effort_levels.set(levels);
                     }
                     Err(_) => {
                         set_effort_levels.set(vec![

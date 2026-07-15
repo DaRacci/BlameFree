@@ -142,7 +142,7 @@ pub fn RunDetailPage() -> impl IntoView {
                                         <MetricsCard value={format!("{:.3}", agg.f1())} label="F1 Score" value_style="color: var(--accent-blue, #58a6ff);"/>
                                         <MetricsCard value={format!("{:.3}", agg.precision())} label="Precision" value_style="color: var(--accent-green, #3fb950);"/>
                                         <MetricsCard value={format!("{:.3}", agg.recall())} label="Recall" value_style="color: var(--accent-orange, #f0883e);"/>
-                                        <MetricsCard value={format!("${:.4}", agg.total_cost)} label="Total Cost" />
+                                        <MetricsCard value={detail_clone.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into())} label="Total Cost" />
                                         <MetricsCard value={format!("{:.0}s", agg.duration_secs)} label="Duration" />
                                     }.into_view()
                                 } else {

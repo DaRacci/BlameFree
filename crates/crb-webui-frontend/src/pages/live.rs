@@ -340,7 +340,6 @@ pub fn LivePage() -> impl IntoView {
 
 /// Look up the PR key for a given role and update agent state within that PR.
 /// Helper that avoids duplicating the `role_current_pr` → `set_states` lookup chain.
-#[deprecated = "This is fucking stupid and should be refactored to avoid this kind of nested state mutation. Use a more functional approach."]
 fn with_role_pr(
     role_current_pr: &ReadSignal<HashMap<String, String>>,
     set_states: &WriteSignal<HashMap<String, PrState>>,
@@ -350,11 +349,10 @@ fn with_role_pr(
     let pr_key = role_current_pr.get().get(role).cloned();
     if let Some(key) = pr_key {
         set_states.update(|states| {
-            if let Some(pr) = states.get_mut(&key) {
-                if let Some(agent) = pr.agents.get_mut(role) {
-                    f(agent);
-                }
-            }
+            states
+                .get_mut(&key)
+                .and_then(|pr| pr.agents.get_mut(role))
+                .map(f);
         });
     }
 }
@@ -452,6 +450,10 @@ fn handle_event(
                     }
                 });
             }
+        }
+
+        RunEvent::ReviewStarted { .. } => {
+            // Review started — progress signal, nothing to do on the dashboard
         }
 
         RunEvent::RunProgress {
