@@ -94,7 +94,7 @@ pub async fn run_harness(
     let filtered_prs = config
         .pr_filter
         .as_ref()
-        .map(|f| pr::filter_prs_by_pattern(all_prs, f))
+        .map(|f| pr::filter_prs_by_pattern(all_prs.clone(), f))
         .unwrap_or(all_prs);
 
     if filtered_prs.is_empty() {
@@ -124,6 +124,7 @@ pub async fn run_harness(
 
         let mut aggregate = Metrics::default();
         let cfg = EvalConfig {
+            identifier: run_id.to_string(),
             strategy: if config.skip_consensus {
                 EvalStrategy::Single
             } else {

@@ -49,13 +49,13 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
         .collect();
 
     let lib = crb_agents::prompts::PromptLibrary::get_instance();
-    let mut roles = lib
+    let mut roles: Vec<RoleInfo> = lib
         .agents()
         .iter()
         .map(|agent| RoleInfo {
-            abbreviation: agent.role_abbreviation,
-            name: agent.role_abbreviation,
-            incompatible_with_roles: agent.incompatible_with_roles,
+            abbreviation: agent.role_abbreviation.clone(),
+            name: agent.role_abbreviation.clone(),
+            incompatible_with_roles: agent.incompatible_with_roles.clone(),
         })
         .collect();
     roles.sort_by(|a, b| a.abbreviation.cmp(&b.abbreviation));

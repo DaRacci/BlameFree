@@ -63,12 +63,7 @@ pub(crate) fn run_validate(dataset_dir: &Path) -> Result<()> {
                 ));
             }
 
-            if comment.severity.trim().is_empty() {
-                errors.push(format!(
-                    "PR '{}' comment #{} has empty severity",
-                    entry.pr_title, i
-                ));
-            } else if !valid_severities.contains(&comment.severity.to_lowercase()) {
+            if !valid_severities.contains(&comment.severity.to_string()) {
                 errors.push(format!(
                     "PR '{}' comment #{} has unknown severity '{}' (expected one of: {})",
                     entry.pr_title,

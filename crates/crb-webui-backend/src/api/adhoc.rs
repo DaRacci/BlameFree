@@ -23,9 +23,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{info, warn};
 
-use crate::api::runs::{
-    self, AggregateMetrics, CostJson, MetricsJson, PrResult, PrResultJson, RunConfig, RunDetail,
-    VerdictJson,
+use crate::api::runs::{self, PrResultJson};
+use crb_webui_shared::runs::{
+    CostJson, MetricsJson, PrResult, RunConfig, RunDetail, VerdictJson,
 };
 use crate::server::AppState;
 use rig_core::client::CompletionClient;
@@ -230,15 +230,10 @@ pub async fn get_adhoc_run(
     let total_cost = summary_f64("total_cost_usd", 0.0);
 
     let mut results: Vec<PrResult> = Vec::new();
-    let mut aggregate_metrics = AggregateMetrics {
-        avg_f1: 0.0,
-        avg_precision: 0.0,
-        avg_recall: 0.0,
-        total_tp: 0,
-        total_fp: 0,
-        total_fn: 0,
-        total_cost,
-        total_prs: 0,
+    let mut aggregate_metrics = Metrics {
+        true_positives: 0,
+        false_positives: 0,
+        false_negatives: 0,
         duration_secs: duration_secs.unwrap_or(0.0),
     };
 
@@ -258,23 +253,14 @@ pub async fn get_adhoc_run(
                     has_agents: false,
                 });
 
-                aggregate_metrics.total_tp += metrics.true_positives;
-                aggregate_metrics.total_fp += metrics.false_positives;
-                aggregate_metrics.total_fn += metrics.false_negatives;
+                aggregate_metrics.true_positives += metrics.true_positives;
+                aggregate_metrics.false_positives += metrics.false_positives;
+                aggregate_metrics.false_negatives += metrics.false_negatives;
             }
         }
     }
 
-    let n = results.len() as f64;
-    if n > 0.0 {
-        let sum_f1: f64 = results.iter().filter_map(|r| r.f1).sum();
-        let sum_prec: f64 = results.iter().filter_map(|r| r.precision).sum();
-        let sum_recall: f64 = results.iter().filter_map(|r| r.recall).sum();
-        aggregate_metrics.avg_f1 = sum_f1 / n;
-        aggregate_metrics.avg_precision = sum_prec / n;
-        aggregate_metrics.avg_recall = sum_recall / n;
-        aggregate_metrics.total_prs = n as u32;
-    }
+    // Remove old averaging block — MetricsProvider derives f1/precision/recall from aggregates.
 
     let detail = RunDetail {
         id: id.clone(),
@@ -390,7 +376,7 @@ async fn run_adhoc_review_inner(
     roles: &[String],
 ) -> anyhow::Result<()> {
     let output_subdir = state.output_dir.join("adhoc").join(run_id);
-    let cache_dir = output_subdir.join(cache::paths::CACHE_DIR_NAME);
+    let cache_dir = output_subdir.join(crb_cache::paths::CACHE_DIR_NAME);
 
     info!(
         run_id = %run_id,
@@ -506,9 +492,9 @@ async fn run_adhoc_review_inner(
     )
     .await;
 
-    let metrics_for_summary = result.metrics;
+    let metrics_for_summary = result.metrics.clone();
 
-    let total_cost = result.cost.as_ref().map(|c| c.total_usd).unwrap_or(0.0);
+    let total_cost = result.cost.as_ref().map(|c| c.total_cost()).unwrap_or(0.0);
 
     fs::create_dir_all(&output_subdir)?;
 
@@ -522,9 +508,9 @@ async fn run_adhoc_review_inner(
             true_positives: result.metrics.true_positives,
             false_positives: result.metrics.false_positives,
             false_negatives: result.metrics.false_negatives,
-            precision: result.metrics.precision,
-            recall: result.metrics.recall,
-            f1: result.metrics.f1,
+            precision: result.metrics.precision(),
+            recall: result.metrics.recall(),
+            f1: result.metrics.f1(),
         },
         verdicts: result
             .verdicts
@@ -532,17 +518,22 @@ async fn run_adhoc_review_inner(
             .map(|v| VerdictJson {
                 reasoning: v.reasoning.clone(),
                 match_: v.match_,
-                confidence: v.confidence,
+                confidence: v.confidence as f64,
             })
             .collect(),
-        cost: result.cost.map(|c| CostJson {
-            total_usd: c.total_usd,
-            agent_tokens_in: c.agent_tokens_in as u64,
-            agent_tokens_out: c.agent_tokens_out as u64,
-            judge_tokens_in: c.judge_tokens_in as u64,
-            judge_tokens_out: c.judge_tokens_out as u64,
-            agent_call_count: c.agent_call_count as u64,
-            judge_call_count: c.judge_call_count as u64,
+        cost: result.cost.map(|c| {
+            let total_tokens_in: u64 = c.sessions.values().map(|s| s.input_tokens).sum();
+            let total_tokens_out: u64 = c.sessions.values().map(|s| s.output_tokens).sum();
+            let total_call_count: u64 = c.sessions.values().map(|s| s.call_count).sum();
+            CostJson {
+                total_usd: c.total_cost(),
+                agent_tokens_in: total_tokens_in,
+                agent_tokens_out: total_tokens_out,
+                judge_tokens_in: 0,
+                judge_tokens_out: 0,
+                agent_call_count: total_call_count,
+                judge_call_count: 0,
+            }
         }),
         findings: json!([]),
         agent_responses: vec![],
@@ -563,9 +554,9 @@ async fn run_adhoc_review_inner(
         "total_cost_usd": total_cost,
         "duration_secs": elapsed.as_secs_f64(),
         "aggregate_metrics": {
-            "avg_f1": metrics_for_summary.f1,
-            "avg_precision": metrics_for_summary.precision,
-            "avg_recall": metrics_for_summary.recall,
+            "avg_f1": metrics_for_summary.f1(),
+            "avg_precision": metrics_for_summary.precision(),
+            "avg_recall": metrics_for_summary.recall(),
             "total_true_positives": metrics_for_summary.true_positives,
             "total_false_positives": metrics_for_summary.false_positives,
             "total_false_negatives": metrics_for_summary.false_negatives,

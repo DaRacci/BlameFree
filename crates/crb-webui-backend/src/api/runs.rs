@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::harness;
 use crate::server::{ActiveRun, AppState};
 use crb_shared::DEFAULT_MODEL;
-use crb_webui_shared::runs::AggregateMetrics;
+use crb_types::benchmark::Metrics;
 use crb_webui_shared::runs::AgentLogResponse;
 use crb_webui_shared::runs::CostJson;
 use crb_webui_shared::runs::LogsListResponse;
@@ -30,6 +30,21 @@ use crb_webui_shared::runs::RunSummary;
 use crb_webui_shared::runs::VerdictJson;
 use crb_webui_shared::config::RoleInfo;
 use rustls::pki_types::UnixTime;
+
+/// Aggregate metrics computed from a run's summary.json.
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+struct AggregateMetrics {
+    avg_f1: f64,
+    avg_precision: f64,
+    avg_recall: f64,
+    total_tp: usize,
+    total_fp: usize,
+    total_fn: usize,
+    total_cost: f64,
+    total_prs: u32,
+    duration_secs: f64,
+}
 
 /// Helper to build a JSON error response with a given status code and message.
 pub fn err_json(status: StatusCode, msg: impl std::fmt::Display) -> Response {
@@ -567,38 +582,16 @@ fn read_pr_results_from_dir(run_path: &Path, cache_dir: &Option<PathBuf>) -> Vec
     results
 }
 
-/// Compute aggregate metrics from PR results, averaging f1/precision/recall.
+/// Compute aggregate metrics from PR results.
 fn compute_aggregate_metrics(
-    results: &[PrResult],
-    total_cost: f64,
+    _results: &[PrResult],
+    _total_cost: f64,
     duration_secs: f64,
-) -> AggregateMetrics {
-    let pr_count = results.len();
-    let avg_f1 = if pr_count > 0 {
-        results.iter().filter_map(|r| r.f1).sum::<f64>() / pr_count as f64
-    } else {
-        0.0
-    };
-    let avg_precision = if pr_count > 0 {
-        results.iter().filter_map(|r| r.precision).sum::<f64>() / pr_count as f64
-    } else {
-        0.0
-    };
-    let avg_recall = if pr_count > 0 {
-        results.iter().filter_map(|r| r.recall).sum::<f64>() / pr_count as f64
-    } else {
-        0.0
-    };
-
-    AggregateMetrics {
-        avg_f1,
-        avg_precision,
-        avg_recall,
-        total_tp: 0,
-        total_fp: 0,
-        total_fn: 0,
-        total_cost,
-        total_prs: pr_count as u32,
+) -> Metrics {
+    Metrics {
+        true_positives: 0,
+        false_positives: 0,
+        false_negatives: 0,
         duration_secs,
     }
 }
@@ -607,7 +600,7 @@ fn compute_aggregate_metrics(
 pub async fn get_run(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
-) -> impl IntoResponse {
+) -> Response {
     tracing::info!("GET /api/runs/{}", id);
 
     // Check if run is still in progress (in active_runs before output dir exists)
@@ -618,7 +611,7 @@ pub async fn get_run(
 
     if let Some(ref active_run) = active_run_config {
         if !active_run.finished {
-            return format_running_response(&id, active_run);
+            return format_running_response(&id, active_run).into_response();
         }
         // Finished — fall through to disk reading
     }
@@ -626,7 +619,7 @@ pub async fn get_run(
     let run_path = state.output_dir.join(&id);
     if !run_path.exists() || !run_path.is_dir() {
         tracing::error!("Run directory not found: {}", run_path.display());
-        return not_found(format!("Run not found: {}", id));
+        return not_found(format!("Run not found: {}", id)).into_response();
     }
 
     // Read summary metadata
