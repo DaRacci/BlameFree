@@ -353,12 +353,6 @@ mod tests {
         assert_eq!(parsed_empty, None);
     }
 
-    #[test]
-    fn test_reasoning_to_additional_params() {
-        let model = Model("deepseek/deepseek-v4-flash".to_string());
-        let result = reasoning_to_additional_params(&model, Some(ReasoningEffort::Low));
-        assert!(result.is_some());
-    }
 }
 
 /// Build the `additional_params` JSON value for a reasoning model.
@@ -375,15 +369,4 @@ pub fn make_additional_params(
     let effort = reasoning_effort?;
     let config = get_reasoning_config(model, effort)?;
     Some(config.to_additional_params_json())
-}
-
-/// Convert a `reasoning_effort: Option<ReasoningEffort>` plus a `model: &Model` into
-/// the `additional_params: Option<serde_json::Value>` that should be passed
-/// down the agent call chain.
-#[deprecated = "Use make_additional_params instead."]
-pub fn reasoning_to_additional_params(
-    model: &Model,
-    reasoning_effort: Option<ReasoningEffort>,
-) -> Option<serde_json::Value> {
-    make_additional_params(model, reasoning_effort)
 }

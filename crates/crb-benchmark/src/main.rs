@@ -19,7 +19,7 @@ use crb_rules::RuleSet;
 use crb_shared::metrics::MetricsOutput;
 use crb_shared::{benchmark, sanitize_filename};
 use crb_types::benchmark::Metrics;
-use crb_types::{Metrics, RunEvent};
+use crb_types::RunEvent;
 use rig_core::client::ProviderClient;
 use tokio::sync::broadcast;
 use tracing::{error, info, info_span, warn};

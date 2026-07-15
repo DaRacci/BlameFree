@@ -3,7 +3,7 @@ use rig_core::client::CompletionClient;
 use rig_core::completion::{Prompt, Usage};
 use rig_core::providers::openai::{Client, responses_api::ResponsesCompletionModel};
 
-use crb_types::benchmark::JudgeVerdict;
+use crb_types::benchmark::{JudgeVerdict, Metrics};
 
 /// The Martian JUDGE_PROMPT template used for LLM-as-judge evaluation.
 ///
@@ -149,7 +149,7 @@ pub fn compute_metrics(verdicts: &[JudgeVerdict], golden_count: usize) -> Metric
         1.0
     };
 
-    let f1 = if (precision + recall) > 0.0 {
+    let _f1 = if (precision + recall) > 0.0 {
         2.0 * precision * recall / (precision + recall)
     } else {
         0.0
@@ -159,16 +159,14 @@ pub fn compute_metrics(verdicts: &[JudgeVerdict], golden_count: usize) -> Metric
         true_positives,
         false_positives,
         false_negatives,
-        precision,
-        recall,
-        f1,
+        duration_secs: 0.0,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::judge::{compute_metrics, jaccard_match};
-    use crb_types::benchmark::JudgeVerdict;
+    use crb_types::benchmark::{JudgeVerdict, Metrics};
 
     #[test]
     fn test_perfect_match() {
