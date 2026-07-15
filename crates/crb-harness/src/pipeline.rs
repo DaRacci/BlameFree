@@ -40,6 +40,9 @@ pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding
     let reviewer_findings = post_process(reviewer_findings.as_slice(), config);
     all_findings.extend(reviewer_findings);
 
+    let snapshot = config.cost_tracker.to_snapshot().await;
+    let (total_tokens_in, total_tokens_out) = snapshot.total_tokens().await;
+
     metrics(config).await;
     report(config).await;
 
@@ -49,8 +52,8 @@ pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding
     send_event!(config, RunEvent::ReviewCompleted {
         identifier: config.identifier.clone(),
         metrics: crb_types::benchmark::Metrics::default(),
-        cost: 0.0,
-        total_tokens: 0,
+        cost: snapshot.total_cost(),
+        total_tokens: (total_tokens_in + total_tokens_out) as usize,
         agent_calls,
         findings_count,
     });

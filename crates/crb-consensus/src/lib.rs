@@ -5,29 +5,13 @@
 //! judge fallback against golden comments.
 
 pub mod adaptive;
-pub mod agent;
-pub mod execution;
-pub mod harness;
 pub mod judge;
 pub mod pipeline;
 
 use crb_reporting::{cost::AnalyticsSnapshot, golden::GoldenComment};
 use crb_shared::finding::Finding;
 use crb_types::benchmark::MetricsProvider;
-use regex::Regex;
-use rig_core::completion::{AssistantContent, Message};
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
-use tracing::warn;
-
-/// Regex to extract JSON from markdown code blocks.
-#[allow(clippy::unwrap_used)]
-static RE_CODEBLOCK_JSON: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)```(?:json)?\s*\n(.*?)\n\s*```").unwrap());
-
-/// Regex to find any JSON array in a response.
-#[allow(clippy::unwrap_used)]
-static RE_JSON_ARRAY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[[\s\S]*\]").unwrap());
 
 /// The role of a reviewer agent.
 ///
@@ -119,70 +103,6 @@ impl MetricsProvider for ConsensusReport {
     fn false_negatives(&self) -> usize {
         self.false_negatives.len()
     }
-}
-
-/// Attempt to parse findings from an agent response using a 3-strategy
-/// fallback:
-///
-/// 1. Direct JSON parse of the full response
-/// 2. Extract JSON from markdown code blocks via [`RE_CODEBLOCK_JSON`]
-/// 3. Find any JSON array via [`RE_JSON_ARRAY`]
-///
-/// If `context` is non-empty, a warning is logged with that context on
-/// failure (e.g. `"CACHED"`, `""` for silent failure).
-#[deprecated = "Use output_schema::<Vec<Finding>>() from rig instead of manual JSON parsing."]
-pub fn parse_findings_from_response(response: &str, role: &Role, context: &str) -> Vec<Finding> {
-    serde_json::from_str(response).unwrap_or_else(|_| {
-        if let Some(caps) = RE_CODEBLOCK_JSON.captures(response) {
-            // This is safe, it will always have atleast one group if it matches
-            #[allow(clippy::unwrap_used)]
-            let inner = caps.get(1).unwrap().as_str().trim();
-            if let Ok(f) = serde_json::from_str::<Vec<Finding>>(inner) {
-                return f;
-            }
-        }
-
-        if let Some(m) = RE_JSON_ARRAY.find(response) {
-            if let Ok(f) = serde_json::from_str::<Vec<Finding>>(m.as_str()) {
-                return f;
-            }
-        }
-
-        if !context.is_empty() {
-            warn!(
-                "Failed to parse {} findings for role {:?}. Response (truncated): {}",
-                context,
-                role,
-                &response[..std::cmp::min(200, response.len())],
-            );
-        }
-        Vec::new()
-    })
-}
-
-/// Try to extract the last assistant text message from a chat history.
-///
-/// When [`PromptError::MaxTurnsError`] fires, the agent's accumulated conversation is available in `chat_history`.
-/// This function walks it in reverse to find the most recent `Message::Assistant` whose content includes an `AssistantContent::Text` variant
-/// that text is often a partial or complete JSON findings array the model produced before being cut off.
-pub fn extract_last_assistant_text(history: &[Message]) -> Option<String> {
-    for msg in history.iter().rev() {
-        let Message::Assistant { content, .. } = msg else {
-            continue;
-        };
-
-        for item in content.iter() {
-            let AssistantContent::Text(text) = item else {
-                continue;
-            };
-
-            let t = text.text.trim().to_string();
-            if !t.is_empty() {
-                return Some(t);
-            }
-        }
-    }
-    None
 }
 
 #[cfg(test)]
