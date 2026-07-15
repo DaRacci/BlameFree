@@ -73,6 +73,37 @@ pub fn iter_json_files(
     iter
 }
 
+/// Compute directory duration from file modification timestamps (max - min).
+fn compute_duration_from_dir(dir: &Path) -> f64 {
+    let mut oldest = f64::MAX;
+    let mut newest = 0.0f64;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if let Ok(meta) = entry.path().metadata() {
+                if let Ok(modified) = meta.modified() {
+                    let secs = modified
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs_f64();
+                    if secs > 0.0 {
+                        if secs < oldest {
+                            oldest = secs;
+                        }
+                        if secs > newest {
+                            newest = secs;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if newest > oldest && oldest < f64::MAX {
+        newest - oldest
+    } else {
+        0.0
+    }
+}
+
 /// A single PR result as it appears in the JSON files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrResultJson {
@@ -382,35 +413,7 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
 
     // Fallback: compute duration from file timestamps if not found in summary
     if duration_secs == 0.0 && !has_summary {
-        duration_secs = {
-            let mut oldest = f64::MAX;
-            let mut newest = 0.0f64;
-            if let Ok(entries) = std::fs::read_dir(path) {
-                for entry in entries.flatten() {
-                    if let Ok(meta) = entry.path().metadata() {
-                        if let Ok(modified) = meta.modified() {
-                            let secs = modified
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs_f64();
-                            if secs > 0.0 {
-                                if secs < oldest {
-                                    oldest = secs;
-                                }
-                                if secs > newest {
-                                    newest = secs;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if newest > oldest && oldest < f64::MAX {
-                newest - oldest
-            } else {
-                0.0
-            }
-        };
+        duration_secs = compute_duration_from_dir(path);
     }
 
     Ok(RunSummary {
@@ -646,35 +649,7 @@ pub async fn get_run(
 
     // Fallback: compute duration from file timestamps if not found in summary
     if duration_secs == 0.0 {
-        duration_secs = {
-            let mut oldest = f64::MAX;
-            let mut newest = 0.0f64;
-            if let Ok(entries) = std::fs::read_dir(&run_path) {
-                for entry in entries.flatten() {
-                    if let Ok(meta) = entry.path().metadata() {
-                        if let Ok(modified) = meta.modified() {
-                            let secs = modified
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs_f64();
-                            if secs > 0.0 {
-                                if secs < oldest {
-                                    oldest = secs;
-                                }
-                                if secs > newest {
-                                    newest = secs;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if newest > oldest && oldest < f64::MAX {
-                newest - oldest
-            } else {
-                0.0
-            }
-        };
+        duration_secs = compute_duration_from_dir(&run_path);
     }
 
     // Merge config from active run state if available (it isn't stored on disk)
