@@ -2,9 +2,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crb_agents::build_agent;
+use crb_agents::{build_agent, prompts::PromptLibrary};
 use crb_cache::sha256::sha256_hex;
 use crb_shared::finding::Finding;
+use crb_types::wrappers::Model;
 use rig_core::completion::{AssistantContent, Message, PromptError, Usage};
 use rig_core::providers::openai;
 use rig_core::streaming::StreamingPrompt;
@@ -91,8 +92,8 @@ pub async fn run_reviewers(
         let tool_preamble = tool_preamble.map(String::from);
         let agent = build_agent(
             &client,
-            &model,
-            role.as_str(),
+            &Model(model.clone()),
+            PromptLibrary::get_instance().config(role.as_str()).unwrap(),
             preamble.as_deref(),
             template_vars,
             tool_preamble.as_deref(),
@@ -161,7 +162,7 @@ pub async fn run_reviewers(
             agent_api_calls.fetch_add(1, Ordering::SeqCst);
             info!("CACHE MISS for role {:?} (key={})", role, &cache_key[..12]);
 
-            let turn_budget_hook = TurnBudgetHook::new(agent);
+            let turn_budget_hook = TurnBudgetHook::new(6);
 
             let role_async = role.clone();
             let outcome = tokio::time::timeout(Duration::from_secs(900), async {

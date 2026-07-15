@@ -11,7 +11,7 @@ use crb_types::{
 };
 use rig_core::{agent::Agent, providers::openai, tool::server::ToolServerHandle};
 
-use crate::{cost, model_capabilities::ReasoningEffort};
+use crate::model_capabilities::ReasoningEffort;
 
 /// Strategy for evaluating a PR review.
 #[derive(Debug, Clone, PartialEq)]
@@ -23,7 +23,7 @@ pub enum EvalStrategy {
     Panel,
 }
 
-pub trait EvalIdentifier: Send + Sync + Sized {
+pub trait EvalIdentifier: Send + Sync {
     fn id(&self) -> &str;
 }
 
@@ -31,7 +31,7 @@ pub trait EvalIdentifier: Send + Sync + Sized {
 #[derive(Clone)]
 pub struct EvalConfig {
     /// Unique identifier for the run.
-    pub identifier: Box<dyn EvalIdentifier>,
+    pub identifier: String,
 
     /// The strategy to use.
     pub strategy: EvalStrategy,

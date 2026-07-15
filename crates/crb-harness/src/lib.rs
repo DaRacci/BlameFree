@@ -7,7 +7,8 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 use crb_agents::build_agent;
-use crb_agents::prompts::{AgentEntry, PromptLibrary};
+use crb_agents::prompts::PromptLibrary;
+pub use crb_agents::AgentEntry;
 use crb_auditor::apply_severity_auditor;
 use crb_cache::sha256::sha256_hex;
 use crb_cache::traits::CacheBackend;
@@ -15,17 +16,17 @@ use crb_consensus::harness::evaluate_pr_with_consensus;
 use crb_reporting::cost::AnalyticsTracker;
 use crb_reporting::golden::GoldenCommentEntry;
 use crb_reporting::history::{RunHistoryEntry, append_run_history};
-use crb_reporting::{Metrics, PrResult};
+use crb_reporting::PrResult;
 use crb_shared::deduplicate::semantic_dedup;
 use crb_shared::finding::Finding;
 use crb_shared::jaccard::jaccard_similarity;
 use crb_shared::url::parse_github_url;
-use crb_shared::{diff, sanitize_filename};
+use crb_shared::{diff::Diff, sanitize_filename};
+use crb_tools::build_tool_server;
 use crb_tools::linters::tool::LinterArgs;
-use crb_tools::{build_tool_server, create_linter_tool};
 use crb_types::RunEvent;
-use crb_types::benchmark::JudgeVerdict;
-use crb_types::wrappers::{Diff, Model};
+use crb_types::benchmark::{JudgeVerdict, Metrics, MetricsProvider};
+use crb_types::wrappers::{Model, WrappedData};
 use regex::Regex;
 use rig_core::agent::{Agent, PromptResponse};
 use rig_core::client::ProviderClient;
@@ -37,18 +38,15 @@ use rig_core::tool::server::{ToolServer, ToolServerHandle};
 use tokio::sync::broadcast;
 use tracing::{info, info_span, warn};
 
-use crate::config::ReviewArgs;
 use crate::eval::{EvalConfig, EvalStrategy};
+use crate::finding::post_process_findings;
 use crate::model_capabilities::ReasoningEffort;
 
-pub mod config;
 pub mod eval;
 pub mod finding;
-pub mod history;
 pub mod model_capabilities;
 pub mod paths;
 pub mod pipeline;
-pub mod review;
 pub mod runner;
 pub mod test_utils;
 
@@ -154,7 +152,7 @@ fn spawn_agent_task(
     model: Arc<String>,
     diff: Arc<String>,
     diff_hash: String,
-    rules_hash: String,
+    _rules_hash: String,
     rules_preamble: Option<String>,
     cache: Option<Arc<dyn CacheBackend>>,
     cost_tracker: Arc<AnalyticsTracker>,
@@ -167,12 +165,16 @@ fn spawn_agent_task(
         let span = info_span!("agent", role = %role);
         let _guard = span.enter();
 
+        let agent_entry = prompt_library.config(&role)
+            .ok_or_else(|| format!("Unknown role: {role}"))?
+            .clone();
+
         let prompt_hash = sha256_hex(prompt_library.get(&role).unwrap_or(""));
         let agent_cache_key = sha256_hex(&format!(
             "{prompt_hash}:{diff_hash}:{}:{}:{}",
             model.as_str(),
             role,
-            rules_hash,
+            agent_entry.role_abbreviation,
         ));
 
         // Check cache first
@@ -206,14 +208,15 @@ fn spawn_agent_task(
                         &agent_cache_key[..12]
                     );
                     let usage = cached_usage.unwrap_or_default();
-                    cost_tracker.record_agent(&usage, true);
+                    cost_tracker.record(role.clone(), usage, true).await;
                     if let Some(ref tx) = dashboard_tx {
                         // Ignore; receiver may have disconnected
                         let _ = tx.send(RunEvent::AgentChunk {
                             identifier: role.clone(),
                             chunk: cached_response.clone(),
                         });
-                        let result = parse_agent_findings(&cached_response);
+                        let result: Result<Vec<Finding>, String> = serde_json::from_str(&cached_response)
+                            .map_err(|e| format!("Failed to parse cached response: {e}"));
                         let findings_count = result.as_ref().map(|v| v.len()).unwrap_or(0);
                         // Ignore; receiver may have disconnected
                         let _ = tx.send(RunEvent::AgentFinished {
@@ -222,7 +225,8 @@ fn spawn_agent_task(
                             success: result.is_ok(),
                         });
                     }
-                    let result = parse_agent_findings(&cached_response);
+                    let result: Result<Vec<Finding>, String> = serde_json::from_str(&cached_response)
+                        .map_err(|e| format!("Failed to parse cached response: {e}"));
                     return result;
                 }
             }
@@ -233,27 +237,33 @@ fn spawn_agent_task(
             &agent_cache_key[..12]
         );
 
-        let agent = build_agent(
-            &client,
-            model.as_str(),
-            &role,
-            rules_preamble.as_deref(),
-            None,
-            None,
-            additional_params.clone(),
-            tool_server_handle.clone(),
-        );
-
         let result: Result<Vec<Finding>, String> = with_retry(
             || {
-                let agent = agent.clone();
-                let role = role.clone();
+                let client = client.clone();
+                let model = model.clone();
+                let agent_entry = agent_entry.clone();
                 let diff = Arc::clone(&diff);
                 let agent_cache_key = agent_cache_key.clone();
                 let cache = cache.clone();
                 let ct = cost_tracker.clone();
                 let tx = dashboard_tx.clone();
+                let rules_preamble = rules_preamble.clone();
+                let additional_params = additional_params.clone();
+                let tool_server_handle = tool_server_handle.clone();
+                let role = role.clone();
                 async move {
+                    let agent = build_agent(
+                        &client,
+                        &Model(model.as_str().to_string()),
+                        &agent_entry,
+                        rules_preamble.as_deref(),
+                        None,
+                        None,
+                        additional_params,
+                        tool_server_handle,
+                    )
+                    .output_schema::<Vec<Finding>>()
+                    .build();
                     let resp: PromptResponse = agent
                         .prompt(diff.as_str())
                         .extended_details()
@@ -262,7 +272,7 @@ fn spawn_agent_task(
                     let response = resp.output;
                     let usage = resp.usage;
 
-                    ct.record_agent(&usage, false);
+                    ct.record(role.clone(), usage, false).await;
 
                     if let Some(ref tx) = tx {
                         let _ = tx.send(RunEvent::AgentChunk {
@@ -291,7 +301,8 @@ fn spawn_agent_task(
                         );
                     }
 
-                    let findings = parse_agent_findings(&response);
+                    let findings: Result<Vec<Finding>, String> = serde_json::from_str(&response)
+                        .map_err(|e| format!("Failed to parse agent response: {e}"));
                     if let Some(ref tx) = tx {
                         let findings_count = findings.as_ref().map(|v| v.len()).unwrap_or(0);
                         let _ = tx.send(RunEvent::AgentFinished {
@@ -491,6 +502,8 @@ pub async fn evaluate_pr(
 
     let rules_preamble = config.ruleset.as_ref().map(|rs| rs.format_preamble(&[]));
 
+    let cache: Option<Arc<dyn CacheBackend>> = config.cache.clone();
+    let linter_findings: Vec<Finding> = Vec::new();
     let pr_key = sanitize_filename(&pr.pr_title);
     if let Some(ref tx) = config.dashboard_tx {
         for role in config
@@ -509,13 +522,13 @@ pub async fn evaluate_pr(
     let (all_findings, verdicts) = match config.strategy {
         EvalStrategy::Single => {
             let reasoning_params = config.reasoning_effort.and_then(|re| {
-                model_capabilities::make_additional_params(&Model(config.model.clone()), Some(re))
+                model_capabilities::make_additional_params(&config.model, Some(re))
             });
             evaluate_pr_single_agent(
                 pr,
                 &config.client,
-                &config.model,
-                &diff,
+                config.model.get(),
+                &diff.raw,
                 linter_findings,
                 rules_preamble.as_deref(),
                 cache.clone(),
@@ -527,13 +540,13 @@ pub async fn evaluate_pr(
         }
         EvalStrategy::Panel => {
             let reasoning_params = config.reasoning_effort.and_then(|re| {
-                model_capabilities::make_additional_params(&Model(config.model.clone()), Some(re))
+                model_capabilities::make_additional_params(&config.model, Some(re))
             });
             evaluate_pr_single_agent(
                 pr,
                 &config.client,
-                &config.model,
-                &diff,
+                config.model.get(),
+                diff.raw.as_str(),
                 linter_findings,
                 rules_preamble.as_deref(),
                 cache.clone(),
@@ -545,7 +558,7 @@ pub async fn evaluate_pr(
         }
     };
 
-    // let processed_findings = post_process_findings(&all_findings);
+    let processed_findings = post_process_findings(&all_findings);
 
     if let Some(ref tx) = config.dashboard_tx {
         for (_i, role) in ["SA", "CL", "AR", "SEC"].iter().enumerate() {
@@ -558,23 +571,22 @@ pub async fn evaluate_pr(
     }
 
     // ── Phase 10: Metrics ────────────────────────────────────────────────
-    let metrics = Metrics::default();
+    let metrics = crb_types::benchmark::Metrics::default();
 
     // ── Phase 11: Dashboard PrCompleted event ──────────────────────────
     if let Some(ref tx) = config.dashboard_tx {
-        let tokens = config.cost_tracker.total_tokens();
-        let total_tokens = tokens.0 + tokens.1;
-        let cost_usd = config.cost_tracker.total_cost_usd();
+        let snapshot = config.cost_tracker.to_snapshot().await;
+        let (total_tokens_in, total_tokens_out) = snapshot.total_tokens().await;
+        let total_tokens = (total_tokens_in + total_tokens_out) as usize;
+        let cost_usd = snapshot.total_cost();
         let total_agent_calls = 4;
         let _ = tx.send(RunEvent::ReviewCompleted {
             identifier: pr_key,
-            metrics: crb_types::MetricsData {
+            metrics: crb_types::benchmark::Metrics {
                 true_positives: metrics.true_positives,
                 false_positives: metrics.false_positives,
                 false_negatives: metrics.false_negatives,
-                precision: metrics.precision,
-                recall: metrics.recall,
-                f1: metrics.f1,
+                ..Default::default()
             },
             cost: cost_usd,
             total_tokens,
@@ -587,7 +599,7 @@ pub async fn evaluate_pr(
     let metadata = serde_json::json!({
         "pr_title": pr.pr_title,
         "url": pr.url,
-        "model": config.model,
+        "model": config.model.get(),
         "strategy": format!("{:?}", config.strategy),
         "timestamp": format!("{:?}", std::time::SystemTime::now()),
         "findings_count": verdicts.len(),
@@ -596,9 +608,9 @@ pub async fn evaluate_pr(
             "true_positives": metrics.true_positives,
             "false_positives": metrics.false_positives,
             "false_negatives": metrics.false_negatives,
-            "precision": metrics.precision,
-            "recall": metrics.recall,
-            "f1": metrics.f1,
+            "precision": metrics.precision(),
+            "recall": metrics.recall(),
+            "f1": metrics.f1(),
         },
     });
     if let Some(ref cache) = cache {
@@ -616,7 +628,7 @@ pub async fn evaluate_pr(
         golden_count: pr.comments.len(),
         metrics,
         verdicts,
-        cost: Some(config.cost_tracker.to_summary()),
+        cost: Some(config.cost_tracker.to_snapshot().await),
     })
 }
 
@@ -633,15 +645,20 @@ pub fn write_summary(
     let total_llm_calls: usize = results.iter().map(|r| r.findings_count).sum();
     let total_judge_calls: usize = results.iter().map(|r| r.verdicts.len()).sum();
 
-    let total_tokens: usize = results
+    let total_tokens: u64 = results
         .iter()
         .filter_map(|r| r.cost.as_ref())
-        .map(|c| c.agent_tokens_in + c.agent_tokens_out + c.judge_tokens_in + c.judge_tokens_out)
+        .map(|c| {
+            c.sessions
+                .values()
+                .map(|s| s.input_tokens + s.output_tokens)
+                .sum::<u64>()
+        })
         .sum();
     let total_cost_usd: f64 = results
         .iter()
         .filter_map(|r| r.cost.as_ref())
-        .map(|c| c.total_usd)
+        .map(|c| c.total_cost())
         .sum();
     let avg_agent_cache_hit_rate = if results.is_empty() {
         0.0
@@ -649,7 +666,7 @@ pub fn write_summary(
         results
             .iter()
             .filter_map(|r| r.cost.as_ref())
-            .map(|c| c.agent_cache_hit_rate)
+            .map(|c| c.hit_rate())
             .sum::<f64>()
             / results.len() as f64
     };
@@ -659,7 +676,7 @@ pub fn write_summary(
         results
             .iter()
             .filter_map(|r| r.cost.as_ref())
-            .map(|c| c.judge_cache_hit_rate)
+            .map(|c| c.hit_rate())
             .sum::<f64>()
             / results.len() as f64
     };
@@ -668,10 +685,10 @@ pub fn write_summary(
         serde_json::json!({})
     } else {
         let avg_precision =
-            results.iter().map(|r| r.metrics.precision).sum::<f64>() / results.len() as f64;
+            results.iter().map(|r| r.metrics.precision()).sum::<f64>() / results.len() as f64;
         let avg_recall =
-            results.iter().map(|r| r.metrics.recall).sum::<f64>() / results.len() as f64;
-        let avg_f1 = results.iter().map(|r| r.metrics.f1).sum::<f64>() / results.len() as f64;
+            results.iter().map(|r| r.metrics.recall()).sum::<f64>() / results.len() as f64;
+        let avg_f1 = results.iter().map(|r| r.metrics.f1()).sum::<f64>() / results.len() as f64;
         serde_json::json!({
             "avg_precision": avg_precision,
             "avg_recall": avg_recall,

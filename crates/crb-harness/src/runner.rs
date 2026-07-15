@@ -1,92 +1,81 @@
-use std::{future::Future, sync::Arc, time::Instant};
+use std::sync::{Arc, LazyLock};
 
 use anyhow::Result;
 use crb_agents::build_agent;
 use crb_shared::{diff::Diff, finding::Finding};
-use crb_types::RunEvent;
 use rig_core::{
-    completion::{TypedPrompt, request},
-    streaming::{StreamingChat, StreamingCompletion, StreamingPrompt},
+    agent::PromptResponse,
+    completion::Prompt,
 };
 use tokio::{
-    sync::{self, Semaphore},
+    sync::Semaphore,
     task::JoinSet,
 };
-use tracing::error;
+use tracing::{error, info};
 
-use crate::{eval::EvalConfig, send_event};
+use crate::eval::EvalConfig;
 
 const MAX_CONCURRENT_AGENTS: usize = 4;
-static SEMAPHORE: Arc<Semaphore> = Arc::new(Semaphore::const_new(4));
+static SEMAPHORE: LazyLock<Arc<Semaphore>> =
+    LazyLock::new(|| Arc::new(Semaphore::new(MAX_CONCURRENT_AGENTS)));
 
-#[deprecated = "Incomplete scaffolding — finish or remove."]
+#[deprecated = "Use pipeline::run_reviewers() instead."]
 /// Run the shared agent loop for a set of roles, collecting findings.
 async fn run_agents(diff: &Diff, config: &EvalConfig) -> Vec<Finding> {
+    let client = config.client.clone();
+    let model = config.model.clone();
+    let tool_server_handle = config.tool_handle.clone();
+    let max_findings = config.max_findings;
+    let diff_str = diff.raw.clone();
+    let agents = config.agents.to_vec();
+
+    let results = run_concurrent(agents, move |entry| {
+        let client = client.clone();
+        let model = model.clone();
+        let tool_server_handle = tool_server_handle.clone();
+        let diff_str = diff_str.clone();
+        let entry_name = entry.role_abbreviation.clone();
+
+        async move {
+            let agent = build_agent(
+                &client,
+                &model,
+                entry,
+                None,
+                None,
+                None,
+                None,
+                tool_server_handle.clone(),
+            )
+            .output_schema::<Vec<Finding>>()
+            .build();
+
+            let resp: PromptResponse = agent
+                .prompt(diff_str)
+                .extended_details()
+                .await
+                .map_err(|e| anyhow::anyhow!("Agent {entry_name} failed: {e}"))?;
+
+            let mut findings: Vec<Finding> =
+                serde_json::from_str(&resp.output).unwrap_or_default();
+            if findings.len() > max_findings {
+                info!(
+                    "Agent {entry_name} produced {} findings, capping at {max_findings}",
+                    findings.len(),
+                );
+                findings.truncate(max_findings);
+            }
+
+            Ok(findings)
+        }
+    })
+    .await;
+
+    // Flatten collected findings
     let mut all_findings = Vec::new();
-
-    config.cache.store_raw(key, value);
-
-    let client = config.client;
-    let model = config.model;
-    let tool_server_handle = config.tool_handle;
-    let config = Arc::new(config);
-    run_concurrent(config.agents.to_vec(), async move |entry| {
-        let agent = build_agent(
-            &client,
-            &model,
-            entry,
-            None,
-            None,
-            None,
-            None,
-            tool_server_handle.clone(),
-        )
-        .output_schema::<Vec<Finding>>()
-        .build();
-
-        let mut stream = agent.stream_prompt(todo!("SEND THE DIFF")).await;
-        while let Ok(msg) = stream.next().await {
-            match msg {
-                StreamingCompletion::Response(resp) => {
-                    send_event!(RunEvent::AgentChunk {
-                        identifier: entry.role_abbreviation.clone(),
-                        chunk: ()
-                    })
-                }
-                StreamingCompletion::Error(err) => {
-                    send_event!(RunEvent::AgentFinished {
-                        identifier: entry.role_abbreviation.clone(),
-                        findings: (),
-                        success: ()
-                    })
-                }
-                StreamingCompletion::Done => {
-                    send_event!(RunEvent::AgentFinished {
-                        identifier: entry.role_abbreviation.clone(),
-                        findings: (),
-                        success: ()
-                    })
-                }
-            }
-        }
-
-        match agent.prompt(diff).extended_details().await {
-            Ok(resp) => {
-                let response = resp.output;
-                let _usage = resp.usage;
-                match parse_agent_findings(&response) {
-                    Ok(mut findings) => {
-                        if findings.len() > max_findings {
-                            findings.truncate(max_findings);
-                        }
-                        all_findings.append(&mut findings);
-                    }
-                    Err(e) => warn!("Failed to parse agent response for role {}: {}", role, e),
-                }
-            }
-            Err(e) => warn!("Agent call failed for role {}: {}", role, e),
-        }
-    });
+    for findings in results {
+        all_findings.extend(findings);
+    }
 
     all_findings
 }
@@ -105,7 +94,11 @@ where
     let total = items.len();
     let mut set = JoinSet::new();
     for item in items {
-        let permit = SEMAPHORE.clone().acquire_owned().await?;
+        let sem = SEMAPHORE.clone();
+        let permit = sem
+            .acquire_owned()
+            .await
+            .expect("Failed to acquire semaphore permit");
         let task_fn = task_fn.clone();
         set.spawn(async move {
             let _permit = permit;

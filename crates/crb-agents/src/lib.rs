@@ -18,8 +18,9 @@ pub mod agent;
 pub mod prompts;
 pub mod templates;
 
-use crate::agent::AgentEntry;
 use crate::prompts::PromptLibrary;
+
+pub use crate::agent::AgentEntry;
 
 const DEFAULT_TEMPERATURE: f64 = 0.3;
 const DEFAULT_MAX_TURNS: usize = 6;

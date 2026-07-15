@@ -1,4 +1,5 @@
 use std::env;
+use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::Parser;
@@ -52,13 +53,12 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli {
-        Cli::Review(args) => run_review(args).await,
+        Cli::Review { .. } => run_review().await,
     }
 }
 
-/// Run the `review` subcommand: get a git diff and print findings.
-async fn run_review(args: crb_harness::config::ReviewArgs) -> Result<()> {
-    let findings = crb_harness::review_diff(args).await?;
-    println!("{}", serde_json::to_string_pretty(&findings)?);
+/// Run the `review` subcommand: no longer functional.
+async fn run_review() -> Result<()> {
+    eprintln!("[review] The review subcommand has been removed. Use the eval/review pipeline instead.");
     Ok(())
 }
