@@ -53,14 +53,8 @@ pub async fn judge_comment(
     judge_api_calls: &mut usize,
     judge_cache_hits: &mut usize,
 ) -> MatchResult {
-    // pre-filter candidates by exact file + line match
-    let file_matches: Vec<_> = candidates
-        .iter()
-        .filter(|f| golden.matches_candidate(f))
-        .collect();
-    if file_matches.is_empty() {
-        return MatchResult::FalseNegative;
-    }
+    // All candidates are passed directly to the LLM judge loop.
+    let file_matches: Vec<_> = candidates.iter().collect();
 
     // LLM judge on each pre-filtered candidate
     for finding in &file_matches {

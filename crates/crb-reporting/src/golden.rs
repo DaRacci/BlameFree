@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use crb_shared::{finding::Finding, severity::Severity};
+use crb_shared::severity::Severity;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
@@ -32,13 +32,6 @@ pub struct GoldenComment {
 
     /// The expected severity of the comment
     pub severity: Severity,
-}
-
-impl GoldenComment {
-    #[deprecated = "This was never an effective filter."]
-    pub fn matches_candidate(&self, _: &Finding) -> bool {
-        false
-    }
 }
 
 /// Load all golden-comment entries from every `.json` file under `dataset_dir`.

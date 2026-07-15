@@ -104,8 +104,8 @@ pub async fn run_consensus(
                 // Remove the first file+line matched finding from the pool
                 // (judge_comment returns on the first match, so the first
                 // candidate in iteration order is the one that was matched).
-                if let Some(idx) = unmatched.iter().position(|f| golden.matches_candidate(f)) {
-                    let matched = unmatched.remove(idx);
+                if !unmatched.is_empty() {
+                    let matched = unmatched.remove(0);
                     true_positives.push((golden.clone(), matched));
                 }
             }
