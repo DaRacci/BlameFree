@@ -42,5 +42,8 @@ clap = { workspace = true, optional = true }
 dotenvy = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
 
+[dev-dependencies]
+crb-benchmark = { path = "../crb-benchmark" }
+
 [lints]
 workspace = true

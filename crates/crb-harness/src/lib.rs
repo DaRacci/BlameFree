@@ -54,37 +54,6 @@ pub struct ReviewParams {
     pub cache_dir: Option<PathBuf>,
 }
 
-/// Load the diff for a PR from pre-extracted cached diff files.
-///
-/// Cached diffs live at `{benchmark_dir}/diffs/{owner}_{repo}_{pr_num}.diff`.
-pub fn load_cached_diff(
-    benchmark_dir: &Path,
-    owner: &str,
-    repo: &str,
-    pr_num: u32,
-) -> Option<String> {
-    let diffs_dir = benchmark_dir.join("diffs");
-    let diff_path = diffs_dir.join(format!("{}_{}_{}.diff", owner, repo, pr_num));
-    match fs::read_to_string(&diff_path) {
-        Ok(content) => {
-            info!(
-                "Loaded cached diff ({} bytes) from {}",
-                content.len(),
-                diff_path.display()
-            );
-            Some(content)
-        }
-        Err(e) => {
-            warn!(
-                "Cached diff not found at {}: {}. Using empty diff.",
-                diff_path.display(),
-                e
-            );
-            None
-        }
-    }
-}
-
 /// Call an async function with exponential backoff retry.
 #[doc(hidden)]
 pub async fn with_retry<F, Fut, T, E>(f: F, max_retries: usize, base_delay_ms: u64) -> Result<T, E>

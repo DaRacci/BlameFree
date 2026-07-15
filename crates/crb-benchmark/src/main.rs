@@ -883,7 +883,7 @@ async fn run_benchmark(
             };
             let diff_str = match parse_github_url(&pr.url) {
                 Ok((owner, repo, pr_num)) => {
-                    let d = crb_harness::load_cached_diff(&benchmark_dir, &owner, &repo, pr_num).unwrap_or_default();
+                    let d = crb_benchmark::diff_cache::load_cached_diff(&benchmark_dir, &owner, &repo, pr_num).unwrap_or_default();
                     if d.is_empty() {
                         warn!("Empty diff for PR: {} (url: {})", pr.pr_title, pr.url);
                     } else {

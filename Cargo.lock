@@ -675,6 +675,7 @@ dependencies = [
  "clap",
  "crb-agents",
  "crb-auditor",
+ "crb-benchmark",
  "crb-cache",
  "crb-consensus",
  "crb-reporting",

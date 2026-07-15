@@ -76,7 +76,7 @@ fn review_mode_working() {
 #[test]
 fn load_cached_diff_nonexistent() {
     let dir = tempfile::TempDir::new().expect("temp dir");
-    let result = crb_harness::load_cached_diff(dir.path(), "owner", "repo", 42);
+    let result = crb_benchmark::diff_cache::load_cached_diff(dir.path(), "owner", "repo", 42);
     assert!(result.is_none());
 }
 
@@ -91,7 +91,7 @@ fn load_cached_diff_exists() {
         "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new",
     )
     .expect("write diff");
-    let result = crb_harness::load_cached_diff(dir.path(), "owner", "repo", 42);
+    let result = crb_benchmark::diff_cache::load_cached_diff(dir.path(), "owner", "repo", 42);
     assert!(result.is_some());
     let content = result.unwrap();
     assert!(content.contains("old"));
