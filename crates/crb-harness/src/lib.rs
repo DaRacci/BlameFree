@@ -1,17 +1,7 @@
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Result;
-use crb_reporting::golden::GoldenCommentEntry;
-use crb_reporting::PrResult;
-use crb_shared::{diff::Diff, sanitize_filename};
-use crb_types::RunEvent;
-use crb_types::benchmark::{Metrics, MetricsProvider};
-use crb_types::wrappers::WrappedData;
-use tracing::{info, warn};
-
-use crate::eval::EvalConfig;
+use tracing::warn;
 
 #[cfg(feature = "binary")]
 pub mod config;
@@ -61,79 +51,4 @@ where
             }
         }
     }
-}
-
-/// Unified evaluation of a single PR.
-///
-/// This function runs the steps:
-/// - diff preprocessing
-/// - linter collection
-/// - agent review
-/// - post-processing (dedup / severity auditor / capping)
-/// - metrics computation
-/// - dashboard events
-/// - metadata
-/// - caching
-pub async fn evaluate_pr(
-    pr: &GoldenCommentEntry,
-    diff: &Diff,
-    config: &EvalConfig,
-) -> Result<PrResult> {
-    // ── Phase 1: Send AgentStarted events ──
-    let pr_key = sanitize_filename(&pr.pr_title);
-    if let Some(ref tx) = config.dashboard_tx {
-        for entry in config.agents {
-            let _ = tx.send(RunEvent::AgentStarted {
-                identifier: pr_key.clone(),
-                agent: entry.role_abbreviation.to_string(),
-            });
-        }
-    }
-
-    // ── Phase 2: Run pipeline (delegate to evaluate) ──
-    // pipeline::evaluate() handles diff preprocessing, linters, reviewers,
-    // post-processing, metrics logging, and sends the ReviewCompleted event.
-    let owned_diff = Diff::new(diff.raw.clone());
-    let all_findings = crate::pipeline::evaluate(owned_diff, config).await?;
-
-    // ── Phase 3: Metrics ──
-    // Metrics require golden data (true/false positives) which pipeline
-    // doesn't have access to. Use defaults for now.
-    let metrics = Metrics::default();
-
-    // ── Phase 4: Cache metadata ──
-    let metadata = serde_json::json!({
-        "pr_title": pr.pr_title,
-        "url": pr.url,
-        "model": config.model.get(),
-        "strategy": format!("{:?}", config.strategy),
-        "timestamp": format!("{:?}", std::time::SystemTime::now()),
-        "findings_count": all_findings.len(),
-        "golden_count": pr.comments.len(),
-        "metrics": {
-            "true_positives": metrics.true_positives,
-            "false_positives": metrics.false_positives,
-            "false_negatives": metrics.false_negatives,
-            "precision": metrics.precision(),
-            "recall": metrics.recall(),
-            "f1": metrics.f1(),
-        },
-    });
-    if let Some(ref cache) = config.cache {
-        match serde_json::to_string(&metadata) {
-            Ok(json_str) => cache.store_raw("run_metadata", &json_str),
-            Err(e) => warn!("Failed to serialize cache metadata: {e}"),
-        }
-    }
-
-    // ── Phase 5: Return result ──
-    Ok(PrResult {
-        pr_title: pr.pr_title.clone(),
-        url: pr.url.clone(),
-        findings_count: all_findings.len(),
-        golden_count: pr.comments.len(),
-        metrics,
-        verdicts: Vec::new(),
-        cost: Some(config.cost_tracker.to_snapshot().await),
-    })
 }

@@ -7,4 +7,4 @@ CLI binary for running the review-harness evaluation pipeline — evaluating PRs
 
 ## CLI usage
 
-The `review` subcommand has been removed. Use the evaluation pipeline via the `evaluate_pr` API or benchmarks instead.
+The `review` subcommand has been removed. Use `crb_harness::pipeline::evaluate` directly.

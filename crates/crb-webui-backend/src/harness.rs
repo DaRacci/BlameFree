@@ -1,8 +1,8 @@
 //! In-process harness execution via library calls.
 //!
 //! Previously this module spawned `crb-harness --dashboard-events` as a
-//! Now it calls `crb_harness::evaluate_pr`
-//! directly, forwarding progress events to all SSE clients via the same
+//! subprocess. Now it calls `crb_harness::pipeline::evaluate` directly,
+//! forwarding progress events to all SSE clients via the same
 //! broadcast channel.
 
 use std::collections::HashMap;
@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use crb_agents::prompts::PromptLibrary;
 use crb_benchmark::pr;
-use crb_harness::{EvalConfig, EvalStrategy, evaluate_pr};
+use crb_harness::{EvalConfig, EvalStrategy};
 use crb_reporting::golden::load_golden_datasets;
 use crb_reporting::history::{RunHistoryEntry, append_run_history};
 use crb_reporting::{PrResult, write_report};
@@ -37,7 +37,7 @@ use crb_types::RunEvent;
 /// This function:
 /// 1. Sets up the OpenAI client, judge agent, prompt library, rules, linters
 /// 2. Loads the dataset and filters PRs according to config
-/// 3. Evaluates each PR via `crb_harness::evaluate_pr`
+/// 3. Evaluates each PR via `crb_harness::pipeline::evaluate` and `build_pr_result`
 /// 4. Writes per-PR result files + a `_summary.json`
 /// 5. Sends a final `RunFinished` event
 pub async fn run_harness(
@@ -247,7 +247,15 @@ pub async fn run_harness(
                 }
             };
             let diff = crb_shared::diff::Diff::new(diff_str);
-            crb_harness::evaluate_pr(&pr, &diff, &cfg).await
+            let findings = crb_harness::pipeline::evaluate(diff, &cfg).await?;
+            Ok(crb_harness::pipeline::build_pr_result(
+                &findings,
+                &cfg,
+                &pr.pr_title,
+                &pr.url,
+                pr.comments.len(),
+            )
+            .await)
         });
     }
 

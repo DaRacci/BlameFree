@@ -471,7 +471,15 @@ async fn run_adhoc_review_inner(
         template_vars: None,
     };
 
-    let result = crb_harness::evaluate_pr(&pr, diff, &cfg).await?;
+    let findings = crb_harness::pipeline::evaluate(diff, &cfg).await?;
+    let result = crb_harness::pipeline::build_pr_result(
+        &findings,
+        &cfg,
+        &pr.pr_title,
+        &pr.url,
+        pr.comments.len(),
+    )
+    .await;
 
     let metrics_for_summary = result.metrics;
 

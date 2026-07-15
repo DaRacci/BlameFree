@@ -897,7 +897,15 @@ async fn run_benchmark(
                 }
             };
             let diff = crb_shared::diff::Diff::new(diff_str);
-            crb_harness::evaluate_pr(&pr, &diff, &cfg).await
+            let findings = crb_harness::pipeline::evaluate(diff, &cfg).await?;
+            Ok(crb_harness::pipeline::build_pr_result(
+                &findings,
+                &cfg,
+                &pr.pr_title,
+                &pr.url,
+                pr.comments.len(),
+            )
+            .await)
         }
     });
 

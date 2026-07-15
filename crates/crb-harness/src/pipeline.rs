@@ -1,18 +1,22 @@
 use anyhow::Result;
 use crb_agents::build_agent;
 use crb_consensus::adaptive::get_agents_for_diff;
+use crb_reporting::PrResult;
 use crb_shared::{
     diff::{self, Diff},
     finding::Finding,
+    sanitize_filename,
 };
 use crb_tools::{build_tool_server, linters::create_linter_tool, linters::tool::LinterArgs};
 use crb_types::RunEvent;
+use crb_types::benchmark::{Metrics, MetricsProvider};
 use rig_core::completion::Prompt;
 use rig_core::tool::Tool;
 use tokio::task;
 use tracing::{info, warn};
 
-use crate::{eval::EvalConfig, finding::post_process_findings};
+use crate::eval::EvalConfig;
+use crate::finding::post_process_findings;
 
 // Helper macro to send events to the dashboard if the channel is available.
 // `$config` must be an expression that yields an `&EvalConfig`.
@@ -23,6 +27,40 @@ macro_rules! send_event {
             let _ = tx.send($event);
         }
     };
+}
+
+/// Send AgentStarted events for each configured agent.
+pub async fn send_agent_started_events(config: &EvalConfig, identifier: &str) {
+    if let Some(ref tx) = config.dashboard_tx {
+        let pr_key = sanitize_filename(identifier);
+        for entry in config.agents {
+            let _ = tx.send(RunEvent::AgentStarted {
+                identifier: pr_key.clone(),
+                agent: entry.role_abbreviation.to_string(),
+            });
+        }
+    }
+}
+
+/// Build a PrResult from evaluation outputs and caller-provided PR metadata.
+pub async fn build_pr_result(
+    findings: &[Finding],
+    config: &EvalConfig,
+    pr_title: &str,
+    url: &str,
+    golden_count: usize,
+) -> PrResult {
+    let snapshot = config.cost_tracker.to_snapshot().await;
+    let metrics = Metrics::default();
+    PrResult {
+        pr_title: pr_title.to_string(),
+        url: url.to_string(),
+        findings_count: findings.len(),
+        golden_count,
+        metrics,
+        verdicts: Vec::new(),
+        cost: Some(snapshot),
+    }
 }
 
 pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> {
