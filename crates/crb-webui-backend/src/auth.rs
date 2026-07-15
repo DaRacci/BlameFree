@@ -37,7 +37,7 @@ use crate::server::AppState;
 /// Name of the session cookie.
 const SESSION_COOKIE_NAME: &str = "crb-session";
 
-use crb_shared::AuthUser;
+use crb_webui_shared::auth::AuthUser;
 
 /// In-memory session store mapping session tokens to user data.
 pub type SessionStore = Arc<RwLock<HashMap<String, AuthUser>>>;

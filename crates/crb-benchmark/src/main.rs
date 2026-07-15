@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::io::Write;
 use std::{env, fs, io};
 use std::{process, time};
 
@@ -11,7 +12,8 @@ use crb_agents::prompts::PromptLibrary;
 use crb_benchmark::judge::build_judge;
 use crb_benchmark::pr;
 use crb_harness::eval::EvalConfig;
-use crb_harness::{EvalStrategy, model_capabilities, validation};
+use crb_harness::eval::EvalStrategy;
+use crb_harness::{model_capabilities, validation};
 use crb_reporting::cost::AnalyticsTracker;
 use crb_reporting::golden::{GoldenCommentEntry, load_golden_datasets};
 use crb_reporting::history::{RunHistoryEntry, append_run_history};
@@ -403,7 +405,7 @@ fn main() -> Result<()> {
 
 /// List all PRs in a dataset with their URLs and titles.
 fn run_list(dataset_dir: &PathBuf) -> Result<()> {
-    let entries = crb_reporting::load_golden_datasets(dataset_dir)?;
+    let entries = load_golden_datasets(dataset_dir)?;
     let mut repos = std::collections::BTreeSet::new();
 
     for entry in &entries {
@@ -773,7 +775,7 @@ async fn run_benchmark(
 
     let linter_config_path = Path::new(&linters_config);
     let linter_configs = if linter_config_path.exists() && !skip_linters {
-        match crb_tools::load_linter_config(&linters_config) {
+        match crb_tools::linters::config::load_linter_config(&linters_config) {
             Ok(configs) => {
                 info!("Loaded {} linter(s) from {}", configs.len(), linters_config);
                 Some(configs)
@@ -913,7 +915,7 @@ async fn run_benchmark(
 
     let (results, eval_elapsed) = run_concurrent(prs_to_evaluate, &pipeline_cfg, eval_fn).await;
 
-    let mut aggregated = Metrics::new();
+    let mut aggregated = Metrics::default();
     for r in &results {
         aggregated.add(r);
     }

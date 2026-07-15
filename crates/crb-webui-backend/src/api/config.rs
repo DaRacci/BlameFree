@@ -7,11 +7,11 @@ use axum::extract::{Path as AxumPath, State};
 use serde::Serialize;
 
 use crate::server::AppState;
-use crb_shared::DatasetConfig;
-use crb_shared::DatasetInfo;
-use crb_shared::PrEntry;
-use crb_shared::ReasoningEffortsResponse;
-use crb_shared::RoleInfo;
+use crb_webui_shared::config::DatasetConfig;
+use crb_webui_shared::config::DatasetInfo;
+use crb_webui_shared::config::PrEntry;
+use crb_webui_shared::config::ReasoningEffortsResponse;
+use crb_webui_shared::config::RoleInfo;
 
 /// Available configuration options.
 #[derive(Debug, Clone, Serialize)]

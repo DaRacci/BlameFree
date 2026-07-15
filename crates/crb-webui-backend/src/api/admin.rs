@@ -23,7 +23,7 @@ use tokio::time::interval;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::server::AppState;
-use crb_shared::LogsResponse;
+use crb_webui_shared::admin::LogsResponse;
 
 /// GET /api/admin/logs return recent server console logs.
 ///

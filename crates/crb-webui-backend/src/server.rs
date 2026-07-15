@@ -61,7 +61,7 @@ pub struct ActiveRun {
     pub created_at: UnixTime,
 
     /// The config used to start this run.
-    pub config: crate::api::BenchmarkConfig,
+    pub config: crate::api::runs::BenchmarkConfig,
 
     /// Broadcast channel for SSE events.
     pub tx: broadcast::Sender<RunEvent>,
@@ -108,38 +108,38 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
     let api_router = Router::new()
         .route(
             "/api/runs",
-            get(crate::api::list_runs).post(crate::api::start_run),
+            get(crate::api::runs::list_runs).post(crate::api::runs::start_run),
         )
-        .route("/api/runs/:id", get(crate::api::get_run))
-        .route("/api/runs/:id/live", get(crate::api::live_stream))
-        .route("/api/config", get(crate::api::get_config))
-        .route("/api/config/datasets", get(crate::api::list_datasets))
+        .route("/api/runs/:id", get(crate::api::runs::get_run))
+        .route("/api/runs/:id/live", get(crate::api::live::live_stream))
+        .route("/api/config", get(crate::api::config::get_config))
+        .route("/api/config/datasets", get(crate::api::config::list_datasets))
         .route(
             "/api/config/reasoning-efforts",
-            get(crate::api::list_reasoning_efforts),
+            get(crate::api::config::list_reasoning_efforts),
         )
-        .route("/api/runs/:id/logs", get(crate::api::list_logs))
+        .route("/api/runs/:id/logs", get(crate::api::runs::list_logs))
         .route(
             "/api/runs/:id/logs/:pr_key/:role",
-            get(crate::api::get_agent_log),
+            get(crate::api::runs::get_agent_log),
         )
-        .route("/api/runs/:id/prs/:pr_key", get(crate::api::get_pr_agents))
+        .route("/api/runs/:id/prs/:pr_key", get(crate::api::runs::get_pr_agents))
         .route(
             "/api/runs/:id/pr-detail/:pr_key",
-            get(crate::api::get_pr_detail),
+            get(crate::api::runs::get_pr_detail),
         )
-        .route("/api/datasets/:id/prs", get(crate::api::list_dataset_prs))
+        .route("/api/datasets/:id/prs", get(crate::api::config::list_dataset_prs))
         // Ad-hoc review endpoints
-        .route("/api/adhoc/review", post(crate::api::start_adhoc_review))
-        .route("/api/adhoc/runs", get(crate::api::list_adhoc_runs))
-        .route("/api/adhoc/runs/:id", get(crate::api::get_adhoc_run))
+        .route("/api/adhoc/review", post(crate::api::adhoc::start_adhoc_review))
+        .route("/api/adhoc/runs", get(crate::api::adhoc::list_adhoc_runs))
+        .route("/api/adhoc/runs/:id", get(crate::api::adhoc::get_adhoc_run))
         .route(
             "/api/adhoc/prs/:owner/:repo",
-            get(crate::api::list_repo_prs),
+            get(crate::api::adhoc::list_repo_prs),
         )
         // Admin endpoints
-        .route("/api/admin/logs", get(crate::api::get_logs))
-        .route("/api/admin/logs/stream", get(crate::api::get_logs_stream));
+        .route("/api/admin/logs", get(crate::api::admin::get_logs))
+        .route("/api/admin/logs/stream", get(crate::api::admin::get_logs_stream));
 
     // Build router: merge all routes first, then apply state and layers
     let mut app = Router::new().merge(api_router);

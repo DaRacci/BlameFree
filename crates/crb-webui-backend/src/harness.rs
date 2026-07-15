@@ -17,18 +17,20 @@ use crb_reporting::golden::load_golden_datasets;
 use crb_reporting::write_report;
 use crb_rules::RuleSet;
 use crb_shared::diff::Diff;
-use crb_shared::url::parse_github_url;
-use crb_tools::linters::config::load_linter_config;
-use crb_types::RunEvent;
-use crb_types::benchmark::Metrics;
-use crb_types::wrappers::Model;
+use rig_core::client::CompletionClient;
+use rig_core::client::ProviderClient;
 use rig_core::providers::openai;
 use rig_core::tool::server::ToolServer;
+use crb_types::RunEvent;
+use crb_types::benchmark::Metrics;
+use crb_types::benchmark::MetricsProvider;
+use crb_types::wrappers::Model;
 use tokio::sync::{RwLock, broadcast};
 use tracing::{error, info, warn};
-
 use crate::api::runs::BenchmarkConfig;
 use crate::server::ActiveRun;
+use crb_shared::url::parse_github_url;
+use crb_tools::linters::config::load_linter_config;
 
 /// Run the harness inline, calling library functions directly.
 ///
@@ -116,7 +118,7 @@ pub async fn run_harness(
         let diff_str = parse_github_url(&pr.url)
             .ok()
             .and_then(|(owner, repo, num)| {
-                crb_benchmark::diff_cache::load_cached_diff(&bench_dir, &owner, &repo, num).ok()
+                crb_benchmark::diff_cache::load_cached_diff(&bench_dir, &owner, &repo, num)
             })
             .unwrap_or_default();
 

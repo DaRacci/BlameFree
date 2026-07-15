@@ -15,9 +15,10 @@ use axum::response::IntoResponse;
 use crb_agents::prompts;
 use crb_shared::sanitize_filename;
 use crb_shared::url::parse_github_url;
-use crb_shared::{DEFAULT_MODEL, cache};
-use crb_shared::{AdhocReviewResponse, AdhocRunSummary, GithubPrListItem};
-use crb_types::Metrics;
+use crb_shared::DEFAULT_MODEL;
+use crb_webui_shared::adhoc::{AdhocReviewResponse, AdhocRunSummary, GithubPrListItem};
+use crb_types::benchmark::Metrics;
+use crb_types::benchmark::MetricsProvider;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{info, warn};
@@ -27,6 +28,7 @@ use crate::api::runs::{
     VerdictJson,
 };
 use crate::server::AppState;
+use rig_core::client::CompletionClient;
 use rig_core::client::ProviderClient;
 /// POST /api/adhoc/review
 #[derive(Debug, Clone, Serialize, Deserialize)]
