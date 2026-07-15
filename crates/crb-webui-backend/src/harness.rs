@@ -56,7 +56,7 @@ pub async fn run_harness(
         run_id = %run_id,
         output_dir = %output_subdir.display(),
         dataset = %dataset_dir.display(),
-        roles = %config.roles.as_deref().unwrap_or(""),
+        roles = %config.roles.join(","),
         concurrency = config.concurrency,
         "Starting harness run via library"
     );
@@ -184,7 +184,6 @@ pub async fn run_harness(
         })
         .to_path_buf();
     let model_owned = Arc::new(config.model.clone());
-    let roles_owned = config.roles.clone();
     let reasoning_effort_owned = Arc::new(config.reasoning_effort.clone().unwrap_or_default());
 
     for pr in filtered_prs {
@@ -197,7 +196,6 @@ pub async fn run_harness(
         let skip_consensus = config.skip_consensus;
         let ruleset = ruleset.clone();
         let prompt_lib = prompt_lib.clone();
-        let roles = roles_owned.clone();
         let max_findings = config.max_findings;
         let cache_dir_opt = cache_dir_opt.clone();
         let dashboard_tx = dashboard_tx.clone();
@@ -227,7 +225,6 @@ pub async fn run_harness(
                 cache: None,
                 cost_tracker: cost_tracker.clone(),
                 dashboard_tx: dashboard_tx.clone(),
-                roles: roles.clone(),
                 max_findings,
                 linters_only: false,
                 linter_configs: linter_configs.as_ref().map(|a| (*a).clone()),

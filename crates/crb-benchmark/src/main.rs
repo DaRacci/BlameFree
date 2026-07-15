@@ -157,8 +157,8 @@ enum Commands {
         ci: bool,
 
         /// Comma-separated agent roles.
-        #[arg(long, env = "ROLES", default_value = "SA,CL,AR,SEC")]
-        roles: String,
+        #[arg(long, env = "ROLES")]
+        roles: Option<String>,
 
         /// Max findings per agent.
         #[arg(long, env = "MAX_FINDINGS", default_value_t = 20)]
@@ -365,6 +365,10 @@ fn main() -> Result<()> {
 
             // Pre-warm model capabilities cache (uses blocking HTTP, must be called outside the async runtime)
             model_capabilities::warm_model_cache_blocking();
+
+            let roles = roles.unwrap_or_else(||
+                crb_agents::prompts::PromptLibrary::get_instance().abbreviations().join(",")
+            );
 
             rt.block_on(run_benchmark(
                 benchmark_dir,
@@ -844,7 +848,6 @@ async fn run_benchmark(
         let linter_configs = linter_configs.clone();
         let ruleset = ruleset.clone();
         let prompt_lib = prompt_lib.clone();
-        let roles = roles.clone();
         let cache_dir = eval_cache_dir.clone();
         let dashboard_tx = eval_dashboard_tx.clone();
         let reasoning_effort = reasoning_effort.clone();
@@ -870,7 +873,6 @@ async fn run_benchmark(
                 tool_handle: todo!(),
                 agents: todo!(),
                 repo_root: todo!(),
-                roles: roles.clone(),
                 max_findings: 20,
                 judge_model: judge_model.clone(),
                 judge: todo!(),

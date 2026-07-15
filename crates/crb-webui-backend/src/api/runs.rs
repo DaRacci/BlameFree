@@ -149,7 +149,7 @@ pub struct BenchmarkConfig {
     pub cache_dir: Option<String>,
 
     #[serde(default)]
-    pub roles: Option<String>,
+    pub roles: Vec<String>,
 
     #[serde(default)]
     pub skip_consensus: bool,
@@ -449,12 +449,7 @@ fn get_file_modified(path: &Path) -> String {
 
 /// Build a RunDetail for a run still in memory (not yet written to disk).
 fn format_running_response(id: &str, active_run: &ActiveRun) -> impl IntoResponse {
-    let roles: Vec<String> = active_run
-        .config
-        .roles
-        .as_deref()
-        .map(|s| vec![s.to_string()])
-        .unwrap_or_default();
+    let roles = active_run.config.roles.clone();
     let detail = RunDetail {
         id: id.to_string(),
         name: id.to_string(),
@@ -656,12 +651,7 @@ pub async fn get_run(
     let config = active_run_config.as_ref().map(|ar| RunConfig {
         model: ar.config.model.clone(),
         dataset: ar.config.dataset_dir.clone(),
-        roles: ar
-            .config
-            .roles
-            .as_deref()
-            .map(|s| vec![s.to_string()])
-            .unwrap_or_default(),
+        roles: ar.config.roles.clone(),
     });
 
     let aggregate = compute_aggregate_metrics(&results, total_cost, duration_secs);
@@ -689,10 +679,10 @@ pub async fn start_run(
     Json(config): Json<BenchmarkConfig>,
 ) -> impl IntoResponse {
     tracing::info!(
-        "POST /api/runs — model={}, dataset={}, roles={}",
+        "POST /api/runs — model={}, dataset={}, roles={:?}",
         config.model,
         config.dataset_dir,
-        config.roles.as_deref().unwrap_or("")
+        config.roles,
     );
     let run_id = format!(
         "run-{}",

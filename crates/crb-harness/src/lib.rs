@@ -40,11 +40,14 @@ use tracing::{info, info_span, warn};
 use crate::eval::{EvalConfig, EvalStrategy};
 use crate::model_capabilities::ReasoningEffort;
 
+#[cfg(feature = "binary")]
+pub mod config;
 pub mod eval;
 pub mod finding;
 pub mod model_capabilities;
 pub mod paths;
 pub mod pipeline;
+pub mod review;
 pub mod runner;
 pub mod test_utils;
 
@@ -335,7 +338,6 @@ fn spawn_agent_task(
 /// Run the original single-agent evaluation with finding collection.
 /// (private) used by evaluate_pr
 #[doc(hidden)]
-#[deprecated = "Use EvalConfig-based evaluate_pr() instead."]
 #[allow(trivial_casts)]
 async fn evaluate_pr_single_agent(
     pr: &GoldenCommentEntry,
@@ -404,7 +406,6 @@ async fn evaluate_pr_single_agent(
 /// - dashboard events
 /// - metadata
 /// - caching
-#[deprecated = "Use crate::finding::evaluate_pr() instead."]
 pub async fn evaluate_pr(
     pr: &GoldenCommentEntry,
     diff: &Diff,

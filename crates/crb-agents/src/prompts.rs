@@ -199,6 +199,5 @@ mod tests {
     fn test_prompt_library_loads() {
         let lib = PromptLibrary::get_instance();
         assert!(!lib.agents().is_empty());
-        assert!(lib.get("SA").is_some() || lib.get("GEN").is_some());
     }
 }

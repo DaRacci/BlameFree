@@ -44,7 +44,8 @@ pub struct DatasetDefaults {
     #[serde(default)]
     pub max_findings: Option<usize>,
 
-    /// Default reviewer roles.
+    /// Default reviewer roles (comma-separated for legacy frontend compat).
+    /// TODO: Change to `Option<Vec<String>>` when frontend is updated.
     #[serde(default)]
     pub roles: Option<String>,
 }

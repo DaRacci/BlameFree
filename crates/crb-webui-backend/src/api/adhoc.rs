@@ -98,7 +98,6 @@ pub async fn start_adhoc_review(
     let run_id = format!("adhoc-{timestamp}");
 
     let state_clone = state.clone();
-    let roles_str = req.roles.join(",");
     let model = req.model.clone();
     let run_id_bg = run_id.clone();
     let pr_title_bg = pr_title.clone();
@@ -110,7 +109,7 @@ pub async fn start_adhoc_review(
             &pr_title_bg,
             &diff,
             &model,
-            &roles_str,
+            &req.roles,
         )
         .await
         {
@@ -207,7 +206,7 @@ pub async fn get_adhoc_run(
         .as_ref()
         .and_then(|s| s.get("roles"))
         .and_then(|v| v.as_str())
-        .map(|s| vec![s.to_string()])
+        .map(|s| s.split(',').map(|r| r.trim().to_string()).collect())
         .unwrap_or_default();
     let status = summary_str("status", "unknown");
     let duration_secs = match summary_data
@@ -378,7 +377,7 @@ async fn run_adhoc_review_inner(
     pr_title: &str,
     diff: &str,
     model: &str,
-    roles: &str,
+    roles: &[String],
 ) -> anyhow::Result<()> {
     let output_subdir = state.output_dir.join("adhoc").join(run_id);
     let cache_dir = output_subdir.join(cache::paths::CACHE_DIR_NAME);
@@ -387,7 +386,7 @@ async fn run_adhoc_review_inner(
         run_id = %run_id,
         pr_title = %pr_title,
         model = %model,
-        roles = %roles,
+        roles = ?roles,
         "Starting ad-hoc review"
     );
 
@@ -442,7 +441,7 @@ async fn run_adhoc_review_inner(
     }
 
     info!(
-        "Running ad-hoc review with roles={}, model={}",
+        "Running ad-hoc review with roles={:?}, model={}",
         roles, model
     );
 
@@ -457,7 +456,6 @@ async fn run_adhoc_review_inner(
         cache: None,
         cost_tracker: cost_tracker_arc,
         dashboard_tx: None,
-        roles: roles.to_string(),
         max_findings: 20,
         linters_only: false,
         linter_configs: None,
@@ -516,7 +514,7 @@ async fn run_adhoc_review_inner(
     let summary = json!({
         "model": model,
         "judge_model": model,
-        "roles": roles,
+        "roles": roles.join(","),
         "status": "completed",
         "pr_url": pr_url,
         "pr_title": pr_title,

@@ -66,9 +66,6 @@ pub struct EvalConfig {
     /// The repository root path for the evaluation.
     pub repo_root: PathBuf,
 
-    /// Comma-separated role abbreviations for the evaluation.
-    pub roles: String,
-
     /// Maximum number of findings per agent.
     pub max_findings: usize,
 
@@ -98,7 +95,6 @@ impl std::fmt::Debug for EvalConfig {
             .field("model", &self.model.get())
             .field("reasoning_effort", &self.reasoning_effort)
             .field("agents", &self.agents)
-            .field("roles", &self.roles)
             .field("max_findings", &self.max_findings)
             .finish_non_exhaustive()
     }

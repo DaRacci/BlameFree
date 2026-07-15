@@ -152,6 +152,7 @@ pub fn build_template_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prompts::PromptLibrary;
 
     #[test]
     fn test_template_engine_new() {
@@ -231,19 +232,23 @@ mod tests {
 
     #[test]
     fn test_build_template_context() {
-        let ctx = build_template_context("rust", "my-repo", "SA", 20, None);
+        let roles = PromptLibrary::get_instance().abbreviations();
+        let role = roles.first().expect("at least one agent loaded");
+        let ctx = build_template_context("rust", "my-repo", role, 20, None);
         assert_eq!(ctx["language"], "rust");
         assert_eq!(ctx["repo"], "my-repo");
-        assert_eq!(ctx["role"], "SA");
+        assert_eq!(ctx["role"], *role);
         assert_eq!(ctx["max_findings"], 20);
     }
 
     #[test]
     fn test_build_template_context_with_extra() {
+        let roles = PromptLibrary::get_instance().abbreviations();
+        let role = roles.first().expect("at least one agent loaded");
         let mut extra = HashMap::new();
         extra.insert("diff".to_string(), serde_json::json!("some diff"));
         extra.insert("file_list".to_string(), serde_json::json!(["a.rs", "b.rs"]));
-        let ctx = build_template_context("python", "my-repo", "CL", 15, Some(extra));
+        let ctx = build_template_context("python", "my-repo", role, 15, Some(extra));
         assert_eq!(ctx["diff"], "some diff");
         assert_eq!(ctx["file_list"][0], "a.rs");
     }

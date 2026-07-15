@@ -1,5 +1,7 @@
 //! Tests for `ReviewParams`, `ReviewMode`, and public helpers.
 
+use crb_agents::prompts::PromptLibrary;
+
 // ---------------------------------------------------------------------------
 // ReviewParams
 // ---------------------------------------------------------------------------
@@ -26,7 +28,12 @@ fn review_params_custom_roles() {
         diff: String::new(),
         model: "m".to_string(),
         pr_title: "t".to_string(),
-        roles: vec!["SA".to_string(), "SEC".to_string()],
+        roles: PromptLibrary::get_instance()
+            .abbreviations()
+            .into_iter()
+            .take(2)
+            .map(|s| s.to_string())
+            .collect(),
         max_findings: 10,
         cache_dir: None,
     };

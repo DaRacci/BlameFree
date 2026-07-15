@@ -33,6 +33,9 @@ static RE_JSON_ARRAY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[[\s\S]*\
 ///
 /// This is a dynamic newtype around a string abbreviation.
 /// Valid values are loaded at runtime from the agent manifest (`prompts/agents/*.md`).
+///
+/// Prefer [`Role::from_abbreviation`] for construction — it validates against
+/// the loaded [`PromptLibrary`](crb_agents::prompts::PromptLibrary).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct Role(pub String);
 
@@ -40,6 +43,17 @@ impl Role {
     /// Convert to the string identifier used by `crb_agents::build_agent`.
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Construct a `Role` from an abbreviation, validating that it exists
+    /// in the loaded [`PromptLibrary`](crb_agents::prompts::PromptLibrary).
+    ///
+    /// Returns `None` if the abbreviation is not a known agent role.
+    pub fn from_abbreviation(abbreviation: &str) -> Option<Self> {
+        let upper = abbreviation.to_uppercase();
+        crb_agents::prompts::PromptLibrary::get_instance()
+            .config(&upper)
+            .map(|_| Role(upper))
     }
 }
 
