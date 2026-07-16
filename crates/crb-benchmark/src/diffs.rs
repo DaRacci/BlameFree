@@ -263,7 +263,7 @@ mod tests {
 
     #[test]
     fn git_diff_between_commits() {
-        let (_, repo_path) = setup_repo_with_diffs();
+        let (_dir, repo_path) = setup_repo_with_diffs();
 
         let output = Command::new("git")
             .args(["diff", "HEAD~1..HEAD"])
@@ -287,7 +287,7 @@ mod tests {
 
     #[test]
     fn git_diff_working_tree() {
-        let (_, repo_path) = setup_repo_with_diffs();
+        let (_dir, repo_path) = setup_repo_with_diffs();
 
         fs::write(
             repo_path.join("main.rs"),
@@ -312,7 +312,7 @@ mod tests {
 
     #[test]
     fn git_diff_staged_changes() {
-        let (_, repo_path) = setup_repo_with_diffs();
+        let (_dir, repo_path) = setup_repo_with_diffs();
 
         fs::write(repo_path.join("main.rs"), "fn main() {\n    // staged\n}\n").expect("write");
         Command::new("git")
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn git_diff_format_has_hunks() {
-        let (_, repo_path) = setup_repo_with_diffs();
+        let (_dir, repo_path) = setup_repo_with_diffs();
 
         let output = Command::new("git")
             .args(["diff", "HEAD~1..HEAD"])
@@ -353,7 +353,7 @@ mod tests {
 
     #[test]
     fn fetch_single_diff_via_worktree() {
-        let (_, repo_path) = setup_repo_with_diffs();
+        let (_dir, repo_path) = setup_repo_with_diffs();
 
         let worktree_dir = tempfile::TempDir::new().expect("worktree temp");
         let wt_path = worktree_dir.path().join("wt");
@@ -388,7 +388,7 @@ mod tests {
 
     #[test]
     fn git_diff_on_empty_initial_commit() {
-        let (_, repo_path) = setup_empty_commit_repo();
+        let (_dir, repo_path) = setup_empty_commit_repo();
 
         let output = Command::new("git")
             .arg("diff")

@@ -156,7 +156,7 @@ mod tests {
 
         let result = tool
             .call(ReadFileArgs {
-                path: "test.txt".into(),
+                path: dir.path().join("test.txt").to_string_lossy().into(),
                 start_line: None,
                 max_lines: None,
             })

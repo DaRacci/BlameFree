@@ -442,7 +442,7 @@ mod tests {
         assert!(err.to_string().contains("MCP tool error"));
 
         let err = McpError::ConfigError("bad config".into());
-        assert!(err.to_string().contains("MCP config error"));
+        assert!(err.to_string().contains("MCP configuration error"));
     }
 
     #[test]

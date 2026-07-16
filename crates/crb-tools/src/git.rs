@@ -153,7 +153,7 @@ mod tests {
     #[test]
     fn test_git_error_display() {
         let err = GitError::TimeoutElapsed;
-        assert_eq!(err.to_string(), "git operation timed out");
+        assert_eq!(err.to_string(), "git operation did not complete within the configured timeout");
 
         let err = GitError::NonZeroExit(128, "not a repo".into());
         assert_eq!(err.to_string(), "git exited with code 128: not a repo");

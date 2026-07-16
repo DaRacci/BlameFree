@@ -232,6 +232,7 @@ mod tests {
 
     #[test]
     fn test_build_template_context() {
+        PromptLibrary::new().unwrap();
         let roles = PromptLibrary::get_instance().abbreviations();
         let role = roles.first().expect("at least one agent loaded");
         let ctx = build_template_context("rust", "my-repo", role, 20, None);
@@ -243,6 +244,7 @@ mod tests {
 
     #[test]
     fn test_build_template_context_with_extra() {
+        PromptLibrary::new().unwrap();
         let roles = PromptLibrary::get_instance().abbreviations();
         let role = roles.first().expect("at least one agent loaded");
         let mut extra = HashMap::new();

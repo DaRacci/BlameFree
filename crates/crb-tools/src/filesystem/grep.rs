@@ -117,10 +117,10 @@ mod tests {
     #[test]
     fn test_grep_error_display() {
         let err = GrepError::TimeoutElapsed;
-        assert_eq!(err.to_string(), "grep command timed out");
+        assert_eq!(err.to_string(), "grep operation did not complete within the configured timeout");
 
         let err = GrepError::CommandFailed("permission denied".into());
-        assert_eq!(err.to_string(), "grep command failed: permission denied");
+        assert_eq!(err.to_string(), "subprocess could not be spawned or communicated with: permission denied");
 
         let err = GrepError::NonZeroExit(2, "error".into());
         assert_eq!(err.to_string(), "grep exited with code 2: error");

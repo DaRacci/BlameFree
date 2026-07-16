@@ -28,6 +28,7 @@ pub struct LinterConfig {
 
 /// The output format for a linter tool.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum OutputFormat {
     /// JSON output (used by ruff, ESLint with --format json).
     Json,
@@ -147,10 +148,10 @@ optional = false
         let result = load_temp_config("test_bad_format_linters.toml", toml_content);
         assert!(result.is_err());
         match result.unwrap_err() {
-            ConfigError::ValidationError(msg) => {
-                assert!(msg.contains("invalid output_format"));
+            ConfigError::ParseError(msg) => {
+                assert!(msg.contains("unknown variant") || msg.contains("yaml"));
             }
-            other => panic!("expected ValidationError, got {other:?}"),
+            other => panic!("expected ParseError, got {other:?}"),
         }
     }
 

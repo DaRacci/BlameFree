@@ -2,11 +2,12 @@ use anyhow::Result;
 use handlebars::Handlebars;
 use include_dir::{Dir, include_dir};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use tracing::warn;
 
 use crate::{agent::AgentEntry, templates};
 
-static PROMPT_LIBRARY: Option<PromptLibrary> = None;
+static PROMPT_LIBRARY: OnceLock<PromptLibrary> = OnceLock::new();
 static PROMPTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../prompts");
 
 const AGENT_TEMPLATE_PATH: &str = "agent.hbs";
@@ -35,7 +36,7 @@ pub struct PromptLibrary {
 impl PromptLibrary {
     /// Gets a reference to the static `PromptLibrary`.
     pub fn get_instance() -> &'static Self {
-        PROMPT_LIBRARY.as_ref().unwrap()
+        PROMPT_LIBRARY.get().unwrap()
     }
 
     /// Initialise from embedded data.
@@ -43,7 +44,7 @@ impl PromptLibrary {
     /// This function will initialise the static `PROMPT_LIBRARY` if it hasn't been initialised yet, and return a reference to it.
     /// Returns error if agent.hbs is missing or no agents are found.
     pub fn new() -> Result<&'static Self, String> {
-        if PROMPT_LIBRARY.is_some() {
+        if PROMPT_LIBRARY.get().is_some() {
             return Ok(Self::get_instance());
         }
 
@@ -92,11 +93,14 @@ impl PromptLibrary {
         hb.register_template_string("agent", &agent_template)
             .map_err(|e| format!("Failed to register agent template: {e}"))?;
 
-        PROMPT_LIBRARY.as_ref().replace(&PromptLibrary {
+        let library = PromptLibrary {
             agents,
             sections,
             handlebars: hb,
-        });
+        };
+
+        // If set() fails, another test already initialised the singleton — that's fine.
+        let _ = PROMPT_LIBRARY.set(library);
 
         Ok(Self::get_instance())
     }
@@ -197,6 +201,7 @@ mod tests {
 
     #[test]
     fn test_prompt_library_loads() {
+        PromptLibrary::new().unwrap();
         let lib = PromptLibrary::get_instance();
         assert!(!lib.agents().is_empty());
     }

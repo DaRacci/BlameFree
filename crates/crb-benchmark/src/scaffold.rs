@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn worktree_add_and_remove() {
-        let (_, repo_path) = setup_temp_repo();
+        let (_dir, repo_path) = setup_temp_repo();
         let worktree_dir = tempfile::TempDir::new().expect("worktree temp dir");
         let wt_path = worktree_dir.path().join("wt");
 

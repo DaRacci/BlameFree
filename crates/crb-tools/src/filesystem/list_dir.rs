@@ -85,7 +85,7 @@ mod tests {
     #[test]
     fn test_list_dir_error_display() {
         let err = ListDirError::IoError("not found".into());
-        assert_eq!(err.to_string(), "list directory error: not found");
+        assert_eq!(err.to_string(), "directory could not be read: not found");
     }
 
     #[tokio::test]
