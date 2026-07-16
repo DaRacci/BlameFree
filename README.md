@@ -1,5 +1,9 @@
 # review-harness
 
+> **⚠️ HEAVY ALPHA — NOT STABLE**
+>
+> This project is in very early, active development. Everything is broken, subject to change, and should not be relied upon. APIs, data formats, CLI flags, and core architecture are fluid. Use at your own risk.
+
 Rust-powered code review harness. Evaluates AI code review agents against git diffs using multi-agent LLM reviewers.
 
 ## Quick start
