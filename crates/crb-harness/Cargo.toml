@@ -41,5 +41,8 @@ clap = { workspace = true, optional = true }
 dotenvy = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
 
+[dev-dependencies]
+insta = { workspace = true }
+
 [lints]
 workspace = true

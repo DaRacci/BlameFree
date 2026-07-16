@@ -37,3 +37,29 @@ pub struct ReviewArgs {
     #[arg(long, env = "CACHE_DIR", default_value = "cache")]
     pub cache_dir: PathBuf,
 }
+
+#[cfg(test)]
+#[cfg(feature = "binary")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_review_args_defaults() {
+        let args = ReviewArgs {
+            commits: None,
+            working: false,
+            path: PathBuf::from("."),
+            model: "deepseek/deepseek-v4-pro".to_string(),
+            roles: None,
+            max_findings: 20,
+            cache_dir: PathBuf::from("cache"),
+        };
+        assert_eq!(args.path, PathBuf::from("."));
+        assert_eq!(args.model, "deepseek/deepseek-v4-pro");
+        assert_eq!(args.max_findings, 20);
+        assert_eq!(args.cache_dir, PathBuf::from("cache"));
+        assert!(args.commits.is_none());
+        assert!(!args.working);
+        assert!(args.roles.is_none());
+    }
+}

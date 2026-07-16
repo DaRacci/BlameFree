@@ -99,3 +99,46 @@ impl std::fmt::Debug for EvalConfig {
             .finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- EvalStrategy tests ---
+
+    #[test]
+    fn test_eval_strategy_partial_eq() {
+        assert_eq!(EvalStrategy::Single, EvalStrategy::Single);
+        assert_eq!(EvalStrategy::Panel, EvalStrategy::Panel);
+        assert_ne!(EvalStrategy::Single, EvalStrategy::Panel);
+    }
+
+    #[test]
+    fn test_eval_strategy_debug() {
+        assert_eq!(format!("{:?}", EvalStrategy::Single), "Single");
+        assert_eq!(format!("{:?}", EvalStrategy::Panel), "Panel");
+    }
+
+    #[test]
+    fn test_eval_strategy_clone() {
+        let original = EvalStrategy::Panel;
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+
+    // --- EvalIdentifier tests ---
+
+    #[test]
+    fn test_eval_identifier_impl() {
+        struct TestId(String);
+
+        impl EvalIdentifier for TestId {
+            fn id(&self) -> &str {
+                &self.0
+            }
+        }
+
+        let id = TestId("test-runner".to_string());
+        assert_eq!(id.id(), "test-runner");
+    }
+}

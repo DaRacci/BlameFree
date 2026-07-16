@@ -222,3 +222,105 @@ async fn report(config: &EvalConfig) {
         snapshot.hit_rate() * 100.0,
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{path::PathBuf, sync::Arc};
+
+    use crb_agents::agent::AgentEntry;
+    use crb_reporting::cost::AnalyticsTracker;
+    use crb_shared::finding::Finding;
+    use crb_types::wrappers::Model;
+    use rig_core::client::CompletionClient;
+    use rig_core::tool::server::ToolServer;
+
+    use crate::eval::{EvalConfig, EvalStrategy};
+
+    use super::*;
+
+    fn build_minimal_config() -> EvalConfig {
+        let tool_server = ToolServer::new().run();
+
+        let client = Arc::new(
+            rig_core::providers::openai::Client::builder()
+                .api_key("test-key")
+                .build()
+                .unwrap(),
+        );
+
+        EvalConfig {
+            strategy: EvalStrategy::Panel,
+            identifier: "test-run".to_string(),
+            model: Model("test-model".to_string()),
+            reasoning_effort: None,
+            client: client.clone(),
+            cache: None,
+            cost_tracker: Arc::new(AnalyticsTracker::new()),
+            tool_handle: tool_server,
+            dashboard_tx: None,
+            agents: &[],
+            repo_root: PathBuf::from("/tmp/test"),
+            max_findings: 20,
+            judge_model: "judge-model".to_string(),
+            judge: client.as_ref().agent("judge-model").preamble("You are a test judge.").build(),
+            linters_only: false,
+            linter_configs: None,
+            ruleset: None,
+            template_vars: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_build_pr_result_empty_findings() {
+        let config = build_minimal_config();
+        let result = build_pr_result(&[], &config, "Test PR", "https://example.com/pr/1", 0).await;
+
+        assert_eq!(result.pr_title, "Test PR");
+        assert_eq!(result.url, "https://example.com/pr/1");
+        assert_eq!(result.findings_count, 0);
+        assert_eq!(result.golden_count, 0);
+        assert!(result.verdicts.is_empty());
+        assert!(result.cost.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_build_pr_result_with_findings() {
+        let config = build_minimal_config();
+        let findings = vec![
+            Finding {
+                file: Some("src/main.rs".to_string()),
+                line: Some(10),
+                message: "Test finding".to_string(),
+                severity: crb_shared::severity::Severity::Medium,
+                evidence: None,
+                rule_code: None,
+                severity_audited: false,
+                severity_audit_reason: None,
+                path_trace: None,
+                confidence: None,
+                found_by: None,
+                agent_count: None,
+                cross_validated: false,
+                cross_validated_by: None,
+                merged_from: None,
+            },
+        ];
+
+        let result = build_pr_result(&findings, &config, "Test PR", "https://example.com/pr/2", 3).await;
+
+        assert_eq!(result.findings_count, 1);
+        assert_eq!(result.golden_count, 3);
+        assert_eq!(result.pr_title, "Test PR");
+    }
+
+    #[tokio::test]
+    async fn test_build_pr_result_with_cost() {
+        let config = build_minimal_config();
+        let result = build_pr_result(&[], &config, "Cost Test", "https://example.com/pr/3", 0).await;
+
+        let cost = result.cost.unwrap();
+        // Fresh cost tracker should have zero sessions and zero cost
+        assert_eq!(cost.sessions.len(), 0);
+        assert_eq!(cost.total_cost(), 0.0);
+    }
+}

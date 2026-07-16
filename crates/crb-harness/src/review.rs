@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
 use crb_shared::{diff::Diff, finding::Finding};
 use crb_types::wrappers::WrappedData;
@@ -100,4 +102,15 @@ pub fn build_review_config(args: &crate::config::ReviewArgs) -> Result<EvalConfi
         ruleset: None,
         template_vars: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_review_identifier_impl() {
+        let id = ReviewIdentifier("test-review".to_string());
+        assert_eq!(id.id(), "test-review");
+    }
 }
