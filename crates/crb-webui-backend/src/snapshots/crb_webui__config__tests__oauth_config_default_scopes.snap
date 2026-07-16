@@ -1,0 +1,8 @@
+---
+source: crates/crb-webui-backend/src/config.rs
+expression: deserialized.scopes
+---
+[
+    "read:user",
+    "user:email",
+]

@@ -1,0 +1,9 @@
+---
+source: crates/crb-webui-shared/src/admin.rs
+expression: "&orig"
+---
+{
+  "logs": "INFO: starting review\nINFO: completed",
+  "available": true,
+  "message": "Logs available"
+}

@@ -1,0 +1,9 @@
+---
+source: crates/crb-webui-frontend/src/lib.rs
+expression: "(input, a, b)"
+---
+(
+    "pm",
+    "hsl(341, 65%, 55%)",
+    "hsl(341, 65%, 55%)",
+)

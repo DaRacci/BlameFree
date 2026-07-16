@@ -1,0 +1,8 @@
+---
+source: crates/crb-webui-shared/src/lib.rs
+expression: "(color1, color2)"
+---
+(
+    "#D37234",
+    "#D37234",
+)

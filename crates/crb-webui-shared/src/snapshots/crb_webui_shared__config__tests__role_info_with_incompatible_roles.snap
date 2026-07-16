@@ -1,0 +1,12 @@
+---
+source: crates/crb-webui-shared/src/config.rs
+expression: "&role"
+---
+{
+  "name": "Full Stack",
+  "abbreviation": "FS",
+  "incompatible_with_roles": [
+    "FE",
+    "BE"
+  ]
+}

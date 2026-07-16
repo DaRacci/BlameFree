@@ -1,0 +1,12 @@
+---
+source: crates/crb-webui-shared/src/config.rs
+expression: config
+---
+DatasetConfig {
+    defaults: DatasetDefaults {
+        model: None,
+        concurrency: None,
+        max_findings: None,
+        roles: None,
+    },
+}

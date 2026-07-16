@@ -261,3 +261,190 @@ fn read_prs_from_json(path: &Path, content: &str, prs: &mut Vec<PrEntry>) {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_count_prs_in_dir_empty() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let count = count_prs_in_dir(dir.path());
+        insta::assert_debug_snapshot!(count);
+    }
+
+    #[test]
+    fn test_count_prs_in_dir_single_file() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let file_path = dir.path().join("test.json");
+        let json = r#"[
+            {"url": "https://github.com/owner/repo/pull/1", "pr_title": "Fix bug"},
+            {"url": "https://github.com/owner/repo/pull/2", "pr_title": "Add feature"}
+        ]"#;
+        std::fs::write(&file_path, json).expect("write test file");
+        insta::assert_debug_snapshot!(count_prs_in_dir(dir.path()));
+    }
+
+    #[test]
+    fn test_count_prs_in_dir_object_format() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let file_path = dir.path().join("test.json");
+        let json = r#"{
+            "entries": [
+                {"url": "https://github.com/owner/repo/pull/1", "pr_title": "Fix"},
+                {"url": "https://github.com/owner/repo/pull/2", "pr_title": "Feature"},
+                {"url": "https://github.com/owner/repo/pull/3", "pr_title": "Docs"}
+            ]
+        }"#;
+        std::fs::write(&file_path, json).expect("write test file");
+        insta::assert_debug_snapshot!(count_prs_in_dir(dir.path()));
+    }
+
+    #[test]
+    fn test_count_prs_in_dir_multiple_files() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let f1 = dir.path().join("a.json");
+        std::fs::write(&f1, r#"[{"url":"https://github.com/a/b/pull/1","pr_title":"x"}]"#)
+            .expect("write");
+        let f2 = dir.path().join("b.json");
+        std::fs::write(&f2, r#"[{"url":"https://github.com/c/d/pull/2","pr_title":"y"}]"#)
+            .expect("write");
+        insta::assert_debug_snapshot!(count_prs_in_dir(dir.path()));
+    }
+
+    #[test]
+    fn test_count_prs_in_dir_non_json_ignored() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(dir.path().join("readme.txt"), "hello").expect("write");
+        std::fs::write(dir.path().join("config.toml"), "[section]").expect("write");
+        insta::assert_debug_snapshot!(count_prs_in_dir(dir.path()));
+    }
+
+    #[test]
+    fn test_count_prs_in_dir_nonexistent() {
+        insta::assert_debug_snapshot!(count_prs_in_dir(Path::new("/nonexistent/path")));
+    }
+
+    #[test]
+    fn test_load_dataset_config_valid() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let toml_content = r#"
+            name = "test-dataset"
+            description = "A test dataset"
+        "#;
+        std::fs::write(dir.path().join("dataset.toml"), toml_content).expect("write");
+
+        let config = load_dataset_config(dir.path());
+        insta::assert_debug_snapshot!(config.is_some());
+    }
+
+    #[test]
+    fn test_load_dataset_config_missing() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let config = load_dataset_config(dir.path());
+        insta::assert_debug_snapshot!(config.is_none());
+    }
+
+    #[test]
+    fn test_load_dataset_config_invalid() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(dir.path().join("dataset.toml"), "not valid toml {{{").expect("write");
+        let config = load_dataset_config(dir.path());
+        insta::assert_debug_snapshot!(config.is_none());
+    }
+
+    #[test]
+    fn test_read_prs_from_json_array() {
+        let path = Path::new("discourse.json");
+        let json = r#"[
+            {"url": "https://github.com/discourse/discourse/pull/100", "pr_title": "Fix"},
+            {"url": "https://github.com/discourse/discourse/pull/200", "pr_title": "Enhance"}
+        ]"#;
+        let mut prs = Vec::new();
+        read_prs_from_json(path, json, &mut prs);
+        insta::assert_debug_snapshot!(prs);
+    }
+
+    #[test]
+    fn test_read_prs_from_json_object_with_entries() {
+        let path = Path::new("test.json");
+        let json = r#"{
+            "entries": [
+                {"url": "https://github.com/rust-lang/rust/pull/1", "pr_title": "PR #1"},
+                {"url": "https://github.com/rust-lang/rust/pull/2", "pr_title": "PR #2"}
+            ]
+        }"#;
+        let mut prs = Vec::new();
+        read_prs_from_json(path, json, &mut prs);
+        insta::assert_debug_snapshot!(prs);
+    }
+
+    #[test]
+    fn test_read_prs_from_json_empty() {
+        let path = Path::new("test.json");
+        let json = r#"[]"#;
+        let mut prs = Vec::new();
+        read_prs_from_json(path, json, &mut prs);
+        insta::assert_debug_snapshot!(prs);
+    }
+
+    #[test]
+    fn test_read_prs_from_json_invalid() {
+        let path = Path::new("test.json");
+        let json = "not valid json";
+        let mut prs = Vec::new();
+        read_prs_from_json(path, json, &mut prs);
+        insta::assert_debug_snapshot!(prs);
+    }
+
+    #[test]
+    fn test_read_prs_from_json_missing_fields() {
+        let path = Path::new("test.json");
+        let json = r#"[
+            {"url": "https://github.com/owner/repo/pull/5"}
+        ]"#;
+        let mut prs = Vec::new();
+        read_prs_from_json(path, json, &mut prs);
+        insta::assert_debug_snapshot!(prs);
+    }
+
+    #[test]
+    fn test_scan_datasets_nonexistent_dir() {
+        let result = scan_datasets(Path::new("/nonexistent/dataset/path"));
+        insta::assert_debug_snapshot!(result.is_empty());
+    }
+
+    #[test]
+    fn test_scan_datasets_empty_dir() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let result = scan_datasets(dir.path());
+        insta::assert_debug_snapshot!(result.is_empty());
+    }
+
+    #[test]
+    fn test_scan_datasets_with_subdirs() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let ds1 = dir.path().join("dataset-a");
+        std::fs::create_dir(&ds1).expect("create ds1");
+        // Add a PR file in the dataset
+        std::fs::write(
+            ds1.join("prs.json"),
+            r#"[{"url":"https://github.com/a/b/pull/1","pr_title":"x"}]"#,
+        )
+        .expect("write prs");
+
+        let ds2 = dir.path().join("dataset-b");
+        std::fs::create_dir(&ds2).expect("create ds2");
+        // Add a PR file
+        std::fs::write(
+            ds2.join("prs.json"),
+            r#"[{"url":"https://github.com/c/d/pull/2","pr_title":"y"}]"#,
+        )
+        .expect("write prs");
+
+        let result = scan_datasets(dir.path());
+        insta::assert_debug_snapshot!(result.len());
+        insta::assert_debug_snapshot!(result[0].pr_count);
+        insta::assert_debug_snapshot!(result[1].pr_count);
+    }
+}

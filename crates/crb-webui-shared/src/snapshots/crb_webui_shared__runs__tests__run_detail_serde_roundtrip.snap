@@ -1,0 +1,34 @@
+---
+source: crates/crb-webui-shared/src/runs.rs
+expression: "&orig"
+---
+{
+  "id": "run-002",
+  "name": "Evaluation run",
+  "pr_count": 10,
+  "results": [
+    {
+      "pr_number": 1,
+      "pr_key": "owner/repo/pull/1",
+      "title": "Fix bug",
+      "f1": 0.75,
+      "precision": 0.8,
+      "recall": 0.7,
+      "cost": 0.05,
+      "status": "completed",
+      "has_agents": true
+    }
+  ],
+  "aggregate": {
+    "true_positives": 10,
+    "false_positives": 2,
+    "false_negatives": 3,
+    "duration_secs": 120.0
+  },
+  "total_cost": 0.5,
+  "total_tokens": 5000,
+  "duration_secs": 120.0,
+  "model": "gpt-4o-mini",
+  "status": "completed",
+  "config": null
+}

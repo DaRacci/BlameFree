@@ -1,0 +1,11 @@
+---
+source: crates/crb-types/src/lib.rs
+expression: "&v"
+---
+{
+  "data": {
+    "agent": "bot",
+    "identifier": "test"
+  },
+  "event": "agentstarted"
+}

@@ -1,0 +1,12 @@
+---
+source: crates/crb-webui-shared/src/runs.rs
+expression: "&orig"
+---
+{
+  "model": "claude-3.5-sonnet",
+  "dataset": "security-bench",
+  "roles": [
+    "SEC",
+    "INFRA"
+  ]
+}

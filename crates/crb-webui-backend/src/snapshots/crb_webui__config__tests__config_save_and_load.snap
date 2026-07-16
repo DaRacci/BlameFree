@@ -1,0 +1,21 @@
+---
+source: crates/crb-webui-backend/src/config.rs
+expression: loaded
+---
+WebUiConfig {
+    server: ServerConfig {
+        host: "10.0.0.1",
+        port: 8080,
+    },
+    oauth: Some(
+        OAuthConfig {
+            provider: "gitlab",
+            client_id: "gl-id",
+            client_secret: "gl-secret",
+            redirect_url: "http://10.0.0.1:8080/callback",
+            scopes: [
+                "api",
+            ],
+        },
+    ),
+}

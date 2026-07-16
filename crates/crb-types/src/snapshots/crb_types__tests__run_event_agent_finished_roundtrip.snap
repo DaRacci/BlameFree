@@ -1,0 +1,12 @@
+---
+source: crates/crb-types/src/lib.rs
+expression: "&original"
+---
+{
+  "event": "agentfinished",
+  "data": {
+    "identifier": "pr-1",
+    "findings": 3,
+    "success": true
+  }
+}

@@ -1,0 +1,5 @@
+---
+source: crates/crb-webui-backend/src/api/config.rs
+expression: "result[0].pr_count"
+---
+1

@@ -1,0 +1,14 @@
+---
+source: crates/crb-webui-frontend/src/lib.rs
+expression: req
+---
+NewRunRequest {
+    model: "gpt-4",
+    dataset: "test-ds",
+    roles: [
+        "reviewer",
+    ],
+    pr_filter: None,
+    use_cache: true,
+    reasoning_effort: None,
+}

@@ -1,0 +1,5 @@
+---
+source: crates/crb-webui-backend/src/server.rs
+expression: "mime_type_from_extension(Some(\"wasm\"))"
+---
+"application/wasm"

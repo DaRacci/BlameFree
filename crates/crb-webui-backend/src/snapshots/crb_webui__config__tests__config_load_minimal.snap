@@ -1,0 +1,11 @@
+---
+source: crates/crb-webui-backend/src/config.rs
+expression: cfg
+---
+WebUiConfig {
+    server: ServerConfig {
+        host: "0.0.0.0",
+        port: 8080,
+    },
+    oauth: None,
+}

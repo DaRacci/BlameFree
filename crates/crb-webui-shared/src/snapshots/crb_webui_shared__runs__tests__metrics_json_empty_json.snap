@@ -1,0 +1,12 @@
+---
+source: crates/crb-webui-shared/src/runs.rs
+expression: metrics
+---
+MetricsJson {
+    true_positives: 0,
+    false_positives: 0,
+    false_negatives: 0,
+    precision: 0.0,
+    recall: 0.0,
+    f1: 0.0,
+}

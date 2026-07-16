@@ -1,0 +1,20 @@
+---
+source: crates/crb-types/src/lib.rs
+expression: "&original"
+---
+{
+  "event": "reviewcompleted",
+  "data": {
+    "identifier": "batch-1",
+    "metrics": {
+      "true_positives": 5,
+      "false_positives": 2,
+      "false_negatives": 1,
+      "duration_secs": 10.5
+    },
+    "cost": 0.5,
+    "total_tokens": 1000,
+    "agent_calls": 3,
+    "findings_count": 8
+  }
+}

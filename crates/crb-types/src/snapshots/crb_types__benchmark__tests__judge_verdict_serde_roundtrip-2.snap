@@ -1,0 +1,9 @@
+---
+source: crates/crb-types/src/benchmark.rs
+expression: v
+---
+JudgeVerdict {
+    reasoning: "No match",
+    match_: false,
+    confidence: 0.3,
+}

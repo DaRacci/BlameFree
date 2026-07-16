@@ -1,0 +1,5 @@
+---
+source: crates/crb-types/src/benchmark.rs
+expression: m2.precision()
+---
+0.0

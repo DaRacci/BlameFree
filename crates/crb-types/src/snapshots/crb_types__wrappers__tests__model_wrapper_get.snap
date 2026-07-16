@@ -1,0 +1,5 @@
+---
+source: crates/crb-types/src/wrappers.rs
+expression: model.get()
+---
+"gpt-4"

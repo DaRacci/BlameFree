@@ -1,0 +1,11 @@
+---
+source: crates/crb-webui-shared/src/config.rs
+expression: "&orig"
+---
+{
+  "key": "owner/repo/pull/42",
+  "url": "https://github.com/owner/repo/pull/42",
+  "title": "Add CI pipeline",
+  "repo": "owner/repo",
+  "pr_number": 42
+}

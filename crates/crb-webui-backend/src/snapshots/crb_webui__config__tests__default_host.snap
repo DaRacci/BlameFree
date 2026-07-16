@@ -1,0 +1,5 @@
+---
+source: crates/crb-webui-backend/src/config.rs
+expression: default_host()
+---
+"0.0.0.0"

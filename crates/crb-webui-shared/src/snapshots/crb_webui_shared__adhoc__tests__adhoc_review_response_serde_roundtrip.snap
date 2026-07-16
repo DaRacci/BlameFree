@@ -1,0 +1,9 @@
+---
+source: crates/crb-webui-shared/src/adhoc.rs
+expression: "&orig"
+---
+{
+  "run_id": "run-123",
+  "pr_title": "Fix the thing",
+  "status": "completed"
+}

@@ -1,0 +1,20 @@
+---
+source: crates/crb-webui-backend/src/api/config.rs
+expression: prs
+---
+[
+    PrEntry {
+        key: "discourse/pull/100",
+        url: "https://github.com/discourse/discourse/pull/100",
+        title: "Fix",
+        repo: "discourse",
+        pr_number: 100,
+    },
+    PrEntry {
+        key: "discourse/pull/200",
+        url: "https://github.com/discourse/discourse/pull/200",
+        title: "Enhance",
+        repo: "discourse",
+        pr_number: 200,
+    },
+]

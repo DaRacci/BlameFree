@@ -1,0 +1,11 @@
+---
+source: crates/crb-types/src/lib.rs
+expression: "&original"
+---
+{
+  "event": "reviewstarted",
+  "data": {
+    "identifier": "batch-1",
+    "total_agents": 2
+  }
+}

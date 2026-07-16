@@ -1,0 +1,12 @@
+---
+source: crates/crb-webui-shared/src/config.rs
+expression: "&orig"
+---
+{
+  "defaults": {
+    "model": "gpt-4o",
+    "concurrency": 5,
+    "max_findings": 10,
+    "roles": "FE,BE"
+  }
+}

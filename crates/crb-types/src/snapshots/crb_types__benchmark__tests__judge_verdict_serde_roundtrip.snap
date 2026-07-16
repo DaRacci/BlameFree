@@ -1,0 +1,9 @@
+---
+source: crates/crb-types/src/benchmark.rs
+expression: "&original"
+---
+{
+  "reasoning": "Found a semantic match",
+  "match": true,
+  "confidence": 0.95
+}

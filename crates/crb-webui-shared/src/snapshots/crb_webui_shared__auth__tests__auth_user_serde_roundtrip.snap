@@ -1,0 +1,11 @@
+---
+source: crates/crb-webui-shared/src/auth.rs
+expression: "&orig"
+---
+{
+  "id": "12345",
+  "login": "octocat",
+  "name": "Octo Cat",
+  "email": "octo@example.com",
+  "avatar_url": "https://avatars.example.com/u/12345"
+}

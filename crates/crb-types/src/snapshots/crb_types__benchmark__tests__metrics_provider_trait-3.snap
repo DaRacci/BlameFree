@@ -1,0 +1,8 @@
+---
+source: crates/crb-types/src/benchmark.rs
+expression: "(m.recall(), expected_recall)"
+---
+(
+    0.7692307692307693,
+    0.7692307692307693,
+)

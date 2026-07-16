@@ -274,3 +274,68 @@ fn mime_type_from_extension(ext: Option<&str>) -> &'static str {
         _ => "application/octet-stream",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mime_type_from_extension_html() {
+        insta::assert_debug_snapshot!(mime_type_from_extension(Some("html")));
+    }
+
+    #[test]
+    fn test_mime_type_from_extension_js() {
+        insta::assert_debug_snapshot!(mime_type_from_extension(Some("js")));
+    }
+
+    #[test]
+    fn test_mime_type_from_extension_wasm() {
+        insta::assert_debug_snapshot!(mime_type_from_extension(Some("wasm")));
+    }
+
+    #[test]
+    fn test_mime_type_from_extension_css() {
+        insta::assert_debug_snapshot!(mime_type_from_extension(Some("css")));
+    }
+
+    #[test]
+    fn test_mime_type_from_extension_json() {
+        insta::assert_debug_snapshot!(mime_type_from_extension(Some("json")));
+    }
+
+    #[test]
+    fn test_mime_type_from_extension_png() {
+        insta::assert_debug_snapshot!(mime_type_from_extension(Some("png")));
+    }
+
+    #[test]
+    fn test_mime_type_from_extension_svg() {
+        insta::assert_debug_snapshot!(mime_type_from_extension(Some("svg")));
+    }
+
+    #[test]
+    fn test_mime_type_from_extension_ico() {
+        insta::assert_debug_snapshot!(mime_type_from_extension(Some("ico")));
+    }
+
+    #[test]
+    fn test_mime_type_from_extension_txt() {
+        insta::assert_debug_snapshot!(mime_type_from_extension(Some("txt")));
+    }
+
+    #[test]
+    fn test_mime_type_from_extension_fallback() {
+        insta::assert_debug_snapshot!(mime_type_from_extension(Some("unknown")));
+    }
+
+    #[test]
+    fn test_mime_type_from_extension_fallback_none() {
+        insta::assert_debug_snapshot!(mime_type_from_extension(None));
+    }
+
+    #[test]
+    fn test_mime_type_from_extension_empty_string() {
+        insta::assert_debug_snapshot!(mime_type_from_extension(Some("")));
+    }
+}

@@ -1,0 +1,5 @@
+---
+source: crates/crb-webui-backend/src/auth.rs
+expression: client.is_ok()
+---
+true

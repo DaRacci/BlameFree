@@ -1,0 +1,7 @@
+error: proc-macro derive panicked
+ --> tests/fixtures/04-enum-fails.rs:8:10
+  |
+8 | #[derive(Cacheable, Serialize, Deserialize)]
+  |          ^^^^^^^^^
+  |
+  = help: message: Cacheable derive macro only supports structs

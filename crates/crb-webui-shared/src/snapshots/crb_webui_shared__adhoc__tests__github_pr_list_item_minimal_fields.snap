@@ -1,0 +1,9 @@
+---
+source: crates/crb-webui-shared/src/adhoc.rs
+expression: item
+---
+GithubPrListItem {
+    number: 1,
+    title: "Fix",
+    html_url: "https://github.com/a/b/pull/1",
+}

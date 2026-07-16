@@ -1,0 +1,15 @@
+---
+source: crates/crb-webui-shared/src/runs.rs
+expression: result
+---
+PrResult {
+    pr_number: 1,
+    pr_key: "a/b/pull/1",
+    title: "T",
+    f1: None,
+    precision: None,
+    recall: None,
+    cost: None,
+    status: None,
+    has_agents: false,
+}

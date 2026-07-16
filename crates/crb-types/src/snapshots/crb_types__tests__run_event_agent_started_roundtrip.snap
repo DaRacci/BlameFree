@@ -1,0 +1,11 @@
+---
+source: crates/crb-types/src/lib.rs
+expression: "&original"
+---
+{
+  "event": "agentstarted",
+  "data": {
+    "identifier": "pr-1",
+    "agent": "claude"
+  }
+}

@@ -1,0 +1,8 @@
+---
+source: crates/crb-types/src/benchmark.rs
+expression: "(m.f1(), expected_f1)"
+---
+(
+    0.7142857142857142,
+    0.7142857142857142,
+)

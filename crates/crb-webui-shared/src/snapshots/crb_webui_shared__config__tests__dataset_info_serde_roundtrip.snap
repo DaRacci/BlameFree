@@ -1,0 +1,10 @@
+---
+source: crates/crb-webui-shared/src/config.rs
+expression: "&orig"
+---
+{
+  "id": "benchmark-v2",
+  "path": "/data/datasets/benchmark-v2",
+  "pr_count": 150,
+  "config": null
+}

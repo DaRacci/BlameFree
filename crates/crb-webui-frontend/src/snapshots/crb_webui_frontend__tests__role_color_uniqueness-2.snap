@@ -1,0 +1,5 @@
+---
+source: crates/crb-webui-frontend/src/lib.rs
+expression: inputs.len()
+---
+6

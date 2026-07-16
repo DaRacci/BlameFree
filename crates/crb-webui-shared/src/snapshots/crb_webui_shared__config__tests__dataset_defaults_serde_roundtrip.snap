@@ -1,0 +1,10 @@
+---
+source: crates/crb-webui-shared/src/config.rs
+expression: "&orig"
+---
+{
+  "model": "claude-3-opus",
+  "concurrency": 3,
+  "max_findings": 20,
+  "roles": "SEC"
+}

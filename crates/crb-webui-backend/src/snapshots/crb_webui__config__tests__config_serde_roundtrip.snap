@@ -1,0 +1,21 @@
+---
+source: crates/crb-webui-backend/src/config.rs
+expression: deserialized
+---
+WebUiConfig {
+    server: ServerConfig {
+        host: "127.0.0.1",
+        port: 9090,
+    },
+    oauth: Some(
+        OAuthConfig {
+            provider: "github",
+            client_id: "my-client",
+            client_secret: "my-secret",
+            redirect_url: "http://localhost:9090/callback",
+            scopes: [
+                "repo",
+            ],
+        },
+    ),
+}

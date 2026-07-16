@@ -1,0 +1,15 @@
+---
+source: crates/crb-webui-shared/src/auth.rs
+expression: user
+---
+AuthUser {
+    id: "2",
+    login: "dev",
+    name: Some(
+        "Developer",
+    ),
+    email: None,
+    avatar_url: Some(
+        "https://example.com/avatar.png",
+    ),
+}

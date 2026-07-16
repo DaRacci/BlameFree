@@ -1,0 +1,5 @@
+---
+source: crates/crb-webui-backend/src/auth.rs
+expression: s.chars().all(|c| c.is_ascii_alphanumeric())
+---
+true

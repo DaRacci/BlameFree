@@ -1,0 +1,11 @@
+---
+source: crates/crb-types/src/lib.rs
+expression: "&original"
+---
+{
+  "event": "agentchunk",
+  "data": {
+    "identifier": "pr-1",
+    "chunk": "some streaming text"
+  }
+}

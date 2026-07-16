@@ -1,0 +1,11 @@
+---
+source: crates/crb-webui-frontend/src/lib.rs
+expression: config
+---
+AppConfig {
+    models: [],
+    datasets: [],
+    roles: [],
+    reduce_diff_enabled: false,
+    auth_enabled: false,
+}

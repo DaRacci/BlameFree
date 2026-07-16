@@ -1,0 +1,5 @@
+---
+source: crates/crb-types/src/benchmark.rs
+expression: m.f1()
+---
+0.0

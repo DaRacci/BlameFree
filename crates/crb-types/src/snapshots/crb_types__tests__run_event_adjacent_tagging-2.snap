@@ -1,0 +1,14 @@
+---
+source: crates/crb-types/src/lib.rs
+expression: "&v"
+---
+{
+  "data": {
+    "completed_prs": 0,
+    "current_pr": null,
+    "elapsed_secs": 0.0,
+    "total_cost": 0.0,
+    "total_prs": 5
+  },
+  "event": "runprogress"
+}

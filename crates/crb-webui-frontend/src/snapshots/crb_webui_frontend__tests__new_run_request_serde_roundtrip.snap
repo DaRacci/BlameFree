@@ -1,0 +1,15 @@
+---
+source: crates/crb-webui-frontend/src/lib.rs
+expression: "&req"
+---
+{
+  "model": "gpt-4",
+  "dataset": "test-ds",
+  "roles": [
+    "reviewer",
+    "coder"
+  ],
+  "pr_filter": "feature/",
+  "use_cache": false,
+  "reasoning_effort": "high"
+}

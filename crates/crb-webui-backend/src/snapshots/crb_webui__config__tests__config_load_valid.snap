@@ -1,0 +1,22 @@
+---
+source: crates/crb-webui-backend/src/config.rs
+expression: cfg
+---
+WebUiConfig {
+    server: ServerConfig {
+        host: "192.168.1.1",
+        port: 3000,
+    },
+    oauth: Some(
+        OAuthConfig {
+            provider: "google",
+            client_id: "google-client",
+            client_secret: "google-secret",
+            redirect_url: "http://localhost:3000/callback",
+            scopes: [
+                "read:user",
+                "user:email",
+            ],
+        },
+    ),
+}

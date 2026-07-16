@@ -1,0 +1,9 @@
+---
+source: crates/crb-webui-shared/src/runs.rs
+expression: verdict
+---
+VerdictJson {
+    reasoning: "ok",
+    match_: true,
+    confidence: 0.8,
+}

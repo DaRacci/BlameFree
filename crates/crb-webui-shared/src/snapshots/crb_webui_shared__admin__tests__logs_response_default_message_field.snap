@@ -1,0 +1,9 @@
+---
+source: crates/crb-webui-shared/src/admin.rs
+expression: resp
+---
+LogsResponse {
+    logs: "test logs",
+    available: true,
+    message: None,
+}

@@ -1,0 +1,9 @@
+---
+source: crates/crb-webui-shared/src/runs.rs
+expression: "&orig"
+---
+{
+  "pr_key": "owner/repo/pull/42",
+  "pr_title": "Bug fix",
+  "agents": []
+}

@@ -1,0 +1,7 @@
+---
+source: crates/crb-webui-backend/src/auth.rs
+expression: extract_session_cookie(&headers)
+---
+Some(
+    "abc123",
+)

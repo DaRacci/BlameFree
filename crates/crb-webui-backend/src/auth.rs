@@ -340,3 +340,148 @@ fn random_string(length: usize) -> String {
         .map(char::from)
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::header::COOKIE;
+
+    // ─── extract_session_cookie tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_extract_session_cookie_valid() {
+        let mut headers = HeaderMap::new();
+        headers.insert(COOKIE, "crb-session=abc123; other=val".parse().unwrap());
+        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
+    }
+
+    #[test]
+    fn test_extract_session_cookie_valid_first_position() {
+        let mut headers = HeaderMap::new();
+        headers.insert(COOKIE, "crb-session=token123".parse().unwrap());
+        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
+    }
+
+    #[test]
+    fn test_extract_session_cookie_missing() {
+        let headers = HeaderMap::new();
+        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
+    }
+
+    #[test]
+    fn test_extract_session_cookie_malformed() {
+        let mut headers = HeaderMap::new();
+        // Wrong cookie name
+        headers.insert(COOKIE, "other-session=abc123".parse().unwrap());
+        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
+    }
+
+    #[test]
+    fn test_extract_session_cookie_empty_value() {
+        let mut headers = HeaderMap::new();
+        headers.insert(COOKIE, "crb-session=".parse().unwrap());
+        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
+    }
+
+    #[test]
+    fn test_extract_session_cookie_trailing_semicolon() {
+        let mut headers = HeaderMap::new();
+        headers.insert(COOKIE, "crb-session=xyz;".parse().unwrap());
+        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
+    }
+
+    #[test]
+    fn test_extract_session_cookie_whitespace() {
+        let mut headers = HeaderMap::new();
+        headers.insert(COOKIE, "foo=bar; crb-session=hello; baz=qux".parse().unwrap());
+        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
+    }
+
+    // ─── build_oauth_client tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_build_oauth_client_github() {
+        let config = OAuthConfig {
+            provider: "github".to_string(),
+            client_id: "test-client-id".to_string(),
+            client_secret: "test-client-secret".to_string(),
+            redirect_url: "http://localhost:8080/auth/callback".to_string(),
+            scopes: vec!["read:user".to_string()],
+        };
+        let client = build_oauth_client(&config, "github");
+        insta::assert_debug_snapshot!(client.is_ok());
+    }
+
+    #[test]
+    fn test_build_oauth_client_google() {
+        let config = OAuthConfig {
+            provider: "google".to_string(),
+            client_id: "test-client-id".to_string(),
+            client_secret: "test-client-secret".to_string(),
+            redirect_url: "http://localhost:8080/auth/callback".to_string(),
+            scopes: vec!["openid".to_string()],
+        };
+        let client = build_oauth_client(&config, "google");
+        insta::assert_debug_snapshot!(client.is_ok());
+    }
+
+    #[test]
+    fn test_build_oauth_client_gitlab() {
+        let config = OAuthConfig {
+            provider: "gitlab".to_string(),
+            client_id: "test-client-id".to_string(),
+            client_secret: "test-client-secret".to_string(),
+            redirect_url: "http://localhost:8080/auth/callback".to_string(),
+            scopes: vec!["read_user".to_string()],
+        };
+        let client = build_oauth_client(&config, "gitlab");
+        insta::assert_debug_snapshot!(client.is_ok());
+    }
+
+    #[test]
+    fn test_build_oauth_client_unsupported_provider() {
+        let config = OAuthConfig {
+            provider: "unsupported".to_string(),
+            client_id: "id".to_string(),
+            client_secret: "secret".to_string(),
+            redirect_url: "http://localhost:8080/auth/callback".to_string(),
+            scopes: vec![],
+        };
+        let result = build_oauth_client(&config, "unsupported");
+        insta::assert_debug_snapshot!(result.is_err());
+        insta::assert_debug_snapshot!(result.unwrap_err().contains("Unsupported"));
+    }
+
+    #[test]
+    fn test_build_oauth_client_invalid_redirect_url() {
+        let config = OAuthConfig {
+            provider: "github".to_string(),
+            client_id: "id".to_string(),
+            client_secret: "secret".to_string(),
+            redirect_url: String::new(), // empty URL → invalid
+            scopes: vec![],
+        };
+        let result = build_oauth_client(&config, "github");
+        insta::assert_debug_snapshot!(result.is_err());
+    }
+
+    // ─── random_string tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_random_string_length() {
+        let s = random_string(32);
+        insta::assert_debug_snapshot!(s.len());
+    }
+
+    #[test]
+    fn test_random_string_zero_length() {
+        let s = random_string(0);
+        insta::assert_debug_snapshot!(s.len());
+    }
+
+    #[test]
+    fn test_random_string_alphanumeric() {
+        let s = random_string(100);
+        insta::assert_debug_snapshot!(s.chars().all(|c| c.is_ascii_alphanumeric()));
+    }
+}

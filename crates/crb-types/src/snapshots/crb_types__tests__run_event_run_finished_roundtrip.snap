@@ -1,0 +1,19 @@
+---
+source: crates/crb-types/src/lib.rs
+expression: "&original"
+---
+{
+  "event": "runfinished",
+  "data": {
+    "total_prs": 10,
+    "aggregated": {
+      "true_positives": 10,
+      "false_positives": 3,
+      "false_negatives": 2,
+      "duration_secs": 120.3
+    },
+    "total_cost": 5.5,
+    "total_tokens": 5000,
+    "total_agent_calls": 20
+  }
+}

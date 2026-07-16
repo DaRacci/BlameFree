@@ -1,0 +1,21 @@
+---
+source: crates/crb-webui-shared/src/runs.rs
+expression: "&orig"
+---
+{
+  "run_id": "run-001",
+  "cache_available": true,
+  "prs": [
+    {
+      "pr_key": "owner/repo/pull/1",
+      "pr_title": "Fix UI",
+      "agents": [
+        {
+          "name": "Frontend Engineer",
+          "abbreviation": "FE",
+          "incompatible_with_roles": []
+        }
+      ]
+    }
+  ]
+}

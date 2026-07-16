@@ -1,0 +1,5 @@
+---
+source: crates/crb-webui-backend/src/auth.rs
+expression: s.len()
+---
+32

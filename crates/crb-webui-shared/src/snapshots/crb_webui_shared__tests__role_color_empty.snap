@@ -1,0 +1,5 @@
+---
+source: crates/crb-webui-shared/src/lib.rs
+expression: "role_color(\"\")"
+---
+"#808080"

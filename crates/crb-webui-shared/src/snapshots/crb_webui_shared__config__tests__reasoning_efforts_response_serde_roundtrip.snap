@@ -1,0 +1,11 @@
+---
+source: crates/crb-webui-shared/src/config.rs
+expression: "&orig"
+---
+{
+  "levels": [
+    "low",
+    "medium",
+    "high"
+  ]
+}

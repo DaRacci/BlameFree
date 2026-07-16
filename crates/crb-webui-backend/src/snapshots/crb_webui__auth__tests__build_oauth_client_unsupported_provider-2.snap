@@ -1,0 +1,5 @@
+---
+source: crates/crb-webui-backend/src/auth.rs
+expression: "result.unwrap_err().contains(\"Unsupported\")"
+---
+true

@@ -1,0 +1,20 @@
+---
+source: crates/crb-webui-backend/src/api/config.rs
+expression: prs
+---
+[
+    PrEntry {
+        key: "rust/pull/1",
+        url: "https://github.com/rust-lang/rust/pull/1",
+        title: "PR #1",
+        repo: "rust",
+        pr_number: 1,
+    },
+    PrEntry {
+        key: "rust/pull/2",
+        url: "https://github.com/rust-lang/rust/pull/2",
+        title: "PR #2",
+        repo: "rust",
+        pr_number: 2,
+    },
+]

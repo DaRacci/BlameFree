@@ -1,0 +1,22 @@
+---
+source: crates/crb-webui-frontend/src/lib.rs
+expression: "&config"
+---
+{
+  "models": [
+    "gpt-4",
+    "claude-3"
+  ],
+  "datasets": [
+    "ds1"
+  ],
+  "roles": [
+    {
+      "name": "Reviewer",
+      "abbreviation": "rev",
+      "incompatible_with_roles": []
+    }
+  ],
+  "reduce_diff_enabled": true,
+  "auth_enabled": false
+}

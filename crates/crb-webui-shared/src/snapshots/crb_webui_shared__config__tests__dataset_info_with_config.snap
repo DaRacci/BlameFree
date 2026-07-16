@@ -1,0 +1,17 @@
+---
+source: crates/crb-webui-shared/src/config.rs
+expression: "&orig"
+---
+{
+  "id": "test-set",
+  "path": "/tmp/datasets/test",
+  "pr_count": 10,
+  "config": {
+    "defaults": {
+      "model": "gpt-4",
+      "concurrency": null,
+      "max_findings": null,
+      "roles": null
+    }
+  }
+}

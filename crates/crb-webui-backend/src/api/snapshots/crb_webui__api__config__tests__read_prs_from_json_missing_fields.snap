@@ -1,0 +1,13 @@
+---
+source: crates/crb-webui-backend/src/api/config.rs
+expression: prs
+---
+[
+    PrEntry {
+        key: "repo/pull/5",
+        url: "https://github.com/owner/repo/pull/5",
+        title: "",
+        repo: "repo",
+        pr_number: 5,
+    },
+]

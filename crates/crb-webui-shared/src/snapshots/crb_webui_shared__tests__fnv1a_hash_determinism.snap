@@ -1,0 +1,9 @@
+---
+source: crates/crb-webui-shared/src/lib.rs
+expression: "(fnv1a_hash(\"hello\"), fnv1a_hash(\"hello\"), fnv1a_hash(\"world\"))"
+---
+(
+    1335831723,
+    1335831723,
+    933488787,
+)
