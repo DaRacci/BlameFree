@@ -165,7 +165,8 @@ pub fn compute_metrics(verdicts: &[JudgeVerdict], golden_count: usize) -> Metric
 
 #[cfg(test)]
 mod tests {
-    use crate::judge::{compute_metrics, jaccard_match};
+    use crate::judge::{compute_metrics, format_judge_prompt, jaccard_match};
+    use crate::judge::JUDGE_PROMPT;
     use crb_types::benchmark::{JudgeVerdict, MetricsProvider};
 
     const THRESHOLD: f64 = 0.12;
@@ -372,5 +373,27 @@ mod tests {
             assert!(score.is_some());
             assert!((score.unwrap() - 0.25).abs() < 0.01);
         }
+    }
+
+    #[test]
+    fn test_format_judge_prompt_basic() {
+        let result = format_judge_prompt("golden", "candidate");
+        assert!(result.contains("golden"));
+        assert!(result.contains("candidate"));
+        assert!(result.contains("match"));
+        assert!(result.contains("reasoning"));
+    }
+
+    #[test]
+    fn test_format_judge_prompt_contains_placeholders() {
+        assert!(JUDGE_PROMPT.contains("{golden_comment}"));
+        assert!(JUDGE_PROMPT.contains("{candidate}"));
+    }
+
+    #[test]
+    fn test_format_judge_prompt_special_chars() {
+        let result = format_judge_prompt("line1\nline2", "text with \"quotes\"");
+        assert!(result.contains("line1\nline2"));
+        assert!(result.contains("text with \"quotes\""));
     }
 }

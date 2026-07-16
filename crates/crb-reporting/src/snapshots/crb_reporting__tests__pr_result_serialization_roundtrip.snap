@@ -1,0 +1,48 @@
+---
+source: crates/crb-reporting/src/lib.rs
+expression: "&result"
+---
+{
+  "pr_title": "Fix security vulnerability",
+  "url": "https://github.com/owner/repo/pull/42",
+  "findings_count": 3,
+  "golden_count": 2,
+  "metrics": {
+    "true_positives": 2,
+    "false_positives": 1,
+    "false_negatives": 0,
+    "duration_secs": 12.5
+  },
+  "verdicts": [
+    {
+      "reasoning": "Correct match",
+      "match": true,
+      "confidence": 0.95
+    },
+    {
+      "reasoning": "False positive",
+      "match": false,
+      "confidence": 0.3
+    }
+  ],
+  "cost": {
+    "sessions": {
+      "agent:test": {
+        "input_tokens": 100,
+        "output_tokens": 50,
+        "cached_input_tokens": 20,
+        "cache_creation_input_tokens": 10,
+        "reasoning_tokens": 5,
+        "tool_use_prompt_tokens": 3,
+        "call_count": 1,
+        "tool_use_count": 0
+      }
+    },
+    "cache_usage": {
+      "agent:test": {
+        "cache_hits": 1,
+        "cache_misses": 0
+      }
+    }
+  }
+}

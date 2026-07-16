@@ -1,0 +1,5 @@
+---
+source: crates/crb-consensus/src/lib.rs
+expression: "MatchResult::FalseNegative"
+---
+"FalseNegative"

@@ -947,3 +947,50 @@ async fn run_benchmark(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_run_list_with_dataset() {
+        if let Ok(dir) = tempfile::TempDir::new() {
+            let dataset = r#"{"entries":[{"pr_title":"Test PR","url":"https://github.com/owner/repo/pull/1","comments":[{"comment":"bug","severity":"critical"}]}]}"#;
+            if std::fs::write(dir.path().join("dataset.json"), dataset).is_ok() {
+                let result = run_list(&dir.path().to_path_buf());
+                assert!(result.is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn test_run_list_empty_dataset() {
+        if let Ok(dir) = tempfile::TempDir::new() {
+            let result = run_list(&dir.path().to_path_buf());
+            assert!(result.is_ok());
+        }
+    }
+
+    #[test]
+    fn test_run_clean_dry_run() {
+        if let Ok(dir) = tempfile::TempDir::new() {
+            let worktrees_path = dir.path().join("worktrees").join("dummy_worktree");
+            if std::fs::create_dir_all(&worktrees_path).is_ok()
+                && std::fs::write(worktrees_path.join(".git"), "gitdir: /dummy").is_ok()
+            {
+                let result = run_clean(&dir.path().to_path_buf(), false, false, true);
+                assert!(result.is_ok());
+                assert!(dir.path().join("worktrees").exists());
+            }
+        }
+    }
+
+    #[test]
+    fn test_run_clean_non_existent_dir() {
+        if let Ok(dir) = tempfile::TempDir::new() {
+            let nonexistent = dir.path().join("nonexistent");
+            let result = run_clean(&nonexistent, false, false, false);
+            assert!(result.is_ok());
+        }
+    }
+}

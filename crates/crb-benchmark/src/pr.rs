@@ -64,3 +64,84 @@ where
 
     filtered
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone)]
+    struct TestPr(String);
+
+    impl HasUrl for TestPr {
+        fn url(&self) -> &str {
+            &self.0
+        }
+    }
+
+    #[test]
+    fn test_filter_by_exact_pr_number() {
+        let prs = vec![
+            TestPr("https://github.com/owner/repo/pull/1".into()),
+            TestPr("https://github.com/owner/repo/pull/2".into()),
+            TestPr("https://github.com/owner/repo/pull/10".into()),
+        ];
+        let result = filter_prs_by_pattern(prs, "1");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_by_repo_and_number() {
+        let prs = vec![
+            TestPr("https://github.com/owner/repo/pull/42".into()),
+            TestPr("https://github.com/other/repo/pull/42".into()),
+        ];
+        let result = filter_prs_by_pattern(prs, "owner/repo/pull/42");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_by_url_suffix() {
+        let prs = vec![TestPr("https://github.com/owner/repo/pull/1".into())];
+        let result = filter_prs_by_pattern(prs, "owner/repo/pull/1");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_comma_separated() {
+        let prs = vec![
+            TestPr("https://github.com/owner/repo/pull/1".into()),
+            TestPr("https://github.com/owner/repo/pull/2".into()),
+            TestPr("https://github.com/owner/repo/pull/3".into()),
+        ];
+        let result = filter_prs_by_pattern(prs, "1,3");
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_filter_no_match_returns_empty() {
+        let prs = vec![
+            TestPr("https://github.com/owner/repo/pull/5".into()),
+            TestPr("https://github.com/owner/repo/pull/6".into()),
+        ];
+        let result = filter_prs_by_pattern(prs, "999");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_filter_bare_number_no_substring_match() {
+        let prs = vec![
+            TestPr("https://github.com/owner/repo/pull/1".into()),
+            TestPr("https://github.com/owner/repo/pull/10".into()),
+            TestPr("https://github.com/owner/repo/pull/100".into()),
+        ];
+        let result = filter_prs_by_pattern(prs, "1");
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_case_insensitive() {
+        let prs = vec![TestPr("https://github.com/OWNER/REPO/pull/1".into())];
+        let result = filter_prs_by_pattern(prs, "owner/repo/pull/1");
+        assert_eq!(result.len(), 1);
+    }
+}

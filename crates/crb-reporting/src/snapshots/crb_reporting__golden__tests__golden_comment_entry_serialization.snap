@@ -1,0 +1,14 @@
+---
+source: crates/crb-reporting/src/golden.rs
+expression: "&entry"
+---
+{
+  "pr_title": "Fix memory leak",
+  "url": "https://github.com/owner/repo/pull/42",
+  "comments": [
+    {
+      "comment": "This introduces a memory leak",
+      "severity": "critical"
+    }
+  ]
+}

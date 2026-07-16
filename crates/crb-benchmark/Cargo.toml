@@ -36,6 +36,7 @@ strum = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"], optional = true }
 
 [dev-dependencies]
+insta = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]

@@ -92,3 +92,133 @@ impl crb_shared::url::HasUrl for GoldenCommentEntry {
         &self.url
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_golden_comment_entry_serialization() {
+        let entry = GoldenCommentEntry {
+            pr_title: "Fix memory leak".into(),
+            url: "https://github.com/owner/repo/pull/42".into(),
+            comments: vec![GoldenComment {
+                comment: "This introduces a memory leak".into(),
+                severity: Severity::Critical,
+            }],
+        };
+        insta::assert_json_snapshot!(&entry);
+    }
+
+    #[test]
+    fn test_golden_comment_severity_roundtrip() {
+        let comment = GoldenComment {
+            comment: "Use checked arithmetic".into(),
+            severity: Severity::Critical,
+        };
+        let json = serde_json::to_string(&comment).expect("serialization should succeed");
+        let deserialized: GoldenComment =
+            serde_json::from_str(&json).expect("deserialization should succeed");
+        assert_eq!(deserialized.severity, Severity::Critical);
+    }
+
+    #[test]
+    fn test_load_golden_datasets_standard_format() {
+        let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
+        let json_content = r#"{
+            "entries": [
+                {
+                    "pr_title": "Fix bug",
+                    "url": "https://github.com/a/b/pull/1",
+                    "comments": [
+                        {"comment": "off by one", "severity": "high"}
+                    ]
+                }
+            ]
+        }"#;
+        let file_path = dir.path().join("dataset.json");
+        fs::write(&file_path, json_content).expect("write should succeed");
+
+        let entries = load_golden_datasets(dir.path()).expect("load should succeed");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].pr_title, "Fix bug");
+    }
+
+    #[test]
+    fn test_load_golden_datasets_raw_array_format() {
+        let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
+        let json_content = r#"[
+            {
+                "pr_title": "Raw entry",
+                "url": "https://github.com/a/b/pull/2",
+                "comments": [
+                    {"comment": "needs null check", "severity": "critical"}
+                ]
+            }
+        ]"#;
+        let file_path = dir.path().join("raw.json");
+        fs::write(&file_path, json_content).expect("write should succeed");
+
+        let entries = load_golden_datasets(dir.path()).expect("load should succeed");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].pr_title, "Raw entry");
+    }
+
+    #[test]
+    fn test_load_golden_datasets_empty_dir() {
+        let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
+        let entries = load_golden_datasets(dir.path()).expect("load should succeed");
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_load_golden_datasets_skips_non_json() {
+        let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
+        // Create .txt, .md, and .json files
+        fs::write(dir.path().join("readme.txt"), "not json").expect("write should succeed");
+        fs::write(dir.path().join("notes.md"), "# Notes").expect("write should succeed");
+        fs::write(
+            dir.path().join("data.json"),
+            r#"{"entries": [{"pr_title":"Only","url":"https://github.com/a/b/pull/1","comments":[]}]}"#,
+        )
+        .expect("write should succeed");
+
+        let entries = load_golden_datasets(dir.path()).expect("load should succeed");
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn test_load_golden_datasets_multiple_files() {
+        let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
+        fs::write(
+            dir.path().join("a.json"),
+            r#"{"entries": [{"pr_title":"A","url":"https://github.com/a/b/pull/1","comments":[]}]}"#,
+        )
+        .expect("write should succeed");
+        fs::write(
+            dir.path().join("b.json"),
+            r#"{"entries": [{"pr_title":"B","url":"https://github.com/a/b/pull/2","comments":[]}]}"#,
+        )
+        .expect("write should succeed");
+
+        let entries = load_golden_datasets(dir.path()).expect("load should succeed");
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn test_load_golden_datasets_malformed_json() {
+        let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
+        fs::write(dir.path().join("bad.json"), "this is not json").expect("write should succeed");
+
+        let entries = load_golden_datasets(dir.path()).expect("load should succeed");
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn test_load_golden_datasets_nonexistent_dir() {
+        let non_existent = Path::new("/tmp/this_path_does_not_exist_42xyz");
+        let entries = load_golden_datasets(non_existent).expect("load should succeed");
+        assert!(entries.is_empty());
+    }
+}

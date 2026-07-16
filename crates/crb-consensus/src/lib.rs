@@ -155,6 +155,73 @@ mod tests {
     }
 
     #[test]
+    fn test_role_display() {
+        let role = Role("SECURITY".to_string());
+        assert_eq!(format!("{role}"), "SECURITY");
+        assert_eq!(role.as_str(), "SECURITY");
+    }
+
+    #[test]
+    fn test_role_from_str() {
+        let role: Role = "security".into();
+        assert_eq!(role.as_str(), "SECURITY");
+    }
+
+    #[test]
+    fn test_role_from_string() {
+        let role: Role = Role::from("rust".to_string());
+        assert_eq!(role.as_str(), "RUST");
+    }
+
+    #[test]
+    fn test_match_result_json_serialization() {
+        insta::assert_json_snapshot!(MatchResult::TruePositive);
+        insta::assert_json_snapshot!(MatchResult::FalsePositive);
+        insta::assert_json_snapshot!(MatchResult::FalseNegative);
+    }
+
+    #[test]
+    fn test_consensus_report_mixed_metrics() {
+        let report = ConsensusReport {
+            agents: vec![],
+            true_positives: vec![(
+                GoldenComment {
+                    comment: "bug".into(),
+                    severity: Severity::Critical,
+                },
+                Finding {
+                    file: Some("a.rs".into()),
+                    line: Some(1),
+                    message: "bug".into(),
+                    severity: Severity::Critical,
+                    ..Default::default()
+                },
+            )],
+            false_positives: vec![Finding {
+                file: Some("b.rs".into()),
+                line: Some(2),
+                message: "not a bug".into(),
+                severity: Severity::Info,
+                ..Default::default()
+            }],
+            false_negatives: vec![GoldenComment {
+                comment: "missed".into(),
+                severity: Severity::Low,
+            }],
+            ..Default::default()
+        };
+
+        assert_eq!(report.true_positives(), 1);
+        assert_eq!(report.false_positives(), 1);
+        assert_eq!(report.false_negatives(), 1);
+
+        let eps = 1e-6;
+        assert!((report.precision() - 0.5).abs() < eps);
+        assert!((report.recall() - 0.5).abs() < eps);
+        assert!((report.f1() - 0.5).abs() < eps);
+    }
+
+    #[test]
     fn test_consensus_report_no_matches() {
         let report = ConsensusReport {
             false_positives: vec![Finding {

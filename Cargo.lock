@@ -632,6 +632,7 @@ dependencies = [
  "crb-rules",
  "crb-shared",
  "crb-types",
+ "insta",
  "rig-core",
  "serde",
  "serde_json",
@@ -647,9 +648,12 @@ version = "0.1.0"
 dependencies = [
  "crb-macros",
  "crb-types",
+ "insta",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
+ "tokio",
  "tracing",
 ]
 
@@ -665,6 +669,7 @@ dependencies = [
  "crb-tools",
  "crb-types",
  "futures",
+ "insta",
  "regex",
  "rig-core",
  "serde",
@@ -722,9 +727,11 @@ dependencies = [
  "anyhow",
  "crb-shared",
  "crb-types",
+ "insta",
  "rig-core",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
 ]

@@ -97,3 +97,83 @@ pub(crate) fn run_validate(dataset_dir: &Path) -> Result<()> {
         bail!("Dataset validation failed with {} error(s)", errors.len());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_validate_empty_directory() {
+        if let Ok(dir) = TempDir::new() {
+            let result = run_validate(dir.path());
+            assert!(result.is_err());
+        }
+    }
+
+    #[test]
+    fn test_validate_valid_dataset() {
+        if let Ok(dir) = TempDir::new() {
+            let dataset = r#"{"entries":[{"pr_title":"Test","url":"https://github.com/a/b/pull/1","comments":[{"comment":"bug","severity":"critical"}]}]}"#;
+            if let Ok(()) = std::fs::write(dir.path().join("dataset.json"), dataset) {
+                let result = run_validate(dir.path());
+                assert!(result.is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn test_validate_duplicate_urls() {
+        if let Ok(dir) = TempDir::new() {
+            let dataset = r#"{"entries":[{"pr_title":"First","url":"https://github.com/a/b/pull/1","comments":[{"comment":"bug","severity":"critical"}]},{"pr_title":"Second","url":"https://github.com/a/b/pull/1","comments":[{"comment":"security","severity":"critical"}]}]}"#;
+            if let Ok(()) = std::fs::write(dir.path().join("dataset.json"), dataset) {
+                let result = run_validate(dir.path());
+                assert!(result.is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn test_validate_duplicate_pr_titles() {
+        if let Ok(dir) = TempDir::new() {
+            let dataset = r#"{"entries":[{"pr_title":"Same","url":"https://github.com/a/b/pull/1","comments":[{"comment":"bug","severity":"critical"}]},{"pr_title":"Same","url":"https://github.com/a/b/pull/2","comments":[{"comment":"security","severity":"critical"}]}]}"#;
+            if let Ok(()) = std::fs::write(dir.path().join("dataset.json"), dataset) {
+                let result = run_validate(dir.path());
+                assert!(result.is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn test_validate_empty_comment() {
+        if let Ok(dir) = TempDir::new() {
+            let dataset = r#"{"entries":[{"pr_title":"Test","url":"https://github.com/a/b/pull/1","comments":[{"comment":"","severity":"critical"}]}]}"#;
+            if let Ok(()) = std::fs::write(dir.path().join("dataset.json"), dataset) {
+                let result = run_validate(dir.path());
+                assert!(result.is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn test_validate_invalid_severity() {
+        if let Ok(dir) = TempDir::new() {
+            let dataset = r#"{"entries":[{"pr_title":"Test","url":"https://github.com/a/b/pull/1","comments":[{"comment":"bug","severity":"super-critical"}]}]}"#;
+            if let Ok(()) = std::fs::write(dir.path().join("dataset.json"), dataset) {
+                let result = run_validate(dir.path());
+                assert!(result.is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn test_validate_empty_url() {
+        if let Ok(dir) = TempDir::new() {
+            let dataset = r#"{"entries":[{"pr_title":"Test","url":"","comments":[{"comment":"bug","severity":"critical"}]}]}"#;
+            if let Ok(()) = std::fs::write(dir.path().join("dataset.json"), dataset) {
+                let result = run_validate(dir.path());
+                assert!(result.is_err());
+            }
+        }
+    }
+}

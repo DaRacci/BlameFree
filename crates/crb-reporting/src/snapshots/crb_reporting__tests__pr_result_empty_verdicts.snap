@@ -1,0 +1,17 @@
+---
+source: crates/crb-reporting/src/lib.rs
+expression: "&result"
+---
+{
+  "pr_title": "Empty verdicts",
+  "url": "https://github.com/owner/repo/pull/0",
+  "findings_count": 0,
+  "golden_count": 0,
+  "metrics": {
+    "true_positives": 0,
+    "false_positives": 0,
+    "false_negatives": 0,
+    "duration_secs": 0.0
+  },
+  "verdicts": []
+}

@@ -137,3 +137,46 @@ Instructions:
 
 Respond with ONLY a JSON object:
 {\"reasoning\": \"brief explanation\", \"match\": true/false, \"confidence\": 0.0-1.0}";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_judge_prompt_replaces_golden_comment() {
+        let prompt = format_judge_prompt("my golden comment", "some candidate");
+        assert!(prompt.contains("my golden comment"));
+        assert!(!prompt.contains("{golden_comment}"));
+    }
+
+    #[test]
+    fn test_format_judge_prompt_replaces_candidate() {
+        let prompt = format_judge_prompt("golden", "my candidate finding");
+        assert!(prompt.contains("my candidate finding"));
+        assert!(!prompt.contains("{candidate}"));
+    }
+
+    #[test]
+    fn test_format_judge_prompt_with_special_chars() {
+        let golden = "code: unsafe block detected";
+        let candidate = "line 42: potential memory issue";
+        let prompt = format_judge_prompt(golden, candidate);
+        assert!(prompt.contains(golden));
+        assert!(prompt.contains(candidate));
+    }
+
+    #[test]
+    fn test_format_judge_prompt_empty_strings() {
+        let prompt = format_judge_prompt("", "");
+        // After replacement, empty golden_comment means the line reads "...looking for:\n\nCandidate..."
+        assert!(prompt.contains("Golden Comment (the issue we're looking for):\n\n"));
+        assert!(prompt.contains("Candidate Issue (from the tool's review):\n\n"));
+    }
+
+    #[test]
+    fn test_judge_prompt_constant_not_empty() {
+        assert!(!JUDGE_PROMPT.is_empty());
+        assert!(JUDGE_PROMPT.contains("{golden_comment}"));
+        assert!(JUDGE_PROMPT.contains("{candidate}"));
+    }
+}

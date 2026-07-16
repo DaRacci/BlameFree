@@ -121,3 +121,122 @@ pub async fn print_terminal_summary(results: &[PrResult]) {
     println!(" Agent cache hit rate: {:.1}%", avg_agent_rate * 100.0);
     println!("{separator}");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cost::{CacheUsage, SessionUsage};
+    use std::collections::HashMap;
+
+    fn make_cost_snapshot() -> AnalyticsSnapshot {
+        let mut sessions = HashMap::new();
+        sessions.insert(
+            "agent:test".to_string(),
+            SessionUsage {
+                input_tokens: 100,
+                output_tokens: 50,
+                cached_input_tokens: 20,
+                cache_creation_input_tokens: 10,
+                reasoning_tokens: 5,
+                tool_use_prompt_tokens: 3,
+                call_count: 1,
+                tool_use_count: 0,
+            },
+        );
+        let mut cache_usage = HashMap::new();
+        cache_usage.insert(
+            "agent:test".to_string(),
+            CacheUsage {
+                cache_hits: 1,
+                cache_misses: 0,
+            },
+        );
+        AnalyticsSnapshot {
+            sessions,
+            cache_usage,
+        }
+    }
+
+    fn make_pr_result(pr_title: &str, url: &str, cost: Option<AnalyticsSnapshot>) -> PrResult {
+        PrResult {
+            pr_title: pr_title.to_string(),
+            url: url.to_string(),
+            findings_count: 3,
+            golden_count: 2,
+            metrics: Metrics {
+                true_positives: 2,
+                false_positives: 1,
+                false_negatives: 0,
+                duration_secs: 12.5,
+            },
+            verdicts: vec![
+                JudgeVerdict {
+                    reasoning: "Correct match".into(),
+                    match_: true,
+                    confidence: 0.95,
+                },
+                JudgeVerdict {
+                    reasoning: "False positive".into(),
+                    match_: false,
+                    confidence: 0.3,
+                },
+            ],
+            cost,
+        }
+    }
+
+    #[test]
+    fn test_pr_result_serialization_roundtrip() {
+        let cost = make_cost_snapshot();
+        let result = make_pr_result(
+            "Fix security vulnerability",
+            "https://github.com/owner/repo/pull/42",
+            Some(cost),
+        );
+        insta::assert_json_snapshot!(&result);
+
+        // Serialize to JSON string and parse as generic value to verify fields
+        let json_str = serde_json::to_string(&result).expect("serialization should succeed");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json_str).expect("deserialization should succeed");
+
+        assert_eq!(parsed["pr_title"], "Fix security vulnerability");
+        assert_eq!(
+            parsed["url"],
+            "https://github.com/owner/repo/pull/42"
+        );
+        assert_eq!(parsed["findings_count"], 3);
+        assert_eq!(parsed["golden_count"], 2);
+        assert!(parsed["cost"].is_object());
+        assert!(parsed["cost"]["sessions"].is_object());
+        assert!(parsed["cost"]["cache_usage"].is_object());
+    }
+
+    #[test]
+    fn test_pr_result_cost_skipped_when_none() {
+        let result = make_pr_result(
+            "Minor refactor",
+            "https://github.com/owner/repo/pull/7",
+            None,
+        );
+        let json_str = serde_json::to_string(&result).expect("serialization should succeed");
+
+        #[allow(clippy::print_stdout)]
+        let contains_cost = json_str.contains("\"cost\"");
+        assert!(!contains_cost, "JSON should not contain cost field when None");
+    }
+
+    #[test]
+    fn test_pr_result_empty_verdicts() {
+        let result = PrResult {
+            pr_title: "Empty verdicts".into(),
+            url: "https://github.com/owner/repo/pull/0".into(),
+            findings_count: 0,
+            golden_count: 0,
+            metrics: Metrics::default(),
+            verdicts: Vec::new(),
+            cost: None,
+        };
+        insta::assert_json_snapshot!(&result);
+    }
+}
