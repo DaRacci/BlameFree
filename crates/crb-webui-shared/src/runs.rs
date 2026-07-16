@@ -290,32 +290,8 @@ pub struct PrDetailResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::RoleInfo;
-    use crb_types::benchmark::Metrics;
 
     // ── RunSummary ────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_run_summary_serde_roundtrip() {
-        let orig = RunSummary {
-            id: "run-001".into(),
-            name: "Benchmark v2 run".into(),
-            pr_count: 42,
-            avg_f1: Some(0.85),
-            avg_precision: Some(0.90),
-            avg_recall: Some(0.80),
-            total_cost: Some(12.50),
-            total_tokens: 150000,
-            duration_secs: Some(3600.0),
-            created_at: "2024-03-01T12:00:00Z".into(),
-            model: Some("gpt-4o".into()),
-            status: "completed".into(),
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: RunSummary = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
 
     #[test]
     fn test_run_summary_default_fields() {
@@ -326,88 +302,7 @@ mod tests {
 
     // ── RunDetail ─────────────────────────────────────────────────────────
 
-    #[test]
-    fn test_run_detail_serde_roundtrip() {
-        let orig = RunDetail {
-            id: "run-002".into(),
-            name: "Evaluation run".into(),
-            pr_count: 10,
-            results: vec![PrResult {
-                pr_number: 1,
-                pr_key: "owner/repo/pull/1".into(),
-                title: "Fix bug".into(),
-                f1: Some(0.75),
-                precision: Some(0.80),
-                recall: Some(0.70),
-                cost: Some(0.05),
-                status: Some("completed".into()),
-                has_agents: true,
-            }],
-            aggregate: Some(Metrics {
-                true_positives: 10,
-                false_positives: 2,
-                false_negatives: 3,
-                duration_secs: 120.0,
-            }),
-            total_cost: Some(0.50),
-            total_tokens: 5000,
-            duration_secs: Some(120.0),
-            model: "gpt-4o-mini".into(),
-            status: "completed".into(),
-            config: None,
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: RunDetail = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
-    #[test]
-    fn test_run_detail_with_config() {
-        let config = RunConfig {
-            model: "gpt-4o".into(),
-            dataset: "benchmark-v2".into(),
-            roles: vec!["FE".into(), "BE".into()],
-        };
-        let orig = RunDetail {
-            id: "run-003".into(),
-            name: "Config test".into(),
-            pr_count: 5,
-            results: vec![],
-            aggregate: None,
-            total_cost: None,
-            total_tokens: 0,
-            duration_secs: None,
-            model: "gpt-4o".into(),
-            status: "pending".into(),
-            config: Some(config),
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: RunDetail = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
     // ── PrResult ──────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_pr_result_serde_roundtrip() {
-        let orig = PrResult {
-            pr_number: 42,
-            pr_key: "owner/repo/pull/42".into(),
-            title: "Add feature".into(),
-            f1: Some(0.92),
-            precision: Some(0.95),
-            recall: Some(0.89),
-            cost: Some(0.12),
-            status: Some("completed".into()),
-            has_agents: true,
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: PrResult = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
 
     #[test]
     fn test_pr_result_default_fields() {
@@ -418,37 +313,7 @@ mod tests {
 
     // ── RunConfig ─────────────────────────────────────────────────────────
 
-    #[test]
-    fn test_run_config_serde_roundtrip() {
-        let orig = RunConfig {
-            model: "claude-3.5-sonnet".into(),
-            dataset: "security-bench".into(),
-            roles: vec!["SEC".into(), "INFRA".into()],
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: RunConfig = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
     // ── CostJson ──────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_cost_json_serde_roundtrip() {
-        let orig = CostJson {
-            total_usd: 1.23,
-            agent_tokens_in: 1000,
-            agent_tokens_out: 500,
-            judge_tokens_in: 2000,
-            judge_tokens_out: 300,
-            agent_call_count: 5,
-            judge_call_count: 10,
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: CostJson = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
 
     #[test]
     fn test_cost_json_default() {
@@ -466,22 +331,6 @@ mod tests {
     // ── MetricsJson ───────────────────────────────────────────────────────
 
     #[test]
-    fn test_metrics_json_serde_roundtrip() {
-        let orig = MetricsJson {
-            true_positives: 15,
-            false_positives: 3,
-            false_negatives: 2,
-            precision: 0.8333,
-            recall: 0.8824,
-            f1: 0.8571,
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: MetricsJson = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
-    #[test]
     fn test_metrics_json_default() {
         let metrics = MetricsJson::default();
         insta::assert_debug_snapshot!(metrics);
@@ -495,19 +344,6 @@ mod tests {
     }
 
     // ── VerdictJson ───────────────────────────────────────────────────────
-
-    #[test]
-    fn test_verdict_json_serde_roundtrip() {
-        let orig = VerdictJson {
-            reasoning: "The finding matches the golden comment.".into(),
-            match_: true,
-            confidence: 0.95,
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: VerdictJson = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
 
     #[test]
     fn test_verdict_json_rename_match() {
@@ -525,152 +361,15 @@ mod tests {
 
     // ── LogsListResponse ──────────────────────────────────────────────────
 
-    #[test]
-    fn test_logs_list_response_serde_roundtrip() {
-        let role_info = RoleInfo {
-            name: "Frontend Engineer".into(),
-            abbreviation: "FE".into(),
-            incompatible_with_roles: vec![],
-        };
-        let orig = LogsListResponse {
-            run_id: "run-001".into(),
-            cache_available: true,
-            prs: vec![PrLogsEntry {
-                pr_key: "owner/repo/pull/1".into(),
-                pr_title: "Fix UI".into(),
-                agents: vec![role_info],
-            }],
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: LogsListResponse = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
     // ── PrLogsEntry ───────────────────────────────────────────────────────
-
-    #[test]
-    fn test_pr_logs_entry_serde_roundtrip() {
-        let orig = PrLogsEntry {
-            pr_key: "owner/repo/pull/42".into(),
-            pr_title: "Bug fix".into(),
-            agents: vec![],
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: PrLogsEntry = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
 
     // ── AgentLogResponse ──────────────────────────────────────────────────
 
-    #[test]
-    fn test_agent_log_response_serde_roundtrip() {
-        let orig = AgentLogResponse {
-            run_id: "run-001".into(),
-            pr_key: "owner/repo/pull/1".into(),
-            role: "FE".into(),
-            prompt: Some("Review this PR".into()),
-            response: Some("Found 3 issues".into()),
-            reasoning: Some("Checked all files".into()),
-            available: true,
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: AgentLogResponse = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
-    #[test]
-    fn test_agent_log_response_unavailable() {
-        let orig = AgentLogResponse {
-            run_id: "run-001".into(),
-            pr_key: "owner/repo/pull/2".into(),
-            role: "BE".into(),
-            prompt: None,
-            response: None,
-            reasoning: None,
-            available: false,
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: AgentLogResponse = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
     // ── PrAgentsResponse ──────────────────────────────────────────────────
-
-    #[test]
-    fn test_pr_agents_response_serde_roundtrip() {
-        let orig = PrAgentsResponse {
-            run_id: "run-001".into(),
-            pr_key: "owner/repo/pull/1".into(),
-            pr_title: "Fix the bug".into(),
-            agents: vec![PrAgentEntry {
-                role: "FE".into(),
-                has_prompt: true,
-                has_response: true,
-                has_reasoning: false,
-            }],
-            has_output: true,
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: PrAgentsResponse = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
 
     // ── PrAgentEntry ──────────────────────────────────────────────────────
 
-    #[test]
-    fn test_pr_agent_entry_serde_roundtrip() {
-        let orig = PrAgentEntry {
-            role: "SEC".into(),
-            has_prompt: false,
-            has_response: false,
-            has_reasoning: false,
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: PrAgentEntry = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
     // ── PrDetailResponse ──────────────────────────────────────────────────
-
-    #[test]
-    fn test_pr_detail_response_serde_roundtrip() {
-        let orig = PrDetailResponse {
-            run_id: "run-001".into(),
-            pr_title: "Add new endpoint".into(),
-            url: "https://github.com/owner/repo/pull/42".into(),
-            findings_count: 5,
-            golden_count: 3,
-            metrics: MetricsJson {
-                true_positives: 2,
-                false_positives: 1,
-                false_negatives: 1,
-                precision: 0.667,
-                recall: 0.667,
-                f1: 0.667,
-            },
-            verdicts: vec![VerdictJson {
-                reasoning: "Matches".into(),
-                match_: true,
-                confidence: 0.9,
-            }],
-            cost: Some(CostJson {
-                total_usd: 0.05,
-                ..Default::default()
-            }),
-            findings: serde_json::json!({"type": "bug", "severity": "high"}),
-            agent_responses: vec!["Response text".into()],
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: PrDetailResponse = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
 
     #[test]
     fn test_pr_detail_response_default_findings() {

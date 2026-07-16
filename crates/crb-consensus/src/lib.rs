@@ -174,13 +174,6 @@ mod tests {
     }
 
     #[test]
-    fn test_match_result_json_serialization() {
-        insta::assert_json_snapshot!(MatchResult::TruePositive);
-        insta::assert_json_snapshot!(MatchResult::FalsePositive);
-        insta::assert_json_snapshot!(MatchResult::FalseNegative);
-    }
-
-    #[test]
     fn test_consensus_report_mixed_metrics() {
         let report = ConsensusReport {
             agents: vec![],

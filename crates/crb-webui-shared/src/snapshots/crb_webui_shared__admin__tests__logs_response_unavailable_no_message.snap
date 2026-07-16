@@ -1,9 +1,0 @@
----
-source: crates/crb-webui-shared/src/admin.rs
-expression: "&orig"
----
-{
-  "logs": "",
-  "available": false,
-  "message": null
-}

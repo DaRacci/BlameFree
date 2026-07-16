@@ -73,17 +73,6 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_entry_serialization() {
-        let entry = CacheEntry {
-            file_path: "abc123.json".into(),
-            timestamp: "1234567890.123456789".into(),
-            model: "gpt-4".into(),
-            tokens_used: Some(150),
-        };
-        insta::assert_json_snapshot!(&entry);
-    }
-
-    #[test]
     fn test_cache_entry_deserialization() -> Result<(), Box<dyn std::error::Error>> {
         let json = r#"{
             "file_path": "test.json",

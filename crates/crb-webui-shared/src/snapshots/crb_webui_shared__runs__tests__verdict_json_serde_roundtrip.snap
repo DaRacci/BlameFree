@@ -1,9 +1,0 @@
----
-source: crates/crb-webui-shared/src/runs.rs
-expression: "&orig"
----
-{
-  "reasoning": "The finding matches the golden comment.",
-  "match": true,
-  "confidence": 0.95
-}

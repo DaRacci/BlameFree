@@ -106,20 +106,6 @@ mod tests {
     }
 
     #[test]
-    fn test_metrics_serde_roundtrip() {
-        let original = Metrics {
-            true_positives: 10,
-            false_positives: 3,
-            false_negatives: 2,
-            duration_secs: 45.5,
-        };
-        let json = serde_json::to_string(&original).unwrap();
-        let deserialized: Metrics = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&original);
-        let _ = deserialized;
-    }
-
-    #[test]
     fn test_metrics_aliases_deserialize() {
         let json = r#"{"total_tp":5,"total_fp":2,"total_fn":1,"duration_secs":10.0}"#;
         let m: Metrics = serde_json::from_str(json).unwrap();

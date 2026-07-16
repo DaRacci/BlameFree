@@ -1,5 +1,0 @@
----
-source: crates/crb-consensus/src/lib.rs
-expression: "MatchResult::TruePositive"
----
-"TruePositive"

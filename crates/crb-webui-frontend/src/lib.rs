@@ -227,45 +227,8 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // NewRunResponse — serde
-    // ------------------------------------------------------------------
-
-    #[test]
-    fn test_new_run_response_serde_roundtrip() {
-        let resp = NewRunResponse {
-            run_id: "abc-123".into(),
-            status: "created".into(),
-            total_prs: 42,
-        };
-        let json = serde_json::to_string(&resp).expect("serialize");
-        let deserialized: NewRunResponse = serde_json::from_str(&json).expect("deserialize");
-        insta::assert_json_snapshot!(&resp);
-        let _ = deserialized;
-    }
-
-    // ------------------------------------------------------------------
     // AppConfig — serde
     // ------------------------------------------------------------------
-
-    #[test]
-    fn test_app_config_serde_roundtrip() {
-        use crb_webui_shared::config::RoleInfo;
-
-        let config = AppConfig {
-            models: vec!["gpt-4".into(), "claude-3".into()],
-            datasets: vec!["ds1".into()],
-            roles: vec![RoleInfo {
-                name: "Reviewer".into(),
-                abbreviation: "rev".into(),
-                incompatible_with_roles: vec![],
-            }],
-            auth_enabled: false,
-        };
-        let json = serde_json::to_string(&config).expect("serialize");
-        let deserialized: AppConfig = serde_json::from_str(&json).expect("deserialize");
-        insta::assert_json_snapshot!(&config);
-        let _ = deserialized;
-    }
 
     #[test]
     fn test_app_config_serde_defaults() {

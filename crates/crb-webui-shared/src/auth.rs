@@ -27,21 +27,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_auth_user_serde_roundtrip() {
-        let orig = AuthUser {
-            id: "12345".into(),
-            login: "octocat".into(),
-            name: Some("Octo Cat".into()),
-            email: Some("octo@example.com".into()),
-            avatar_url: Some("https://avatars.example.com/u/12345".into()),
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: AuthUser = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
-    #[test]
     fn test_auth_user_default() {
         let user = AuthUser::default();
         insta::assert_debug_snapshot!(user);

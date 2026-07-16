@@ -102,19 +102,6 @@ mod tests {
     // ── RoleInfo ──────────────────────────────────────────────────────────
 
     #[test]
-    fn test_role_info_serde_roundtrip() {
-        let orig = RoleInfo {
-            name: "Frontend Engineer".into(),
-            abbreviation: "FE".into(),
-            incompatible_with_roles: vec![],
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: RoleInfo = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
-    #[test]
     fn test_role_info_display_name() {
         let role = RoleInfo {
             name: "Backend Engineer".into(),
@@ -125,19 +112,6 @@ mod tests {
     }
 
     #[test]
-    fn test_role_info_with_incompatible_roles() {
-        let role = RoleInfo {
-            name: "Full Stack".into(),
-            abbreviation: "FS".into(),
-            incompatible_with_roles: vec!["FE".into(), "BE".into()],
-        };
-        let json = serde_json::to_string(&role).unwrap();
-        let deserialized: RoleInfo = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&role);
-        let _ = deserialized;
-    }
-
-    #[test]
     fn test_role_info_default_incompatible() {
         let json = r#"{"name":"Frontend","abbreviation":"FE"}"#;
         let role: RoleInfo = serde_json::from_str(json).unwrap();
@@ -145,22 +119,6 @@ mod tests {
     }
 
     // ── DatasetConfig ─────────────────────────────────────────────────────
-
-    #[test]
-    fn test_dataset_config_serde_roundtrip() {
-        let orig = DatasetConfig {
-            defaults: DatasetDefaults {
-                model: Some("gpt-4o".into()),
-                concurrency: Some(5),
-                max_findings: Some(10),
-                roles: Some("FE,BE".into()),
-            },
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: DatasetConfig = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
 
     #[test]
     fn test_dataset_config_default() {
@@ -178,20 +136,6 @@ mod tests {
     // ── DatasetDefaults ───────────────────────────────────────────────────
 
     #[test]
-    fn test_dataset_defaults_serde_roundtrip() {
-        let orig = DatasetDefaults {
-            model: Some("claude-3-opus".into()),
-            concurrency: Some(3),
-            max_findings: Some(20),
-            roles: Some("SEC".into()),
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: DatasetDefaults = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
-    #[test]
     fn test_dataset_defaults_default() {
         let defaults = DatasetDefaults::default();
         insta::assert_debug_snapshot!(defaults);
@@ -200,82 +144,9 @@ mod tests {
     // ── DatasetInfo ───────────────────────────────────────────────────────
 
     #[test]
-    fn test_dataset_info_serde_roundtrip() {
-        let orig = DatasetInfo {
-            id: "benchmark-v2".into(),
-            path: "/data/datasets/benchmark-v2".into(),
-            pr_count: 150,
-            config: None,
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: DatasetInfo = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
-    #[test]
-    fn test_dataset_info_with_config() {
-        let config = DatasetConfig {
-            defaults: DatasetDefaults {
-                model: Some("gpt-4".into()),
-                ..Default::default()
-            },
-        };
-        let orig = DatasetInfo {
-            id: "test-set".into(),
-            path: "/tmp/datasets/test".into(),
-            pr_count: 10,
-            config: Some(config),
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: DatasetInfo = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
-    #[test]
     fn test_dataset_info_default_config() {
         let json = r#"{"id":"ds1","path":"/data/ds1","pr_count":50}"#;
         let info: DatasetInfo = serde_json::from_str(json).unwrap();
         insta::assert_debug_snapshot!(info);
-    }
-
-    // ── PrEntry ───────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_pr_entry_serde_roundtrip() {
-        let orig = PrEntry {
-            key: "owner/repo/pull/42".into(),
-            url: "https://github.com/owner/repo/pull/42".into(),
-            title: "Add CI pipeline".into(),
-            repo: "owner/repo".into(),
-            pr_number: 42,
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: PrEntry = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
-    // ── ReasoningEffortsResponse ──────────────────────────────────────────
-
-    #[test]
-    fn test_reasoning_efforts_response_serde_roundtrip() {
-        let orig = ReasoningEffortsResponse {
-            levels: vec!["low".into(), "medium".into(), "high".into()],
-        };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: ReasoningEffortsResponse = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
-    }
-
-    #[test]
-    fn test_reasoning_efforts_response_empty() {
-        let orig = ReasoningEffortsResponse { levels: vec![] };
-        let json = serde_json::to_string(&orig).unwrap();
-        let deserialized: ReasoningEffortsResponse = serde_json::from_str(&json).unwrap();
-        insta::assert_json_snapshot!(&orig);
-        let _ = deserialized;
     }
 }

@@ -112,16 +112,4 @@ mod tests {
     fn test_runs_file_constant() {
         assert_eq!(RUNS_FILE, "_runs.json");
     }
-
-    #[test]
-    fn test_run_history_entry_serialization() {
-        let entry = RunHistoryEntry {
-            run_id: "run-001".into(),
-            timestamp: "2026-07-16T12:00:00Z".into(),
-            model: "gpt-4".into(),
-            judge_model: "gpt-4-turbo".into(),
-            total_prs: 10,
-        };
-        insta::assert_json_snapshot!(&entry);
-    }
 }

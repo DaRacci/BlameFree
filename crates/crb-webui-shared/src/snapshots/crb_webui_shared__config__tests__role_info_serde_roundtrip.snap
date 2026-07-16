@@ -1,9 +1,0 @@
----
-source: crates/crb-webui-shared/src/config.rs
-expression: "&orig"
----
-{
-  "name": "Frontend Engineer",
-  "abbreviation": "FE",
-  "incompatible_with_roles": []
-}

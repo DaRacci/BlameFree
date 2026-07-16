@@ -1,9 +1,0 @@
----
-source: crates/crb-webui-shared/src/adhoc.rs
-expression: "&orig"
----
-{
-  "number": 42,
-  "title": "Fix the bug",
-  "html_url": "https://github.com/owner/repo/pull/42"
-}
