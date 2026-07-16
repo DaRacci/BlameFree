@@ -1,0 +1,11 @@
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -5,7 +5,7 @@ fn foo() {
+ // line 1
+ // line 2
+ // line 3
+-    old_code();
++    new_code();
+ // line 5
+ // line 6
+ // line 7

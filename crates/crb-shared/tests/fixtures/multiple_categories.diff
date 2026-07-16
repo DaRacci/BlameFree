@@ -1,0 +1,21 @@
+diff --git a/yarn.lock b/yarn.lock
+index a..b 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -1 +1 @@
+-lock
++lock2
+diff --git a/vendor/some-lib/lib.rs b/vendor/some-lib/lib.rs
+index c..d 100644
+--- a/vendor/some-lib/lib.rs
++++ b/vendor/some-lib/lib.rs
+@@ -1 +1 @@
+-old
++new
+diff --git a/src/lib.rs b/src/lib.rs
+index e..f 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1 +1 @@
+-fn old() {}
++fn new() {}

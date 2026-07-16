@@ -1,0 +1,14 @@
+diff --git a/src/lib.rs b/src/lib.rs
+index abc..def 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1 +1 @@
+-old
++new
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 111..222 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -100 +100 @@
+-lock
++unlock

@@ -168,6 +168,8 @@ mod tests {
     use crate::judge::{compute_metrics, jaccard_match};
     use crb_types::benchmark::{JudgeVerdict, MetricsProvider};
 
+    const THRESHOLD: f64 = 0.12;
+
     #[test]
     fn test_perfect_match() {
         let verdicts = vec![
@@ -230,14 +232,12 @@ mod tests {
         assert!((m.f1() - 0.5).abs() < 1e-6);
     }
 
-    const THRESHOLD: f64 = 0.12;
-
     #[test]
     fn test_jaccard_identical() {
         let score = jaccard_match(
             "hardcoded secret in config",
             "hardcoded secret in config",
-            0.12,
+            THRESHOLD,
         );
         assert!(score.unwrap() > 0.9);
     }
@@ -247,14 +247,18 @@ mod tests {
         let score = jaccard_match(
             "hardcoded API key found",
             "hardcoded secret token in code",
-            0.12,
+            THRESHOLD,
         );
         assert!(score.is_some());
     }
 
     #[test]
     fn test_jaccard_no_overlap() {
-        let score = jaccard_match("null pointer check", "SQL injection vulnerability", 0.12);
+        let score = jaccard_match(
+            "null pointer check",
+            "SQL injection vulnerability",
+            THRESHOLD,
+        );
         assert!(score.is_none());
     }
 
@@ -268,254 +272,105 @@ mod tests {
 
     #[test]
     fn test_jaccard_empty_strings() {
-        assert!(jaccard_match("", "", 0.12).is_none()); // empty union
-        assert!(jaccard_match("hello", "", 0.12).is_none());
+        assert!(jaccard_match("", "", THRESHOLD).is_none()); // empty union
+        assert!(jaccard_match("hello", "", THRESHOLD).is_none());
     }
 
     #[test]
     fn test_jaccard_case_insensitive() {
-        let s1 = jaccard_match("SQL Injection", "sql injection", 0.12);
-        let s2 = jaccard_match("Sql Injection", "sql injection", 0.12);
-        assert_eq!(s1, s2); // case insensitive
+        let s1 = jaccard_match("SQL Injection", "sql injection", THRESHOLD);
+        let s2 = jaccard_match("Sql Injection", "sql injection", THRESHOLD);
+        assert_eq!(s1, s2);
     }
 
     #[test]
     fn test_jaccard_punctuation_stripping() {
-        // With whitespace-only split (Python identical):
-        // "xss (cross-site scripting)" -> {"xss", "(cross-site", "scripting)"}
-        // "xss cross site scripting" -> {"xss", "cross", "site", "scripting"}
-        // Intersection: {"xss"}, Union: 6 words -> Jaccard = 1/6 ≈ 0.167
+        // With whitespace-only split the parenthesized variant yields tokens
+        // {"xss", "(cross-site", "scripting)"} — union of 6 → Jaccard = 1/6 ≈ 0.167
         let s1 = jaccard_match(
             "xss (cross-site scripting)",
             "xss cross site scripting",
-            0.12,
+            THRESHOLD,
         );
         assert!(s1.is_some());
         assert!((s1.unwrap() - 1.0 / 6.0).abs() < 0.01);
     }
 
     #[test]
-    fn test_jaccard_python_equivalent() {
-        // Python: "hardcoded secret in config".lower().split() -> {"hardcoded", "secret", "in", "config"}
-        // Finding: "hardcoded API key found" -> {"hardcoded", "api", "key", "found"}
-        // Intersection: {"hardcoded"} = 1
-        // Union: {"hardcoded", "secret", "in", "config", "api", "key", "found"} = 7
-        // Jaccard = 1/7 ≈ 0.1428 >= 0.12 ✓
-        let score = jaccard_match(
-            "hardcoded API key found",
-            "hardcoded secret in config",
-            0.12,
-        );
-        assert!(score.is_some());
-        let score_val = score.unwrap();
-        assert!((score_val - 1.0 / 7.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn cv_identical_strings() {
-        // Both implementations: score = 1.0
-        let score = jaccard_match(
-            "hardcoded secret in config",
-            "hardcoded secret in config",
-            THRESHOLD,
-        );
-        let val = score.unwrap();
-        println!(
-            "[Rust CV] identical strings: score={:.6}  [Python: 1.0] ✓",
-            val
-        );
-        assert!((val - 1.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn cv_partial_overlap_hardcoded() {
-        // "hardcoded" shared out of 7 unique words -> 1/7 ≈ 0.142857
-        // Python same: 1/7 ≈ 0.142857 ✓
+    fn test_jaccard_precise_intersection() {
+        // "hardcoded" shared out of 7 unique words across
+        // "hardcoded API key found" ∩ "hardcoded secret in config" = 1/7 ≈ 0.1428
         let score = jaccard_match(
             "hardcoded API key found",
             "hardcoded secret in config",
             THRESHOLD,
         );
-        let val = score.unwrap();
-        println!(
-            "[Rust CV] partial overlap (hardcoded): score={:.6}  [Python: 0.142857] ✓",
-            val
-        );
-        assert!((val - 1.0 / 7.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn cv_no_overlap() {
-        // Both: score = None (no common tokens)
-        let score = jaccard_match(
-            "null pointer check",
-            "SQL injection vulnerability",
-            THRESHOLD,
-        );
-        assert!(score.is_none());
-        println!("[Rust CV] no overlap: score=None  [Python: 0.0, no match] ✓");
-    }
-
-    #[test]
-    fn cv_punctuation_diff() {
-        // NOW MATCHES PYTHON:
-        // Python: "xss (cross-site scripting)" -> {"xss", "(cross-site", "scripting)"}
-        //         ∩ {"xss", "cross", "site", "scripting"} = {"xss"} -> 1/6 = 0.167
-        // Rust:   "xss (cross-site scripting)" -> {"xss", "(cross-site", "scripting)"}
-        //         ∩ {"xss", "cross", "site", "scripting"} = {"xss"} -> 1/6 = 0.167 ✓
-        let score = jaccard_match(
-            "xss (cross-site scripting)",
-            "xss cross site scripting",
-            THRESHOLD,
-        );
-        let val = score.unwrap();
-        println!(
-            "[Rust CV] punctuation case: score={:.6}  [Python: 0.166667] ✓ MATCHES",
-            val
-        );
-        assert!((val - 1.0 / 6.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn cv_case_insensitive() {
-        // Both: score = 1.0 for "SQL Injection" vs "sql injection"
-        let s1 = jaccard_match("SQL Injection", "sql injection", THRESHOLD);
-        let s2 = jaccard_match("Sql Injection", "sql injection", THRESHOLD);
-        assert_eq!(s1, s2);
-        println!(
-            "[Rust CV] case insensitive: score={:.6}  [Python: 1.0] ✓",
-            s1.unwrap()
-        );
-    }
-
-    #[test]
-    fn cv_empty_strings() {
-        // Both: return no match for empty/one-empty
-        assert!(jaccard_match("", "", THRESHOLD).is_none());
-        assert!(jaccard_match("hello", "", THRESHOLD).is_none());
-        println!("[Rust CV] empty strings: both None  [Python: 0.0, no match] ✓");
-    }
-
-    #[test]
-    fn cv_hyphen_difference() {
-        // NOW MATCHES PYTHON — no more difference:
-        // "cross-site scripting vulnerability" -> {"cross-site", "scripting", "vulnerability"}
-        // "cross site scripting" -> {"cross", "site", "scripting"}
-        // Intersection: {"scripting"} = 1
-        // Union: {"cross-site", "scripting", "vulnerability", "cross", "site"} = 5
-        // Jaccard = 1/5 = 0.2 — same in Python ✓
-        let hyphen_score = jaccard_match(
-            "cross-site scripting vulnerability",
-            "cross site scripting",
-            THRESHOLD,
-        );
-        // "cross site scripting vulnerability" -> {"cross", "site", "scripting", "vulnerability"}
-        // "cross site scripting" -> {"cross", "site", "scripting"}
-        // Intersection: 3, Union: 4 -> Jaccard = 3/4 = 0.75
-        let regular_score = jaccard_match(
-            "cross site scripting vulnerability",
-            "cross site scripting",
-            THRESHOLD,
-        );
-        println!(
-            "[Rust CV] hyphen case (cross-site vs cross site): score={:?}  [Python: 1/5=0.2] ✓ MATCHES",
-            hyphen_score
-        );
-        println!(
-            "[Rust CV] regular case (no hyphen): score={:?}  [Python: 3/4=0.75]",
-            regular_score
-        );
-        assert!(hyphen_score.is_some());
-        assert!((hyphen_score.unwrap() - 0.2).abs() < 0.01);
-        if let Some(s) = regular_score {
-            assert!((s - 0.75).abs() < 0.01);
-        }
-    }
-
-    #[test]
-    fn cv_compound_difference() {
-        // NOW MATCHES PYTHON:
-        // Python: "well-known vulnerability" -> {"well-known", "vulnerability"}
-        //         ∩ "well known issue" = {} -> 0.0 -> NO MATCH
-        // Rust:   {"well-known", "vulnerability"}
-        //         ∩ {"well", "known", "issue"} = {} -> 0.0 -> NO MATCH ✓
-        let score = jaccard_match("well-known vulnerability", "well known issue", THRESHOLD);
-        println!(
-            "[Rust CV] compound diff: score={:?}  [Python: 0.0, NO MATCH] ✓ MATCHES",
-            score
-        );
-        assert!(
-            score.is_none(),
-            "well-known is a single token now, no overlap with 'well' or 'known'"
-        );
-    }
-
-    #[test]
-    fn cv_apostrophe_preserved() {
-        // Both: "doesn't" is a single token (apostrophe preserved in Rust)
-        let score = jaccard_match("doesn't work", "doesn't function", THRESHOLD);
-        println!(
-            "[Rust CV] apostrophe: score={:?}  [Python: 1/3=0.333]",
-            score
-        );
-        if let Some(s) = score {
-            // "doesn't" common, union = {"doesn't", "work", "function"} = 3
-            assert!((s - 1.0 / 3.0).abs() < 0.01);
-        }
-    }
-
-    #[test]
-    fn cv_ssrf_real_example() {
-        // Both Rust and Python agree (whitespace-only split):
-        // Python: "Server-Side Request Forgery via open()"
-        //         -> {"server-side", "request", "forgery", "via", "open()"}
-        //         "SSRF vulnerability using open(url) without validation"
-        //         -> {"ssrf", "vulnerability", "using", "open(url)", "without", "validation"}
-        //         ∩ = {} -> 0.0 -> NO MATCH
-        //
-        // Rust:   "Server-Side Request Forgery via open()"
-        //         -> {"server-side", "request", "forgery", "via", "open()"}
-        //         "SSRF vulnerability using open(url) without validation"
-        //         -> {"ssrf", "vulnerability", "using", "open(url)", "without", "validation"}
-        //         ∩ = {} -> 0.0 -> NO MATCH ✓
-        let score = jaccard_match(
-            "Server-Side Request Forgery via open()",
-            "SSRF vulnerability using open(url) without validation",
-            THRESHOLD,
-        );
-        println!(
-            "[Rust CV] real SSRF: score={:?}  [Python: 0.0, no match]",
-            score
-        );
-        // Both agree: no match ✓
-        assert!(score.is_none());
-    }
-
-    #[test]
-    fn cv_python_identical_punctuation_case() {
-        // Python: "cross-site" is 1 token, "cross site" is 2 tokens -> different
-        // With whitespace-only split: "cross-site" matches "cross site" — NO (0 words overlap)
-        let score = jaccard_match("cross-site scripting", "cross site scripting", THRESHOLD);
-        // Python token sets: {"cross-site", "scripting"} vs {"cross", "site", "scripting"}
-        // Intersection: {"scripting"}, Union: {"cross-site", "cross", "site", "scripting"} = 4
-        // Jaccard = 1/4 = 0.25 -> above 0.12 -> matches
         assert!(score.is_some());
-        assert!((score.unwrap() - 0.25).abs() < 0.01);
+        assert!((score.unwrap() - 1.0 / 7.0).abs() < 0.01);
     }
 
-    #[test]
-    fn cv_python_xss_paren_case() {
-        // Python: "xss (cross-site scripting)" -> tokens: {"xss", "(cross-site", "scripting)"}
-        // Python: "xss cross site scripting" -> tokens: {"xss", "cross", "site", "scripting"}
-        // Intersection: {"xss"}, Union: {"xss", "(cross-site", "scripting)", "cross", "site", "scripting"} = 6
-        // Jaccard = 1/6 ≈ 0.167 -> above 0.12 -> matches
-        let score = jaccard_match(
-            "xss (cross-site scripting)",
-            "xss cross site scripting",
-            THRESHOLD,
-        );
-        assert!(score.is_some());
-        // Python Jaccard = 1/6 ≈ 0.167
-        assert!((score.unwrap() - 0.1666).abs() < 0.01);
+    mod edge_cases {
+        use super::*;
+
+        #[test]
+        fn test_jaccard_hyphen_difference() {
+            // "cross-site" is a single token, "cross site" is two — different intersection sizes
+            let hyphen_score = jaccard_match(
+                "cross-site scripting vulnerability",
+                "cross site scripting",
+                THRESHOLD,
+            );
+            let regular_score = jaccard_match(
+                "cross site scripting vulnerability",
+                "cross site scripting",
+                THRESHOLD,
+            );
+            // hyphen: 1 shared ("scripting") / 5 union = 0.2
+            assert!(hyphen_score.is_some());
+            assert!((hyphen_score.unwrap() - 0.2).abs() < 0.01);
+            // no hyphen: 3 shared / 4 union = 0.75
+            if let Some(s) = regular_score {
+                assert!((s - 0.75).abs() < 0.01);
+            }
+        }
+
+        #[test]
+        fn test_jaccard_compound_difference() {
+            // "well-known" is a single token, no overlap with "well" or "known"
+            let score = jaccard_match("well-known vulnerability", "well known issue", THRESHOLD);
+            assert!(
+                score.is_none(),
+                "well-known is a single token, no overlap with 'well' or 'known'"
+            );
+        }
+
+        #[test]
+        fn test_jaccard_apostrophe_preserved() {
+            // "doesn't" is a single token (apostrophe preserved in whitespace split)
+            let score = jaccard_match("doesn't work", "doesn't function", THRESHOLD);
+            if let Some(s) = score {
+                // {"doesn't"} common, union = {"doesn't", "work", "function"} = 3
+                assert!((s - 1.0 / 3.0).abs() < 0.01);
+            }
+        }
+
+        #[test]
+        fn test_jaccard_ssrf_real_example() {
+            // SSRF phrase tokens have zero overlap with expanded SSRF description
+            let score = jaccard_match(
+                "Server-Side Request Forgery via open()",
+                "SSRF vulnerability using open(url) without validation",
+                THRESHOLD,
+            );
+            assert!(score.is_none());
+        }
+
+        #[test]
+        fn test_jaccard_hyphen_vs_spaces() {
+            // "cross-site" vs "cross site" — Jaccard = 1/4 = 0.25 (only "scripting" common)
+            let score = jaccard_match("cross-site scripting", "cross site scripting", THRESHOLD);
+            assert!(score.is_some());
+            assert!((score.unwrap() - 0.25).abs() < 0.01);
+        }
     }
 }

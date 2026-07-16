@@ -12,7 +12,7 @@ use crb_cache::sha256::sha256_hex;
 
 use crb_shared::finding::Finding;
 use crb_shared::jaccard::jaccard_similarity;
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::MatchResult;
 use crb_cache::traits::{CacheBackend, CacheKey};
@@ -29,7 +29,10 @@ impl CacheKey for JudgeCacheKey {
     fn cache_key(&self) -> String {
         sha256_hex(&format!(
             "{}{}{}{}",
-            self.judge_prompt_hash, self.finding_message, self.golden_message_regex, self.judge_model
+            self.judge_prompt_hash,
+            self.finding_message,
+            self.golden_message_regex,
+            self.judge_model
         ))
     }
 }
@@ -76,12 +79,13 @@ pub async fn judge_comment(
                 *calls += 1;
                 let prompt = format_judge_prompt(&comment, &msg);
                 match judge.prompt(&prompt).extended_details().await {
-                    Ok(resp) => serde_json::from_str::<JudgeVerdict>(&resp.output)
-                        .unwrap_or(JudgeVerdict {
+                    Ok(resp) => {
+                        serde_json::from_str::<JudgeVerdict>(&resp.output).unwrap_or(JudgeVerdict {
                             match_: false,
                             reasoning: String::new(),
                             confidence: 0.0,
-                        }),
+                        })
+                    }
                     Err(e) => {
                         warn!("Judge call failed: {e}");
                         JudgeVerdict {
@@ -94,9 +98,7 @@ pub async fn judge_comment(
             }
         };
 
-        let verdict = cache
-            .get_or_compute(&cache_key, compute_verdict)
-            .await;
+        let verdict = cache.get_or_compute(&cache_key, compute_verdict).await;
 
         if verdict.match_ {
             return MatchResult::TruePositive;

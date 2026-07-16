@@ -1,0 +1,21 @@
+diff --git a/dist/bundle.min.js b/dist/bundle.min.js
+index a..b 100644
+--- a/dist/bundle.min.js
++++ b/dist/bundle.min.js
+@@ -1 +1 @@
+-var x=1
++var x=2
+diff --git a/coverage/report.html b/coverage/report.html
+index c..d 100644
+--- a/coverage/report.html
++++ b/coverage/report.html
+@@ -1 +1 @@
+-old
++new
+diff --git a/src/lib.rs b/src/lib.rs
+index e..f 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -1 +1 @@
+-fn old() {}
++fn new() {}

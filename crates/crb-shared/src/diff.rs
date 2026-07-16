@@ -234,30 +234,7 @@ mod tests {
     #[test]
     fn debug_minified_coverage() {
         let mut diff = Diff::new(
-            concat!(
-                "diff --git a/dist/bundle.min.js b/dist/bundle.min.js\n",
-                "index a..b 100644\n",
-                "--- a/dist/bundle.min.js\n",
-                "+++ b/dist/bundle.min.js\n",
-                "@@ -1 +1 @@\n",
-                "-var x=1\n",
-                "+var x=2\n",
-                "diff --git a/coverage/report.html b/coverage/report.html\n",
-                "index c..d 100644\n",
-                "--- a/coverage/report.html\n",
-                "+++ b/coverage/report.html\n",
-                "@@ -1 +1 @@\n",
-                "-old\n",
-                "+new\n",
-                "diff --git a/src/lib.rs b/src/lib.rs\n",
-                "index e..f 100644\n",
-                "--- a/src/lib.rs\n",
-                "+++ b/src/lib.rs\n",
-                "@@ -1 +1 @@\n",
-                "-fn old() {}\n",
-                "+fn new() {}\n",
-            )
-            .to_string(),
+            include_str!("../tests/fixtures/mixed_real_and_generated.diff").to_string(),
         );
 
         preprocess_diff(&mut diff);
@@ -276,6 +253,170 @@ mod tests {
                 let note = &diff.raw[start..start + end + 1];
                 println!("FILTER NOTE: {:?}", note);
             }
+        }
+    }
+
+    #[test]
+    fn filter_removes_pnpm_lock() {
+        let mut diff = Diff::new(
+            include_str!("../tests/fixtures/pnpm_lock.diff").to_string(),
+        );
+        preprocess_diff(&mut diff);
+        assert!(
+            diff.sections.iter().any(|s| s.path == "src/lib.rs"),
+            "should contain src/lib.rs"
+        );
+        assert!(
+            !diff.sections.iter().any(|s| s.path == "pnpm-lock.yaml"),
+            "should NOT contain pnpm-lock"
+        );
+        assert!(
+            diff.notes.iter().any(|n| n.contains("filtered")),
+            "should contain a filter note"
+        );
+    }
+
+    #[test]
+    fn filter_removes_node_modules() {
+        let mut diff = Diff::new(
+            include_str!("../tests/fixtures/node_modules.diff").to_string(),
+        );
+        preprocess_diff(&mut diff);
+        assert!(
+            diff.sections.iter().any(|s| s.path == "src/main.rs"),
+            "should contain real file"
+        );
+        assert!(
+            !diff
+                .sections
+                .iter()
+                .any(|s| s.path == "node_modules/pkg/index.js"),
+            "should remove vendor"
+        );
+        assert!(
+            diff.notes.iter().any(|n| n.contains("filtered")),
+            "should have filter note"
+        );
+    }
+
+    #[test]
+    fn filter_removes_minified_and_coverage() {
+        let mut diff = Diff::new(
+            include_str!("../tests/fixtures/mixed_real_and_generated.diff").to_string(),
+        );
+        preprocess_diff(&mut diff);
+        assert!(
+            !diff.sections.iter().any(|s| s.path == "dist/bundle.min.js"),
+            "should remove minified"
+        );
+        assert!(
+            !diff
+                .sections
+                .iter()
+                .any(|s| s.path == "coverage/report.html"),
+            "should remove coverage diff"
+        );
+        assert!(
+            diff.sections.iter().any(|s| s.path == "src/lib.rs"),
+            "should keep real file"
+        );
+        assert!(
+            diff.notes.iter().any(|n| n.contains("filtered")),
+            "should have filter note"
+        );
+    }
+
+    #[test]
+    fn filter_empty_diff_no_note() {
+        let mut diff = Diff::new("".to_string());
+        preprocess_diff(&mut diff);
+        assert!(diff.sections.is_empty());
+        // preprocess_diff always calls filter_files which adds a note, but
+        // with no sections it adds an empty note
+        assert!(diff.notes.is_empty() || diff.notes.iter().all(|n| n.is_empty()));
+    }
+
+    #[test]
+    fn filter_no_filterable_files_no_note() {
+        let mut diff = Diff::new(
+            include_str!("../tests/fixtures/only_src_lib.diff").to_string(),
+        );
+        preprocess_diff(&mut diff);
+        assert!(
+            diff.sections.iter().any(|s| s.path == "src/lib.rs"),
+            "should contain the only section"
+        );
+        assert!(
+            diff.notes.is_empty() || diff.notes.iter().all(|n| n.trim().is_empty() || n == "[]"),
+            "no filter note when nothing filtered"
+        );
+    }
+
+    #[test]
+    fn filter_multiple_categories_noted() {
+        let mut diff = Diff::new(
+            include_str!("../tests/fixtures/multiple_categories.diff").to_string(),
+        );
+        preprocess_diff(&mut diff);
+        assert!(
+            diff.notes.iter().any(|n| n.contains("filtered")),
+            "should note filtering"
+        );
+        assert!(
+            diff.sections.iter().any(|s| s.path == "src/lib.rs"),
+            "should keep real code"
+        );
+    }
+
+    mod strip_diff_metadata_tests {
+        use super::strip_diff_metadata;
+
+        #[test]
+        fn reduces_three_line_context_to_one() {
+            let diff = include_str!("../tests/fixtures/three_line_context.diff");
+            let result = strip_diff_metadata(diff);
+            let lines: Vec<&str> = result.lines().collect();
+            // Should keep --- and +++ lines
+            assert_eq!(lines[0], "--- a/src/main.rs");
+            assert_eq!(lines[1], "+++ b/src/main.rs");
+            // Header should be stripped of trailing context
+            assert_eq!(lines[2], "@@ -5,7 +5,7 @@");
+            // Should have: (---, +++, header + 1 before + 2 changed + 1 after) = 7 lines
+            assert_eq!(lines.len(), 7, "expected 7 lines total");
+            // Before context (only 1 line instead of 3)
+            assert_eq!(lines[3], " // line 3");
+            // Changed lines
+            assert!(lines[4].starts_with('-'));
+            assert!(lines[5].starts_with('+'));
+            // After context (only 1 line instead of 3)
+            assert_eq!(lines[6], " // line 5");
+        }
+
+        #[test]
+        fn strips_diff_git_and_index_lines() {
+            let diff = include_str!("../tests/fixtures/diff_git_index.diff");
+            let result = strip_diff_metadata(diff);
+            assert!(
+                !result.contains("diff --git"),
+                "diff --git should be stripped"
+            );
+            assert!(!result.contains("index "), "index lines should be stripped");
+            // Should still contain --- and +++
+            assert!(result.contains("--- a/src/main.rs"), "--- should be kept");
+            assert!(result.contains("+++ b/src/main.rs"), "+++ should be kept");
+        }
+
+        #[test]
+        fn strips_hunk_header_context_text() {
+            let diff = include_str!("../tests/fixtures/hunk_header_text.diff");
+            let result = strip_diff_metadata(diff);
+            let lines: Vec<&str> = result.lines().collect();
+            // Should keep --- and +++
+            assert_eq!(lines[0], "--- a/src/lib.rs");
+            assert_eq!(lines[1], "+++ b/src/lib.rs");
+            // Header should have stripped trailing "pub fn compute(...)"
+            assert_eq!(lines[2], "@@ -10,6 +10,8 @@");
+            assert!(result.contains("old_path") || result.contains("new_path"));
         }
     }
 }

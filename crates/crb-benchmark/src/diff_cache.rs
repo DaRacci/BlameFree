@@ -36,3 +36,33 @@ pub fn load_cached_diff(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_cached_diff_nonexistent() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let result = load_cached_diff(dir.path(), "owner", "repo", 42);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn load_cached_diff_exists() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let diffs_dir = dir.path().join("diffs");
+        std::fs::create_dir_all(&diffs_dir).expect("create diffs dir");
+        let diff_path = diffs_dir.join("owner_repo_42.diff");
+        std::fs::write(
+            &diff_path,
+            "--- a/file\n+++ b/file\n@@ -1 +1 @@\n-old\n+new",
+        )
+        .expect("write diff");
+        let result = load_cached_diff(dir.path(), "owner", "repo", 42);
+        assert!(result.is_some());
+        let content = result.unwrap();
+        assert!(content.contains("old"));
+        assert!(content.contains("new"));
+    }
+}

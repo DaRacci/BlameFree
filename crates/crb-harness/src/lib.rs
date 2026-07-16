@@ -52,3 +52,32 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn review_mode_commits() {
+        let mode = ReviewMode::Commits {
+            base: "HEAD~3".to_string(),
+            head: "HEAD".to_string(),
+        };
+        match mode {
+            ReviewMode::Commits { base, head } => {
+                assert_eq!(base, "HEAD~3");
+                assert_eq!(head, "HEAD");
+            }
+            _ => panic!("Expected Commits variant"),
+        }
+    }
+
+    #[test]
+    fn review_mode_working() {
+        let mode = ReviewMode::Working;
+        match mode {
+            ReviewMode::Working => {} // ok
+            _ => panic!("Expected Working variant"),
+        }
+    }
+}
