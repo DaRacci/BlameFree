@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/filesystem/grep.rs
+expression: result.unwrap_err().to_string()
+---
+subprocess could not be spawned or communicated with: absolute paths not allowed: /etc/passwd

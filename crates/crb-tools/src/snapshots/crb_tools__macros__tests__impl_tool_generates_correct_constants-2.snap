@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/macros.rs
+expression: def.name
+---
+"mock_tool"

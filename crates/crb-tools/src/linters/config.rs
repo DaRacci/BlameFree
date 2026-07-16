@@ -185,4 +185,24 @@ optional = true
         assert_eq!(ruff.timeout_secs, Some(60));
         assert_eq!(ruff.optional, Some(false));
     }
+
+    #[test]
+    fn test_load_linter_config_empty_name() {
+        let toml = r#"
+[linters.test]
+name = ""
+cmd = ["test"]
+timeout_secs = 60
+output_format = "json"
+optional = false
+"#;
+        let result = load_temp_config("test_empty_name.toml", toml);
+        insta::assert_debug_snapshot!(result.is_err());
+        match result.unwrap_err() {
+            ConfigError::ValidationError(msg) => {
+                insta::assert_snapshot!(msg);
+            }
+            other => panic!("expected ValidationError, got {other:?}"),
+        }
+    }
 }

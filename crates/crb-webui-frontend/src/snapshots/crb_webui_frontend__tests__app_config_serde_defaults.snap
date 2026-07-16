@@ -6,6 +6,5 @@ AppConfig {
     models: [],
     datasets: [],
     roles: [],
-    reduce_diff_enabled: false,
     auth_enabled: false,
 }

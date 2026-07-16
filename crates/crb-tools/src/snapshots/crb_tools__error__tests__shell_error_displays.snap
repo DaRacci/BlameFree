@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/error.rs
+expression: err1.to_string()
+---
+shell command could not be spawned: binary not found

@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/error.rs
+expression: err2.to_string()
+---
+configuration file could not be parsed: expected table at line 3

@@ -499,6 +499,30 @@ mod tests {
     }
 
     #[test]
+    fn test_cache_key_format() {
+        let key = RigCoreMcpTool::cache_key("test", "{}");
+        insta::assert_debug_snapshot!(key.len());
+        insta::assert_debug_snapshot!(key.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_check_json_rpc_error_no_error_field() {
+        let body = serde_json::json!({"result": {"tools": []}});
+        let result = HttpTransport::check_json_rpc_error(&body);
+        insta::assert_debug_snapshot!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_json_rpc_error_with_error_field() {
+        let body = serde_json::json!({
+            "error": {"message": "Method not found", "code": -32601}
+        });
+        let result = HttpTransport::check_json_rpc_error(&body);
+        insta::assert_debug_snapshot!(result.is_err());
+        insta::assert_snapshot!(result.unwrap_err().to_string());
+    }
+
+    #[test]
     fn test_load_mcp_tools_no_file() {
         let tools = load_mcp_tools(Path::new("/tmp/nonexistent_mcp_file.toml"));
         assert!(tools.is_err());

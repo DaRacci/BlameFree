@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/filesystem/grep.rs
+expression: result.len() <= 50_000
+---
+false

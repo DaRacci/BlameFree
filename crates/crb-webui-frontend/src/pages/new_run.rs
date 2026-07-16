@@ -8,8 +8,6 @@ use leptos::{
 };
 use leptos_router::use_navigate;
 
-// ─── Signal Declarations ────────────────────────────────────────────────────
-
 struct NewRunSignals {
     config: ReadSignal<Option<AppConfig>>,
     set_config: WriteSignal<Option<AppConfig>>,
@@ -118,8 +116,6 @@ fn create_form_signals() -> NewRunSignals {
     }
 }
 
-// ─── Data Fetching ──────────────────────────────────────────────────────────
-
 fn create_fetch_prs_handler(
     set_available_prs: WriteSignal<Vec<PrEntry>>,
     set_selected_prs: WriteSignal<Vec<String>>,
@@ -211,7 +207,8 @@ fn create_config_resource(
     set_reasoning_effort: WriteSignal<Option<String>>,
     fetch_prs: std::sync::Arc<dyn Fn(String) + 'static>,
 ) {
-    let _ = create_local_resource( // Ignore — triggered for side-effect; returns LocalResource handle
+    let _ = create_local_resource(
+        // Ignore — triggered for side-effect; returns LocalResource handle
         || (),
         move |_| {
             let set_config = set_config;
@@ -418,26 +415,8 @@ fn render_config_error_view(config_error: ReadSignal<Option<String>>) -> impl In
     }
 }
 
-fn render_reduce_diff_badge(config: ReadSignal<Option<AppConfig>>) -> impl IntoView {
-    move || {
-        config.get().map(|cfg| {
-            if cfg.reduce_diff_enabled {
-                view! {
-                    <div style="margin-bottom: var(--spacing-lg, 16px);">
-                        <span class="badge badge--green">"Reduce Diff: ON (-U1 + stripped)"</span>
-                    </div>
-                }
-                .into_view()
-            } else {
-                view! {
-                    <div style="margin-bottom: var(--spacing-lg, 16px);">
-                        <span class="badge badge--muted">"Reduce Diff: OFF (full diff)"</span>
-                    </div>
-                }
-                .into_view()
-            }
-        }).unwrap_or_else(|| view! { <span></span> }.into_view())
-    }
+fn render_reduce_diff_badge() -> impl IntoView {
+    view! { <span></span> }.into_view()
 }
 
 fn render_config_section(
@@ -826,7 +805,7 @@ pub fn NewRunPage() -> impl IntoView {
             {render_page_header()}
             {render_loading_indicator(s.config_loading, s.datasets_loading)}
             {render_config_error_view(s.config_error)}
-            {render_reduce_diff_badge(s.config)}
+            {render_reduce_diff_badge()}
             <form on:submit=on_submit>
                 {render_config_section(
                     s.config, s.datasets, s.dataset, s.model, s.set_model, on_dataset_change,
@@ -848,8 +827,6 @@ pub fn NewRunPage() -> impl IntoView {
         </div>
     }
 }
-
-// ─── API Call Helpers ───────────────────────────────────────────────────────
 
 async fn get_config() -> Result<AppConfig, String> {
     crate::fetch_json("/api/config").await

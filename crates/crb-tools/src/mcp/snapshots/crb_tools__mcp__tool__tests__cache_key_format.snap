@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/mcp/tool.rs
+expression: key.len()
+---
+64

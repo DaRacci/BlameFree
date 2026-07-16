@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/mcp/tool.rs
+expression: result.is_err()
+---
+true

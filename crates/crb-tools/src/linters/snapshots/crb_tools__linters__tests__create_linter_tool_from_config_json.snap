@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/linters/mod.rs
+expression: tool.name
+---
+custom-lint

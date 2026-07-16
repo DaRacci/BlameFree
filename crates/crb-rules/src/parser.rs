@@ -215,4 +215,46 @@ mod tests {
         let rule = parse_rule_file(content, &source("empty.md")).unwrap();
         assert_eq!(rule.body, "");
     }
+
+    #[test]
+    fn test_parse_empty_content() {
+        let result = parse_rule_file("", &source("empty.md")).unwrap();
+        insta::assert_debug_snapshot!(result.always_apply, @"true");
+        insta::assert_snapshot!(result.body, @"");
+        insta::assert_debug_snapshot!(result.globs.is_empty(), @"true");
+    }
+
+    #[test]
+    fn test_parse_content_with_only_whitespace() {
+        let result = parse_rule_file("   \n  \t  \n  ", &source("whitespace.md")).unwrap();
+        insta::assert_debug_snapshot!(result.always_apply, @"true");
+        insta::assert_snapshot!(result.body, @"");
+    }
+
+    #[test]
+    fn test_parse_frontmatter_only_delimiters() {
+        let result = parse_rule_file("---\n---", &source("empty-fm.md")).unwrap();
+        insta::assert_snapshot!(result.body, @"");
+        insta::assert_debug_snapshot!(result.always_apply, @"false");
+        insta::assert_debug_snapshot!(result.description, @"None");
+    }
+
+    #[test]
+    fn test_parse_frontmatter_all_fields_default() {
+        let result = parse_rule_file("---\n---\nBody.", &source("all-default.md")).unwrap();
+        insta::assert_debug_snapshot!(result.description, @"None");
+        insta::assert_debug_snapshot!(result.always_apply, @"false");
+        insta::assert_snapshot!(result.body, @"Body.");
+    }
+
+    #[test]
+    fn test_parse_globs_field_nontrivial_types() {
+        let content_bool = "---\nglobs: true\n---\nBody.";
+        let result_bool = parse_rule_file(content_bool, &source("bad-globs.md"));
+        insta::assert_debug_snapshot!(result_bool.is_err(), @"true");
+
+        let content_mixed = "---\nglobs:\n  - 42\n  - \"ok\"\n---\nBody.";
+        let result_mixed = parse_rule_file(content_mixed, &source("bad-globs2.md"));
+        insta::assert_debug_snapshot!(result_mixed.is_err(), @"true");
+    }
 }

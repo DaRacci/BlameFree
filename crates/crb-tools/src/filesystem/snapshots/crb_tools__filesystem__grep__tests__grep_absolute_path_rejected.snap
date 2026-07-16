@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/filesystem/grep.rs
+expression: result.is_err()
+---
+true

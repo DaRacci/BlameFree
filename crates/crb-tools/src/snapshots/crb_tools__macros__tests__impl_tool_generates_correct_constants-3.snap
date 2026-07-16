@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/macros.rs
+expression: def.description
+---
+"A mock tool for testing the impl_tool! macro."

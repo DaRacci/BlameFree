@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/error.rs
+expression: err2.to_string()
+---
+linter exited with code 1: syntax error

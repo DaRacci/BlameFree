@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/macros.rs
+expression: "MockToolSpecial::NAME"
+---
+my_custom-tool_v2

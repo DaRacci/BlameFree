@@ -107,4 +107,19 @@ mod tests {
         // Default timeout when None
         assert_eq!(tool.timeout, Duration::from_secs(60));
     }
+
+    #[test]
+    fn test_create_linter_tool_from_config_json() {
+        let config = LinterConfig {
+            name: "custom-lint".to_string(),
+            cmd: vec!["custom".to_string()],
+            timeout_secs: Some(30),
+            output_format: OutputFormat::Json,
+            environment: None,
+            optional: Some(false),
+        };
+        let tool = create_linter_tool(&config);
+        insta::assert_snapshot!(tool.name);
+        insta::assert_debug_snapshot!(tool.timeout);
+    }
 }

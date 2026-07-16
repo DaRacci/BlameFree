@@ -442,4 +442,122 @@ mod tests {
         let files = vec![PathBuf::from("README.md"), PathBuf::from("Makefile")];
         assert!(detect_repo_languages(&files).is_empty());
     }
+
+    #[test]
+    fn test_detect_language_case_sensitive_extension() {
+        insta::assert_debug_snapshot!(
+            detect_language(&PathBuf::from("test.PY")).is_none(),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(
+            detect_language(&PathBuf::from("test.RS")).is_none(),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(
+            detect_language(&PathBuf::from("test.TS")).is_none(),
+            @"true",
+        );
+    }
+
+    #[test]
+    fn test_detect_language_double_extension() {
+        insta::assert_debug_snapshot!(
+            detect_language(&PathBuf::from("script.tar.gz")).is_none(),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(
+            detect_language(&PathBuf::from("archive.tar.bz2")).is_none(),
+            @"true",
+        );
+        insta::assert_snapshot!(
+            detect_language(&PathBuf::from("model.v1.0.rs")).unwrap().name(),
+            @"Rust",
+        );
+    }
+
+    #[test]
+    fn test_detect_language_hidden_file() {
+        insta::assert_debug_snapshot!(
+            detect_language(&PathBuf::from(".hidden.py")).is_some(),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(
+            detect_language(&PathBuf::from(".gitignore")).is_none(),
+            @"true",
+        );
+    }
+
+    #[test]
+    fn test_language_from_str_whitespace_surrounding() {
+        insta::assert_debug_snapshot!(
+            language_from_str("\tPython\n").is_none(),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(
+            language_from_str(" Rust ").is_none(),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(
+            language_from_str("  csharp  ").is_none(),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(
+            language_from_str("C++\n").is_none(),
+            @"true",
+        );
+    }
+
+    #[test]
+    fn test_language_from_str_unicode() {
+        // Cyrillic homoglyphs should not match canonical names
+        insta::assert_debug_snapshot!(
+            language_from_str("Рython").is_none(),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(
+            language_from_str("𝐑ust").is_none(),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(
+            language_from_str("С++").is_none(),
+            @"true",
+        );
+    }
+
+    #[test]
+    fn test_language_to_extension_all_languages() {
+        insta::assert_snapshot!(language_to_extension(Language::Python), @"py");
+        insta::assert_snapshot!(language_to_extension(Language::Rust), @"rs");
+        insta::assert_snapshot!(language_to_extension(Language::TypeScript), @"ts");
+        insta::assert_snapshot!(language_to_extension(Language::JavaScript), @"js");
+        insta::assert_snapshot!(language_to_extension(Language::Go), @"go");
+        insta::assert_snapshot!(language_to_extension(Language::Ruby), @"rb");
+        insta::assert_snapshot!(language_to_extension(Language::Java), @"java");
+        insta::assert_snapshot!(language_to_extension(Language::Kotlin), @"kt");
+        insta::assert_snapshot!(language_to_extension(Language::Swift), @"swift");
+        insta::assert_snapshot!(language_to_extension(Language::CSharp), @"cs");
+        insta::assert_snapshot!(language_to_extension(Language::Cpp), @"cpp");
+        insta::assert_snapshot!(language_to_extension(Language::C), @"c");
+        insta::assert_snapshot!(language_to_extension(Language::Scala), @"scala");
+        insta::assert_snapshot!(language_to_extension(Language::Php), @"php");
+    }
+
+    #[test]
+    fn test_language_to_extension_fallback() {
+        let unknown = Language("Unknown");
+        insta::assert_snapshot!(language_to_extension(unknown), @"txt");
+    }
+
+    #[test]
+    fn test_rule_matches_path_invalid_glob_pattern() {
+        let r = rule(vec!["**[broken"]);
+        insta::assert_debug_snapshot!(
+            rule_matches_path(&r, &PathBuf::from("src/main.py")),
+            @"false",
+        );
+        insta::assert_debug_snapshot!(
+            rule_matches_path(&r, &PathBuf::from("any/file.txt")),
+            @"false",
+        );
+    }
 }

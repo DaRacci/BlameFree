@@ -188,4 +188,104 @@ mod tests {
             other => panic!("expected IoError or PathOutsideRepo, got {other:?}"),
         }
     }
+
+    #[tokio::test]
+    async fn test_read_file_with_start_line() -> Result<(), ReadFileError> {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.txt");
+        let content = (1..=10)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&file_path, &content).unwrap();
+
+        let tool = ReadFileTool {
+            repo_root: dir.path().to_string_lossy().to_string(),
+            ..Default::default()
+        };
+
+        let result = tool
+            .call(ReadFileArgs {
+                path: dir.path().join("test.txt").to_string_lossy().into(),
+                start_line: Some(3),
+                max_lines: None,
+            })
+            .await?;
+
+        insta::assert_snapshot!(result);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_read_file_with_max_lines() -> Result<(), ReadFileError> {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("test.txt");
+        let content = (1..=10)
+            .map(|i| format!("line{i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&file_path, &content).unwrap();
+
+        let tool = ReadFileTool {
+            repo_root: dir.path().to_string_lossy().to_string(),
+            ..Default::default()
+        };
+
+        let result = tool
+            .call(ReadFileArgs {
+                path: dir.path().join("test.txt").to_string_lossy().into(),
+                start_line: None,
+                max_lines: Some(3),
+            })
+            .await?;
+
+        insta::assert_snapshot!(result);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_read_file_too_large() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("large.txt");
+        let content = "x".repeat(1_500_000);
+        std::fs::write(&file_path, &content).unwrap();
+
+        let tool = ReadFileTool {
+            repo_root: dir.path().to_string_lossy().to_string(),
+            ..Default::default()
+        };
+
+        let result = tool
+            .call(ReadFileArgs {
+                path: dir.path().join("large.txt").to_string_lossy().into(),
+                start_line: None,
+                max_lines: None,
+            })
+            .await;
+
+        insta::assert_debug_snapshot!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_read_file_empty() -> Result<(), ReadFileError> {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("empty.txt");
+        std::fs::write(&file_path, "").unwrap();
+
+        let tool = ReadFileTool {
+            repo_root: dir.path().to_string_lossy().to_string(),
+            ..Default::default()
+        };
+
+        let result = tool
+            .call(ReadFileArgs {
+                path: dir.path().join("empty.txt").to_string_lossy().into(),
+                start_line: None,
+                max_lines: None,
+            })
+            .await?;
+
+        insta::assert_snapshot!(result);
+        Ok(())
+    }
 }

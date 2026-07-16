@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/linters/config.rs
+expression: msg
+---
+linter 'test' has empty name

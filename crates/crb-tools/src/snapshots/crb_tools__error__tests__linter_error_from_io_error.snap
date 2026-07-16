@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/error.rs
+expression: linter_err.to_string()
+---
+subprocess could not be spawned or communicated with: connection reset

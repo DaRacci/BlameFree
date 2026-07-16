@@ -105,4 +105,20 @@ mod tests {
         assert_eq!(findings[0].line, Some(25));
         assert_eq!(findings[0].message, "unreachable code");
     }
+
+    #[test]
+    fn test_parse_govet_output_multi_colon_message() {
+        let output = "./src/main.go:25:2: found: unresolved identifier: Foo";
+        let findings = parse_govet_output(output).unwrap();
+        insta::assert_debug_snapshot!(findings.len());
+        insta::assert_snapshot!(findings[0].message.as_str());
+    }
+
+    #[test]
+    fn test_parse_govet_output_unrecognized_format_line() {
+        let output = "./src/main.go:25:2: unreachable code\nwarning: this text is not in expected format\n./src/util.go:42:6: X is unused";
+        let findings = parse_govet_output(output).unwrap();
+        insta::assert_debug_snapshot!(findings.len());
+        insta::assert_snapshot!(findings[1].message.as_str());
+    }
 }

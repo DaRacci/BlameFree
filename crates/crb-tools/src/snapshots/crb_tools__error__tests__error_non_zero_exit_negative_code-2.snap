@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/error.rs
+expression: err2.to_string()
+---
+git exited with code -2: segfault

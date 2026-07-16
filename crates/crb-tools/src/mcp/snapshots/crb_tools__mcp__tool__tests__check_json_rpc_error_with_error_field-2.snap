@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/mcp/tool.rs
+expression: result.unwrap_err().to_string()
+---
+tool invocation failed: Method not found

@@ -106,4 +106,66 @@ mod tests {
         let preamble = format_preamble(&matched);
         assert!(preamble.ends_with("\n\n"));
     }
+
+    #[test]
+    fn test_format_preamble_single_rule() {
+        let r = rule(Some("Single Rule"), "Exactly one rule boundary.");
+        let matched = vec![&r];
+        let output = format_preamble(&matched);
+        insta::assert_debug_snapshot!(
+            output.contains("## Applicable Project Rules"),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(output.contains("### Single Rule"), @"true");
+        insta::assert_debug_snapshot!(
+            output.contains("Exactly one rule boundary."),
+            @"true",
+        );
+    }
+
+    #[test]
+    fn test_format_preamble_rule_with_empty_body() {
+        let r = rule(Some("Empty Body"), "");
+        let matched = vec![&r];
+        let output = format_preamble(&matched);
+        insta::assert_debug_snapshot!(
+            output.contains("## Applicable Project Rules"),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(output.contains("### Empty Body"), @"true");
+    }
+
+    #[test]
+    fn test_format_preamble_rule_without_description_and_without_body() {
+        let r = rule(None, "");
+        let matched = vec![&r];
+        let output = format_preamble(&matched);
+        insta::assert_debug_snapshot!(
+            output.contains("## Applicable Project Rules"),
+            @"true",
+        );
+        // No ### heading since there's no description
+        insta::assert_debug_snapshot!(output.contains("###"), @"false");
+    }
+
+    #[test]
+    fn test_format_preamble_unicode_content() {
+        let r = rule(
+            Some("Unicode 🦀 Rule"),
+            "Check for 🐍 in code. Also: 你好, こんにちは",
+        );
+        let matched = vec![&r];
+        let output = format_preamble(&matched);
+        insta::assert_debug_snapshot!(
+            output.contains("## Applicable Project Rules"),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(
+            output.contains("Unicode 🦀 Rule"),
+            @"true",
+        );
+        insta::assert_debug_snapshot!(output.contains("🐍"), @"true");
+        insta::assert_debug_snapshot!(output.contains("你好"), @"true");
+        insta::assert_debug_snapshot!(output.contains("こんにちは"), @"true");
+    }
 }

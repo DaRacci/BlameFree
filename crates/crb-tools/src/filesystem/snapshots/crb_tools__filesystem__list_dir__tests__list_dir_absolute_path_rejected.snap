@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/filesystem/list_dir.rs
+expression: result.is_err()
+---
+true

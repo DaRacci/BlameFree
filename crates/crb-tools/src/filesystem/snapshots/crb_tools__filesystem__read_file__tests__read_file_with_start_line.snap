@@ -1,0 +1,12 @@
+---
+source: crates/crb-tools/src/filesystem/read_file.rs
+expression: result
+---
+line3
+line4
+line5
+line6
+line7
+line8
+line9
+line10

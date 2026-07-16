@@ -124,4 +124,33 @@ mod tests {
             other => panic!("expected ParseFailed, got {other:?}"),
         }
     }
+
+    #[test]
+    fn test_parse_eslint_output_severity_edge_cases() {
+        let json = r#"[
+            {
+                "filePath": "/repo/src/app.js",
+                "messages": [
+                    {"ruleId": "no-console", "severity": 0, "line": 1, "column": 1, "message": "off but present"},
+                    {"ruleId": "no-eval", "severity": 3, "line": 2, "column": 1, "message": "unknown severity"}
+                ]
+            }
+        ]"#;
+        let findings = parse_eslint_output(json).unwrap();
+        insta::assert_debug_snapshot!(findings.len());
+        insta::assert_debug_snapshot!(findings[0].severity);
+        insta::assert_debug_snapshot!(findings[1].severity);
+    }
+
+    #[test]
+    fn test_parse_eslint_output_no_messages() {
+        let json = r#"[
+            {
+                "filePath": "/repo/src/app.js",
+                "messages": []
+            }
+        ]"#;
+        let findings = parse_eslint_output(json).unwrap();
+        insta::assert_debug_snapshot!(findings.len());
+    }
 }

@@ -154,4 +154,62 @@ mod tests {
 
         assert!(result.is_err());
     }
+
+    #[tokio::test]
+    async fn test_list_dir_absolute_path_rejected() {
+        let tool = ListDirTool {
+            workdir: "/tmp".into(),
+        };
+
+        let result = tool
+            .call(ListDirArgs {
+                path: "/etc".into(),
+                max_items: None,
+            })
+            .await;
+
+        insta::assert_debug_snapshot!(result.is_err());
+        insta::assert_snapshot!(result.unwrap_err().to_string());
+    }
+
+    #[tokio::test]
+    async fn test_list_dir_empty() -> Result<(), ListDirError> {
+        let dir = tempfile::tempdir().unwrap();
+        let tool = ListDirTool {
+            workdir: dir.path().to_string_lossy().to_string(),
+        };
+
+        let result = tool
+            .call(ListDirArgs {
+                path: ".".into(),
+                max_items: None,
+            })
+            .await?;
+
+        insta::assert_snapshot!(result);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_list_dir_symlink() -> Result<(), ListDirError> {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("real_file.txt"), "content").unwrap();
+        std::fs::create_dir(dir.path().join("subdir")).unwrap();
+        std::os::unix::fs::symlink("real_file.txt", dir.path().join("link_to_file")).unwrap();
+
+        let tool = ListDirTool {
+            workdir: dir.path().to_string_lossy().to_string(),
+        };
+
+        let result = tool
+            .call(ListDirArgs {
+                path: ".".into(),
+                max_items: None,
+            })
+            .await?;
+
+        insta::assert_snapshot!(result);
+        Ok(())
+    }
 }

@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/filesystem/read_file.rs
+expression: result.is_err()
+---
+true

@@ -1,0 +1,7 @@
+---
+source: crates/crb-tools/src/filesystem/list_dir.rs
+expression: result
+---
+link_to_file (file)
+real_file.txt (file)
+subdir/

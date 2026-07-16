@@ -172,4 +172,67 @@ mod tests {
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "");
     }
+
+    #[tokio::test]
+    async fn test_grep_absolute_path_rejected() {
+        let tool = GrepTool {
+            workdir: "/tmp".into(),
+        };
+
+        let result = tool
+            .call(GrepArgs {
+                pattern: "test".into(),
+                path: Some("/etc/passwd".into()),
+                file_glob: None,
+            })
+            .await;
+
+        insta::assert_debug_snapshot!(result.is_err());
+        insta::assert_snapshot!(result.unwrap_err().to_string());
+    }
+
+    #[tokio::test]
+    async fn test_grep_with_file_glob() -> Result<(), GrepError> {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.py"), "hello world").unwrap();
+        std::fs::write(dir.path().join("a.rs"), "hello world").unwrap();
+
+        let tool = GrepTool {
+            workdir: dir.path().to_string_lossy().to_string(),
+        };
+
+        let result = tool
+            .call(GrepArgs {
+                pattern: "hello".into(),
+                path: None,
+                file_glob: Some("*.py".into()),
+            })
+            .await?;
+
+        insta::assert_snapshot!(result);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_grep_output_truncation() -> Result<(), GrepError> {
+        let dir = tempfile::tempdir().unwrap();
+        let large_content = "x".repeat(60_000);
+        std::fs::write(dir.path().join("large.txt"), &large_content).unwrap();
+
+        let tool = GrepTool {
+            workdir: dir.path().to_string_lossy().to_string(),
+        };
+
+        let result = tool
+            .call(GrepArgs {
+                pattern: "x".into(),
+                path: None,
+                file_glob: None,
+            })
+            .await?;
+
+        insta::assert_debug_snapshot!(result.len() <= 50_000);
+        insta::assert_snapshot!(result);
+        Ok(())
+    }
 }

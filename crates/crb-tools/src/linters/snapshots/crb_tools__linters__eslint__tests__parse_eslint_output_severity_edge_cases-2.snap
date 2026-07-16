@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/linters/eslint.rs
+expression: "findings[0].severity"
+---
+Info

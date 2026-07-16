@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/linters/govet.rs
+expression: findings.len()
+---
+2

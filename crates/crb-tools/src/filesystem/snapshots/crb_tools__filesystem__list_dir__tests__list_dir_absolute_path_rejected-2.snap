@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/filesystem/list_dir.rs
+expression: result.unwrap_err().to_string()
+---
+directory could not be read: absolute paths not allowed: /etc

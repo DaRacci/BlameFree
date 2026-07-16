@@ -14,8 +14,6 @@ pub mod preamble;
 
 use std::path::{Path, PathBuf};
 
-// ── Core Types ───────────────────────────────────────────────────────────
-
 /// A single rule loaded from a `.md` file with optional YAML frontmatter.
 #[derive(Debug, Clone)]
 pub struct Rule {
@@ -275,5 +273,79 @@ mod tests {
         assert!(preamble.contains("## Applicable Project Rules"));
         assert!(preamble.contains("### Always"));
         assert!(preamble.contains("Always-on content."));
+    }
+
+    #[test]
+    fn test_load_from_dir_with_non_md_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("readme.txt"), "text file").unwrap();
+        std::fs::write(dir.path().join("data.json"), r#"{"key": "value"}"#).unwrap();
+        std::fs::write(dir.path().join("script.py"), "print('hello')").unwrap();
+        let rs = RuleSet::load_from_dir(dir.path()).unwrap();
+        insta::assert_debug_snapshot!(rs.rules.len(), @"0");
+        insta::assert_debug_snapshot!(rs.always_rules.len(), @"0");
+    }
+
+    #[test]
+    fn test_load_from_dir_with_parse_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        // A valid rule file
+        std::fs::write(
+            dir.path().join("valid.md"),
+            "---\ndescription: Valid\nglobs: \"**/*.py\"\n---\nValid rule.",
+        )
+        .unwrap();
+        // Invalid frontmatter — single delimiter only
+        std::fs::write(
+            dir.path().join("invalid.md"),
+            "---\nOnly one delimiter, no closing.",
+        )
+        .unwrap();
+        // Invalid YAML — broken array
+        std::fs::write(
+            dir.path().join("bad-yaml.md"),
+            "---\ninvalid: [yaml: broken\n---\nBody.",
+        )
+        .unwrap();
+        let rs = RuleSet::load_from_dir(dir.path()).unwrap();
+        // Only the valid file should be loaded
+        insta::assert_debug_snapshot!(rs.rules.len(), @"1");
+        insta::assert_debug_snapshot!(rs.always_rules.len(), @"0");
+    }
+
+    #[test]
+    fn test_matching_empty_file_paths() {
+        let (_dir, rs) = with_always_rule("Always", "Always-on.");
+        let matched = rs.matching(&[]);
+        // Always-rules are included even when no file paths are provided
+        insta::assert_debug_snapshot!(matched.len(), @"1");
+    }
+
+    #[test]
+    fn test_load_from_dir_called_on_file_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("not-a-dir.md");
+        std::fs::write(&file_path, "---\ndescription: Test\n---\nBody.").unwrap();
+        let rs = RuleSet::load_from_dir(&file_path).unwrap();
+        // A plain file is not a directory, so returns empty ruleset
+        insta::assert_debug_snapshot!(rs.rules.len(), @"0");
+        insta::assert_debug_snapshot!(rs.always_rules.len(), @"0");
+    }
+
+    #[test]
+    fn test_matching_with_both_always_and_globs_on_same_rule() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("both.md"),
+            "---\ndescription: Both\nalways_apply: true\nglobs: \"**/*.py\"\n---\nBody.",
+        )
+        .unwrap();
+        let rs = RuleSet::load_from_dir(dir.path()).unwrap();
+        // Rule with always_apply: true goes to always_rules regardless of globs
+        insta::assert_debug_snapshot!(rs.always_rules.len(), @"1");
+        insta::assert_debug_snapshot!(rs.rules.len(), @"0");
+        // Matching should include the rule exactly once (no double-count)
+        let matched = rs.matching(&[PathBuf::from("test.py")]);
+        insta::assert_debug_snapshot!(matched.len(), @"1");
     }
 }

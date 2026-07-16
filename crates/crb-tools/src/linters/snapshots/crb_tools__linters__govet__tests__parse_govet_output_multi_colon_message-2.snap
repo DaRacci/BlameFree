@@ -1,0 +1,5 @@
+---
+source: crates/crb-tools/src/linters/govet.rs
+expression: "findings[0].message.as_str()"
+---
+found: unresolved identifier: Foo
