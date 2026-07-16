@@ -19,8 +19,6 @@ pub struct ConfigResponse {
     pub models: Vec<String>,
     pub datasets: Vec<String>,
     pub roles: Vec<RoleInfo>,
-    /// Whether reduce-diff mode is enabled (compile-time feature flag).
-    pub reduce_diff_enabled: bool,
     /// Whether OAuth authentication is configured.
     #[serde(default)]
     pub auth_enabled: bool,
@@ -64,7 +62,6 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
         models,
         datasets,
         roles,
-        reduce_diff_enabled: cfg!(feature = "reduce-diff"),
         auth_enabled: state.config.oauth.is_some(),
     })
 }
@@ -304,11 +301,17 @@ mod tests {
     fn test_count_prs_in_dir_multiple_files() {
         let dir = tempfile::tempdir().expect("temp dir");
         let f1 = dir.path().join("a.json");
-        std::fs::write(&f1, r#"[{"url":"https://github.com/a/b/pull/1","pr_title":"x"}]"#)
-            .expect("write");
+        std::fs::write(
+            &f1,
+            r#"[{"url":"https://github.com/a/b/pull/1","pr_title":"x"}]"#,
+        )
+        .expect("write");
         let f2 = dir.path().join("b.json");
-        std::fs::write(&f2, r#"[{"url":"https://github.com/c/d/pull/2","pr_title":"y"}]"#)
-            .expect("write");
+        std::fs::write(
+            &f2,
+            r#"[{"url":"https://github.com/c/d/pull/2","pr_title":"y"}]"#,
+        )
+        .expect("write");
         insta::assert_debug_snapshot!(count_prs_in_dir(dir.path()));
     }
 

@@ -8,13 +8,14 @@ license.workspace = true
 [[bin]]
 name = "crb-benchmark"
 path = "src/main.rs"
+required-features = ["binary"]
 
 [lib]
 name = "crb_benchmark"
 path = "src/lib.rs"
 
 [features]
-reduce-diff = ["crb-harness/reduce-diff"]
+binary = ["crb-rules", "serde", "strum", "tokio"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -23,19 +24,16 @@ crb-agents = { path = "../crb-agents" }
 crb-types = { path = "../crb-types" }
 crb-harness = { path = "../crb-harness" }
 crb-reporting = { path = "../crb-reporting" }
-crb-rules = { path = "../crb-rules" }
-crb-cache = { path = "../crb-cache" }
 crb-shared = { path = "../crb-shared" }
-crb-tools = { path = "../crb-tools" }
-dotenvy = { workspace = true }
-regex = { workspace = true }
 rig-core = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-strum = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+# Binary Dependencies
+crb-rules = { path = "../crb-rules", optional = true }
+serde = { workspace = true, optional = true }
+strum = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"], optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -166,7 +166,7 @@ pub fn compute_metrics(verdicts: &[JudgeVerdict], golden_count: usize) -> Metric
 #[cfg(test)]
 mod tests {
     use crate::judge::{compute_metrics, jaccard_match};
-    use crb_types::benchmark::{JudgeVerdict, Metrics, MetricsProvider};
+    use crb_types::benchmark::{JudgeVerdict, MetricsProvider};
 
     #[test]
     fn test_perfect_match() {

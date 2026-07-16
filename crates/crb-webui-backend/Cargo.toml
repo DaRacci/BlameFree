@@ -1,5 +1,5 @@
 [package]
-name = "crb-webui"
+name = "crb-webui-backend"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,8 +9,7 @@ name = "crb-webui"
 path = "src/main.rs"
 
 [features]
-default = ["reduce-diff", "oauth2", "exp16_adaptive_agents", "exp14_template_vars"]
-reduce-diff = ["crb-harness/reduce-diff"]
+default = ["oauth2", "exp16_adaptive_agents", "exp14_template_vars"]
 oauth2 = ["dep:oauth2", "dep:reqwest"]
 exp14_template_vars = ["crb-harness/exp14_template_vars"]
 exp16_adaptive_agents = ["crb-harness/exp16_adaptive_agents"]
@@ -31,8 +30,6 @@ crb-shared = { path = "../crb-shared" }
 crb-tools = { path = "../crb-tools" }
 crb-webui-shared = { path = "../crb-webui-shared" }
 dotenvy = { workspace = true }
-futures = { workspace = true }
-hmac = { workspace = true }
 oauth2 = { workspace = true, optional = true }
 octocrab = { workspace = true }
 rand = { workspace = true }
@@ -43,7 +40,6 @@ rust-embed = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 toml = { workspace = true }

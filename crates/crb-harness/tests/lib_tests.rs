@@ -1,9 +1,5 @@
 //! Tests for `ReviewMode` and public helpers.
 
-// ---------------------------------------------------------------------------
-// ReviewMode
-// ---------------------------------------------------------------------------
-
 #[test]
 fn review_mode_commits() {
     let mode = crb_harness::ReviewMode::Commits {
@@ -27,10 +23,6 @@ fn review_mode_working() {
         _ => panic!("Expected Working variant"),
     }
 }
-
-// ---------------------------------------------------------------------------
-// load_cached_diff
-// ---------------------------------------------------------------------------
 
 #[test]
 fn load_cached_diff_nonexistent() {

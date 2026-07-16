@@ -136,12 +136,6 @@ async fn main() -> Result<()> {
             .unwrap_or_else(|_| "none".to_string())
     );
 
-    if cfg!(feature = "reduce-diff") {
-        info!("reduce-diff: enabled (-U1 context + metadata stripping)");
-    } else {
-        info!("reduce-diff: disabled (full diff)");
-    }
-
     info!(
         "Starting crb-webui on port {} (output={}, datasets={})",
         args.port,

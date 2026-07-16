@@ -46,10 +46,6 @@ pub struct AppConfig {
     #[serde(default)]
     pub roles: Vec<RoleInfo>,
 
-    /// Whether reduce-diff mode is enabled (compile-time feature flag).
-    #[serde(default)]
-    pub reduce_diff_enabled: bool,
-
     /// Whether OAuth authentication is configured server-side.
     #[serde(default)]
     pub auth_enabled: bool,
@@ -217,8 +213,7 @@ mod tests {
             reasoning_effort: Some("high".into()),
         };
         let json = serde_json::to_string(&req).expect("serialize");
-        let deserialized: NewRunRequest =
-            serde_json::from_str(&json).expect("deserialize");
+        let deserialized: NewRunRequest = serde_json::from_str(&json).expect("deserialize");
         insta::assert_json_snapshot!(&req);
         let _ = deserialized;
     }
@@ -243,8 +238,7 @@ mod tests {
             total_prs: 42,
         };
         let json = serde_json::to_string(&resp).expect("serialize");
-        let deserialized: NewRunResponse =
-            serde_json::from_str(&json).expect("deserialize");
+        let deserialized: NewRunResponse = serde_json::from_str(&json).expect("deserialize");
         insta::assert_json_snapshot!(&resp);
         let _ = deserialized;
     }
@@ -265,12 +259,10 @@ mod tests {
                 abbreviation: "rev".into(),
                 incompatible_with_roles: vec![],
             }],
-            reduce_diff_enabled: true,
             auth_enabled: false,
         };
         let json = serde_json::to_string(&config).expect("serialize");
-        let deserialized: AppConfig =
-            serde_json::from_str(&json).expect("deserialize");
+        let deserialized: AppConfig = serde_json::from_str(&json).expect("deserialize");
         insta::assert_json_snapshot!(&config);
         let _ = deserialized;
     }

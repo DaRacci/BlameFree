@@ -10,9 +10,8 @@ path = "src/main.rs"
 required-features = ["binary"]
 
 [features]
-default = ["reduce-diff"]
+default = []
 binary = ["clap", "dotenvy", "tracing-subscriber"]
-reduce-diff = []
 exp14_template_vars = ["crb-tools/exp14_template_vars"]
 exp16_adaptive_agents = ["crb-consensus/exp16_adaptive_agents"]
 
@@ -41,9 +40,6 @@ tracing = { workspace = true }
 clap = { workspace = true, optional = true }
 dotenvy = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
-
-[dev-dependencies]
-crb-benchmark = { path = "../crb-benchmark" }
 
 [lints]
 workspace = true
