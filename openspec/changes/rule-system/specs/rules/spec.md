@@ -129,6 +129,11 @@ The system SHALL match rules against file paths using the `globs` field with the
 
 The system SHALL detect programming language from file extensions and support filtering rules by language.
 
+> **⚠️ Implementation status:** `RuleSet::matching_language()` is specified in the design but NOT yet implemented.
+> The `detect_language()`, `language_from_str()`, and `detect_repo_languages()` functions are implemented
+> (returning `Option<Language>`), but `RuleSet::matching_language()` — which filters rules by language —
+> does not exist on the `RuleSet` struct yet.
+
 #### Scenario: Detect Python from .py
 - GIVEN a path `src/main.py`
 - WHEN `detect_language(path)` is called
@@ -233,6 +238,12 @@ The system SHALL accept an optional rules preamble in `build_agent()` and prepen
 ### Requirement: CLI Integration
 
 The system SHALL provide `--rules-dir` and `--skip-rules` CLI flags in `crb-harness` for controlling rule loading.
+
+> **⚠️ Implementation status:** This requirement is specified but NOT yet implemented.
+> - No `--rules-dir` or `--skip-rules` flags exist in `ReviewArgs` / `CliArgs`
+> - `build_review_config()` in `review.rs` hardcodes `ruleset: None`
+> - `pipeline.rs` line 149 passes `&[]` (empty slice) to `format_preamble()` instead of actual file paths
+> - The `Diff::sections` each contain a `path` field that should be collected and passed
 
 #### Scenario: Default rules directory loaded at startup
 - GIVEN a project with `.crb/rules/` containing rule files

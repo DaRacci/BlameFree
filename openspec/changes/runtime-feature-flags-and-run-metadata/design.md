@@ -9,30 +9,34 @@
 ### 1.2 Struct Definition
 
 ```rust
-/// Runtime-configurable feature flags.
+/// Runtime-configurable experimental feature flags.
+///
+/// These replace `cfg!(feature = "exp14_*")` / `cfg!(feature = "exp16_*")`
+/// compile-time gates. Defaults match `crates/crb-harness/Cargo.toml` defaults
+/// (`default = []` — all flags off). The webui backend (`crb-webui-backend`)
+/// enables some by default at its own Cargo.toml level.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfig {
-    /// Enable diff reduction (strip metadata, -U1 context).
-    pub reduce_diff: bool,
     /// Enable template variables (language, repo, role) injected into prompts.
-    pub template_vars: bool,
+    pub exp14_template_vars: bool,
     /// Enable submit-finding collector on consensus API.
-    pub submit_finding: bool,
+    pub exp14_submit_finding: bool,
     /// Enable adaptive agent dispatch (single GEN agent for small PRs).
-    pub adaptive_agents: bool,
+    pub exp16_adaptive_agents: bool,
 }
 
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
-            reduce_diff: true,        // matches current Cargo.toml `default = ["reduce-diff"]`
-            template_vars: true, // matches webui default
-            submit_finding: false, // not in defaults
-            adaptive_agents: true, // matches webui default
+            exp14_template_vars: false,   // matches crb-harness Cargo.toml (default = [])
+            exp14_submit_finding: false,  // matches crb-harness Cargo.toml (default = [])
+            exp16_adaptive_agents: false, // matches crb-harness Cargo.toml (default = [])
         }
     }
 }
 ```
+
+> **Note on defaults:** `crb-webui-backend/Cargo.toml` enables `exp14_template_vars` and `exp16_adaptive_agents` in its `default` feature set. When the harness is compiled via the webui backend, those features are on by default at the Cargo level. After runtime conversion, the webui backend will set its own defaults via its API/CLI entry points instead of relying on Cargo features.
 
 ### 1.3 Global Accessor
 
@@ -59,29 +63,25 @@ impl RuntimeConfig {
 
 RuntimeConfig is populated from three sources, listed in ascending priority order:
 
-#### CLI path (`crb-benchmark` binary)
+#### CLI path (`crb-harness` binary)
 
-The `Run` subcommand accepts `--flag-*` args to control each feature:
+The `Review` subcommand accepts `--flag-*` args to control each feature:
 
 ```rust
-// In Cli Run subcommand:
+// In ReviewArgs (extended):
 #[arg(long)]
-reduce_diff: bool,            // defaults to true via RuntimeConfig::default()
+exp14_template_vars: bool,
 #[arg(long)]
-no_reduce_diff: bool,         // --no-reduce-diff to disable (reduce_diff defaults on)
+exp14_submit_finding: bool,
 #[arg(long)]
-template_vars: bool,
-#[arg(long)]
-submit_finding: bool,
-#[arg(long)]
-adaptive_agents: bool,
+exp16_adaptive_agents: bool,
 ```
 
-These are parsed into a `RuntimeConfig` struct at startup and stored in `RUNTIME_CONFIG` before any benchmark iteration begins. `reduce_diff` defaults to `true`; a `--no-reduce-diff` flag allows explicitly disabling it without requiring `--reduce-diff=false`.
+All default to `false` via `RuntimeConfig::default()`.
 
 #### WebUI path (`crb-webui`)
 
-- **Ad-hoc review form**: The "Advanced options" section contains a checkbox/toggle for each flag (`template_vars`, `submit_finding`, `adaptive_agents`, `reduce_diff`).
+- **Ad-hoc review form**: The "Advanced options" section contains a checkbox/toggle for each flag (`exp14_template_vars`, `exp14_submit_finding`, `exp16_adaptive_agents`).
 - **Benchmark run form**: Same toggles appear in the benchmark run configuration panel.
 - The web UI sends the active flag values as fields in the API request to the harness, which populates `RuntimeConfig` before the run begins.
 
@@ -91,17 +91,16 @@ For automated/headless environments:
 
 | Env var | Maps to field | Values |
 |---------|---------------|--------|
-| `CRB_REDUCE_DIFF` | `reduce_diff` | `0` / `1` |
-| `CRB_TEMPLATE_VARS` | `template_vars` | `0` / `1` |
-| `CRB_SUBMIT_FINDING` | `submit_finding` | `0` / `1` |
-| `CRB_ADAPTIVE_AGENTS` | `adaptive_agents` | `0` / `1` |
+| `CRB_EXP14_TEMPLATE_VARS` | `exp14_template_vars` | `0` / `1` |
+| `CRB_EXP14_SUBMIT_FINDING` | `exp14_submit_finding` | `0` / `1` |
+| `CRB_EXP16_ADAPTIVE_AGENTS` | `exp16_adaptive_agents` | `0` / `1` |
 
 Env vars have the lowest priority — CLI args always override env vars.
 
 #### Initialization Order
 
-1. Start with `RuntimeConfig::default()` (hardcoded defaults matching current Cargo.toml feature defaults)
-2. Overlay env vars (if present): each `CRB_*` var overrides the corresponding field
+1. Start with `RuntimeConfig::default()` (hardcoded defaults — all flags off)
+2. Overlay env vars (if present): each `CRB_EXP*` var overrides the corresponding field
 3. Overlay CLI args / API request fields (final): explicit args win over everything
 
 ```rust
@@ -110,17 +109,15 @@ impl RuntimeConfig {
         let mut config = RuntimeConfig::default();
         // Step 2: apply env vars
         if let Some(env) = env {
-            if let Some(v) = env.reduce_diff { config.reduce_diff = v; }
-            if let Some(v) = env.template_vars { config.template_vars = v; }
-            if let Some(v) = env.submit_finding { config.submit_finding = v; }
-            if let Some(v) = env.adaptive_agents { config.adaptive_agents = v; }
+            if let Some(v) = env.exp14_template_vars { config.exp14_template_vars = v; }
+            if let Some(v) = env.exp14_submit_finding { config.exp14_submit_finding = v; }
+            if let Some(v) = env.exp16_adaptive_agents { config.exp16_adaptive_agents = v; }
         }
         // Step 3: apply CLI args (highest priority)
         if let Some(args) = args {
-            config.reduce_diff = args.reduce_diff;
-            config.template_vars = args.template_vars;
-            config.submit_finding = args.submit_finding;
-            config.adaptive_agents = args.adaptive_agents;
+            config.exp14_template_vars = args.exp14_template_vars;
+            config.exp14_submit_finding = args.exp14_submit_finding;
+            config.exp16_adaptive_agents = args.exp16_adaptive_agents;
         }
         config
     }
@@ -129,38 +126,29 @@ impl RuntimeConfig {
 
 ### 1.5 Feature Gate Conversion Pattern
 
-**Before (`#[cfg]`):**
+**Before (`cfg!()` macro):**
 ```rust
-#[cfg(feature = "reduce-diff")]
-{
-    let filtered = filter_files(raw_diff);
-    strip_diff_metadata(&filtered)
-}
-#[cfg(not(feature = "reduce-diff"))]
-{
-    raw_diff.to_string()
-}
+cfg!(feature = "exp14_template_vars")
 ```
 
 **After (runtime check):**
 ```rust
-if RuntimeConfig::global().lock().unwrap().reduce_diff {
-    let filtered = filter_files(raw_diff);
-    strip_diff_metadata(&filtered)
-} else {
-    raw_diff.to_string()
-}
+RuntimeConfig::global().lock().unwrap().exp14_template_vars
 ```
 
-The same pattern applies to all four feature gates:
-- `template_vars` → check `runtime_config.template_vars` before building template variables
-- `submit_finding` → check `runtime_config.submit_finding` before wiring collector
-- `adaptive_agents` → check `runtime_config.adaptive_agents` before adaptive dispatch
+The same pattern applies to all three experimental feature gates:
+- `exp14_template_vars` → check `runtime_config.exp14_template_vars` before building template variables
+- `exp14_submit_finding` → check `runtime_config.exp14_submit_finding` before wiring collector
+- `exp16_adaptive_agents` → check `runtime_config.exp16_adaptive_agents` before adaptive dispatch
+
+> **Note on `exp14_submit_finding`:** Currently used via `cfg!(feature = "exp14_submit_finding")` in `crb-agents/src/templates.rs` (inside a macro/template context). This is already a runtime-evaluated macro (not `#[cfg]` attribute) — the compile-time binding is only that the feature flag must be enabled at build time for the code to be compiled. After conversion, the template will use the runtime config value instead.
+
+> **Note on `binary` flag:** `#[cfg(feature = "binary")]` is used to conditionally compile `config.rs` module and `build_review_config()` function. This is a pure compilation concern (binary vs library build) and is **not** converted to runtime.
 
 ### 1.6 Phased Removal
 
-1. Phase 1: Replace `#[cfg]` with runtime checks. All feature compile-time flags remain in `Cargo.toml` (no-op).
-2. Phase 2 (after validation): Remove feature flag entries from `Cargo.toml`, remove `#[cfg(feature)]` attributes when no longer referenced.
+1. Phase 1: Replace `cfg!()` with runtime checks. All feature compile-time flags remain in `Cargo.toml` (no-op for the flags being converted; `binary` stays as-is).
+2. Phase 2 (after validation): Remove experimental feature flag entries from `Cargo.toml`, remove `cfg!()` references when no longer needed.
 
 ---
 
@@ -215,7 +203,7 @@ pub struct RunMetadata {
 impl Default for RunMetadata {
     fn default() -> Self {
         Self {
-            enabled_features: vec!["reduce-diff".to_string()],
+            enabled_features: vec![],  // no features enabled by default
             model: None,
             judge_model: None,
             reasoning_effort: None,
@@ -330,8 +318,9 @@ The `DashboardEvent` enum in `crb-dashboard` already uses Serde. Adding `metadat
 
 ### 5.3 CLI Flag Defaults
 
-Defaults are chosen to match the current Cargo.toml feature defaults:
-- `reduce-diff`: `true` (was default feature)
-- `template_vars`: `true` (webui default)
-- `submit_finding`: `false` (not in defaults)
-- `adaptive_agents`: `true` (webui default)
+Defaults match `crates/crb-harness/Cargo.toml` feature defaults:
+- `exp14_template_vars`: `false` (was not in `default = []`)
+- `exp14_submit_finding`: `false` (was not in `default = []`)
+- `exp16_adaptive_agents`: `false` (was not in `default = []`)
+
+The webui backend (`crb-webui-backend`) currently enables `exp14_template_vars` and `exp16_adaptive_agents` in its own `default` feature set. After migration, the webui backend will pass its own defaults at the API/CLI level rather than relying on Cargo feature composition.

@@ -38,31 +38,30 @@
 - [ ] **3.3 Extend `AdhocRunSummary` to carry metadata**
   - Add `metadata: Option<RunMetadata>` field
 
-## Phase 4: Convert Feature Gates to Runtime
+## Phase 4: Convert Experimental Feature Gates to Runtime
 
 - [ ] **4.1 Add `RuntimeConfig` struct** — In `crates/crb-harness/src/config.rs`
-  - Four bool fields: `reduce_diff`, `template_vars`, `submit_finding`, `adaptive_agents`
-  - `impl Default` matching current Cargo.toml defaults
+  - Three bool fields: `exp14_template_vars`, `exp14_submit_finding`, `exp16_adaptive_agents`
+  - `impl Default` matching current Cargo.toml defaults (all `false`)
   - Global `Lazy<Mutex<RuntimeConfig>>` accessor
-- [ ] **4.2 Add CLI args for runtime flags** — Benchmark `Run` subcommand
-  - `--reduce-diff`, `--template-vars`, `--submit-finding`, `--adaptive-agents`
+- [ ] **4.2 Add CLI args for runtime flags** — `ReviewArgs` struct
+  - `--exp14-template-vars`, `--exp14-submit-finding`, `--exp16-adaptive-agents`
   - Wire into `RuntimeConfig::init()` at startup
-- [ ] **4.3 Convert `reduce-diff` to runtime** — `crates/crb-harness/src/lib.rs`
-  - `preprocess_diff()`: replace `#[cfg(feature = "reduce-diff")]` with `if runtime_config.reduce_diff`
-  - `strip_diff_metadata()`: remove `#[cfg(feature = "reduce-diff")]` attribute (function always compiled)
-- [ ] **4.4 Convert `template_vars` to runtime** — `crates/crb-harness/src/lib.rs`
-  - `evaluate_pr_with_postprocessing()`: replace `#[cfg(feature = "template_vars")]` blocks
-- [ ] **4.5 Convert `submit_finding` to runtime** — `crates/crb-consensus/src/lib.rs`
-  - `run_consensus()`: replace `#[cfg(feature = "submit_finding")]` blocks
-- [ ] **4.6 Convert `adaptive_agents` to runtime** — `crates/crb-harness/src/lib.rs`
-  - `evaluate_pr_with_postprocessing()`: replace `#[cfg(feature = "adaptive_agents")]` blocks
-- [ ] **4.7 Remove unused feature flags from Cargo.toml** — After all `#[cfg]` references are removed
-  - `crates/crb-harness/Cargo.toml`: remove `[features]` section (if all flags migrated)
-  - `crates/crb-consensus/Cargo.toml`: remove `submit_finding`, `adaptive_agents`
-  - `crates/crb-benchmark/Cargo.toml`: remove `reduce-diff`
-  - `crates/crb-agents/Cargo.toml`: remove `submit_finding`
-  - `crates/crb-tools/Cargo.toml`: remove `template_vars`
-  - `crates/crb-webui/Cargo.toml`: remove feature flag dependencies
+- [ ] **4.3 Convert `exp14_template_vars` to runtime** — `crb-harness` / `crb-tools`
+  - Replace `cfg!(feature = "exp14_template_vars")` with runtime check
+  - Wire the flag through to template variable injection
+- [ ] **4.4 Convert `exp14_submit_finding` to runtime** — `crb-agents/src/templates.rs`
+  - Replace `cfg!(feature = "exp14_submit_finding")` with runtime check
+  - This is used inside template rendering context
+- [ ] **4.5 Convert `exp16_adaptive_agents` to runtime** — `crb-consensus/src/adaptive.rs`
+  - Replace `#[allow(unused_variables)]` pattern with explicit runtime check
+  - Conditionally apply adaptive agent dispatch logic
+- [ ] **4.6 Remove unused feature flags from Cargo.toml** — After all `cfg!()` references are removed
+  - `crates/crb-harness/Cargo.toml`: remove `exp14_template_vars`, `exp16_adaptive_agents` features
+  - `crates/crb-tools/Cargo.toml`: remove `exp14_template_vars`, `exp14_submit_finding` features
+  - `crates/crb-consensus/Cargo.toml`: remove `exp14_submit_finding`, `exp16_adaptive_agents` features
+  - `crates/crb-agents/Cargo.toml`: remove `exp14_submit_finding` feature
+  - `crates/crb-webui-backend/Cargo.toml`: remove `exp14_template_vars`, `exp16_adaptive_agents` feature references to crb-harness
 
 ## Phase 5: Update Dashboard Events
 

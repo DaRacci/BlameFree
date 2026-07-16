@@ -425,7 +425,32 @@ let mut template_vars = HashMap::new();
 template_vars.insert("context_map", context_map.render_compact(2000));
 ```
 
-## 9. Risk Assessment & Mitigations
+## 9. Integration Points Update (2026-07-16)
+
+Since this design was written, the codebase has changed significantly:
+
+- **`build_agent()` now accepts `template_vars` directly**, not a separate `context_map` parameter. The `{context_map}` variable should be passed through `template_vars` rather than as a dedicated argument. The current signature is:
+  ```rust
+  pub fn build_agent(
+      client: &openai::Client,
+      model: &str,
+      role: &str,
+      template_vars: Option<&HashMap<String, String>>,
+      tools: Vec<Box<dyn ToolServerHandle>>,
+      workdir: Option<&str>,
+  ) -> Agent
+  ```
+  (See actual code in `crb-agents/src/lib.rs` for the exact current signature.)
+
+- **Tool registration uses `ToolServerHandle` trait objects**, not per-tool `.tool()` chaining. Tools are provided as a `Vec<Box<dyn ToolServerHandle>>` to `build_agent()`.
+
+- **The template engine uses `{{handlebars}}` syntax**, not `{placeholders}`. If `{context_map}` is used, it must be resolved before passing to the Handlebars renderer or the template should use `{{context_map}}` instead.
+
+- **The consensus pipeline has been refactored** — `evaluate_pr_with_consensus` may no longer exist in the same form. Check the actual pipeline entry point in `crb-consensus`.
+
+Before implementing, the design should be updated to target the actual 15-crate workspace structure rather than the simplified crate layout assumed here.
+
+## 10. Risk Assessment & Mitigations
 
 | Risk | Impact | Mitigation |
 |---|---|---|

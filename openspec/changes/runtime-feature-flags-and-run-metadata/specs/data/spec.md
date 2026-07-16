@@ -8,7 +8,7 @@ The system SHALL define a `RunMetadata` struct with the following fields, all op
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `enabled_features` | `Vec<String>` | `["reduce-diff"]` | Names of runtime feature flags that were enabled |
+| `enabled_features` | `Vec<String>` | `[]` | Names of runtime feature flags that were enabled |
 | `model` | `Option<String>` | `None` | Primary evaluation model |
 | `judge_model` | `Option<String>` | `None` | Judge model used for scoring |
 | `reasoning_effort` | `Option<String>` | `None` | Reasoning effort level (`"low"`, `"medium"`, `"high"`, or `None`) |
@@ -22,11 +22,11 @@ The system SHALL define a `RunMetadata` struct with the following fields, all op
 | `duration_secs` | `Option<f64>` | `None` | Total run duration in seconds |
 
 #### Scenario: Metadata created from CLI args
-- GIVEN a benchmark run is started with `MODEL=deepseek/deepseek-v4-pro`, roles "SA,CL", and `reduce_diff` enabled
+- GIVEN a benchmark run is started with `MODEL=deepseek/deepseek-v4-pro`, roles "SA,CL", and `exp14_template_vars` enabled
 - WHEN `RunMetadata` is constructed
 - THEN `model` SHALL be `Some("deepseek/deepseek-v4-pro")`
 - AND `roles` SHALL be `Some("SA,CL")`
-- AND `enabled_features` SHALL include `"reduce-diff"`
+- AND `enabled_features` SHALL include `"exp14_template_vars"`
 - AND `started_at` SHALL be a valid ISO 8601 timestamp
 
 #### Scenario: Metadata created from ad-hoc API request

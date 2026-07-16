@@ -65,7 +65,7 @@ crb-harness (binary)
 
 ```rust
 /// A single rule loaded from a .md file with YAML frontmatter.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Rule {
     pub description: Option<String>,
     pub globs: Vec<String>,
@@ -75,13 +75,13 @@ pub struct Rule {
 }
 
 /// Intermediate deserialization target for YAML frontmatter.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct RuleMetadata {
     description: Option<String>,
     #[serde(default)]
-    globs: GlobsField,
-    #[serde(default = "default_always_apply")]
-    always_apply: bool,
+    globs: Option<GlobsField>,
+    #[serde(default)]
+    always_apply: Option<bool>,
 }
 
 /// Accept single string or array of strings for globs.
@@ -101,9 +101,14 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
+    /// Load all `.md` rule files from `dir`.
+    ///
+    /// If `dir` does not exist or contains no `.md` files, returns an empty
+    /// [`RuleSet`] (no error) so that the harness works without any rules
+    /// configured.
     pub fn load_from_dir(dir: &Path) -> Result<Self>;
     pub fn matching(&self, file_paths: &[PathBuf]) -> Vec<&Rule>;
-    pub fn matching_language(&self, language: &str) -> Vec<&Rule>;
+    pub fn matching_language(&self, language: &Language) -> Vec<&Rule>;
     pub fn format_preamble(&self, file_paths: &[PathBuf]) -> String;
 }
 ```
@@ -172,29 +177,16 @@ fn rule_matches_path(rule: &Rule, path: &Path) -> bool {
 Map file extensions to language identifiers:
 
 ```rust
-pub fn detect_language(path: &Path) -> Option<&'static str> {
-    match path.extension()?.to_str()? {
-        "py" => Some("python"),
-        "rs" => Some("rust"),
-        "ts" | "tsx" => Some("typescript"),
-        "js" | "jsx" => Some("javascript"),
-        "go" => Some("go"),
-        "rb" => Some("ruby"),
-        "java" => Some("java"),
-        "kt" | "kts" => Some("kotlin"),
-        "swift" => Some("swift"),
-        "cs" => Some("csharp"),
-        "cpp" | "cc" | "cxx" | "hpp" => Some("cpp"),
-        "c" | "h" => Some("c"),
-        "rs" => Some("rust"),
-        "scala" => Some("scala"),
-        "php" => Some("php"),
-        _ => None,
-    }
+pub fn detect_language(path: &Path) -> Option<Language> {
+    let ext = path.extension()?.to_str()?;
+    EXTENSION_MAP
+        .iter()
+        .find(|(e, _)| *e == ext)
+        .map(|(_, lang)| *lang)
 }
 
-pub fn detect_repo_languages(files: &[PathBuf]) -> HashSet<String> {
-    files.iter().filter_map(|f| detect_language(f)).map(String::from).collect()
+pub fn detect_repo_languages(files: &[PathBuf]) -> HashSet<Language> {
+    files.iter().filter_map(|f| detect_language(f)).collect()
 }
 ```
 
@@ -333,4 +325,4 @@ tempfile = "3"
 | Glob crate | `glob = "0.3"` | Lightweight, well-maintained, `Pattern::matches()` is the standard Rust glob matcher. |
 | YAML crate | `serde_yaml = "0.9"` | Works with existing serde derives. No need for a custom YAML parser. |
 | Caching | `always_rules` cached at load time | Avoids re-filtering always-apply rules on every `matching()` call. |
-| Empty rules directory | Returns empty RuleSet (no error) | Harness works without any rules configured. `format_preamble()` returns empty string. |
+|| Empty / nonexistent rules directory | Returns empty RuleSet (no error) | Harness works without any rules configured. `load_from_dir` on nonexistent path returns `Ok(empty)` not `Err`. |

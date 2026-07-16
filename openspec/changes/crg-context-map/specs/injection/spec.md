@@ -1,5 +1,7 @@
 # Delta for Prompt Injection Strategy
 
+> **Note (2026-07-16):** This spec targets a hypothetical `crb-context` crate that does not exist in the codebase. Not yet implemented.
+
 ## ADDED Requirements
 
 ### Requirement: `{context_map}` Template Variable

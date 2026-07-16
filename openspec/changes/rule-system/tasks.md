@@ -68,7 +68,7 @@
   - Start with all `always_rules`
   - For each non-always rule, check if any file path matches its globs
   - Return deduplicated `Vec<&Rule>`
-- [x] Implement `RuleSet::matching_language()`:
+- [ ] Implement `RuleSet::matching_language()`:
   - Filter rules where at least one of the files of the given language matches
 - [x] Write unit tests:
   - Exact glob match
@@ -115,13 +115,13 @@
 ## Phase 7 — Integration: crb-harness
 
 - [x] Add `crb-rules` dependency to `crates/crb-harness/Cargo.toml`
-- [x] Add CLI flags to `CliArgs`:
+- [ ] Add CLI flags to `CliArgs`:
   - `--rules-dir <PATH>` with default `.crb/rules/`
   - `--skip-rules` (flag, disables rule loading)
-- [x] In `main()`:
+- [ ] In `main()`:
   - Load `RuleSet` at startup if not `--skip-rules` and directory exists
   - Pass `ruleset` reference into `evaluate_pr()`
-- [x] In `evaluate_pr()`:
+- [ ] In `evaluate_pr()`:
   - Collect changed file paths from PR diff
   - Call `ruleset.format_preamble(&pr_files)` to get preamble string
   - Pass `Some(preamble_str)` to each `build_agent()` call
@@ -129,20 +129,42 @@
 
 ## Phase 8 — Testing
 
-- [x] Create `crates/crb-rules/tests/` integration tests:
+- [ ] Create `crates/crb-rules/tests/` integration tests:
   - End-to-end: create temp directory with rule files, load, match, format
   - Empty directory, mix of matching and non-matching rules
   - Rules with no frontmatter treated as always-apply
   - Rules with single vs multiple glob patterns
-- [x] Create test fixture `.md` files in `tests/fixtures/`:
+- [ ] Create test fixture `.md` files in `tests/fixtures/`:
   - `python-standards.md`
   - `typescript-rules.md`
   - `security.md` (alwaysApply)
   - `no-frontmatter.md` (plain markdown)
-- [x] Write harness-level integration test:
+- [ ] Write harness-level integration test:
   - Start harness with `--rules-dir test_fixtures/ --skip-linters`
   - Verify preamble appears in agent system prompt
 - [x] Run full `cargo test -p crb-rules` and verify all tests pass
+
+## Known Issues
+
+### Empty file paths in `format_preamble()` call (pipeline.rs:149)
+
+`pipeline.rs` line 149 calls `config.ruleset.as_ref().map(|rs| rs.format_preamble(&[]))`, passing an
+empty slice instead of the actual changed file paths from `diff.sections`.  This means that even if a
+`RuleSet` were loaded, no glob-matched rules would ever fire because no file paths are provided to
+match against.  Always-apply rules would still be included (they don't depend on file paths).
+
+**Root cause:** The `run_reviewers()` function has access to `diff: &Diff` which contains
+`diff.sections: Vec<DiffSection>`, and each `DiffSection` has a `path: String` field.  These paths
+should be collected and passed to `format_preamble()` instead of `&[]`.
+
+**Fix approach:**
+```rust
+// In run_reviewers(), replace:
+let rules_preamble = config.ruleset.as_ref().map(|rs| rs.format_preamble(&[]));
+// With:
+let pr_files: Vec<PathBuf> = diff.sections.iter().map(|s| PathBuf::from(&s.path)).collect();
+let rules_preamble = config.ruleset.as_ref().map(|rs| rs.format_preamble(&pr_files));
+```
 
 ## Future Work (Out of Scope)
 

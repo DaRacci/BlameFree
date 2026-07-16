@@ -1,9 +1,14 @@
 # Proposal: CRG Context Map for Code Review
 
 **Change ID:** crg-context-map
-**Status:** Draft
+**Status:** Research / On-Hold
 **Author:** Hermes Agent
 **Date:** 2026-06-29
+
+## Status Update (2026-07-16)
+
+**Status:** Research / On-Hold
+**Reasoning:** The design is thorough but no implementation has been started. The codebase has evolved significantly since the spec was written — build_agent(), consensus pipeline, and tool registration have all changed. Before implementation could begin, the design needs updating to target the actual (15-crate) codebase structure. Recommend revisiting after the ongoing refactoring stabilizes.
 
 ## Summary
 

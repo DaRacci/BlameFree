@@ -494,7 +494,7 @@ The fundamental building block.
 ### File Structure
 
 ```
-frontend/
+crates/crb-webui-frontend/
 ├── css/
 │   ├── tokens.css          # All CSS custom properties (colors, spacing, type, shadows)
 │   ├── reset.css           # Minimal reset (box-sizing, margin removal)
@@ -633,3 +633,43 @@ frontend/
 - `aria-label` on icon-only buttons (collapsed sidebar)
 - `role="status"` on live updating status sections
 - `prefers-reduced-motion` respects `@media (prefers-reduced-motion: reduce)` for skeleton animations
+
+---
+
+## 9. Implementation Status
+
+### Color Palette Verification
+
+All color tokens in this design match the actual `crates/crb-webui-frontend/css/tokens.css` exactly — no discrepancies in values or naming.
+
+### Component Implementation: CSS vs Rust+CSS
+
+| Component | Type | Status |
+|-----------|------|--------|
+| tokens.css | CSS-only | ✅ All 55 tokens present |
+| reset.css / base.css | CSS-only | ✅ Present |
+| layout.css | CSS-only | ✅ Present |
+| nav.css | CSS-only | ✅ Present; Rust sidebar component in `app.rs` uses same CSS classes |
+| card.css | CSS-only | ✅ Present; card BEM classes used directly in page views |
+| button.css | CSS-only | ✅ Present; `.btn` variants used throughout |
+| form.css | CSS-only | ✅ Present; includes slider styling (unused by Rust) |
+| badge.css | CSS-only | ✅ Present; all semantic variants used |
+| table.css | CSS-only | ✅ Present; `RunTable` component uses its sortable classes |
+| skeleton.css | CSS-only | ✅ Present; skeleton shapes used in all pages |
+| progress.css | CSS-only | ✅ Present; bound to `ProgressBar` Leptos component |
+| home.css | CSS-only | ✅ Present; Rust `HomePage` uses these classes |
+| run-detail.css | CSS-only | ✅ Present; Rust `RunDetailPage` uses these classes |
+| new-run.css | CSS-only | ✅ Present; Rust `NewRunPage` uses these classes |
+| live-view.css | CSS-only | ✅ Present; Rust `LivePage` uses these classes |
+
+### Missing Rust Components
+
+The following features described in this design have CSS but **no Rust/Leptos implementation**:
+
+- **Search bar** on HomePage (Section 6.1)
+- **Sparklines** on run cards (Section 6.1)
+- **Cost breakdown** section on RunDetailPage (Section 6.2)
+- **Table sorting** on RunDetailPage per-PR results table (Section 6.2)
+- **Slider inputs** on NewBenchmarkPage (Section 6.3; uses number inputs instead)
+- **Per-agent metrics** on LiveViewPage (Section 6.4; agent panes show status + response text only)
+- **Auto-scroll** in agent panes on LiveViewPage (Section 6.4)

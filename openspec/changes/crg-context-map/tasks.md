@@ -1,5 +1,7 @@
 # Tasks: CRG Context Map
 
+> **Note (2026-07-16):** All tasks below target a hypothetical `crb-context` crate and `scripts/build_context_map.py` that do not exist in the codebase. 0 of 34 tasks have been started. The repo has been heavily refactored since this task list was written — none of the crate paths or integration points match the current codebase structure. Revisit after the ongoing refactoring stabilizes.
+
 ## Phase 0: Research & Prototyping
 
 - [ ] **0.1 Install tree-sitter CLI + verify on discourse-graphite benchmark repos**
