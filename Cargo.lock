@@ -909,6 +909,7 @@ dependencies = [
 name = "crb-webui-shared"
 version = "0.1.0"
 dependencies = [
+ "crb-macros",
  "crb-types",
  "insta",
  "serde",

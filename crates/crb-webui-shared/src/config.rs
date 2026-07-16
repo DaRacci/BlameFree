@@ -67,8 +67,6 @@ pub struct DatasetInfo {
     pub config: Option<DatasetConfig>,
 }
 
-/// GET /api/datasets/:id/prs.
-///
 /// A single PR entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrEntry {
@@ -99,8 +97,6 @@ pub struct ReasoningEffortsResponse {
 mod tests {
     use super::*;
 
-    // ── RoleInfo ──────────────────────────────────────────────────────────
-
     #[test]
     fn test_role_info_display_name() {
         let role = RoleInfo {
@@ -118,8 +114,6 @@ mod tests {
         insta::assert_debug_snapshot!(role);
     }
 
-    // ── DatasetConfig ─────────────────────────────────────────────────────
-
     #[test]
     fn test_dataset_config_default() {
         let config = DatasetConfig::default();
@@ -133,15 +127,11 @@ mod tests {
         insta::assert_debug_snapshot!(config);
     }
 
-    // ── DatasetDefaults ───────────────────────────────────────────────────
-
     #[test]
     fn test_dataset_defaults_default() {
         let defaults = DatasetDefaults::default();
         insta::assert_debug_snapshot!(defaults);
     }
-
-    // ── DatasetInfo ───────────────────────────────────────────────────────
 
     #[test]
     fn test_dataset_info_default_config() {

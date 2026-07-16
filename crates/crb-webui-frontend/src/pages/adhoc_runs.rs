@@ -1,4 +1,5 @@
 use crb_webui_shared::adhoc::AdhocRunSummary;
+use crb_webui_shared::routes::API_ADHOC_RUNS;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
@@ -11,7 +12,7 @@ pub fn AdhocRunsPage() -> impl IntoView {
     spawn_local(async move {
         set_loading.set(true);
         set_error.set(None);
-        match gloo_net::http::Request::get("/api/adhoc/runs").send().await {
+        match gloo_net::http::Request::get(API_ADHOC_RUNS).send().await {
             Ok(resp) => {
                 if resp.ok() {
                     match resp.json::<Vec<AdhocRunSummary>>().await {

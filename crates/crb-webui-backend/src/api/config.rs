@@ -31,7 +31,7 @@ pub struct ModelInfo {
     pub name: String,
 }
 
-/// GET /api/config — list available models, datasets, and roles.
+/// List available models, datasets, and roles.
 pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
     tracing::info!("GET /api/config");
     let models: Vec<String> = state
@@ -66,7 +66,7 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
     })
 }
 
-/// GET /api/config/datasets — list available datasets with PR counts.
+/// List available datasets with PR counts.
 pub async fn list_datasets(State(state): State<AppState>) -> Json<Vec<DatasetInfo>> {
     tracing::info!("GET /api/config/datasets");
     Json(scan_datasets(&state.dataset_dir))
@@ -127,7 +127,7 @@ fn load_dataset_config(dir: &Path) -> Option<DatasetConfig> {
     }
 }
 
-/// GET /api/config/reasoning-efforts — list available reasoning effort levels.
+/// List available reasoning effort levels.
 pub async fn list_reasoning_efforts() -> Json<ReasoningEffortsResponse> {
     let levels: Vec<String> = crb_harness::model_capabilities::ReasoningEffort::variants()
         .iter()
@@ -166,7 +166,7 @@ fn count_prs_in_dir(dir: &Path) -> usize {
     count
 }
 
-/// GET /api/datasets/:id/prs — list all PRs in a dataset.
+/// List all PRs in a dataset.
 pub async fn list_dataset_prs(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,

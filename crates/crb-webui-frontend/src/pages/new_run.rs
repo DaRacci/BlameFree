@@ -1,7 +1,10 @@
 use crate::components::role_selector::RoleSelector;
 use crate::{AppConfig, NewRunRequest, NewRunResponse};
 use crb_shared::{DEFAULT_MODEL, DEFAULT_MODEL_PRO};
-use crb_webui_shared::config::{DatasetInfo, PrEntry};
+use crb_webui_shared::config::{DatasetInfo, PrEntry, ReasoningEffortsResponse};
+use crb_webui_shared::route;
+use crb_webui_shared::routes::{API_CONFIG, API_CONFIG_DATASETS, API_RUNS};
+use gloo_net::http::Request;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
@@ -130,7 +133,7 @@ fn create_fetch_prs_handler(
         let set_selected = set_selected_prs;
         let set_loading = set_prs_loading;
         spawn_local(async move {
-            match get_dataset_prs(&ds_id).await {
+            match crate::fetch_json::<Vec<PrEntry>>(&route!(API_DATASETS_ID_PRS, ds_id)).await {
                 Ok(prs) => {
                     let all_keys: Vec<String> = prs.iter().map(|p| p.key.clone()).collect();
                     set_available.set(prs);
@@ -225,7 +228,7 @@ fn init_config_spawn(
         async move {
             set_loading.set(true);
             set_datasets_loading.set(true);
-            match get_config().await {
+            match async move { crate::fetch_json::<AppConfig>(API_CONFIG).await }.await {
                 Ok(cfg) => {
                     if let Some(m) = cfg.models.first() {
                         set_model.set(m.clone());
@@ -242,7 +245,9 @@ fn init_config_spawn(
                 }
             }
 
-            match get_datasets().await {
+            match async move { crate::fetch_json::<Vec<DatasetInfo>>(API_CONFIG_DATASETS).await }
+                .await
+            {
                 Ok(ds) => {
                     if let Some(first) = ds.first() {
                         let current_ds = dataset.get();
@@ -281,17 +286,21 @@ fn init_config_spawn(
                 fetch_prs(initial_ds);
             }
 
-            match get_reasoning_efforts().await {
-                Ok(levels) => {
-                    let has_medium = levels.contains(&"medium".to_string());
+            match async move {
+                crate::fetch_json::<ReasoningEffortsResponse>("/api/config/reasoning-efforts").await
+            }
+            .await
+            {
+                Ok(resp) => {
+                    let has_medium = resp.levels.contains(&"medium".to_string());
                     let current = reasoning_effort.get();
                     if current == Some("medium".to_string()) && !has_medium {
-                        let first = levels.first().cloned();
+                        let first = resp.levels.first().cloned();
                         if let Some(l) = first {
                             set_reasoning_effort.set(Some(l));
                         }
                     }
-                    set_effort_levels.set(levels);
+                    set_effort_levels.set(resp.levels);
                 }
                 Err(_) => {
                     set_effort_levels.set(vec![
@@ -359,8 +368,6 @@ fn create_submit_handler(
         });
     }
 }
-
-// ─── View Section Helpers ───────────────────────────────────────────────────
 
 fn render_page_header() -> impl IntoView {
     view! {
@@ -733,8 +740,6 @@ fn render_submit_error(submit_error: ReadSignal<Option<String>>) -> impl IntoVie
     }
 }
 
-// ─── Main Component ─────────────────────────────────────────────────────────
-
 #[component]
 pub fn NewRunPage() -> impl IntoView {
     let s = create_form_signals();
@@ -817,15 +822,10 @@ pub fn NewRunPage() -> impl IntoView {
     }
 }
 
-async fn get_config() -> Result<AppConfig, String> {
-    crate::fetch_json("/api/config").await
-}
-
 async fn create_run(req: NewRunRequest) -> Result<NewRunResponse, String> {
-    let url = "/api/runs";
     let body = serde_json::to_string(&req).map_err(|e| format!("Serialize error: {e}"))?;
 
-    let response = gloo_net::http::Request::post(&url)
+    let response = Request::post(&API_RUNS)
         .header("Content-Type", "application/json")
         .body(&body)
         .map_err(|e| format!("Body error: {e}"))?
@@ -844,23 +844,4 @@ async fn create_run(req: NewRunRequest) -> Result<NewRunResponse, String> {
         .map_err(|e| format!("Parse error: {e}"))?;
 
     Ok(data)
-}
-
-async fn get_datasets() -> Result<Vec<DatasetInfo>, String> {
-    let data: Vec<DatasetInfo> = crate::fetch_json("/api/config/datasets").await?;
-    Ok(data)
-}
-
-async fn get_dataset_prs(id: &str) -> Result<Vec<PrEntry>, String> {
-    let url = format!("/api/datasets/{}/prs", id);
-    crate::fetch_json(&url).await
-}
-
-async fn get_reasoning_efforts() -> Result<Vec<String>, String> {
-    #[derive(serde::Deserialize)]
-    struct Wrapper {
-        levels: Vec<String>,
-    }
-    let wrapper: Wrapper = crate::fetch_json("/api/config/reasoning-efforts").await?;
-    Ok(wrapper.levels)
 }

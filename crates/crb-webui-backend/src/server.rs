@@ -10,15 +10,18 @@ use axum::extract::State;
 use axum::http::{StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use crb_webui_shared::routes;
 use rustls::pki_types::UnixTime;
 use tokio::sync::{RwLock, broadcast};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
+use tracing::info;
 
+use crate::api::{adhoc, admin, config, runs};
 use crate::auth::SessionStore;
 use crate::config::WebUiConfig;
-use crb_types::RunEvent;
 use crate::static_assets::StaticAssets;
+use crb_types::RunEvent;
 
 /// Shared application state.
 #[derive(Clone)]
@@ -61,7 +64,7 @@ pub struct ActiveRun {
     pub created_at: UnixTime,
 
     /// The config used to start this run.
-    pub config: crate::api::runs::BenchmarkConfig,
+    pub config: runs::BenchmarkConfig,
 
     /// Broadcast channel for SSE events.
     pub tx: broadcast::Sender<RunEvent>,
@@ -103,53 +106,36 @@ impl AppState {
     }
 }
 
-/// Start the axum HTTP server.
 pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
     let api_router = Router::new()
+        .route(routes::API_RUNS, get(runs::list_runs).post(runs::start_run))
+        .route(routes::API_RUNS_ID, get(runs::get_run))
+        .route(routes::API_RUNS_ID_LIVE, get(crate::api::live::live_stream))
+        .route(routes::API_RUNS_ID_LOGS, get(runs::list_logs))
+        .route(routes::API_RUNS_ID_PRS_KEY, get(runs::get_pr_agents))
+        .route(routes::API_RUNS_ID_LOGS_KEY_ROLE, get(runs::get_agent_log))
+        .route(routes::API_RUNS_ID_DETAILS_KEY, get(runs::get_pr_detail))
+        .route(routes::API_CONFIG, get(config::get_config))
+        .route(API_CONFIG_DATASETS, get(config::list_datasets))
         .route(
-            "/api/runs",
-            get(crate::api::runs::list_runs).post(crate::api::runs::start_run),
+            routes::API_CONFIG_REASONING,
+            get(config::list_reasoning_efforts),
         )
-        .route("/api/runs/:id", get(crate::api::runs::get_run))
-        .route("/api/runs/:id/live", get(crate::api::live::live_stream))
-        .route("/api/config", get(crate::api::config::get_config))
-        .route("/api/config/datasets", get(crate::api::config::list_datasets))
-        .route(
-            "/api/config/reasoning-efforts",
-            get(crate::api::config::list_reasoning_efforts),
-        )
-        .route("/api/runs/:id/logs", get(crate::api::runs::list_logs))
-        .route(
-            "/api/runs/:id/logs/:pr_key/:role",
-            get(crate::api::runs::get_agent_log),
-        )
-        .route("/api/runs/:id/prs/:pr_key", get(crate::api::runs::get_pr_agents))
-        .route(
-            "/api/runs/:id/pr-detail/:pr_key",
-            get(crate::api::runs::get_pr_detail),
-        )
-        .route("/api/datasets/:id/prs", get(crate::api::config::list_dataset_prs))
-        // Ad-hoc review endpoints
-        .route("/api/adhoc/review", post(crate::api::adhoc::start_adhoc_review))
-        .route("/api/adhoc/runs", get(crate::api::adhoc::list_adhoc_runs))
-        .route("/api/adhoc/runs/:id", get(crate::api::adhoc::get_adhoc_run))
-        .route(
-            "/api/adhoc/prs/:owner/:repo",
-            get(crate::api::adhoc::list_repo_prs),
-        )
-        // Admin endpoints
-        .route("/api/admin/logs", get(crate::api::admin::get_logs))
-        .route("/api/admin/logs/stream", get(crate::api::admin::get_logs_stream));
+        .route(routes::API_DATASETS_ID_PRS, get(config::list_dataset_prs))
+        .route(routes::API_ADHOC_REVIEW, post(adhoc::start_adhoc_review))
+        .route(routes::API_ADHOC_RUNS, get(adhoc::list_adhoc_runs))
+        .route(routes::API_ADHOC_RUNS_ID, get(adhoc::get_adhoc_run))
+        .route(routes::API_ADHOC_PRS_OWNER_REPO, get(adhoc::list_repo_prs))
+        .route(routes::API_ADMIN_LOGS, get(admin::get_logs))
+        .route(routes::API_ADMIN_LOGS_STREAM, get(admin::get_logs_stream));
 
-    // Build router: merge all routes first, then apply state and layers
     let mut app = Router::new().merge(api_router);
 
-    // If OAuth is configured, add authentication routes
     if state.config.oauth.is_some() {
-        tracing::info!("OAuth is enabled — adding authentication routes");
+        info!("OAuth is enabled — adding authentication routes");
         app = app.merge(crate::auth::router());
     } else {
-        tracing::info!("OAuth is disabled — skipping authentication routes");
+        info!("OAuth is disabled — skipping authentication routes");
     }
 
     let app = app
@@ -159,7 +145,7 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", port);
-    tracing::info!("Listening on http://{}", addr);
+    info!("Listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

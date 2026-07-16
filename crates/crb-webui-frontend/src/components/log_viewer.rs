@@ -1,3 +1,4 @@
+use crb_webui_shared::route;
 use crb_webui_shared::runs::{AgentLogResponse, LogsListResponse};
 use leptos::either::Either;
 use leptos::prelude::*;
@@ -64,7 +65,7 @@ pub fn LogViewer(logs: LogsListResponse, run_id: String) -> impl IntoView {
                                                     let set_fetch = set_fetching;
                                                     let set_fetched = set_fetched;
                                                     wasm_bindgen_futures::spawn_local(async move {
-                                                        let url = format!("/api/runs/{}/logs/{}/{}", run_id, pr_key, role);
+                                                        let url = route!(API_RUNS_ID_LOGS_KEY_ROLE, run_id, pr_key, role);
                                                         let resp = gloo_net::http::Request::get(&url).send().await;
                                                         match resp {
                                                             Ok(r) if r.ok() => {

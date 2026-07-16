@@ -7,6 +7,7 @@ pub mod adhoc;
 pub mod admin;
 pub mod auth;
 pub mod config;
+pub mod routes;
 pub mod runs;
 
 /// Deterministically maps a role abbreviation string to a hex color code.
@@ -48,7 +49,9 @@ mod tests {
 
     #[test]
     fn test_role_color_uniqueness() {
-        let roles = ["FE", "BE", "SEC", "INFRA", "DOCS", "UX", "QA", "DEVOPS", "ML"];
+        let roles = [
+            "FE", "BE", "SEC", "INFRA", "DOCS", "UX", "QA", "DEVOPS", "ML",
+        ];
         let mut colors = HashSet::new();
         for role in &roles {
             let c = role_color(role);
@@ -87,6 +90,10 @@ mod tests {
 
     #[test]
     fn test_fnv1a_hash_determinism() {
-        insta::assert_debug_snapshot!((fnv1a_hash("hello"), fnv1a_hash("hello"), fnv1a_hash("world")));
+        insta::assert_debug_snapshot!((
+            fnv1a_hash("hello"),
+            fnv1a_hash("hello"),
+            fnv1a_hash("world")
+        ));
     }
 }

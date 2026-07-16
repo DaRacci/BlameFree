@@ -1,11 +1,4 @@
 //! API handler for admin endpoints.
-//!
-//! Currently provides:
-//! - `GET /api/admin/logs` — returns recent server console logs
-//! - `GET /api/admin/logs/stream` — SSE stream of live logs
-//!
-//! This module is designed for future expansion with additional admin
-//! features such as cache inspection, config management, etc.
 
 use std::cmp::min;
 use std::convert::Infallible;
@@ -21,16 +14,15 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use tokio::sync::mpsc;
 use tokio::time::interval;
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tracing::{info, warn};
 
 use crate::server::AppState;
 use crb_webui_shared::admin::LogsResponse;
 
-/// GET /api/admin/logs return recent server console logs.
+/// Get return recent server console logs.
 ///
 /// Reads the last 500 lines from the server's log file.
 pub async fn get_logs(State(state): State<AppState>) -> Json<LogsResponse> {
-    tracing::info!("GET /api/admin/logs");
-
     let log_path = &state.log_file;
 
     match read_last_n_lines(log_path, 500) {
@@ -43,7 +35,7 @@ pub async fn get_logs(State(state): State<AppState>) -> Json<LogsResponse> {
             })
         }
         Err(e) => {
-            tracing::warn!("Failed to read log file {}: {e}", log_path.display());
+            warn!("Failed to read log file {}: {e}", log_path.display());
             Json(LogsResponse {
                 logs: String::new(),
                 available: false,
@@ -115,14 +107,12 @@ fn read_last_n_lines(path: &std::path::Path, n: usize) -> std::io::Result<Vec<St
     Ok(lines)
 }
 
-/// GET /api/admin/logs/stream — SSE stream of server console logs.
+/// Get SSE stream of server console logs.
 ///
 /// On first connection, sends the last 500 lines as a batch.
 /// Then polls the log file every second for new lines and streams them.
 /// Uses Server-Sent Events (SSE) for real-time log delivery.
 pub async fn get_logs_stream(State(state): State<AppState>) -> impl IntoResponse {
-    tracing::info!("GET /api/admin/logs/stream (SSE)");
-
     let log_path = state.log_file.clone();
 
     let (tx, rx) = mpsc::unbounded_channel::<Result<Event, Infallible>>();
@@ -137,7 +127,7 @@ pub async fn get_logs_stream(State(state): State<AppState>) -> impl IntoResponse
                 }
             }
             Err(e) => {
-                tracing::warn!("Failed to read initial log lines: {e}");
+                warn!("Failed to read initial log lines: {e}");
                 // Continue anyway so polling can pick up future writes
             }
         }

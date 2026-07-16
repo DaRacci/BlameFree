@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use crate::role_color;
 use crb_webui_shared::config::RoleInfo;
+use crb_webui_shared::route;
+use crb_webui_shared::routes::API_CONFIG;
 use crb_webui_shared::runs::{AgentLogResponse, PrAgentEntry, PrAgentsResponse};
+use gloo_net::http::Request;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::components::A;
@@ -29,8 +32,7 @@ pub fn PrDetailPage() -> impl IntoView {
     {
         let set_map = set_role_info_map;
         spawn_local(async move {
-            let url = "/api/config";
-            if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
+            if let Ok(resp) = Request::get(&API_CONFIG).send().await {
                 if let Ok(config) = resp.json::<crate::AppConfig>().await {
                     let map: HashMap<String, RoleInfo> = config
                         .roles
@@ -60,8 +62,8 @@ pub fn PrDetailPage() -> impl IntoView {
         let set_logs = set_agent_logs;
         let set_logs_loading = set_logs_loading;
         spawn_local(async move {
-            let url = format!("/api/runs/{}/prs/{}", rid_clone, pk_clone);
-            match gloo_net::http::Request::get(&url).send().await {
+            let url = route!(API_RUNS_ID_PRS_KEY, rid_clone, pk_clone);
+            match Request::get(&url).send().await {
                 Ok(r) if r.ok() => match r.json::<PrAgentsResponse>().await {
                     Ok(pr) => {
                         set_title.set(pr.pr_title);
@@ -81,10 +83,8 @@ pub fn PrDetailPage() -> impl IntoView {
                         spawn_local(async move {
                             let mut results = HashMap::new();
                             for role in &roles {
-                                let log_url = format!("/api/runs/{}/logs/{}/{}", rid2, pk2, role);
-                                if let Ok(resp) =
-                                    gloo_net::http::Request::get(&log_url).send().await
-                                {
+                                let log_url = route!(API_RUNS_ID_LOGS_KEY_ROLE, rid2, pk2, role);
+                                if let Ok(resp) = Request::get(&log_url).send().await {
                                     if let Ok(log) = resp.json::<AgentLogResponse>().await {
                                         results.insert(role.clone(), log);
                                     }

@@ -5,7 +5,10 @@ use crate::components::progress_bar::ProgressBar;
 use crate::sse;
 use crb_types::RunEvent;
 use crb_webui_shared::config::RoleInfo;
+use crb_webui_shared::route;
+use crb_webui_shared::routes::API_CONFIG;
 use crb_webui_shared::runs::RunStatus;
+use gloo_net::http::Request;
 use leptos::either::{Either, EitherOf3};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -76,8 +79,7 @@ pub fn LivePage() -> impl IntoView {
 
     // Fetch available roles on mount
     spawn_local(async move {
-        let url = "/api/config";
-        if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
+        if let Ok(resp) = Request::get(&API_CONFIG).send().await {
             if let Ok(config) = resp.json::<AppConfig>().await {
                 set_available_role_infos.set(config.roles);
             }
@@ -105,7 +107,7 @@ pub fn LivePage() -> impl IntoView {
                 return;
             }
 
-            let url = format!("/api/runs/{}/live", id);
+            let url = route!(API_RUNS_ID_LIVE, id);
 
             match sse::connect_sse(&url).await {
                 Ok(mut rx) => {
@@ -395,7 +397,7 @@ fn handle_event(
                         pr.agents.insert(agent.clone(), PerAgentState::new());
                     }
                     if let Some(agent) = pr.agents.get_mut(&agent) {
-                        agent.status = "reviewing".into();
+                        agent.status = RunStatus::Running;
                     }
                 }
             });

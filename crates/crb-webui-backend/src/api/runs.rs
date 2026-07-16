@@ -211,8 +211,7 @@ pub struct StartRunResponse {
     pub total_prs: usize,
 }
 
-/// GET /api/runs
-/// list all benchmark runs, including active and completed runs.
+/// List all benchmark runs, including active and completed runs.
 pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
     tracing::info!("GET /api/runs");
     let output_dir = state.output_dir.clone();
@@ -595,7 +594,7 @@ fn compute_aggregate_metrics(
     }
 }
 
-/// GET /api/runs/:id — get detailed run results.
+/// Get detailed run results.
 pub async fn get_run(State(state): State<AppState>, AxumPath(id): AxumPath<String>) -> Response {
     tracing::info!("GET /api/runs/{}", id);
 
@@ -662,7 +661,7 @@ pub async fn get_run(State(state): State<AppState>, AxumPath(id): AxumPath<Strin
     Json(detail).into_response()
 }
 
-/// POST /api/runs — start a new benchmark run.
+/// Start a new benchmark run.
 pub async fn start_run(
     State(state): State<AppState>,
     Json(config): Json<BenchmarkConfig>,
@@ -681,8 +680,7 @@ pub async fn start_run(
             .as_secs()
     );
 
-    // Calculate total PRs before constructing ActiveRun so the frontend
-    // can see it immediately when polling GET /api/runs/:id
+    // Calculate total PRs before constructing ActiveRun so the frontend can see it immediately when polling
     // Resolve dataset directory: the config stores just the dataset ID (e.g. "golden_comments"),
     // but the actual path is relative to the server's base dataset_dir (e.g. "datasets/golden_comments").
     let dataset_dir = state.dataset_dir.join(&config.dataset_dir);
@@ -870,7 +868,7 @@ fn resolve_cache_dir(output_dir: &Path, _run_id: &str) -> Option<PathBuf> {
     None
 }
 
-/// GET /api/runs/:id/logs — list available log files for a run
+/// List available log files for a run
 ///
 /// Merges PRs from the output directory (canonical source) with cache entries.
 /// All PRs with output files are shown; cache entries add agent roles where available.
@@ -1037,7 +1035,7 @@ fn resolve_pr_title(output_dir: &Path, run_id: &str, pr_key: &str) -> String {
     pr_key.to_string()
 }
 
-/// GET /api/runs/:id/logs/:pr_key/:role — get specific agent log
+/// Get specific agent log
 pub async fn get_agent_log(
     State(state): State<AppState>,
     AxumPath((id, pr_key, role)): AxumPath<(String, String, String)>,
@@ -1091,7 +1089,7 @@ pub async fn get_agent_log(
     .into_response()
 }
 
-/// GET /api/runs/:id/prs/:pr_key — get agent availability info for a single PR
+/// Get agent availability info for a single PR
 ///
 /// Returns the PR title and which agents have cached log files.
 pub async fn get_pr_agents(
@@ -1175,7 +1173,7 @@ pub async fn get_pr_agents(
     .into_response()
 }
 
-/// GET /api/runs/:id/pr-detail/:pr_key — get full details for a specific PR from its result file
+/// Get full details for a specific PR from its result file
 pub async fn get_pr_detail(
     State(state): State<AppState>,
     AxumPath((id, pr_key)): AxumPath<(String, String)>,

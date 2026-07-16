@@ -1,4 +1,5 @@
 use crb_webui_shared::auth::AuthUser;
+use crb_webui_shared::routes::API_CONFIG;
 use gloo_net::http::Request;
 use leptos::mount::mount_to_body;
 use leptos::prelude::*;
@@ -43,7 +44,7 @@ pub fn App() -> impl IntoView {
     provide_context(auth_ctx.clone());
 
     spawn_local(async move {
-        let resp = Request::get("/api/config").send().await;
+        let resp = Request::get(API_CONFIG).send().await;
         if let Ok(resp) = resp {
             if let Ok(config) = resp.json::<AppConfig>().await {
                 auth_ctx.auth_enabled.set(config.auth_enabled);

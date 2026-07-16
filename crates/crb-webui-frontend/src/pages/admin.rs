@@ -1,19 +1,15 @@
 use crate::sse;
 use crb_webui_shared::admin::LogsResponse;
+use crb_webui_shared::routes::API_ADMIN_LOGS;
+use crb_webui_shared::routes::API_ADMIN_LOGS_STREAM;
 use futures::StreamExt;
+use gloo_net::http::Request;
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use lucide_leptos::{ClipboardList, TriangleAlert};
 
-/// Admin page component.
-///
-/// Provides:
-/// - Server console log viewer (live streaming via SSE)
-///
-/// Structured as a series of `.admin-section` divs so future admin features
-/// (cache management, config editor, system stats, etc.) can be added as
-/// sibling sections with minimal changes.
+/// Admin page component
 #[component]
 pub fn AdminPage() -> impl IntoView {
     let (logs, set_logs) = signal::<String>(String::new());
@@ -21,35 +17,29 @@ pub fn AdminPage() -> impl IntoView {
     let (error, set_error) = signal::<Option<String>>(None);
     let (available, set_available) = signal(true);
     let (status_msg, set_status_msg) = signal::<Option<String>>(None);
-    // Connection status: "connecting", "connected", "disconnected", "error: ..."
     let (connection_status, set_connection_status) = signal("connecting".to_string());
-    // Number of live-streamed lines received
     let (live_line_count, set_live_line_count) = signal(0usize);
 
-    let logs_url = "/api/admin/logs";
     spawn_local(async move {
-        match gloo_net::http::Request::get(&logs_url).send().await {
-            Ok(resp) => {
-                if resp.ok() {
-                    match resp.json::<LogsResponse>().await {
-                        Ok(data) => {
-                            set_available.set(data.available);
-                            set_status_msg.set(data.message.clone());
-                            if data.available {
-                                let initial_count = data.logs.lines().count();
-                                set_logs.set(data.logs);
-                                set_live_line_count.set(initial_count);
-                            }
-                        }
-                        Err(e) => {
-                            set_error.set(Some(format!("Failed to parse response: {e}")));
-                        }
+        match Request::get(&API_ADMIN_LOGS).send().await {
+            Ok(resp) if resp.ok() => match resp.json::<LogsResponse>().await {
+                Ok(data) => {
+                    set_available.set(data.available);
+                    set_status_msg.set(data.message.clone());
+                    if data.available {
+                        let initial_count = data.logs.lines().count();
+                        set_logs.set(data.logs);
+                        set_live_line_count.set(initial_count);
                     }
-                } else {
-                    let status = resp.status();
-                    let text = resp.text().await.unwrap_or_default();
-                    set_error.set(Some(format!("Server error ({status}): {text}")));
                 }
+                Err(e) => {
+                    set_error.set(Some(format!("Failed to parse response: {e}")));
+                }
+            },
+            Ok(resp) => {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                set_error.set(Some(format!("Server error ({status}): {text}")));
             }
             Err(e) => {
                 set_error.set(Some(format!("Network error: {e}")));
@@ -58,12 +48,11 @@ pub fn AdminPage() -> impl IntoView {
         set_loading.set(false);
     });
 
-    let stream_url = "/api/admin/logs/stream";
     let sse_logs = set_logs;
     let sse_lines = set_live_line_count;
     let sse_conn = set_connection_status;
     spawn_local(async move {
-        match sse::connect_sse_with_status(&stream_url, sse_conn).await {
+        match sse::connect_sse_with_status(&API_ADMIN_LOGS_STREAM, sse_conn).await {
             Ok(mut rx) => {
                 while let Some(line) = rx.next().await {
                     sse_logs.update(|s| {
@@ -74,7 +63,6 @@ pub fn AdminPage() -> impl IntoView {
                     });
                     sse_lines.update(|n| *n += 1);
                 }
-                // Channel closed — stream ended
                 sse_conn.set("disconnected".into());
             }
             Err(e) => {

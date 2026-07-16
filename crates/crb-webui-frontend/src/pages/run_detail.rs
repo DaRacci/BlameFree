@@ -1,7 +1,10 @@
 use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crb_types::benchmark::MetricsProvider;
-use crb_webui_shared::runs::{PrResult, RunDetail};
+use crb_webui_shared::{
+    route,
+    runs::{PrResult, RunDetail},
+};
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_params_map;
@@ -24,7 +27,7 @@ pub fn RunDetailPage() -> impl IntoView {
         async move {
             set_loading.set(true);
             set_error.set(None);
-            match get_run_detail(&id).await {
+            match crate::fetch_json(&route!(API_RUNS_ID, id)).await {
                 Ok(detail) => {
                     set_run.set(Some(detail));
                     set_loading.set(false);
@@ -257,9 +260,4 @@ pub fn RunDetailPage() -> impl IntoView {
             }}
         </div>
     }
-}
-
-async fn get_run_detail(id: &str) -> Result<RunDetail, String> {
-    let url = format!("/api/runs/{}", id);
-    crate::fetch_json(&url).await
 }

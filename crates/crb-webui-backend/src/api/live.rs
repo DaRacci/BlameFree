@@ -14,7 +14,7 @@ use tokio_stream::wrappers::BroadcastStream;
 
 use crate::server::AppState;
 
-/// GET /api/runs/:id/live — SSE stream of live agent outputs.
+/// Get an SSE stream of live agent outputs.
 pub async fn live_stream(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,

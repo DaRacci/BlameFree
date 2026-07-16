@@ -1,3 +1,4 @@
+use crb_webui_shared::routes::{API_ADHOC_RUNS, API_RUNS};
 use crb_webui_shared::runs::RunStatus;
 use crb_webui_shared::{adhoc::AdhocRunSummary, runs::RunSummary};
 use gloo_timers::callback::Interval;
@@ -8,9 +9,6 @@ use leptos::task::spawn_local;
 use crate::components::metrics_card::MetricsCard;
 use crate::fetch_json;
 use lucide_leptos::{ArrowRight, TriangleAlert};
-
-const API_RUNS_URL: &str = "/api/runs";
-const API_ADHOC_RUNS_URL: &str = "/api/adhoc/runs";
 
 #[component]
 pub fn HomePage() -> impl IntoView {
@@ -28,7 +26,7 @@ pub fn HomePage() -> impl IntoView {
         spawn_local(async move {
             let mut active = false;
 
-            match fetch_json::<Vec<RunSummary>>(API_RUNS_URL).await {
+            match fetch_json::<Vec<RunSummary>>(API_RUNS).await {
                 Ok(data) => {
                     if data.iter().any(|r| r.status == RunStatus::Running) {
                         active = true;
@@ -38,7 +36,7 @@ pub fn HomePage() -> impl IntoView {
                 Err(e) => se.set(Some(e)),
             }
 
-            match fetch_json::<Vec<AdhocRunSummary>>(API_ADHOC_RUNS_URL).await {
+            match fetch_json::<Vec<AdhocRunSummary>>(API_ADHOC_RUNS).await {
                 Ok(data) => {
                     if data.iter().any(|r| r.status == RunStatus::Running) {
                         active = true;

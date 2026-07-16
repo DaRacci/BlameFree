@@ -13,24 +13,22 @@ use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use crb_agents::prompts;
+use crb_shared::DEFAULT_MODEL;
 use crb_shared::sanitize_filename;
 use crb_shared::url::parse_github_url;
-use crb_shared::DEFAULT_MODEL;
-use crb_webui_shared::adhoc::{AdhocReviewResponse, AdhocRunSummary, GithubPrListItem};
 use crb_types::benchmark::Metrics;
 use crb_types::benchmark::MetricsProvider;
+use crb_webui_shared::adhoc::{AdhocReviewResponse, AdhocRunSummary, GithubPrListItem};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{info, warn};
 
 use crate::api::runs::{self, PrResultJson};
-use crb_webui_shared::runs::{
-    CostJson, MetricsJson, PrResult, RunConfig, RunDetail, VerdictJson,
-};
 use crate::server::AppState;
+use crb_webui_shared::runs::{CostJson, MetricsJson, PrResult, RunConfig, RunDetail, VerdictJson};
 use rig_core::client::CompletionClient;
 use rig_core::client::ProviderClient;
-/// POST /api/adhoc/review
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdhocReviewRequest {
     pub url: String,
@@ -124,7 +122,7 @@ pub async fn start_adhoc_review(
         Json(AdhocReviewResponse {
             run_id,
             pr_title,
-            status: "running".to_string(),
+            status: RunStatus::Running,
         }),
     )
         .into_response()
@@ -209,7 +207,11 @@ pub async fn get_adhoc_run(
         .and_then(|s| s.get("roles"))
         .and_then(|v| {
             if let Some(arr) = v.as_array() {
-                Some(arr.iter().filter_map(|r| r.as_str().map(String::from)).collect())
+                Some(
+                    arr.iter()
+                        .filter_map(|r| r.as_str().map(String::from))
+                        .collect(),
+                )
             } else if let Some(s) = v.as_str() {
                 // Backward compat: old format stored comma-separated string
                 Some(s.split(',').map(|r| r.trim().to_string()).collect())
@@ -283,8 +285,6 @@ pub async fn get_adhoc_run(
     Json(detail).into_response()
 }
 
-/// GET /api/adhoc/prs/:owner/:repo
-///
 /// List open PRs from a GitHub repo (proxied to avoid CORS).
 pub async fn list_repo_prs(
     State(state): State<AppState>,
@@ -624,7 +624,11 @@ fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<AdhocRunSummary> {
         .and_then(|s| s.get("roles"))
         .and_then(|v| {
             if let Some(arr) = v.as_array() {
-                Some(arr.iter().filter_map(|r| r.as_str().map(String::from)).collect())
+                Some(
+                    arr.iter()
+                        .filter_map(|r| r.as_str().map(String::from))
+                        .collect(),
+                )
             } else if let Some(s) = v.as_str() {
                 // Backward compat: old format stored comma-separated string
                 Some(s.split(',').map(|r| r.trim().to_string()).collect())

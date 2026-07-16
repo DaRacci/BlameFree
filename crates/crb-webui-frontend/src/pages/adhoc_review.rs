@@ -2,14 +2,17 @@ use crate::AppConfig;
 use crate::components::role_selector::RoleSelector;
 use crb_webui_shared::adhoc::{AdhocReviewResponse, GithubPrListItem};
 use crb_webui_shared::config::RoleInfo;
+use crb_webui_shared::route;
+use crb_webui_shared::routes::{API_ADHOC_REVIEW, API_CONFIG};
+use gloo_net::http::Request;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 
 /// Fetch open PRs for a given owner/repo via the backend proxy.
-async fn fetch_repo_prs(owner: &str, repo: &str) -> Result<Vec<GithubPrListItem>, String> {
-    let url = format!("/api/adhoc/prs/{}/{}", owner, repo);
-    let resp = gloo_net::http::Request::get(&url)
+async fn fetch_repo_prs(owner: &str, repos: &str) -> Result<Vec<GithubPrListItem>, String> {
+    let url = route!(API_ADHOC_PRS_OWNER_REPO, owner, repos);
+    let resp = Request::get(&url)
         .send()
         .await
         .map_err(|e| format!("Network error: {}", e))?;
@@ -102,14 +105,13 @@ fn fetch_initial_config(
     set_available_roles: WriteSignal<Vec<RoleInfo>>,
 ) {
     spawn_local(async move {
-        let url = "/api/config";
-        if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
-            if let Ok(config) = resp.json::<AppConfig>().await {
-                if let Some(first) = config.models.first() {
-                    set_model.set(first.clone());
-                }
-                set_available_roles.set(config.roles);
+        if let Ok(resp) = Request::get(&API_CONFIG).send().await
+            && let Ok(config) = resp.json::<AppConfig>().await
+        {
+            if let Some(first) = config.models.first() {
+                set_model.set(first.clone());
             }
+            set_available_roles.set(config.roles);
         }
     });
 }
@@ -220,8 +222,7 @@ fn build_submit_handler(
         });
 
         spawn_local(async move {
-            let req = gloo_net::http::Request::post("/api/adhoc/review")
-                .header("Content-Type", "application/json");
+            let req = Request::post(API_ADHOC_REVIEW).header("Content-Type", "application/json");
             let resp = match req.body(body.to_string()) {
                 Ok(r) => r.send().await,
                 Err(e) => {
@@ -261,8 +262,6 @@ fn build_submit_handler(
         });
     }
 }
-
-// ─── View Sections ──────────────────────────────────────────────────────────
 
 fn render_repo_section(
     owner: ReadSignal<String>,
