@@ -1,4 +1,4 @@
-//! GitHub URL parsing utilities.
+//! URL parsing utilities.
 
 use anyhow::{Result, anyhow};
 use regex::Regex;

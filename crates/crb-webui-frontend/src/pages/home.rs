@@ -1,3 +1,4 @@
+use crb_webui_shared::runs::RunStatus;
 use crb_webui_shared::{adhoc::AdhocRunSummary, runs::RunSummary};
 use leptos::{
     IntoView, SignalGet, SignalSet, WriteSignal, component, create_effect, create_signal,
@@ -29,7 +30,7 @@ pub fn HomePage() -> impl IntoView {
 
             match fetch_json::<Vec<RunSummary>>(API_RUNS_URL).await {
                 Ok(data) => {
-                    if data.iter().any(|r| r.status == "running") {
+                    if data.iter().any(|r| r.status == RunStatus::Running) {
                         active = true;
                     }
                     sb.set(data);
@@ -39,7 +40,7 @@ pub fn HomePage() -> impl IntoView {
 
             match fetch_json::<Vec<AdhocRunSummary>>(API_ADHOC_RUNS_URL).await {
                 Ok(data) => {
-                    if data.iter().any(|r| r.status == "running") {
+                    if data.iter().any(|r| r.status == RunStatus::Running) {
                         active = true;
                     }
                     sa.set(data);
@@ -133,10 +134,10 @@ pub fn HomePage() -> impl IntoView {
                     let adhoc = adhoc_runs.get();
 
                     let completed_bench: Vec<&RunSummary> = bench.iter()
-                        .filter(|r| r.status != "running" && r.status != "pending")
+                        .filter(|r| r.status != RunStatus::Running && r.status != RunStatus::Pending)
                         .collect();
                     let completed_adhoc: Vec<&AdhocRunSummary> = adhoc.iter()
-                        .filter(|r| r.status != "running" && r.status != "pending")
+                        .filter(|r| r.status != RunStatus::Running && r.status != RunStatus::Pending)
                         .collect();
 
                     let total_runs = completed_bench.len() + completed_adhoc.len();
@@ -147,10 +148,10 @@ pub fn HomePage() -> impl IntoView {
                     };
 
                     let active_bench: Vec<&RunSummary> = bench.iter()
-                        .filter(|r| r.status == "running" || r.status == "pending")
+                        .filter(|r| r.status == RunStatus::Running || r.status == RunStatus::Pending)
                         .collect();
                     let active_adhoc: Vec<&AdhocRunSummary> = adhoc.iter()
-                        .filter(|r| r.status == "running" || r.status == "pending")
+                        .filter(|r| r.status == RunStatus::Running || r.status == RunStatus::Pending)
                         .collect();
                     let has_any_active = !active_bench.is_empty() || !active_adhoc.is_empty();
 
@@ -342,7 +343,7 @@ enum RecentRunItem {
 }
 
 impl RecentRunItem {
-    fn status(&self) -> &str {
+    fn status(&self) -> &RunStatus {
         match self {
             RecentRunItem::Benchmark(r) => &r.status,
             RecentRunItem::Adhoc(r) => &r.status,

@@ -478,9 +478,11 @@ fn render_config_section(
 }
 
 fn render_error_view(error: ReadSignal<Option<String>>) -> impl IntoView {
-    move || error.get().map(|e| {
+    move || {
+        error.get().map(|e| {
         view! { <div class="error-message" style="color: var(--accent-red, #f85149); margin-bottom: var(--spacing-lg, 16px);">{e}</div> }
     })
+    }
 }
 
 fn render_submit_button(
@@ -499,8 +501,6 @@ fn render_submit_button(
         </div>
     }
 }
-
-// ─── Main Component ─────────────────────────────────────────────────────────
 
 #[component]
 pub fn AdhocReviewPage() -> impl IntoView {

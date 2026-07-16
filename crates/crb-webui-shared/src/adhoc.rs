@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::runs::RunStatus;
+
 /// POST /api/adhoc/review
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdhocReviewResponse {
@@ -9,9 +11,8 @@ pub struct AdhocReviewResponse {
     /// PR title for the ad-hoc review.
     pub pr_title: String,
 
-    // TODO: Convert to enum type.
-    /// Status of the review (e.g. "running", "completed").
-    pub status: String,
+    /// Status of the review
+    pub status: RunStatus,
 }
 
 /// Summary of an ad-hoc review run (for the list endpoint).
@@ -27,7 +28,7 @@ pub struct AdhocRunSummary {
     pub pr_title: String,
 
     /// Status of the run.
-    pub status: String,
+    pub status: RunStatus,
 
     // TODO: Convert to time type.
     /// ISO-8601 timestamp of when the run was created.

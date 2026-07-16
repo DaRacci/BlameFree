@@ -142,7 +142,6 @@ pub async fn get_logs_stream(State(state): State<AppState>) -> impl IntoResponse
             }
         }
 
-        // ── Polling: check for new lines every second ───────────────
         let mut last_pos = match metadata(&log_path) {
             Ok(m) => m.len(),
             Err(_) => 0,

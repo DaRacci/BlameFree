@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Aggregate metrics computed from total true/false positives and false negatives.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[deprecated = "Use [`crb_shared::benchmark::Metrics`]"]
 pub struct MetricsOutput {
     /// Precision score (tp / (tp + fp)).
     pub precision: f64,
@@ -25,6 +26,7 @@ pub struct MetricsOutput {
 /// # Returns
 ///
 /// A [`MetricsOutput`] with the computed precision, recall, and F1 values.
+#[deprecated = "Use [`crb_shared::benchmark::Metrics`]"]
 pub fn compute_aggregate_metrics(
     total_tp: usize,
     total_fp: usize,

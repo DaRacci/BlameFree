@@ -15,7 +15,7 @@ use crate::harness;
 use crate::server::{ActiveRun, AppState};
 use crb_shared::DEFAULT_MODEL;
 use crb_types::benchmark::Metrics;
-use crb_webui_shared::runs::AgentLogResponse;
+use crb_webui_shared::config::RoleInfo;
 use crb_webui_shared::runs::CostJson;
 use crb_webui_shared::runs::LogsListResponse;
 use crb_webui_shared::runs::MetricsJson;
@@ -28,7 +28,7 @@ use crb_webui_shared::runs::RunConfig;
 use crb_webui_shared::runs::RunDetail;
 use crb_webui_shared::runs::RunSummary;
 use crb_webui_shared::runs::VerdictJson;
-use crb_webui_shared::config::RoleInfo;
+use crb_webui_shared::runs::{AgentLogResponse, RunStatus};
 use rustls::pki_types::UnixTime;
 
 /// Aggregate metrics computed from a run's summary.json.
@@ -267,7 +267,7 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
                 },
                 model: Some(ar.config.model.clone()),
                 status: if ar.finished {
-                    "completed".to_string()
+                    RunStatus::Completed
                 } else {
                     "running".to_string()
                 },
@@ -277,8 +277,8 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
 
     // 3) Sort: active (running) first by creation time, then completed by time
     runs.sort_by(|a, b| {
-        let a_running = a.status == "running";
-        let b_running = b.status == "running";
+        let a_running = a.status == RunStatus::Running;
+        let b_running = b.status == RunStatus::Running;
         // Active runs come first
         a_running
             .cmp(&b_running)
@@ -289,7 +289,6 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
 
     Json(runs).into_response()
 }
-
 
 /// Scan a run directory and compute summary metrics.
 fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
@@ -393,7 +392,7 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
                                 duration_secs: Some(duration_secs),
                                 created_at: get_file_modified(path),
                                 model: Some(model),
-                                status: "completed".to_string(),
+                                status: RunStatus::Completed,
                             });
                         }
                     }
@@ -443,7 +442,7 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
         duration_secs: Some(duration_secs),
         created_at: get_file_modified(path),
         model: Some("unknown".to_string()),
-        status: "completed".to_string(),
+        status: RunStatus::Completed,
     })
 }
 
@@ -597,10 +596,7 @@ fn compute_aggregate_metrics(
 }
 
 /// GET /api/runs/:id — get detailed run results.
-pub async fn get_run(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-) -> Response {
+pub async fn get_run(State(state): State<AppState>, AxumPath(id): AxumPath<String>) -> Response {
     tracing::info!("GET /api/runs/{}", id);
 
     // Check if run is still in progress (in active_runs before output dir exists)
@@ -770,8 +766,6 @@ fn count_prs_in_dataset(dataset_dir: &Path) -> usize {
     }
     count
 }
-
-// ── Log viewing handlers ────────────────────────────────────────────────────
 
 /// Scan a PR cache directory for agent log files and return deduplicated roles.
 fn scan_agent_roles(pr_cache_dir: &Path) -> Vec<RoleInfo> {

@@ -1,5 +1,7 @@
-use crb_webui_shared::runs::RunSummary;
-use leptos::{IntoView, SignalGet, SignalSet, SignalUpdate, component, create_signal, view};
+use std::cmp::Ordering;
+
+use crb_webui_shared::runs::{RunStatus, RunSummary};
+use leptos::{IntoView, SignalGet, SignalSet, SignalUpdate, View, component, create_signal, view};
 
 #[component]
 pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
@@ -18,73 +20,27 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
     let sorted_runs = move || {
         let mut runs = runs.clone();
         let asc = sort_asc.get();
-        match sort_column.get() {
-            SortColumn::Name => {
-                runs.sort_by(|a, b| {
-                    if asc {
-                        a.name.cmp(&b.name)
-                    } else {
-                        b.name.cmp(&a.name)
-                    }
-                });
-            }
-            SortColumn::Status => {
-                runs.sort_by(|a, b| {
-                    if asc {
-                        a.status.cmp(&b.status)
-                    } else {
-                        b.status.cmp(&a.status)
-                    }
-                });
-            }
+        runs.sort_by(|a, b| match sort_column.get() {
+            SortColumn::Name => sort_by(&a.name, &b.name, asc),
+            SortColumn::Status => sort_by(&a.status, &b.status, asc),
             SortColumn::Model => {
-                runs.sort_by(|a, b| {
-                    let a_m = a.model.as_deref().unwrap_or("");
-                    let b_m = b.model.as_deref().unwrap_or("");
-                    if asc { a_m.cmp(b_m) } else { b_m.cmp(a_m) }
-                });
+                let a_m = a.model.as_deref().unwrap_or("");
+                let b_m = b.model.as_deref().unwrap_or("");
+                sort_by(a_m, b_m, asc)
             }
             SortColumn::F1 => {
-                runs.sort_by(|a, b| {
-                    let a_v = a.avg_f1.unwrap_or(-1.0);
-                    let b_v = b.avg_f1.unwrap_or(-1.0);
-                    if asc {
-                        a_v.partial_cmp(&b_v).unwrap()
-                    } else {
-                        b_v.partial_cmp(&a_v).unwrap()
-                    }
-                });
+                let a_v = a.avg_f1.unwrap_or(-1.0);
+                let b_v = b.avg_f1.unwrap_or(-1.0);
+                sort_by(a_v, b_v, asc)
             }
-            SortColumn::PrCount => {
-                runs.sort_by(|a, b| {
-                    if asc {
-                        a.pr_count.cmp(&b.pr_count)
-                    } else {
-                        b.pr_count.cmp(&a.pr_count)
-                    }
-                });
-            }
+            SortColumn::PrCount => a.pr_count.cmp(&b.pr_count),
             SortColumn::Cost => {
-                runs.sort_by(|a, b| {
-                    let a_v = a.total_cost.unwrap_or(0.0);
-                    let b_v = b.total_cost.unwrap_or(0.0);
-                    if asc {
-                        a_v.partial_cmp(&b_v).unwrap()
-                    } else {
-                        b_v.partial_cmp(&a_v).unwrap()
-                    }
-                });
+                let a_v = a.total_cost.unwrap_or(0.0);
+                let b_v = b.total_cost.unwrap_or(0.0);
+                sort_by(a_v, b_v, asc)
             }
-            SortColumn::Date => {
-                runs.sort_by(|a, b| {
-                    if asc {
-                        a.id.cmp(&b.id)
-                    } else {
-                        b.id.cmp(&a.id)
-                    }
-                });
-            }
-        }
+            SortColumn::Date => a.id.cmp(&b.id),
+        });
         runs
     };
 
@@ -132,11 +88,11 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
                 </thead>
                 <tbody>
                     {move || sorted_runs().into_iter().map(|run| {
-                        let badge_variant = match run.status.as_str() {
-                            "done" => "badge--success",
-                            "failed" => "badge--danger",
-                            "running" => "badge--warning",
-                            _ => "badge--neutral",
+                        let badge_variant = match run.status {
+                            RunStatus::Completed => "badge--success",
+                            RunStatus::Failed => "badge--danger",
+                            RunStatus::Running => "badge--warning",
+                            RunStatus::Pending => "badge--neutral",
                         };
                         let f1_str = run.avg_f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into());
                         let cost_str = run.total_cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "-".into());
@@ -150,7 +106,7 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
                                 <td class="table__td">
                                     <span class=format!("badge {}", badge_variant)>
                                         <span class="badge__dot"></span>
-                                        <span class="badge__label">{&run.status}</span>
+                                        <span class="badge__label">{run.status.to_string()}</span>
                                     </span>
                                 </td>
                                 <td class="table__td">{model_str}</td>
@@ -160,7 +116,7 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
                                 <td class="table__td">
                                     <div style="display: flex; gap: 0.5rem;">
                                         <a href=&detail_path class="btn btn--sm btn--secondary">"View"</a>
-                                        {if run.status == "running" || run.status == "pending" {
+                                        {if run.status == RunStatus::Running || run.status == RunStatus::Pending {
                                             view! {
                                                 <a href=&live_path class="btn btn--sm btn--secondary">"Live"</a>
                                             }.into_view()
@@ -187,4 +143,15 @@ enum SortColumn {
     F1,
     Cost,
     Date,
+}
+
+fn sort_by<T>(a: T, b: T, asc: bool) -> Ordering
+where
+    T: PartialOrd,
+{
+    if asc {
+        a.partial_cmp(&b).unwrap_or(Ordering::Equal)
+    } else {
+        b.partial_cmp(&a).unwrap_or(Ordering::Equal)
+    }
 }

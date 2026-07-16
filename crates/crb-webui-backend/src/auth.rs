@@ -191,8 +191,6 @@ async fn me(
         .map(Json)
 }
 
-// ─── Cookie Helpers ──────────────────────────────────────────────────────────
-
 /// Extract the session token from the Cookie header.
 fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
     let cookie_header = headers.get(axum::http::header::COOKIE)?.to_str().ok()?;
@@ -204,8 +202,6 @@ fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
     }
     None
 }
-
-// ─── OAuth Client Construction ───────────────────────────────────────────────
 
 /// Build an `oauth2::BasicClient` for the given provider.
 fn build_oauth_client(config: &OAuthConfig, provider: &str) -> Result<BasicClient, String> {
@@ -243,8 +239,6 @@ fn build_oauth_client(config: &OAuthConfig, provider: &str) -> Result<BasicClien
 
     Ok(client)
 }
-
-// ─── Provider User Info Fetching ─────────────────────────────────────────────
 
 /// Fetch JSON from an OAuth provider endpoint, checking for success and
 /// returning the parsed `serde_json::Value`.
@@ -346,8 +340,6 @@ mod tests {
     use super::*;
     use axum::http::header::COOKIE;
 
-    // ─── extract_session_cookie tests ──────────────────────────────────────────
-
     #[test]
     fn test_extract_session_cookie_valid() {
         let mut headers = HeaderMap::new();
@@ -393,11 +385,12 @@ mod tests {
     #[test]
     fn test_extract_session_cookie_whitespace() {
         let mut headers = HeaderMap::new();
-        headers.insert(COOKIE, "foo=bar; crb-session=hello; baz=qux".parse().unwrap());
+        headers.insert(
+            COOKIE,
+            "foo=bar; crb-session=hello; baz=qux".parse().unwrap(),
+        );
         insta::assert_debug_snapshot!(extract_session_cookie(&headers));
     }
-
-    // ─── build_oauth_client tests ────────────────────────────────────────────
 
     #[test]
     fn test_build_oauth_client_github() {
@@ -464,8 +457,6 @@ mod tests {
         let result = build_oauth_client(&config, "github");
         insta::assert_debug_snapshot!(result.is_err());
     }
-
-    // ─── random_string tests ─────────────────────────────────────────────────
 
     #[test]
     fn test_random_string_length() {

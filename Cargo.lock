@@ -875,6 +875,7 @@ dependencies = [
  "insta",
  "serde",
  "serde_json",
+ "strum",
 ]
 
 [[package]]

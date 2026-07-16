@@ -1,5 +1,6 @@
 use crb_types::benchmark::Metrics;
 use serde::{Deserialize, Serialize};
+use strum::Display;
 
 use crate::config::RoleInfo;
 
@@ -18,18 +19,22 @@ pub struct RunSummary {
 
     /// Average F1 score, if computed.
     #[serde(default)]
+    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
     pub avg_f1: Option<f64>,
 
     /// Average precision, if computed.
     #[serde(default)]
+    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
     pub avg_precision: Option<f64>,
 
     /// Average recall, if computed.
     #[serde(default)]
+    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
     pub avg_recall: Option<f64>,
 
     /// Total cost in USD.
     #[serde(default)]
+    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
     pub total_cost: Option<f64>,
 
     /// Total tokens consumed.
@@ -49,9 +54,16 @@ pub struct RunSummary {
     #[serde(default)]
     pub model: Option<String>,
 
-    // TODO: Convert to enum
-    /// Run status (e.g. "running", "completed", "failed").
-    pub status: String,
+    /// The state of the run.
+    pub status: RunStatus,
+}
+
+#[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RunStatus {
+    Pending,
+    Running,
+    Failed,
+    Completed,
 }
 
 /// Detailed run result with per-PR data.
@@ -291,8 +303,6 @@ pub struct PrDetailResponse {
 mod tests {
     use super::*;
 
-    // ── RunSummary ────────────────────────────────────────────────────────
-
     #[test]
     fn test_run_summary_default_fields() {
         let json = r#"{"id":"r1","name":"test","status":"running"}"#;
@@ -300,20 +310,12 @@ mod tests {
         insta::assert_debug_snapshot!(summary);
     }
 
-    // ── RunDetail ─────────────────────────────────────────────────────────
-
-    // ── PrResult ──────────────────────────────────────────────────────────
-
     #[test]
     fn test_pr_result_default_fields() {
         let json = r#"{"pr_number":1,"pr_key":"a/b/pull/1","title":"T"}"#;
         let result: PrResult = serde_json::from_str(json).unwrap();
         insta::assert_debug_snapshot!(result);
     }
-
-    // ── RunConfig ─────────────────────────────────────────────────────────
-
-    // ── CostJson ──────────────────────────────────────────────────────────
 
     #[test]
     fn test_cost_json_default() {
@@ -328,8 +330,6 @@ mod tests {
         insta::assert_debug_snapshot!(cost);
     }
 
-    // ── MetricsJson ───────────────────────────────────────────────────────
-
     #[test]
     fn test_metrics_json_default() {
         let metrics = MetricsJson::default();
@@ -342,8 +342,6 @@ mod tests {
         let metrics: MetricsJson = serde_json::from_str(json).unwrap();
         insta::assert_debug_snapshot!(metrics);
     }
-
-    // ── VerdictJson ───────────────────────────────────────────────────────
 
     #[test]
     fn test_verdict_json_rename_match() {
