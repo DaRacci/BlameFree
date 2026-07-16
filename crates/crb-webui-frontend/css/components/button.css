@@ -106,8 +106,8 @@
 }
 
 .btn__icon {
-  font-size: var(--text-lg);
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 
 .btn__label {

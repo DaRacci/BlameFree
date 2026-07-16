@@ -2,11 +2,9 @@ use crate::AppConfig;
 use crate::components::role_selector::RoleSelector;
 use crb_webui_shared::adhoc::{AdhocReviewResponse, GithubPrListItem};
 use crb_webui_shared::config::RoleInfo;
-use leptos::{
-    IntoView, ReadSignal, SignalGet, SignalGetUntracked, SignalSet, WriteSignal, component,
-    create_signal, event_target_value, spawn_local, view,
-};
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::use_navigate;
 
 /// Fetch open PRs for a given owner/repo via the backend proxy.
 async fn fetch_repo_prs(owner: &str, repo: &str) -> Result<Vec<GithubPrListItem>, String> {
@@ -24,8 +22,6 @@ async fn fetch_repo_prs(owner: &str, repo: &str) -> Result<Vec<GithubPrListItem>
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))
 }
-
-// ─── State ──────────────────────────────────────────────────────────────────
 
 struct AdhocSignals {
     owner: ReadSignal<String>,
@@ -57,19 +53,19 @@ struct AdhocSignals {
 }
 
 fn create_adhoc_signals() -> AdhocSignals {
-    let (owner, set_owner) = create_signal(String::new());
-    let (repo, set_repo) = create_signal(String::new());
-    let (model, set_model) = create_signal(String::new());
-    let (selected_roles, set_selected_roles) = create_signal::<Vec<String>>(Vec::new());
-    let (available_roles, set_available_roles) = create_signal::<Vec<RoleInfo>>(Vec::new());
-    let (loading, set_loading) = create_signal(false);
-    let (error, set_error) = create_signal::<Option<String>>(None);
-    let (prs_loading, set_prs_loading) = create_signal(false);
-    let (open_prs, set_open_prs) = create_signal::<Vec<GithubPrListItem>>(Vec::new());
-    let (pr_mode, set_pr_mode) = create_signal::<String>("open".to_string());
-    let (selected_pr_number, set_selected_pr_number) = create_signal::<Option<u32>>(None);
-    let (manual_pr_number, set_manual_pr_number) = create_signal(String::new());
-    let (prs_error, set_prs_error) = create_signal::<Option<String>>(None);
+    let (owner, set_owner) = signal(String::new());
+    let (repo, set_repo) = signal(String::new());
+    let (model, set_model) = signal(String::new());
+    let (selected_roles, set_selected_roles) = signal::<Vec<String>>(Vec::new());
+    let (available_roles, set_available_roles) = signal::<Vec<RoleInfo>>(Vec::new());
+    let (loading, set_loading) = signal(false);
+    let (error, set_error) = signal::<Option<String>>(None);
+    let (prs_loading, set_prs_loading) = signal(false);
+    let (open_prs, set_open_prs) = signal::<Vec<GithubPrListItem>>(Vec::new());
+    let (pr_mode, set_pr_mode) = signal::<String>("open".to_string());
+    let (selected_pr_number, set_selected_pr_number) = signal::<Option<u32>>(None);
+    let (manual_pr_number, set_manual_pr_number) = signal(String::new());
+    let (prs_error, set_prs_error) = signal::<Option<String>>(None);
 
     AdhocSignals {
         owner,
@@ -100,8 +96,6 @@ fn create_adhoc_signals() -> AdhocSignals {
         set_prs_error,
     }
 }
-
-// ─── Data Fetching ──────────────────────────────────────────────────────────
 
 fn fetch_initial_config(
     set_model: WriteSignal<String>,
@@ -342,7 +336,7 @@ fn render_pr_selection_section(
                             <input
                                 type="radio"
                                 name="pr-mode"
-                                checked=move || pr_mode.get() == "open"
+                                prop:checked=move || pr_mode.get() == "open"
                                 on:click=move |_| set_pr_mode.set("open".to_string())
                             />
                             <span>"Open PRs"</span>
@@ -351,7 +345,7 @@ fn render_pr_selection_section(
                             <input
                                 type="radio"
                                 name="pr-mode"
-                                checked=move || pr_mode.get() == "manual"
+                                prop:checked=move || pr_mode.get() == "manual"
                                 on:click=move |_| set_pr_mode.set("manual".to_string())
                             />
                             <span>"Manual Entry"</span>
@@ -359,66 +353,9 @@ fn render_pr_selection_section(
                     </div>
                 </div>
 
-                {move || {
-                    if pr_mode.get() == "open" {
-                        let prs = open_prs.get();
-                        let loading_prs = prs_loading.get();
-                        let prs_err = prs_error.get();
-
-                        if loading_prs {
-                            view! {
-                                <div class="form-field">
-                                    <p style="color: var(--text-secondary, #8b949e);">"Loading PRs..."</p>
-                                </div>
-                            }.into_view()
-                        } else if let Some(err) = prs_err {
-                            view! {
-                                <div class="form-field">
-                                    <p style="color: var(--accent-red, #f85149); font-size: var(--text-sm, 14px);">{err}</p>
-                                </div>
-                            }.into_view()
-                        } else if prs.is_empty() {
-                            view! {
-                                <div class="form-field">
-                                    <p style="color: var(--text-secondary, #8b949e); font-size: var(--text-sm, 14px);">
-                                        "Enter owner/repo and click \"Load PRs\" to see open pull requests."
-                                    </p>
-                                </div>
-                            }.into_view()
-                        } else {
-                            let sel_num = selected_pr_number.get();
-                            view! {
-                                <div class="form-field">
-                                    <label class="form-field__label" for="pr-select">"Select Open PR"</label>
-                                    <select
-                                        id="pr-select"
-                                        class="input select"
-                                        prop:value=move || sel_num.map(|n| n.to_string()).unwrap_or_default()
-                                        on:change=move |ev| {
-                                            let val = event_target_value(&ev);
-                                            if val.is_empty() {
-                                                set_selected_pr_number.set(None);
-                                            } else if let Ok(n) = val.parse::<u32>() {
-                                                set_selected_pr_number.set(Some(n));
-                                            }
-                                        }
-                                    >
-                                        <option value="">"-- Select a PR --"</option>
-                                        {prs.into_iter().map(|pr| {
-                                            let label = format!("#{} - {}", pr.number, pr.title);
-                                            let val = pr.number.to_string();
-                                            let is_selected = sel_num == Some(pr.number);
-                                            view! {
-                                                <option value=&val selected=is_selected>{&label}</option>
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </select>
-                                    <p class="form-field__helper">"Select an open PR from the dropdown above."</p>
-                                </div>
-                            }.into_view()
-                        }
-                    } else {
-                        view! {
+                {move || -> AnyView {
+                    if pr_mode.get() != "open" {
+                        return view! {
                             <div class="form-field">
                                 <label class="form-field__label" for="manual-pr">"PR Number"</label>
                                 <input
@@ -431,8 +368,65 @@ fn render_pr_selection_section(
                                 />
                                 <p class="form-field__helper">"Enter any PR number (open, closed, or merged)."</p>
                             </div>
-                        }.into_view()
+                        }.into_view().into_any();
                     }
+                    let prs = open_prs.get();
+                    let loading_prs = prs_loading.get();
+                    let prs_err = prs_error.get();
+
+                    if loading_prs {
+                        return view! {
+                            <div class="form-field">
+                                <p style="color: var(--text-secondary, #8b949e);">"Loading PRs..."</p>
+                            </div>
+                        }.into_view().into_any();
+                    }
+                    if let Some(err) = prs_err {
+                        return view! {
+                            <div class="form-field">
+                                <p style="color: var(--accent-red, #f85149); font-size: var(--text-sm, 14px);">{err}</p>
+                            </div>
+                        }.into_view().into_any();
+                    }
+                    if prs.is_empty() {
+                        return view! {
+                            <div class="form-field">
+                                <p style="color: var(--text-secondary, #8b949e); font-size: var(--text-sm, 14px);">
+                                    "Enter owner/repo and click \"Load PRs\" to see open pull requests."
+                                </p>
+                            </div>
+                        }.into_view().into_any();
+                    }
+                    let sel_num = selected_pr_number.get();
+                    view! {
+                        <div class="form-field">
+                            <label class="form-field__label" for="pr-select">"Select Open PR"</label>
+                            <select
+                                id="pr-select"
+                                class="input select"
+                                prop:value=move || sel_num.map(|n| n.to_string()).unwrap_or_default()
+                                on:change=move |ev| {
+                                    let val = event_target_value(&ev);
+                                    if val.is_empty() {
+                                        set_selected_pr_number.set(None);
+                                    } else if let Ok(n) = val.parse::<u32>() {
+                                        set_selected_pr_number.set(Some(n));
+                                    }
+                                }
+                            >
+                                <option value="">"-- Select a PR --"</option>
+                                {prs.into_iter().map(|pr| {
+                                    let label = format!("#{} - {}", pr.number, pr.title);
+                                    let val = pr.number.to_string();
+                                    let is_selected = sel_num == Some(pr.number);
+                                    view! {
+                                        <option value=val selected=is_selected>{label}</option>
+                                    }
+                                }).collect::<Vec<_>>()}
+                            </select>
+                            <p class="form-field__helper">"Select an open PR from the dropdown above."</p>
+                        </div>
+                    }.into_view().into_any()
                 }}
             </div>
         </section>

@@ -14,3 +14,4 @@ research
 experiments
 benchmark/
 test-diffs/
+.hermes/

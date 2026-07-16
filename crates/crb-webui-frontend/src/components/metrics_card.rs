@@ -1,4 +1,4 @@
-use leptos::{IntoView, component, view};
+use leptos::prelude::*;
 
 #[component]
 pub fn MetricsCard(
@@ -9,7 +9,7 @@ pub fn MetricsCard(
     let value = value.into();
     view! {
         <div class="metric-card">
-            <p class="metric-card__value" style=value_style>{&value}</p>
+            <p class="metric-card__value" style=value_style>{value}</p>
             <p class="metric-card__label">{label}</p>
         </div>
     }

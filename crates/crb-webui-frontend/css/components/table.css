@@ -62,7 +62,10 @@
 
 .table__sort-icon {
   margin-left: var(--spacing-xs);
-  font-size: 12px;
+}
+
+.table__th svg {
+  vertical-align: middle;
 }
 
 .table__td {

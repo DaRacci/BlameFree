@@ -1,24 +1,24 @@
 use crb_webui_shared::runs::RunStatus;
 use crb_webui_shared::{adhoc::AdhocRunSummary, runs::RunSummary};
-use leptos::{
-    IntoView, SignalGet, SignalSet, WriteSignal, component, create_effect, create_signal,
-    set_interval, spawn_local, view,
-};
-use std::time::Duration;
+use gloo_timers::callback::Interval;
+use leptos::either::EitherOf3;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 use crate::components::metrics_card::MetricsCard;
 use crate::fetch_json;
+use lucide_leptos::{ArrowRight, TriangleAlert};
 
 const API_RUNS_URL: &str = "/api/runs";
 const API_ADHOC_RUNS_URL: &str = "/api/adhoc/runs";
 
 #[component]
 pub fn HomePage() -> impl IntoView {
-    let (bench_runs, set_bench_runs) = create_signal::<Vec<RunSummary>>(Vec::new());
-    let (adhoc_runs, set_adhoc_runs) = create_signal::<Vec<AdhocRunSummary>>(Vec::new());
-    let (loading, set_loading) = create_signal(true);
-    let (error, set_error) = create_signal::<Option<String>>(None);
-    let (has_active, set_has_active) = create_signal(false);
+    let (bench_runs, set_bench_runs) = signal::<Vec<RunSummary>>(Vec::new());
+    let (adhoc_runs, set_adhoc_runs) = signal::<Vec<AdhocRunSummary>>(Vec::new());
+    let (loading, set_loading) = signal(true);
+    let (error, set_error) = signal::<Option<String>>(None);
+    let (has_active, set_has_active) = signal(false);
 
     let fetch = move |sb: WriteSignal<Vec<RunSummary>>,
                       sa: WriteSignal<Vec<AdhocRunSummary>>,
@@ -60,24 +60,20 @@ pub fn HomePage() -> impl IntoView {
         set_error,
         set_has_active,
     );
-    let s_bench = set_bench_runs;
-    let s_adhoc = set_adhoc_runs;
-    let s_loading = set_loading;
-    let s_error = set_error;
-    let s_has_active = set_has_active;
-    create_effect(move |_| {
+
+    // Poll every 5s while there are active runs
+    Effect::new(move || {
         if has_active.get() {
-            let sb = s_bench;
-            let sa = s_adhoc;
-            let sl = s_loading;
-            let se = s_error;
-            let sha = s_has_active;
-            set_interval(
-                move || {
-                    fetch(sb, sa, sl, se, sha);
-                },
-                Duration::from_secs(5),
-            );
+            let interval = Interval::new(5_000, move || {
+                fetch(
+                    set_bench_runs,
+                    set_adhoc_runs,
+                    set_loading,
+                    set_error,
+                    set_has_active,
+                );
+            });
+            interval.forget();
         }
     });
 
@@ -97,38 +93,42 @@ pub fn HomePage() -> impl IntoView {
 
             {move || {
                 if loading.get() {
-                    view! {
-                        <div class="content-grid content-grid--metrics">
-                            <div class="skeleton skeleton--metric"></div>
-                            <div class="skeleton skeleton--metric"></div>
-                            <div class="skeleton skeleton--metric"></div>
-                        </div>
-                        <div style="margin-top: var(--spacing-xl);">
-                            <div class="skeleton skeleton--card" style="height: 180px; margin-bottom: var(--spacing-lg);"></div>
-                            <div class="skeleton skeleton--card" style="height: 300px;"></div>
-                        </div>
-                    }.into_view()
-                } else if let Some(e) = error.get() {
-                    view! {
-                        <div class="error-state" role="alert">
-                            <div class="error-state__icon">"!"</div>
-                            <h3 class="error-state__heading">"Failed to load data"</h3>
-                            <p class="error-state__message">{format!("Something went wrong: {}", e)}</p>
-                            <div class="error-state__action">
-                                <button class="btn btn--primary" on:click=move |_| {
-                                    set_loading.set(true);
-                                    set_error.set(None);
-                                    fetch(
-                                        set_bench_runs,
-                                        set_adhoc_runs,
-                                        set_loading,
-                                        set_error,
-                                        set_has_active,
-                                    );
-                                }>"Retry"</button>
+                    EitherOf3::A(
+                        view! {
+                            <div class="content-grid content-grid--metrics">
+                                <div class="skeleton skeleton--metric"></div>
+                                <div class="skeleton skeleton--metric"></div>
+                                <div class="skeleton skeleton--metric"></div>
                             </div>
-                        </div>
-                    }.into_view()
+                            <div style="margin-top: var(--spacing-xl);">
+                                <div class="skeleton skeleton--card" style="height: 180px; margin-bottom: var(--spacing-lg);"></div>
+                                <div class="skeleton skeleton--card" style="height: 300px;"></div>
+                            </div>
+                        }
+                    )
+                } else if let Some(e) = error.get() {
+                    EitherOf3::B(
+                        view! {
+                            <div class="error-state" role="alert">
+                                <div class="error-state__icon"><TriangleAlert size=24 /></div>
+                                <h3 class="error-state__heading">"Failed to load data"</h3>
+                                <p class="error-state__message">{format!("Something went wrong: {}", e)}</p>
+                                <div class="error-state__action">
+                                    <button class="btn btn--primary" on:click=move |_| {
+                                        set_loading.set(true);
+                                        set_error.set(None);
+                                        fetch(
+                                            set_bench_runs,
+                                            set_adhoc_runs,
+                                            set_loading,
+                                            set_error,
+                                            set_has_active,
+                                        );
+                                    }>"Retry"</button>
+                                </div>
+                            </div>
+                        }
+                    )
                 } else {
                     let bench = bench_runs.get();
                     let adhoc = adhoc_runs.get();
@@ -165,178 +165,180 @@ pub fn HomePage() -> impl IntoView {
                     merged.sort_by(|a, b| b.created_at().cmp(a.created_at()));
                     merged.truncate(10);
 
-                    view! {
-                        <div class="content-grid content-grid--metrics">
-                            <MetricsCard value={total_runs.to_string()} label="Total Runs" />
-                            <MetricsCard value={format!("{:.2}", avg_f1)} label="Avg F1" />
-                            <MetricsCard value={total_prs.to_string()} label="PRs Reviewed" />
-                        </div>
+                    EitherOf3::C(
+                        view! {
+                            <div class="content-grid content-grid--metrics">
+                                <MetricsCard value={total_runs.to_string()} label="Total Runs" />
+                                <MetricsCard value={format!("{:.2}", avg_f1)} label="Avg F1" />
+                                <MetricsCard value={total_prs.to_string()} label="PRs Reviewed" />
+                            </div>
 
-                        <div class="quick-actions">
-                            <a href="/new" class="btn btn--primary btn--lg quick-actions__btn">
-                                "New Benchmark"
-                            </a>
-                            <a href="/adhoc/new" class="btn btn--secondary btn--lg quick-actions__btn">
-                                "Ad-hoc Review"
-                            </a>
-                        </div>
+                            <div class="quick-actions">
+                                <a href="/new" class="btn btn--primary btn--lg quick-actions__btn">
+                                    "New Benchmark"
+                                </a>
+                                <a href="/adhoc/new" class="btn btn--secondary btn--lg quick-actions__btn">
+                                    "Ad-hoc Review"
+                                </a>
+                            </div>
 
-                        {if has_any_active {
-                            view! {
-                                <div class="section-header">
-                                    <h2 class="section-header__title">
-                                        <span class="active-runs-indicator"></span>
-                                        "Running Reviews"
-                                    </h2>
-                                    <span class="active-runs-count">{format!("{} running", active_bench.len() + active_adhoc.len())}</span>
-                                </div>
-                                <div class="content-grid content-grid--cards">
-                                    {active_bench.into_iter().map(|run| {
-                                        let live_path = format!("/runs/{}/live", run.id);
-                                        let detail_path = format!("/runs/{}", run.id);
-                                        let detail_path2 = detail_path.clone();
-                                        let elapsed = run.duration_secs
-                                            .map(format_elapsed)
-                                            .unwrap_or_else(|| "Just started".into());
-                                        let pr_progress = if run.pr_count > 0 {
-                                            format!("{} PRs", run.pr_count)
-                                        } else {
-                                            String::new()
-                                        };
+                            {if has_any_active {
+                                view! {
+                                    <div class="section-header">
+                                        <h2 class="section-header__title">
+                                            <span class="active-runs-indicator"></span>
+                                            "Running Reviews"
+                                        </h2>
+                                        <span class="active-runs-count">{format!("{} running", active_bench.len() + active_adhoc.len())}</span>
+                                    </div>
+                                    <div class="content-grid content-grid--cards">
+                                        {active_bench.into_iter().map(|run| {
+                                            let live_path = format!("/runs/{}/live", run.id);
+                                            let detail_path = format!("/runs/{}", run.id);
+                                            let detail_path2 = detail_path.clone();
+                                            let elapsed = run.duration_secs
+                                                .map(format_elapsed)
+                                                .unwrap_or_else(|| "Just started".into());
+                                            let pr_progress = if run.pr_count > 0 {
+                                                format!("{} PRs", run.pr_count)
+                                            } else {
+                                                String::new()
+                                            };
 
-                                        view! {
-                                            <a href=live_path class="card card--interactive card--active-run" style="display: block; text-decoration: none;">
-                                                <div class="card__header">
-                                                    <h3 class="card__title">{&run.name}</h3>
-                                                    <span class="badge badge--running">
-                                                        <span class="badge__dot badge__dot--pulse"></span>
-                                                        <span class="badge__label">"Running"</span>
-                                                    </span>
-                                                </div>
-                                                <div class="card__body">
-                                                    <div class="home-page__meta-row" style="display: flex; gap: var(--spacing-lg, 16px); font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
-                                                        {if !pr_progress.is_empty() {
-                                                            view! { <span>{pr_progress}</span> }.into_view()
+                                            view! {
+                                                <a href=live_path class="card card--interactive card--active-run" style="display: block; text-decoration: none;">
+                                                    <div class="card__header">
+                                                        <h3 class="card__title">{run.name.clone()}</h3>
+                                                        <span class="badge badge--running">
+                                                            <span class="badge__dot badge__dot--pulse"></span>
+                                                            <span class="badge__label">"Running"</span>
+                                                        </span>
+                                                    </div>
+                                                    <div class="card__body">
+                                                        <div class="home-page__meta-row" style="display: flex; gap: var(--spacing-lg, 16px); font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
+                                                            {if !pr_progress.is_empty() {
+                                                                view! { <span>{pr_progress}</span> }.into_any()
+                                                            } else {
+                                                                view! { <span></span> }.into_any()
+                                                            }}
+                                                            <span>{elapsed}</span>
+                                                        </div>
+                                                        {run.model.as_ref().map(|m| {
+                                                            view! { <span class="card__meta" style="font-size: var(--text-sm); color: var(--text-secondary);">{format!("Model: {}", m)}</span> }
+                                                        })}
+                                                    </div>
+                                                    <div class="card__footer">
+                                                        <a href=detail_path2 class="btn btn--ghost btn--sm"><ArrowRight size=16 /></a>
+                                                    </div>
+                                                </a>
+                                            }
+                                        }).collect::<Vec<_>>()}
+
+                                        {active_adhoc.into_iter().map(|run| {
+                                            let detail_path = format!("/adhoc/runs/{}", run.id);
+                                            let detail_path2 = detail_path.clone();
+
+                                            view! {
+                                                <a href=detail_path class="card card--interactive card--active-run" style="display: block; text-decoration: none;">
+                                                    <div class="card__header">
+                                                        <h3 class="card__title">{run.pr_title.clone()}</h3>
+                                                        <span class="badge badge--running">
+                                                            <span class="badge__dot badge__dot--pulse"></span>
+                                                            <span class="badge__label">"Running"</span>
+                                                        </span>
+                                                    </div>
+                                                    <div class="card__body">
+                                                        <div class="home-page__meta-row" style="display: flex; gap: var(--spacing-lg, 16px); font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
+                                                            <span>{format!("Model: {}", run.model)}</span>
+                                                            <span>"Ad-hoc"</span>
+                                                        </div>
+                                                        {if !run.roles.is_empty() {
+                                                            view! { <span class="card__meta" style="font-size: var(--text-sm); color: var(--text-secondary);">{format!("Roles: {}", run.roles.join(", "))}</span> }.into_any()
                                                         } else {
-                                                            view! { <span></span> }.into_view()
+                                                            view! { <span></span> }.into_any()
                                                         }}
-                                                        <span>{elapsed}</span>
                                                     </div>
-                                                    {run.model.as_ref().map(|m| {
-                                                        view! { <span class="card__meta" style="font-size: var(--text-sm); color: var(--text-secondary);">{format!("Model: {}", m)}</span> }
-                                                    })}
-                                                </div>
-                                                <div class="card__footer">
-                                                    <a href=detail_path2 class="btn btn--ghost btn--sm">"Details >"</a>
-                                                </div>
-                                            </a>
-                                        }
-                                    }).collect::<Vec<_>>()}
-
-                                    {active_adhoc.into_iter().map(|run| {
-                                        let detail_path = format!("/adhoc/runs/{}", run.id);
-                                        let detail_path2 = detail_path.clone();
-
-                                        view! {
-                                            <a href=detail_path class="card card--interactive card--active-run" style="display: block; text-decoration: none;">
-                                                <div class="card__header">
-                                                    <h3 class="card__title">{&run.pr_title}</h3>
-                                                    <span class="badge badge--running">
-                                                        <span class="badge__dot badge__dot--pulse"></span>
-                                                        <span class="badge__label">"Running"</span>
-                                                    </span>
-                                                </div>
-                                                <div class="card__body">
-                                                    <div class="home-page__meta-row" style="display: flex; gap: var(--spacing-lg, 16px); font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
-                                                        <span>{format!("Model: {}", run.model)}</span>
-                                                        <span>"Ad-hoc"</span>
+                                                    <div class="card__footer">
+                                                        <a href=detail_path2 class="btn btn--ghost btn--sm"><ArrowRight size=16 /></a>
                                                     </div>
-                                                    {if !run.roles.is_empty() {
-                                                        view! { <span class="card__meta" style="font-size: var(--text-sm); color: var(--text-secondary);">{format!("Roles: {}", run.roles.join(", "))}</span> }
-                                                    } else {
-                                                        view! { <span></span> }
-                                                    }}
-                                                </div>
-                                                <div class="card__footer">
-                                                    <a href=detail_path2 class="btn btn--ghost btn--sm">"Details >"</a>
-                                                </div>
-                                            </a>
-                                        }
-                                    }).collect::<Vec<_>>()}
-                                </div>
-                            }.into_view()
-                        } else {
-                            view! {
-                                <div class="section-header">
-                                    <h2 class="section-header__title">"Running Reviews"</h2>
-                                </div>
-                                <div class="empty-state" style="padding: var(--spacing-xl);">
-                                    <p class="empty-state__message" style="margin: 0;">"No active reviews"</p>
-                                </div>
-                            }.into_view()
-                        }}
+                                                </a>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! {
+                                    <div class="section-header">
+                                        <h2 class="section-header__title">"Running Reviews"</h2>
+                                    </div>
+                                    <div class="empty-state" style="padding: var(--spacing-xl);">
+                                        <p class="empty-state__message" style="margin: 0;">"No active reviews"</p>
+                                    </div>
+                                }.into_any()
+                            }}
 
-                        <div class="section-header">
-                            <h2 class="section-header__title">"Recent Runs"</h2>
-                        </div>
-                        {if merged.is_empty() {
-                            view! {
-                                <div class="empty-state" style="padding: var(--spacing-xl);">
-                                    <p class="empty-state__message" style="margin: 0;">"No runs yet"</p>
-                                </div>
-                            }.into_view()
-                        } else {
-                            view! {
-                                <div class="home-page__recent-list">
-                                    {merged.into_iter().map(|item| {
-                                        let display_name = item.display_name();
-                                        let status = item.status().to_string();
-                                        let created = item.created_at().to_string();
-                                        let detail_path = item.detail_path();
-                                        let run_type = item.run_type_label();
-                                        let type_badge_class = match run_type {
-                                            "benchmark" => "badge--info",
-                                            _ => "badge--neutral",
-                                        };
-                                        let status_badge_class = match status.as_str() {
-                                            "running" | "pending" => "badge--warning",
-                                            "completed" | "done" => "badge--success",
-                                            "failed" => "badge--danger",
-                                            _ => "badge--neutral",
-                                        };
+                            <div class="section-header">
+                                <h2 class="section-header__title">"Recent Runs"</h2>
+                            </div>
+                            {if merged.is_empty() {
+                                view! {
+                                    <div class="empty-state" style="padding: var(--spacing-xl);">
+                                        <p class="empty-state__message" style="margin: 0;">"No runs yet"</p>
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! {
+                                    <div class="home-page__recent-list">
+                                        {merged.into_iter().map(|item| {
+                                            let display_name = item.display_name();
+                                            let status = item.status().to_string();
+                                            let created = item.created_at().to_string();
+                                            let detail_path = item.detail_path();
+                                            let run_type = item.run_type_label();
+                                            let type_badge_class = match run_type {
+                                                "benchmark" => "badge--info",
+                                                _ => "badge--neutral",
+                                            };
+                                            let status_badge_class = match status.as_str() {
+                                                "running" | "pending" => "badge--warning",
+                                                "completed" | "done" => "badge--success",
+                                                "failed" => "badge--danger",
+                                                _ => "badge--neutral",
+                                            };
 
-                                        view! {
-                                            <a href=detail_path class="card card--interactive home-page__recent-row" style="display: block; text-decoration: none;">
-                                                <div class="card__header">
-                                                    <h3 class="card__title">{display_name}</h3>
-                                                    <div style="display: flex; gap: var(--spacing-sm); align-items: center;">
-                                                        <span class=format!("badge {}", type_badge_class)>
-                                                            <span class="badge__dot"></span>
-                                                            <span class="badge__label">{run_type}</span>
-                                                        </span>
-                                                        <span class=format!("badge {}", status_badge_class)>
-                                                            <span class="badge__dot"></span>
-                                                            <span class="badge__label">{status}</span>
-                                                        </span>
+                                            view! {
+                                                <a href=detail_path class="card card--interactive home-page__recent-row" style="display: block; text-decoration: none;">
+                                                    <div class="card__header">
+                                                        <h3 class="card__title">{display_name}</h3>
+                                                        <div style="display: flex; gap: var(--spacing-sm); align-items: center;">
+                                                            <span class=format!("badge {}", type_badge_class)>
+                                                                <span class="badge__dot"></span>
+                                                                <span class="badge__label">{run_type}</span>
+                                                            </span>
+                                                            <span class=format!("badge {}", status_badge_class)>
+                                                                <span class="badge__dot"></span>
+                                                                <span class="badge__label">{status}</span>
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                                <div class="card__body" style="padding-top: var(--spacing-md);">
-                                                    <span class="card__meta">{created}</span>
-                                                </div>
-                                            </a>
-                                        }
-                                    }).collect::<Vec<_>>()}
-                                </div>
-                            }.into_view()
-                        }}
-                    }.into_view()
+                                                    <div class="card__body" style="padding-top: var(--spacing-md);">
+                                                        <span class="card__meta">{created}</span>
+                                                    </div>
+                                                </a>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                }.into_any()
+                            }}
+                        }
+                    )
                 }
             }}
         </div>
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 enum RecentRunItem {
     Benchmark(RunSummary),
     Adhoc(AdhocRunSummary),

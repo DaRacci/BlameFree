@@ -1,40 +1,43 @@
-use leptos::{IntoView, Signal, SignalGet, component, view};
+use crb_webui_shared::runs::RunStatus;
+use leptos::either::{Either, EitherOf4};
+use leptos::prelude::*;
+use lucide_leptos::{Check, Circle, CirclePlay, X};
 
 #[component]
 pub fn AgentPane(
     name: String,
-    status: impl Fn() -> String + 'static,
-    response: impl Fn() -> Option<String> + 'static,
-    current_pr: impl Fn() -> Option<String> + 'static,
+    status: impl Fn() -> RunStatus + Send + Sync + 'static,
+    response: impl Fn() -> Option<String> + Send + Sync + 'static,
+    current_pr: impl Fn() -> Option<String> + Send + Sync + 'static,
 ) -> impl IntoView {
     let status = Signal::derive(status);
     let response = Signal::derive(response);
     let current_pr = Signal::derive(current_pr);
 
     let pane_class = move || -> &'static str {
-        match status.get().as_str() {
-            "reviewing" | "running" => "agent-pane--running",
-            "done" | "completed" => "agent-pane--completed",
-            "failed" => "agent-pane--failed",
-            _ => "agent-pane--pending",
+        match status.get() {
+            RunStatus::Running => "agent-pane--running",
+            RunStatus::Completed => "agent-pane--completed",
+            RunStatus::Failed => "agent-pane--failed",
+            RunStatus::Pending => "agent-pane--pending",
         }
     };
 
-    let status_icon = move || -> &'static str {
-        match status.get().as_str() {
-            "reviewing" | "running" => "●",
-            "done" | "completed" => "✓",
-            "failed" => "✗",
-            _ => "||",
+    let status_icon = move || -> EitherOf4<_, _, _, _> {
+        match status.get() {
+            RunStatus::Running => EitherOf4::A(view! { <CirclePlay size=16 /> }),
+            RunStatus::Completed => EitherOf4::B(view! { <Check size=16 /> }),
+            RunStatus::Failed => EitherOf4::C(view! { <X size=16 /> }),
+            RunStatus::Pending => EitherOf4::D(view! { <Circle size=16 /> }),
         }
     };
 
     let status_text = move || -> &'static str {
-        match status.get().as_str() {
-            "reviewing" | "running" => "reviewing...",
-            "done" | "completed" => "completed",
-            "failed" => "failed",
-            _ => "pending",
+        match status.get() {
+            RunStatus::Running => "reviewing...",
+            RunStatus::Completed => "completed",
+            RunStatus::Failed => "failed",
+            RunStatus::Pending => "pending",
         }
     };
 
@@ -56,24 +59,32 @@ pub fn AgentPane(
                 {move || {
                     match (status.get(), response.get()) {
                         (_s, Some(resp)) if !resp.is_empty() => {
-                            view! {
-                                <pre style="white-space: pre-wrap; word-break: break-word; margin: 0; font-size: var(--text-sm, 13px); line-height: 1.4;">{resp}</pre>
-                            }.into_view()
+                            Either::Left(Either::Left(Either::Left(
+                                view! {
+                                    <pre style="white-space: pre-wrap; word-break: break-word; margin: 0; font-size: var(--text-sm, 13px); line-height: 1.4;">{resp}</pre>
+                                }
+                            )))
                         }
-                        (s, _) if s == "pending" => {
-                            view! {
-                                <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"Waiting for task..."</span>
-                            }.into_view()
+                        (s, _) if s == RunStatus::Pending => {
+                            Either::Left(Either::Left(Either::Right(
+                                view! {
+                                    <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"Waiting for task..."</span>
+                                }
+                            )))
                         }
-                        (s, _) if s == "reviewing" || s == "running" => {
-                            view! {
-                                <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"Processing..."</span>
-                            }.into_view()
+                        (s, _) if s == RunStatus::Running => {
+                            Either::Left(Either::Right(
+                                view! {
+                                    <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"Processing..."</span>
+                                }
+                            ))
                         }
                         (_, _) => {
-                            view! {
-                                <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"No response yet"</span>
-                            }.into_view()
+                            Either::Right(
+                                view! {
+                                    <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"No response yet"</span>
+                                }
+                            )
                         }
                     }
                 }}

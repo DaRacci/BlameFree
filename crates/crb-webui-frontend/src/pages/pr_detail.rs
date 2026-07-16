@@ -3,33 +3,32 @@ use std::collections::HashMap;
 use crate::role_color;
 use crb_webui_shared::config::RoleInfo;
 use crb_webui_shared::runs::{AgentLogResponse, PrAgentEntry, PrAgentsResponse};
-use leptos::{
-    DynAttrs, IntoView, SignalGet, SignalSet, component, create_local_resource, create_signal, view,
-};
-use leptos_router::{A, use_params_map};
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::components::A;
+use leptos_router::hooks::use_params_map;
+use lucide_leptos::{ArrowLeft, Check, TriangleAlert, X};
 
 #[component]
 pub fn PrDetailPage() -> impl IntoView {
     let params = use_params_map();
-    let run_id = move || params.get().get("id").cloned().unwrap_or_default();
-    let pr_key = move || params.get().get("pr_key").cloned().unwrap_or_default();
+    let run_id = move || params.get().get("id").unwrap_or_default();
+    let pr_key = move || params.get().get("pr_key").unwrap_or_default();
 
-    let (pr_title, set_pr_title) = create_signal(String::new());
-    let (agents, set_agents) = create_signal::<Vec<PrAgentEntry>>(vec![]);
-    let (loading, set_loading) = create_signal(true);
-    let (error, set_error) = create_signal::<Option<String>>(None);
+    let (pr_title, set_pr_title) = signal(String::new());
+    let (agents, set_agents) = signal::<Vec<PrAgentEntry>>(vec![]);
+    let (loading, set_loading) = signal(true);
+    let (error, set_error) = signal::<Option<String>>(None);
 
-    let (agent_logs, set_agent_logs) =
-        create_signal::<HashMap<String, AgentLogResponse>>(HashMap::new());
-    let (logs_loading, set_logs_loading) = create_signal(false);
+    let (agent_logs, set_agent_logs) = signal::<HashMap<String, AgentLogResponse>>(HashMap::new());
+    let (logs_loading, set_logs_loading) = signal(false);
 
-    let (role_info_map, set_role_info_map) =
-        create_signal::<HashMap<String, RoleInfo>>(HashMap::new());
+    let (role_info_map, set_role_info_map) = signal::<HashMap<String, RoleInfo>>(HashMap::new());
 
     // Fetch available role info on mount for display-name lookups
     {
         let set_map = set_role_info_map;
-        wasm_bindgen_futures::spawn_local(async move {
+        spawn_local(async move {
             let url = "/api/config";
             if let Ok(resp) = gloo_net::http::Request::get(&url).send().await {
                 if let Ok(config) = resp.json::<crate::AppConfig>().await {
@@ -60,7 +59,7 @@ pub fn PrDetailPage() -> impl IntoView {
         let set_error = set_error;
         let set_logs = set_agent_logs;
         let set_logs_loading = set_logs_loading;
-        wasm_bindgen_futures::spawn_local(async move {
+        spawn_local(async move {
             let url = format!("/api/runs/{}/prs/{}", rid_clone, pk_clone);
             match gloo_net::http::Request::get(&url).send().await {
                 Ok(r) if r.ok() => match r.json::<PrAgentsResponse>().await {
@@ -79,7 +78,7 @@ pub fn PrDetailPage() -> impl IntoView {
                         let pk2 = pk_clone.clone();
                         let set_logs = set_logs;
                         let set_logs_loading = set_logs_loading;
-                        wasm_bindgen_futures::spawn_local(async move {
+                        spawn_local(async move {
                             let mut results = HashMap::new();
                             for role in &roles {
                                 let log_url = format!("/api/runs/{}/logs/{}/{}", rid2, pk2, role);
@@ -112,14 +111,12 @@ pub fn PrDetailPage() -> impl IntoView {
         });
     };
 
-    // Trigger fetch on mount
-    let _ = create_local_resource( // Ignore — triggered for side-effect; returns LocalResource handle
-        move || (run_id(), pr_key()),
-        move |_| {
-            fetch_pr();
-            async move {}
-        },
-    );
+    // Trigger fetch on mount — effect re-runs when params change
+    let _ = Effect::new(move || {
+        run_id();
+        pr_key();
+        fetch_pr();
+    });
 
     view! {
         <div class="pr-detail-page">
@@ -150,7 +147,7 @@ pub fn PrDetailPage() -> impl IntoView {
                         href=move || format!("/runs/{}", run_id())
                         attr:class="btn btn--primary"
                     >
-                        "< Back to Run"
+                        <ArrowLeft size=16 />" Back to Run"
                     </A>
                 </div>
             </div>
@@ -161,11 +158,11 @@ pub fn PrDetailPage() -> impl IntoView {
                         <div style="text-align: center; padding: 2rem; color: var(--text-secondary, #64748b); font-style: italic;">
                             "Loading PR details..."
                         </div>
-                    }.into_view()
-                } else if let Some(ref e) = error.get() {
+                    }.into_any()
+                } else if let Some(e) = error.get() {
                     view! {
                         <div class="error-state" role="alert">
-                            <div class="error-state__icon">"!"</div>
+                            <div class="error-state__icon"><TriangleAlert size=24 /></div>
                             <h3 class="error-state__heading">"Failed to load PR details"</h3>
                             <p class="error-state__message">{e}</p>
                             <div class="error-state__action">
@@ -174,7 +171,7 @@ pub fn PrDetailPage() -> impl IntoView {
                                 </button>
                             </div>
                         </div>
-                    }.into_view()
+                    }.into_any()
                 } else {
                     let agents_list = agents.get();
                     if agents_list.is_empty() {
@@ -186,10 +183,10 @@ pub fn PrDetailPage() -> impl IntoView {
                                     attr:class="btn btn--primary"
                                     attr:style="margin-top: 1rem; display: inline-block;"
                                 >
-                                    "< Back to Run"
+                                    <ArrowLeft size=16 />" Back to Run"
                                 </A>
                             </div>
-                        }.into_view()
+                        }.into_any()
                     } else {
                         let logs = agent_logs.get();
                         let logs_loading_val = logs_loading.get();
@@ -203,9 +200,9 @@ pub fn PrDetailPage() -> impl IntoView {
                                             <span style="color: #64748b; font-style: italic; font-size: 0.85rem;">
                                                 "Loading agent logs..."
                                             </span>
-                                        }.into_view()
+                                        }.into_any()
                                     } else {
-                                        view! { <span></span> }.into_view()
+                                        view! { <span></span> }.into_any()
                                     }}
                                 </div>
                             </div>
@@ -240,19 +237,19 @@ pub fn PrDetailPage() -> impl IntoView {
                                                     </h3>
                                                     <div style="display: flex; gap: 6px; font-size: 0.75rem;">
                                                         {if has_prompt {
-                                                            view! { <span style="color: #22c55e;">"✓ Prompt"</span> }.into_view()
+                                                            view! { <span style="color: #22c55e;"><Check size=14 /> Prompt</span> }.into_any()
                                                         } else {
-                                                            view! { <span style="color: #64748b;">"✗ Prompt"</span> }.into_view()
+                                                            view! { <span style="color: #64748b;"><X size=14 /> Prompt</span> }.into_any()
                                                         }}
                                                         {if has_response {
-                                                            view! { <span style="color: #22c55e;">"✓ Response"</span> }.into_view()
+                                                            view! { <span style="color: #22c55e;"><Check size=14 /> Response</span> }.into_any()
                                                         } else {
-                                                            view! { <span style="color: #64748b;">"✗ Response"</span> }.into_view()
+                                                            view! { <span style="color: #64748b;"><X size=14 /> Response</span> }.into_any()
                                                         }}
                                                         {if has_reasoning {
-                                                            view! { <span style="color: #22c55e;">"✓ Reasoning"</span> }.into_view()
+                                                            view! { <span style="color: #22c55e;"><Check size=14 /> Reasoning</span> }.into_any()
                                                         } else {
-                                                            view! { <span></span> }.into_view()
+                                                            view! { <span></span> }.into_any()
                                                         }}
                                                     </div>
                                                 </div>
@@ -265,7 +262,7 @@ pub fn PrDetailPage() -> impl IntoView {
                                                         <p style="color: #64748b; font-style: italic; font-size: 0.85rem; text-align: center; padding: 1rem;">
                                                             "Loading..."
                                                         </p>
-                                                    }.into_view()
+                                                    }.into_any()
                                                 } else if log.is_some() && (has_prompt || has_response) {
                                                     // Use details/summary for Prompt/Response/Reasoning sections
                                                     view! {
@@ -280,9 +277,9 @@ pub fn PrDetailPage() -> impl IntoView {
                                                                             {prompt_content.unwrap_or_default()}
                                                                         </pre>
                                                                     </details>
-                                                                }.into_view()
+                                                                }.into_any()
                                                             } else {
-                                                                view! { <span></span> }.into_view()
+                                                                view! { <span></span> }.into_any()
                                                             }}
                                                             {if has_response {
                                                                 view! {
@@ -294,9 +291,9 @@ pub fn PrDetailPage() -> impl IntoView {
                                                                             {response_content.unwrap_or_default()}
                                                                         </pre>
                                                                     </details>
-                                                                }.into_view()
+                                                                }.into_any()
                                                             } else {
-                                                                view! { <span></span> }.into_view()
+                                                                view! { <span></span> }.into_any()
                                                             }}
                                                             {if has_reasoning {
                                                                 view! {
@@ -308,25 +305,25 @@ pub fn PrDetailPage() -> impl IntoView {
                                                                             {reasoning_content.unwrap_or_default()}
                                                                         </pre>
                                                                     </details>
-                                                                }.into_view()
+                                                                }.into_any()
                                                             } else {
-                                                                view! { <span></span> }.into_view()
+                                                                view! { <span></span> }.into_any()
                                                             }}
                                                         </>
-                                                    }.into_view()
+                                                    }.into_any()
                                                 } else {
                                                     view! {
                                                         <p style="color: #64748b; font-style: italic; font-size: 0.85rem; text-align: center; padding: 1rem;">
                                                             "No log data available."
                                                         </p>
-                                                    }.into_view()
+                                                    }.into_any()
                                                 }}
                                             </div>
                                         </div>
                                     }
                                 }).collect::<Vec<_>>()}
                             </div>
-                        }.into_view()
+                        }.into_any()
                     }
                 }
             }}

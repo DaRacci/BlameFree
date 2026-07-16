@@ -1,5 +1,5 @@
 use futures::channel::mpsc;
-use leptos::{SignalSet, WriteSignal};
+use leptos::prelude::{Set, WriteSignal};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::MessageEvent;
@@ -52,7 +52,6 @@ pub async fn connect_sse_with_status(
     es.set_onopen(Some(open_closure.as_ref().unchecked_ref()));
     open_closure.forget();
 
-    // onerror — connection lost or error
     let on_err = set_connected;
     let es_for_err = es.clone();
     let err_closure = Closure::wrap(Box::new(move || {
@@ -67,7 +66,6 @@ pub async fn connect_sse_with_status(
     es.set_onerror(Some(err_closure.as_ref().unchecked_ref()));
     err_closure.forget();
 
-    // onmessage — new event received
     attach_onmessage(&es, tx);
 
     Ok(rx)

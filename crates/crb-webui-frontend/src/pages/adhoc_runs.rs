@@ -1,49 +1,39 @@
 use crb_webui_shared::adhoc::AdhocRunSummary;
-use leptos::{
-    IntoView, SignalGet, SignalSet, component, create_local_resource, create_signal, view,
-};
+use leptos::prelude::*;
+use leptos::task::spawn_local;
 
 #[component]
 pub fn AdhocRunsPage() -> impl IntoView {
-    let (runs, set_runs) = create_signal::<Vec<AdhocRunSummary>>(Vec::new());
-    let (loading, set_loading) = create_signal(true);
-    let (error, set_error) = create_signal::<Option<String>>(None);
+    let (runs, set_runs) = signal::<Vec<AdhocRunSummary>>(Vec::new());
+    let (loading, set_loading) = signal(true);
+    let (error, set_error) = signal::<Option<String>>(None);
 
-    let _fetch = create_local_resource(
-        move || (),
-        move |_| {
-            let set_runs = set_runs;
-            let set_loading = set_loading;
-            let set_error = set_error;
-            async move {
-                set_loading.set(true);
-                set_error.set(None);
-                match gloo_net::http::Request::get("/api/adhoc/runs").send().await {
-                    Ok(resp) => {
-                        if resp.ok() {
-                            match resp.json::<Vec<AdhocRunSummary>>().await {
-                                Ok(data) => {
-                                    set_runs.set(data);
-                                }
-                                Err(e) => {
-                                    set_error.set(Some(format!("Failed to parse runs: {}", e)));
-                                }
-                            }
-                        } else {
-                            let status_code = resp.status();
-                            let text = resp.text().await.unwrap_or_default();
-                            set_error
-                                .set(Some(format!("Server error ({}): {}", status_code, text)));
+    spawn_local(async move {
+        set_loading.set(true);
+        set_error.set(None);
+        match gloo_net::http::Request::get("/api/adhoc/runs").send().await {
+            Ok(resp) => {
+                if resp.ok() {
+                    match resp.json::<Vec<AdhocRunSummary>>().await {
+                        Ok(data) => {
+                            set_runs.set(data);
+                        }
+                        Err(e) => {
+                            set_error.set(Some(format!("Failed to parse runs: {}", e)));
                         }
                     }
-                    Err(e) => {
-                        set_error.set(Some(format!("Network error: {}", e)));
-                    }
+                } else {
+                    let status_code = resp.status();
+                    let text = resp.text().await.unwrap_or_default();
+                    set_error.set(Some(format!("Server error ({}): {}", status_code, text)));
                 }
-                set_loading.set(false);
             }
-        },
-    );
+            Err(e) => {
+                set_error.set(Some(format!("Network error: {}", e)));
+            }
+        }
+        set_loading.set(false);
+    });
 
     view! {
         <div class="adhoc-runs-page">
@@ -54,10 +44,10 @@ pub fn AdhocRunsPage() -> impl IntoView {
 
             {move || {
                 if loading.get() {
-                    return view! { <div class="state-container"><p>"Loading..."</p></div> }.into_view();
+                    return view! { <div class="state-container"><p>"Loading..."</p></div> }.into_any();
                 }
                 if let Some(e) = error.get() {
-                    return view! { <div class="state-container error-message">{e}</div> }.into_view();
+                    return view! { <div class="state-container error-message">{e}</div> }.into_any();
                 }
                 let items = runs.get();
                 if items.is_empty() {
@@ -66,7 +56,7 @@ pub fn AdhocRunsPage() -> impl IntoView {
                             <p>"No ad-hoc reviews yet."</p>
                             <a href="/adhoc/new" class="btn btn--primary">"Start your first review"</a>
                         </div>
-                    }.into_view();
+                    }.into_any();
                 }
                 view! {
                     <table class="data-table">
@@ -83,7 +73,7 @@ pub fn AdhocRunsPage() -> impl IntoView {
                         </thead>
                         <tbody>
                             {items.into_iter().map(|run| {
-                                let run_status = run.status.clone();
+                                let run_status = run.status.to_string();
                                 view! {
                                     <tr>
                                         <td>
@@ -104,7 +94,7 @@ pub fn AdhocRunsPage() -> impl IntoView {
                             }).collect::<Vec<_>>()}
                         </tbody>
                     </table>
-                }.into_view()
+                }.into_any()
             }}
         </div>
     }

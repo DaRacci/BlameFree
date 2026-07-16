@@ -1,21 +1,22 @@
+use crate::AppConfig;
 use crate::components::agent_pane::AgentPane;
 use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crate::sse;
-use crate::AppConfig;
 use crb_types::RunEvent;
 use crb_webui_shared::config::RoleInfo;
-use leptos::{
-    IntoView, ReadSignal, SignalGet, SignalGetUntracked, SignalSet, SignalUpdate, WriteSignal,
-    component, create_signal, spawn_local, view,
-};
-use leptos_router::use_params_map;
+use crb_webui_shared::runs::RunStatus;
+use leptos::either::{Either, EitherOf3};
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::use_params_map;
+use lucide_leptos::{ArrowLeft, Check, TriangleAlert};
 use std::collections::HashMap;
 
 /// State for a single agent (role) within a single PR.
 #[derive(Debug, Clone)]
 struct PerAgentState {
-    status: String,   // "pending", "reviewing", "done", "failed"
+    status: RunStatus,
     response: String, // accumulated response chunks
     findings: Option<usize>,
 }
@@ -23,7 +24,7 @@ struct PerAgentState {
 impl PerAgentState {
     fn new() -> Self {
         Self {
-            status: "pending".into(),
+            status: RunStatus::Pending,
             response: String::new(),
             findings: None,
         }
@@ -52,28 +53,26 @@ impl PrState {
     fn all_completed(&self) -> bool {
         self.agents
             .values()
-            .all(|a| a.status == "done" || a.status == "failed")
+            .all(|a| a.status == RunStatus::Completed || a.status == RunStatus::Failed)
     }
 }
 
 #[component]
 pub fn LivePage() -> impl IntoView {
     let params = use_params_map();
-    let run_id = move || params.get().get("id").cloned().unwrap_or_default();
+    let run_id = move || params.read().get("id").unwrap_or_default();
 
-    let (pr_states, set_pr_states) = create_signal::<HashMap<String, PrState>>(HashMap::new());
-    let (pr_order, set_pr_order) = create_signal::<Vec<String>>(Vec::new());
-    let (selected_pr, set_selected_pr) = create_signal::<Option<String>>(None);
-    let (role_current_pr, set_role_current_pr) =
-        create_signal::<HashMap<String, String>>(HashMap::new());
+    let (pr_states, set_pr_states) = signal::<HashMap<String, PrState>>(HashMap::new());
+    let (pr_order, set_pr_order) = signal::<Vec<String>>(Vec::new());
+    let (selected_pr, set_selected_pr) = signal::<Option<String>>(None);
+    let (role_current_pr, set_role_current_pr) = signal::<HashMap<String, String>>(HashMap::new());
 
-    let (available_role_infos, set_available_role_infos) =
-        create_signal::<Vec<RoleInfo>>(Vec::new());
+    let (available_role_infos, set_available_role_infos) = signal::<Vec<RoleInfo>>(Vec::new());
 
-    let (progress_done, set_progress_done) = create_signal(0usize);
-    let (progress_total, set_progress_total) = create_signal(0usize);
-    let (status, set_status) = create_signal::<String>("connecting".into());
-    let (_connected, set_connected) = create_signal(false);
+    let (progress_done, set_progress_done) = signal(0usize);
+    let (progress_total, set_progress_total) = signal(0usize);
+    let (status, set_status) = signal::<String>("connecting".into());
+    let (_connected, set_connected) = signal(false);
 
     // Fetch available roles on mount
     spawn_local(async move {
@@ -200,14 +199,17 @@ pub fn LivePage() -> impl IntoView {
                     </span>
                 </div>
                 <div class="page-header__actions">
-                    <a href={format!("/runs/{}", run_id())} class="btn btn--ghost">"< Back"</a>
+                    <a href={format!("/runs/{}", run_id())} class="btn btn--ghost">
+                        <ArrowLeft size=16 />
+                        " Back"
+                    </a>
                 </div>
             </div>
 
             {move || {
                 let s = status.get();
                 if s == "connecting" {
-                    view! {
+                    EitherOf3::A(view! {
                         <div class="content-grid content-grid--metrics">
                             <div class="skeleton skeleton--metric"></div>
                             <div class="skeleton skeleton--metric"></div>
@@ -220,34 +222,36 @@ pub fn LivePage() -> impl IntoView {
                             <div class="skeleton skeleton--card" style="height: 200px;"></div>
                             <div class="skeleton skeleton--card" style="height: 200px;"></div>
                         </div>
-                    }.into_view()
+                    })
                 } else if s.starts_with("error") || s == "no_run_id" {
-                    view! {
+                    EitherOf3::B(view! {
                         <div class="error-state" role="alert">
-                            <div class="error-state__icon">"!"</div>
+                            <div class="error-state__icon">
+                                <TriangleAlert size=48 />
+                            </div>
                             <h3 class="error-state__heading">"Connection lost"</h3>
                             <p class="error-state__message">{format!("Status: {}", s)}</p>
                             <div class="error-state__action">
                                 <button class="btn btn--primary">"Reconnect"</button>
                             </div>
                         </div>
-                    }.into_view()
+                    })
                 } else {
-                    view! {
+                    EitherOf3::C(view! {
                             <MetricsCard value={format!("{}/{}", done(), total())} label="Progress" />
                             <MetricsCard value={status.get().clone()} label="Status" />
                             <MetricsCard value={format!("{}%", pct())} label="Completed" />
                             {move || {
                                 let t = total();
                                 if t > 0 {
-                                    view! {
+                                    Either::Left(view! {
                                         <MetricsCard value={format!("{}", pr_order.get().len())} label="Active PRs" />
-                                    }.into_view()
+                                    })
                                 } else {
-                                    view! { <span></span> }.into_view()
+                                    Either::Right(view! { <span></span> })
                                 }
                             }}
-                        <div class="pr-selector">
+                                        <div class="pr-selector">
                             <div class="pr-selector__tabs">
                                 <span class="pr-selector__label">"PR:"</span>
                                 {move || {
@@ -269,7 +273,11 @@ pub fn LivePage() -> impl IntoView {
                                                 }
                                                 on:click=move |_| set_sel.set(Some(click_key.clone()))
                                             >
-                                                {if completed { "✓ " } else { "" }}
+                                                {if completed {
+                                                    Either::Left(view! { <Check size=14 /> " " })
+                                                } else {
+                                                    Either::Right(view! { <span></span> })
+                                                }}
                                                 {key.clone()}
                                             </button>
                                         }
@@ -310,7 +318,7 @@ pub fn LivePage() -> impl IntoView {
                                         }
                                     }).collect::<Vec<_>>()
                                 } else {
-                                    Vec::<leptos::View>::new()
+                                    vec![]
                                 }
                             }}
                         </div>
@@ -318,20 +326,20 @@ pub fn LivePage() -> impl IntoView {
                         <div class="bottom-bar" style="margin-top: var(--spacing-xl, 24px); padding: var(--spacing-md, 12px); background: var(--bg-surface, #161b22); border: 1px solid var(--border-default, #30363d); border-radius: var(--radius-lg, 8px);">
                             {move || {
                                 if total() > 0 {
-                                    view! {
+                                    Either::Left(view! {
                                         <ProgressBar value=done() as u32 max=total() as u32 label=format!("{} / {} PRs ({}%)", done(), total(), pct()) />
                                         <div class="bottom-bar__info" style="display: flex; justify-content: space-between; align-items: center; margin-top: var(--spacing-sm, 8px); font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
                                             <span>{format!("PRs loaded: {}", pr_order.get().len())}</span>
                                         </div>
-                                    }.into_view()
+                                    })
                                 } else {
-                                    view! {
+                                    Either::Right(view! {
                                         <ProgressBar value=0 max=1 label="Waiting for data...".to_string() />
-                                    }.into_view()
+                                    })
                                 }
                             }}
                         </div>
-                    }.into_view()
+                    })
                 }
             }}
         </div>

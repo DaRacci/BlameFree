@@ -2,11 +2,9 @@ use crate::components::role_selector::RoleSelector;
 use crate::{AppConfig, NewRunRequest, NewRunResponse};
 use crb_shared::{DEFAULT_MODEL, DEFAULT_MODEL_PRO};
 use crb_webui_shared::config::{DatasetInfo, PrEntry};
-use leptos::{
-    IntoView, ReadSignal, SignalGet, SignalSet, SignalUpdate, WriteSignal, component,
-    create_local_resource, create_signal, event_target_value, spawn_local, view,
-};
-use leptos_router::use_navigate;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::use_navigate;
 
 struct NewRunSignals {
     config: ReadSignal<Option<AppConfig>>,
@@ -51,27 +49,27 @@ struct NewRunSignals {
 }
 
 fn create_form_signals() -> NewRunSignals {
-    let (config, set_config) = create_signal::<Option<AppConfig>>(None);
-    let (config_loading, set_config_loading) = create_signal(true);
-    let (config_error, set_config_error) = create_signal::<Option<String>>(None);
-    let (datasets, set_datasets) = create_signal::<Vec<DatasetInfo>>(Vec::new());
-    let (datasets_loading, set_datasets_loading) = create_signal(true);
-    let (model, set_model) = create_signal(String::new());
-    let (dataset, set_dataset) = create_signal(String::new());
-    let (roles, set_roles) = create_signal::<Vec<String>>(Vec::new());
-    let (available_prs, set_available_prs) = create_signal::<Vec<PrEntry>>(Vec::new());
-    let (selected_prs, set_selected_prs) = create_signal::<Vec<String>>(Vec::new());
-    let (prs_loading, set_prs_loading) = create_signal(false);
-    let (concurrency, set_concurrency) = create_signal(String::new());
-    let (max_findings, set_max_findings) = create_signal(String::new());
-    let (use_cache, set_use_cache) = create_signal(true);
+    let (config, set_config) = signal::<Option<AppConfig>>(None);
+    let (config_loading, set_config_loading) = signal(true);
+    let (config_error, set_config_error) = signal::<Option<String>>(None);
+    let (datasets, set_datasets) = signal::<Vec<DatasetInfo>>(Vec::new());
+    let (datasets_loading, set_datasets_loading) = signal(true);
+    let (model, set_model) = signal(String::new());
+    let (dataset, set_dataset) = signal(String::new());
+    let (roles, set_roles) = signal::<Vec<String>>(Vec::new());
+    let (available_prs, set_available_prs) = signal::<Vec<PrEntry>>(Vec::new());
+    let (selected_prs, set_selected_prs) = signal::<Vec<String>>(Vec::new());
+    let (prs_loading, set_prs_loading) = signal(false);
+    let (concurrency, set_concurrency) = signal(String::new());
+    let (max_findings, set_max_findings) = signal(String::new());
+    let (use_cache, set_use_cache) = signal(true);
     let (reasoning_effort, set_reasoning_effort) =
-        create_signal::<Option<String>>(Some("medium".to_string()));
-    let (submitting, set_submitting) = create_signal(false);
-    let (submit_error, set_submit_error) = create_signal::<Option<String>>(None);
-    let (_submit_result, set_submit_result) = create_signal::<Option<String>>(None);
-    let (effort_levels, set_effort_levels) = create_signal::<Vec<String>>(Vec::new());
-    let (effort_loading, set_effort_loading) = create_signal(true);
+        signal::<Option<String>>(Some("medium".to_string()));
+    let (submitting, set_submitting) = signal(false);
+    let (submit_error, set_submit_error) = signal::<Option<String>>(None);
+    let (_submit_result, set_submit_result) = signal::<Option<String>>(None);
+    let (effort_levels, set_effort_levels) = signal::<Vec<String>>(Vec::new());
+    let (effort_loading, set_effort_loading) = signal(true);
 
     NewRunSignals {
         config,
@@ -189,7 +187,7 @@ fn create_dataset_change_handler(
     }
 }
 
-fn create_config_resource(
+fn init_config_spawn(
     set_config: WriteSignal<Option<AppConfig>>,
     set_config_loading: WriteSignal<bool>,
     set_config_error: WriteSignal<Option<String>>,
@@ -207,110 +205,106 @@ fn create_config_resource(
     set_reasoning_effort: WriteSignal<Option<String>>,
     fetch_prs: std::sync::Arc<dyn Fn(String) + 'static>,
 ) {
-    let _ = create_local_resource(
-        // Ignore — triggered for side-effect; returns LocalResource handle
-        || (),
-        move |_| {
-            let set_config = set_config;
-            let set_loading = set_config_loading;
-            let set_error = set_config_error;
-            let set_model = set_model;
-            let dataset = dataset;
-            let set_dataset = set_dataset;
-            let set_datasets = set_datasets;
-            let set_datasets_loading = set_datasets_loading;
-            let set_concurrency = set_concurrency;
-            let set_max_findings = set_max_findings;
-            let set_roles = set_roles;
-            let set_effort_levels = set_effort_levels;
-            let set_effort_loading = set_effort_loading;
-            let reasoning_effort = reasoning_effort;
-            let set_reasoning_effort = set_reasoning_effort;
-            let fetch_prs = fetch_prs.clone();
-            async move {
-                set_loading.set(true);
-                set_datasets_loading.set(true);
-                match get_config().await {
-                    Ok(cfg) => {
-                        if let Some(m) = cfg.models.first() {
-                            set_model.set(m.clone());
-                        }
-                        if let Some(d) = cfg.datasets.first() {
-                            set_dataset.set(d.clone());
-                        }
-                        set_config.set(Some(cfg));
-                        set_loading.set(false);
+    spawn_local({
+        let set_config = set_config;
+        let set_loading = set_config_loading;
+        let set_error = set_config_error;
+        let set_model = set_model;
+        let dataset = dataset;
+        let set_dataset = set_dataset;
+        let set_datasets = set_datasets;
+        let set_datasets_loading = set_datasets_loading;
+        let set_concurrency = set_concurrency;
+        let set_max_findings = set_max_findings;
+        let set_roles = set_roles;
+        let set_effort_levels = set_effort_levels;
+        let set_effort_loading = set_effort_loading;
+        let reasoning_effort = reasoning_effort;
+        let set_reasoning_effort = set_reasoning_effort;
+        let fetch_prs = fetch_prs;
+        async move {
+            set_loading.set(true);
+            set_datasets_loading.set(true);
+            match get_config().await {
+                Ok(cfg) => {
+                    if let Some(m) = cfg.models.first() {
+                        set_model.set(m.clone());
                     }
-                    Err(e) => {
-                        set_error.set(Some(e));
-                        set_loading.set(false);
+                    if let Some(d) = cfg.datasets.first() {
+                        set_dataset.set(d.clone());
                     }
+                    set_config.set(Some(cfg));
+                    set_loading.set(false);
                 }
+                Err(e) => {
+                    set_error.set(Some(e));
+                    set_loading.set(false);
+                }
+            }
 
-                match get_datasets().await {
-                    Ok(ds) => {
-                        if let Some(first) = ds.first() {
-                            let current_ds = dataset.get();
-                            if first.id == current_ds {
-                                if let Some(ref cfg) = first.config {
-                                    if let Some(ref m) = cfg.defaults.model {
-                                        set_model.set(m.clone());
-                                    }
-                                    if let Some(c) = cfg.defaults.concurrency {
-                                        set_concurrency.set(c.to_string());
-                                    }
-                                    if let Some(mf) = cfg.defaults.max_findings {
-                                        set_max_findings.set(mf.to_string());
-                                    }
-                                    if let Some(ref r) = cfg.defaults.roles {
-                                        let roles_vec: Vec<String> = r
-                                            .split(',')
-                                            .map(|s| s.trim().to_string())
-                                            .filter(|s| !s.is_empty())
-                                            .collect();
-                                        set_roles.set(roles_vec);
-                                    }
+            match get_datasets().await {
+                Ok(ds) => {
+                    if let Some(first) = ds.first() {
+                        let current_ds = dataset.get();
+                        if first.id == current_ds {
+                            if let Some(ref cfg) = first.config {
+                                if let Some(ref m) = cfg.defaults.model {
+                                    set_model.set(m.clone());
+                                }
+                                if let Some(c) = cfg.defaults.concurrency {
+                                    set_concurrency.set(c.to_string());
+                                }
+                                if let Some(mf) = cfg.defaults.max_findings {
+                                    set_max_findings.set(mf.to_string());
+                                }
+                                if let Some(ref r) = cfg.defaults.roles {
+                                    let roles_vec: Vec<String> = r
+                                        .split(',')
+                                        .map(|s| s.trim().to_string())
+                                        .filter(|s| !s.is_empty())
+                                        .collect();
+                                    set_roles.set(roles_vec);
                                 }
                             }
                         }
-                        set_datasets.set(ds);
-                        set_datasets_loading.set(false);
                     }
-                    Err(_) => {
-                        set_datasets_loading.set(false);
-                    }
+                    set_datasets.set(ds);
+                    set_datasets_loading.set(false);
                 }
-
-                let initial_ds = dataset.get();
-                if !initial_ds.is_empty() {
-                    fetch_prs(initial_ds);
+                Err(_) => {
+                    set_datasets_loading.set(false);
                 }
-
-                match get_reasoning_efforts().await {
-                    Ok(levels) => {
-                        let has_medium = levels.contains(&"medium".to_string());
-                        let current = reasoning_effort.get();
-                        if current == Some("medium".to_string()) && !has_medium {
-                            let first = levels.first().cloned();
-                            if let Some(l) = first {
-                                set_reasoning_effort.set(Some(l));
-                            }
-                        }
-                        set_effort_levels.set(levels);
-                    }
-                    Err(_) => {
-                        set_effort_levels.set(vec![
-                            "low".into(),
-                            "medium".into(),
-                            "high".into(),
-                            "max".into(),
-                        ]);
-                    }
-                }
-                set_effort_loading.set(false);
             }
-        },
-    );
+
+            let initial_ds = dataset.get();
+            if !initial_ds.is_empty() {
+                fetch_prs(initial_ds);
+            }
+
+            match get_reasoning_efforts().await {
+                Ok(levels) => {
+                    let has_medium = levels.contains(&"medium".to_string());
+                    let current = reasoning_effort.get();
+                    if current == Some("medium".to_string()) && !has_medium {
+                        let first = levels.first().cloned();
+                        if let Some(l) = first {
+                            set_reasoning_effort.set(Some(l));
+                        }
+                    }
+                    set_effort_levels.set(levels);
+                }
+                Err(_) => {
+                    set_effort_levels.set(vec![
+                        "low".into(),
+                        "medium".into(),
+                        "high".into(),
+                        "max".into(),
+                    ]);
+                }
+            }
+            set_effort_loading.set(false);
+        }
+    });
 }
 
 fn create_submit_handler(
@@ -383,22 +377,21 @@ fn render_loading_indicator(
     config_loading: ReadSignal<bool>,
     datasets_loading: ReadSignal<bool>,
 ) -> impl IntoView {
-    move || {
+    move || -> AnyView {
         if config_loading.get() || datasets_loading.get() {
             view! {
                 <div style="display: flex; align-items: center; gap: 12px; color: var(--text-secondary, #8b949e); padding: 24px 0;">
                     <div class="skeleton skeleton--text" style="width: 200px;"></div>
                 </div>
-            }
-            .into_view()
+            }.into_view().into_any()
         } else {
-            view! { <span></span> }.into_view()
+            view! { <span></span> }.into_view().into_any()
         }
     }
 }
 
 fn render_config_error_view(config_error: ReadSignal<Option<String>>) -> impl IntoView {
-    move || {
+    move || -> AnyView {
         if let Some(e) = config_error.get() {
             view! {
                 <div class="card" style="margin-bottom: var(--spacing-lg, 16px);">
@@ -407,10 +400,9 @@ fn render_config_error_view(config_error: ReadSignal<Option<String>>) -> impl In
                         <p style="color: var(--text-secondary, #8b949e); font-size: var(--text-sm, 14px);">"You can still fill in the form manually."</p>
                     </div>
                 </div>
-            }
-            .into_view()
+            }.into_view().into_any()
         } else {
-            view! { <span></span> }.into_view()
+            view! { <span></span> }.into_view().into_any()
         }
     }
 }
@@ -444,9 +436,9 @@ fn render_config_section(
                                 vec![DEFAULT_MODEL.into(), DEFAULT_MODEL_PRO.into()]
                             };
                             models.into_iter().map(|m| {
-                                let is_selected = model.get() == m;
-                                view! { <option value=&m selected=is_selected>{&m}</option> }
-                            }).collect::<Vec<_>>()
+                            let is_selected = model.get() == m;
+                            view! { <option value=m.clone() selected=is_selected>{m.clone()}</option> }
+                        }).collect::<Vec<_>>()
                         }}
                     </select>
                     <p class="form-field__helper">"The model used for review agents"</p>
@@ -461,7 +453,7 @@ fn render_config_section(
                                 ds.into_iter().map(|d| {
                                     let is_selected = dataset.get() == d.id;
                                     let label = format!("{} ({} PRs)", d.id, d.pr_count);
-                                    view! { <option value=&d.id selected=is_selected>{label}</option> }
+                                    view! { <option value=d.id.clone() selected=is_selected>{label}</option> }
                                 }).collect::<Vec<_>>()
                             } else {
                                 let cfg = config.get();
@@ -472,7 +464,7 @@ fn render_config_section(
                                 };
                                 datasets.into_iter().map(|d| {
                                     let is_selected = dataset.get() == d;
-                                    view! { <option value=&d selected=is_selected>{&d}</option> }
+                                    view! { <option value=d.clone() selected=is_selected>{d.clone()}</option> }
                                 }).collect::<Vec<_>>()
                             }
                         }}
@@ -493,21 +485,21 @@ fn render_execution_section(
         <section class="form-section">
             <h2 class="form-section__title">"Execution"</h2>
             <div class="form-section__fields">
-                {move || {
+                {move || -> AnyView {
                     let cfg = config.get();
                     if let Some(ref c) = cfg {
                         let role_infos = c.roles.clone();
                         view! {
-                        <div class="form-field">
-                            <label class="form-field__label">"Roles / Agents"</label>
-                            <div class="checkbox-group">
-                                <RoleSelector available_roles=role_infos selected_roles=roles set_selected_roles=set_roles />
-                            </div>
-                            <p class="form-field__helper">"Select at least one role for this run."</p>
+                    <div class="form-field">
+                        <label class="form-field__label">"Roles / Agents"</label>
+                        <div class="checkbox-group">
+                            <RoleSelector available_roles=role_infos selected_roles=roles set_selected_roles=set_roles />
                         </div>
-                        }.into_view()
+                        <p class="form-field__helper">"Select at least one role for this run."</p>
+                    </div>
+                    }.into_view().into_any()
                     } else {
-                        view! { <span></span> }.into_view()
+                        view! { <span></span> }.into_view().into_any()
                     }
                 }}
             </div>
@@ -527,26 +519,26 @@ fn render_pr_selection_section(
             <div class="form-section__fields">
                 <div class="form-field">
                     <label class="form-field__label">"Select PRs to evaluate"</label>
-                    {move || {
+                    {move || -> AnyView {
                         if prs_loading.get() {
-                            view! {
+                            return view! {
                                 <div style="color: var(--text-secondary, #8b949e); padding: 8px 0;">
                                     "Loading PRs..."
                                 </div>
-                            }.into_view()
-                        } else {
-                            let prs = available_prs.get();
-                            if prs.is_empty() {
-                                view! {
-                                    <div style="color: var(--text-secondary, #8b949e); padding: 8px 0;">
-                                        "Select a dataset to see available PRs."
-                                    </div>
-                                }.into_view()
-                            } else {
-                                let sel = selected_prs.get();
-                                let total = prs.len();
-                                let checked = sel.len();
-                                view! {
+                            }.into_view().into_any();
+                        }
+                        let prs = available_prs.get();
+                        if prs.is_empty() {
+                            return view! {
+                                <div style="color: var(--text-secondary, #8b949e); padding: 8px 0;">
+                                    "Select a dataset to see available PRs."
+                                </div>
+                            }.into_view().into_any();
+                        }
+                        let sel = selected_prs.get();
+                        let total = prs.len();
+                        let checked = sel.len();
+                        view! {
                                     <div style="margin-bottom: 8px; display: flex; gap: 8px; align-items: center;">
                                         <span style="color: var(--text-secondary, #8b949e); font-size: var(--text-sm, 14px);">
                                             {format!("{} / {} PRs selected", checked, total)}
@@ -599,9 +591,7 @@ fn render_pr_selection_section(
                                         }).collect::<Vec<_>>()}
                                     </div>
                                     <p class="form-field__helper">"Uncheck PRs you want to skip. All PRs selected = run entire dataset."</p>
-                                }.into_view()
-                            }
-                        }
+                        }.into_view().into_any()
                     }}
                 </div>
             </div>
@@ -680,10 +670,10 @@ fn render_advanced_section(
                             let current = reasoning_effort.get();
                             let levels = effort_levels.get();
                             let loading = effort_loading.get();
-                            let mut options: Vec<_> = Vec::new();
-                            options.push(view! { <option value="none">"None (disable reasoning)"</option> });
+                            let mut options: Vec<AnyView> = Vec::new();
+                            options.push(view! { <option value="none">"None (disable reasoning)"</option> }.into_view().into_any());
                             if loading {
-                                options.push(view! { <option value="loading" disabled>"Loading..."</option> });
+                                options.push(view! { <option value="loading" disabled>"Loading..."</option> }.into_view().into_any());
                             } else {
                                 for level in &levels {
                                     let val = level.clone();
@@ -693,7 +683,7 @@ fn render_advanced_section(
                                         None if val == "medium" => true,
                                         _ => false,
                                     };
-                                    options.push(view! { <option value=val selected=is_selected>{label}</option> });
+                                    options.push(view! { <option value=val selected=is_selected>{label}</option> }.into_view().into_any());
                                 }
                             }
                             options
@@ -730,16 +720,15 @@ fn render_submit_button(
 }
 
 fn render_submit_error(submit_error: ReadSignal<Option<String>>) -> impl IntoView {
-    move || {
+    move || -> AnyView {
         if let Some(e) = submit_error.get() {
             view! {
                 <div class="error-state" role="alert" style="padding: var(--spacing-lg, 16px);">
                     <p style="color: var(--accent-red, #f85149); font-size: var(--text-sm, 14px);">{format!("Error: {}", e)}</p>
                 </div>
-            }
-            .into_view()
+            }.into_view().into_any()
         } else {
-            view! { <span></span> }.into_view()
+            view! { <span></span> }.into_view().into_any()
         }
     }
 }
@@ -767,7 +756,7 @@ pub fn NewRunPage() -> impl IntoView {
         fetch_prs.clone(),
     );
 
-    create_config_resource(
+    init_config_spawn(
         s.set_config,
         s.set_config_loading,
         s.set_config_error,

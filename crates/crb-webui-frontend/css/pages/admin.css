@@ -95,7 +95,9 @@
 }
 
 .admin-page .admin-empty__icon {
-  font-size: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0.5;
 }
 

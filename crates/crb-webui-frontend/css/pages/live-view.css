@@ -53,6 +53,9 @@
 }
 
 .live-view-page .pr-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--text-sm);
   padding: 4px 12px;
   border: 1px solid var(--border-default);

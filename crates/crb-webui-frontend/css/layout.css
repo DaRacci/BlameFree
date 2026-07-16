@@ -66,7 +66,9 @@
 
 .error-state__icon {
   font-size: 48px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin-bottom: var(--spacing-xl);
 }
 
@@ -98,7 +100,9 @@
 
 .empty-state__icon {
   font-size: 48px;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin-bottom: var(--spacing-xl);
 }
 

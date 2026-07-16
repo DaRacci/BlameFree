@@ -2,21 +2,22 @@ use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crb_types::benchmark::MetricsProvider;
 use crb_webui_shared::runs::{PrResult, RunDetail};
-use leptos::{
-    DynAttrs, IntoView, SignalGet, SignalSet, component, create_local_resource, create_signal, view,
-};
-use leptos_router::*;
+use leptos::prelude::*;
+use leptos_router::components::A;
+use leptos_router::hooks::use_params_map;
+use lucide_leptos::{ArrowLeft, Play, TriangleAlert};
 
 #[component]
 pub fn RunDetailPage() -> impl IntoView {
     let params = use_params_map();
-    let run_id = move || params.get().get("id").cloned().unwrap_or_default();
+    let run_id = move || params.get().get("id").unwrap_or_default();
 
-    let (run, set_run) = create_signal::<Option<RunDetail>>(None);
-    let (loading, set_loading) = create_signal(true);
-    let (error, set_error) = create_signal::<Option<String>>(None);
+    let (run, set_run) = signal::<Option<RunDetail>>(None);
+    let (loading, set_loading) = signal(true);
+    let (error, set_error) = signal::<Option<String>>(None);
 
-    let _fetch = create_local_resource(run_id, move |id| {
+    let _fetch = LocalResource::new(move || {
+        let id = run_id();
         let set_run = set_run;
         let set_loading = set_loading;
         let set_error = set_error;
@@ -38,7 +39,9 @@ pub fn RunDetailPage() -> impl IntoView {
 
     view! {
         <div class="run-detail-page">
-            <A href=move || "/".to_string()>"< Dashboard"</A>
+            <A href=move || "/".to_string()>
+                <ArrowLeft size=16 />" Dashboard"
+            </A>
 
             {move || {
                 if loading.get() {
@@ -50,24 +53,24 @@ pub fn RunDetailPage() -> impl IntoView {
                             <div class="skeleton skeleton--metric"></div>
                             <div class="skeleton skeleton--metric"></div>
                         </div></>
-                    }
+                    }.into_any()
                 } else if loading.get() {
                             view! {
                                 <><div style="text-align: center; padding: 2rem; color: var(--text-secondary, #64748b); font-style: italic;">
                                     "Loading run details..."
                                 </div></>
-                            }
+                            }.into_any()
                         } else if let Some(e) = error.get() {
                             view! {
                                 <><div class="error-state" role="alert">
-                                    <div class="error-state__icon">"!"</div>
+                                    <div class="error-state__icon"><TriangleAlert size=24 /></div>
                                     <h3 class="error-state__heading">"Failed to load run details"</h3>
-                                    <p class="error-state__message">{format!("Error: {e}")}</p>
+                                    <p class="error-state__message">{e}</p>
                                     <div class="error-state__action">
                                         <button class="btn btn--primary" on:click=move |_| set_loading.set(true)>"Retry"</button>
                                     </div>
                                 </div></>
-                            }
+                            }.into_any()
                 } else if let Some(detail) = run.get() {
                     let detail_clone = detail.clone();
                     let _detail_clone2 = detail.clone();
@@ -87,17 +90,21 @@ pub fn RunDetailPage() -> impl IntoView {
 
                     let live_url = format!("/runs/{}/live", detail.id);
 
+                    let name = detail.name.clone();
+                    let status = detail.status.clone();
+                    let model = detail.model.clone();
+
                     view! {
                         <div class="page-header">
                             <div>
-                                <h1 class="page-header__title">{&detail.name}</h1>
+                                <h1 class="page-header__title">{name}</h1>
                                 <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
                                     <span class=format!("badge {}", badge_variant)>
                                         <span class="badge__dot"></span>
-                                        <span class="badge__label">{&detail.status}</span>
+                                        <span class="badge__label">{status}</span>
                                     </span>
                                     <span style="font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
-                                        {"Model: ".to_string()}<span class="code">{&detail.model}</span>
+                                        {"Model: ".to_string()}<span class="code">{model}</span>
                                     </span>
                                 </div>
                             </div>
@@ -106,12 +113,12 @@ pub fn RunDetailPage() -> impl IntoView {
                                     if is_running {
                                         view! {
                                             <a href=&live_url class="btn btn--success">
-                                                <span class="btn__icon">""</span>
+                                                <span class="btn__icon"><Play size=16 /></span>
                                                 <span class="btn__label">"Live View"</span>
                                             </a>
-                                        }.into_view()
+                                        }.into_any()
                                     } else {
-                                        view! { <span></span> }.into_view()
+                                        view! { <span></span> }.into_any()
                                     }
                                 }}
                             </div>
@@ -129,9 +136,9 @@ pub fn RunDetailPage() -> impl IntoView {
                                             <ProgressBar value=done max=total label=format!("{} / {} PRs ({}%)", done, total, pct) />
                                         </div>
                                     </div>
-                                }.into_view()
+                                }.into_any()
                             } else {
-                                view! { <span></span> }.into_view()
+                                view! { <span></span> }.into_any()
                             }
                         }}
 
@@ -144,17 +151,17 @@ pub fn RunDetailPage() -> impl IntoView {
                                         <MetricsCard value={format!("{:.3}", agg.recall())} label="Recall" value_style="color: var(--accent-orange, #f0883e);"/>
                                         <MetricsCard value={detail_clone.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into())} label="Total Cost" />
                                         <MetricsCard value={format!("{:.0}s", agg.duration_secs)} label="Duration" />
-                                    }.into_view()
+                                    }.into_any()
                                 } else {
                                     let cost_str = detail_clone.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into());
                                     let dur_str = detail_clone.duration_secs.map(|d| format!("{:.0}s", d)).unwrap_or_else(|| "-".into());
                                     view! {
-                                        <MetricsCard value={"-"} label="F1 Score" />
-                                        <MetricsCard value={"-"} label="Precision" />
-                                        <MetricsCard value={"-"} label="Recall" />
+                                        <MetricsCard value={"-".to_string()} label="F1 Score" />
+                                        <MetricsCard value={"-".to_string()} label="Precision" />
+                                        <MetricsCard value={"-".to_string()} label="Recall" />
                                         <MetricsCard value={cost_str} label="Total Cost" />
                                         <MetricsCard value={dur_str} label="Duration" />
-                                    }.into_view()
+                                    }.into_any()
                                 }
                             }}
                         </div>
@@ -167,12 +174,12 @@ pub fn RunDetailPage() -> impl IntoView {
                             <table class="table">
                                 <thead>
                                     <tr>
-                                        <th class="table__th table__th--sortable">"# " <span class="table__sort-icon">""</span></th>
-                                        <th class="table__th table__th--sortable">"Title " <span class="table__sort-icon">""</span></th>
-                                        <th class="table__th table__th--sortable">"F1 " <span class="table__sort-icon">""</span></th>
-                                        <th class="table__th table__th--sortable">"Prec " <span class="table__sort-icon">""</span></th>
-                                        <th class="table__th table__th--sortable">"Rec " <span class="table__sort-icon">""</span></th>
-                                        <th class="table__th table__th--sortable">"Cost " <span class="table__sort-icon">""</span></th>
+                                        <th class="table__th">"# "</th>
+                                        <th class="table__th">"Title "</th>
+                                        <th class="table__th">"F1 "</th>
+                                        <th class="table__th">"Prec "</th>
+                                        <th class="table__th">"Rec "</th>
+                                        <th class="table__th">"Cost "</th>
                                         <th class="table__th">"Status"</th>
                                         <th class="table__th">"Details"</th>
                                     </tr>
@@ -202,7 +209,7 @@ pub fn RunDetailPage() -> impl IntoView {
                                         view! {
                                             <tr class="table__row">
                                                 <td class="table__td" style="font-weight: var(--weight-semibold, 600);">{format!("#{}", pr_number)}</td>
-                                                <td class="table__td">{&pr_title}</td>
+                                                <td class="table__td">{pr_title}</td>
                                                 <td class="table__td" style="font-family: var(--font-mono, monospace);">{f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into())}</td>
                                                 <td class="table__td" style="font-family: var(--font-mono, monospace);">{precision.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into())}</td>
                                                 <td class="table__td" style="font-family: var(--font-mono, monospace);">{recall.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into())}</td>
@@ -224,7 +231,7 @@ pub fn RunDetailPage() -> impl IntoView {
                                                                     "Logs"
                                                                 </A>
                                                             </span>
-                                                        }.into_view()
+                                                        }.into_any()
                                                     } else {
                                                         view! {
                                                             <span
@@ -233,7 +240,7 @@ pub fn RunDetailPage() -> impl IntoView {
                                                             >
                                                                 "Logs"
                                                             </span>
-                                                        }.into_view()
+                                                        }.into_any()
                                                     }}
                                                 </td>
                                             </tr>
@@ -243,9 +250,9 @@ pub fn RunDetailPage() -> impl IntoView {
                                 </tbody>
                             </table>
                         </div>
-                    }
+                    }.into_any()
                 } else {
-                    view! { <><p>"No data."</p></> }
+                    view! { <><p>"No data."</p></> }.into_any()
                 }
             }}
         </div>

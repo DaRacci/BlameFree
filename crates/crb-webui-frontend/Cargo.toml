@@ -18,9 +18,10 @@ gloo-net = { workspace = true }
 gloo-timers = { workspace = true, features = ["futures"] }
 js-sys = { workspace = true }
 leptos = { workspace = true, features = ["csr"] }
-leptos_meta = { workspace = true, features = ["csr"] }
-leptos_router = { workspace = true, features = ["csr"] }
+leptos_meta = { workspace = true }
+leptos_router = { workspace = true }
 log = { workspace = true }
+lucide-leptos = { workspace = true, features = ["all-icons"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 wasm-bindgen = { workspace = true }

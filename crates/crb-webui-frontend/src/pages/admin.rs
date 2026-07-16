@@ -1,7 +1,10 @@
 use crate::sse;
 use crb_webui_shared::admin::LogsResponse;
 use futures::StreamExt;
-use leptos::*;
+use leptos::html;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use lucide_leptos::{ClipboardList, TriangleAlert};
 
 /// Admin page component.
 ///
@@ -13,15 +16,15 @@ use leptos::*;
 /// sibling sections with minimal changes.
 #[component]
 pub fn AdminPage() -> impl IntoView {
-    let (logs, set_logs) = create_signal::<String>(String::new());
-    let (loading, set_loading) = create_signal(true);
-    let (error, set_error) = create_signal::<Option<String>>(None);
-    let (available, set_available) = create_signal(true);
-    let (status_msg, set_status_msg) = create_signal::<Option<String>>(None);
+    let (logs, set_logs) = signal::<String>(String::new());
+    let (loading, set_loading) = signal(true);
+    let (error, set_error) = signal::<Option<String>>(None);
+    let (available, set_available) = signal(true);
+    let (status_msg, set_status_msg) = signal::<Option<String>>(None);
     // Connection status: "connecting", "connected", "disconnected", "error: ..."
-    let (connection_status, set_connection_status) = create_signal("connecting".to_string());
+    let (connection_status, set_connection_status) = signal("connecting".to_string());
     // Number of live-streamed lines received
-    let (live_line_count, set_live_line_count) = create_signal(0usize);
+    let (live_line_count, set_live_line_count) = signal(0usize);
 
     let logs_url = "/api/admin/logs";
     spawn_local(async move {
@@ -80,10 +83,10 @@ pub fn AdminPage() -> impl IntoView {
         }
     });
 
-    let log_container_ref = create_node_ref::<html::Div>();
+    let log_container_ref: NodeRef<html::Div> = NodeRef::new();
 
     // Auto-scroll to bottom when logs update (only after initial load)
-    create_effect(move |_| {
+    Effect::new(move || {
         // Depend on logs and live_line_count so this fires on new content
         let _ = logs.get(); // Signal read to create reactivity dependency
         let _ = live_line_count.get(); // Signal read to create reactivity dependency
@@ -135,29 +138,29 @@ pub fn AdminPage() -> impl IntoView {
                             <div class="admin-loading">
                                 <span>"Loading logs..."</span>
                             </div>
-                        }.into_view();
+                        }.into_any();
                     }
 
                     if let Some(ref err) = error.get() {
                         return view! {
                             <div class="admin-empty">
-                                <div class="admin-empty__icon">"⚠"</div>
+                                <div class="admin-empty__icon"><TriangleAlert size=24 /></div>
                                 <div class="admin-empty__title">"Error"</div>
                                 <div class="admin-empty__desc">{err.clone()}</div>
                             </div>
-                        }.into_view();
+                        }.into_any();
                     }
 
                     if !available.get() {
                         return view! {
                             <div class="admin-empty">
-                                <div class="admin-empty__icon">"📋"</div>
+                                <div class="admin-empty__icon"><ClipboardList size=24 /></div>
                                 <div class="admin-empty__title">"Log File Not Configured"</div>
                                 <div class="admin-empty__desc">
                                     {status_msg.get().unwrap_or_default()}
                                 </div>
                             </div>
-                        }.into_view();
+                        }.into_any();
                     }
 
                     let line_count = logs.get().lines().count();
@@ -176,7 +179,7 @@ pub fn AdminPage() -> impl IntoView {
                                 <pre class="log-viewer__pre">{logs.get()}</pre>
                             </div>
                         </div>
-                    }.into_view()
+                    }.into_any()
                 }}
             </div>
         </div>
