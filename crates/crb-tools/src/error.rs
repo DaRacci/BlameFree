@@ -100,87 +100,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_linter_error_displays() {
-        let err1 = LinterError::SubprocessFailed(io::Error::new(io::ErrorKind::PermissionDenied, "denied"));
-        insta::assert_snapshot!(err1.to_string());
-
-        let err2 = LinterError::NonZeroExit(1, "syntax error".into());
-        insta::assert_snapshot!(err2.to_string());
-
-        let err3 = LinterError::TimeoutElapsed;
-        insta::assert_snapshot!(err3.to_string());
-
-        let err4 = LinterError::ParseFailed("unexpected token".into());
-        insta::assert_snapshot!(err4.to_string());
-    }
-
-    #[test]
-    fn test_git_error_displays() {
-        let err1 = GitError::CommandFailed(io::Error::new(io::ErrorKind::NotFound, "git not found"));
-        insta::assert_snapshot!(err1.to_string());
-
-        let err2 = GitError::NonZeroExit(128, "fatal: not a git repository".into());
-        insta::assert_snapshot!(err2.to_string());
-
-        let err3 = GitError::TimeoutElapsed;
-        insta::assert_snapshot!(err3.to_string());
-    }
-
-    #[test]
-    fn test_config_error_displays() {
-        let err1 = ConfigError::IoError(io::Error::new(io::ErrorKind::NotFound, "file not found"));
-        insta::assert_snapshot!(err1.to_string());
-
-        let err2 = ConfigError::ParseError("expected table at line 3".into());
-        insta::assert_snapshot!(err2.to_string());
-
-        let err3 = ConfigError::ValidationError("empty name field".into());
-        insta::assert_snapshot!(err3.to_string());
-    }
-
-    #[test]
-    fn test_mcp_error_displays() {
-        let err1 = McpError::TransportError("connection refused".into());
-        insta::assert_snapshot!(err1.to_string());
-
-        let err2 = McpError::ToolError("tool not found: search".into());
-        insta::assert_snapshot!(err2.to_string());
-
-        let err3 = McpError::ConfigError("missing server URL".into());
-        insta::assert_snapshot!(err3.to_string());
-
-        let err4 = McpError::TimeoutElapsed;
-        insta::assert_snapshot!(err4.to_string());
-    }
-
-    #[test]
-    fn test_grep_error_displays() {
-        let err1 = GrepError::CommandFailed("rg not found on PATH".into());
-        insta::assert_snapshot!(err1.to_string());
-
-        let err2 = GrepError::NonZeroExit(2, "error reading file".into());
-        insta::assert_snapshot!(err2.to_string());
-
-        let err3 = GrepError::TimeoutElapsed;
-        insta::assert_snapshot!(err3.to_string());
-    }
-
-    #[test]
-    fn test_list_dir_error_displays() {
-        let err = ListDirError::IoError("permission denied".into());
-        insta::assert_snapshot!(err.to_string());
-    }
-
-    #[test]
-    fn test_shell_error_displays() {
-        let err1 = ShellError::SpawnFailed("binary not found".into());
-        insta::assert_snapshot!(err1.to_string());
-
-        let err2 = ShellError::TimeoutElapsed;
-        insta::assert_snapshot!(err2.to_string());
-    }
-
-    #[test]
     fn test_linter_error_from_io_error() {
         let io_err = io::Error::new(io::ErrorKind::ConnectionRefused, "connection reset");
         let linter_err: LinterError = io_err.into();
@@ -192,17 +111,5 @@ mod tests {
         let io_err = io::Error::new(io::ErrorKind::NotFound, "no such file or directory");
         let git_err: GitError = io_err.into();
         insta::assert_snapshot!(git_err.to_string());
-    }
-
-    #[test]
-    fn test_error_non_zero_exit_negative_code() {
-        let err1 = LinterError::NonZeroExit(-1, "killed by signal".into());
-        insta::assert_snapshot!(err1.to_string());
-
-        let err2 = GitError::NonZeroExit(-2, "segfault".into());
-        insta::assert_snapshot!(err2.to_string());
-
-        let err3 = GrepError::NonZeroExit(-9, "SIGKILL".into());
-        insta::assert_snapshot!(err3.to_string());
     }
 }

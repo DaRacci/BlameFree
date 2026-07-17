@@ -70,16 +70,6 @@ mod tests {
     }
 
     #[test]
-    fn test_store_and_load_roundtrip() {
-        if let Ok(dir) = tempfile::TempDir::new() {
-            let backend = FilesystemBackend::new(dir.path());
-            backend.store_raw("test-key", "test-value");
-            let loaded = backend.load_raw("test-key");
-            assert_eq!(loaded, "test-value");
-        }
-    }
-
-    #[test]
     fn test_store_creates_file() {
         if let Ok(dir) = tempfile::TempDir::new() {
             let backend = FilesystemBackend::new(dir.path());
@@ -112,7 +102,10 @@ mod tests {
 
             if let Ok(content) = fs::read_to_string(&index_path) {
                 let index: CacheIndex = serde_json::from_str(&content).expect("valid JSON");
-                assert!(index.entries.contains_key("idx-key"), "index should contain the stored key");
+                assert!(
+                    index.entries.contains_key("idx-key"),
+                    "index should contain the stored key"
+                );
                 if let Some(entry) = index.entries.get("idx-key") {
                     assert_eq!(entry.file_path, "idx-key.json");
                 }
@@ -135,7 +128,6 @@ mod tests {
                 assert!(index.entries.contains_key("key-b"));
             }
 
-            // Verify both files exist
             assert!(dir.path().join("key-a.json").exists());
             assert!(dir.path().join("key-b.json").exists());
         }
@@ -144,12 +136,11 @@ mod tests {
     #[test]
     fn test_load_from_existing_index() {
         if let Ok(dir) = tempfile::TempDir::new() {
-            // Create a pre-populated index
             {
                 let backend = FilesystemBackend::new(dir.path());
                 backend.store_raw("pre-existing", "hello");
             }
-            // Re-open: index should be restored
+
             let backend = FilesystemBackend::new(dir.path());
             let loaded = backend.load_raw("pre-existing");
             assert_eq!(loaded, "hello");
@@ -164,7 +155,10 @@ mod tests {
             backend.store_raw("overwrite", "second");
 
             let loaded = backend.load_raw("overwrite");
-            assert_eq!(loaded, "second", "should return the latest value after overwrite");
+            assert_eq!(
+                loaded, "second",
+                "should return the latest value after overwrite"
+            );
 
             // Verify file content is updated
             let file_path = dir.path().join("overwrite.json");

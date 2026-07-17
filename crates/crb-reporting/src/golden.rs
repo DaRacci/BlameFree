@@ -1,9 +1,9 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use anyhow::Result;
-use crb_shared::severity::Severity;
-use serde::{Deserialize, Serialize};
-use tracing::info;
+use crb_types::benchmark::golden::GoldenCommentEntry;
+use serde::Deserialize;
+use tracing::{info, warn};
 
 /// Top-level structure of a golden-comments JSON file.
 #[derive(Debug, Clone, Deserialize)]
@@ -11,33 +11,10 @@ struct DatasetFile {
     entries: Vec<GoldenCommentEntry>,
 }
 
-/// A single entry from a golden-comments dataset, representing one PRs expected review findings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GoldenCommentEntry {
-    /// The PR title.
-    pub pr_title: String,
-
-    /// URL to the PR.
-    pub url: String,
-
-    /// The list of golden comments for this PR.
-    pub comments: Vec<GoldenComment>,
-}
-
-/// A single golden comment for a PR.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GoldenComment {
-    /// The expected comment text
-    pub comment: String,
-
-    /// The expected severity of the comment
-    pub severity: Severity,
-}
-
 /// Load all golden-comment entries from every `.json` file under `dataset_dir`.
 ///
-/// Each JSON file is expected to deserialize as a `DatasetFile` containing
-/// a top-level `entries` array.  Malformed files are logged and skipped.
+/// Each JSON file is expected to deserialize as a `DatasetFile` containing a top-level `entries` array.
+/// Malformed files are logged and skipped.
 #[allow(clippy::cognitive_complexity)]
 pub fn load_golden_datasets(dataset_dir: &Path) -> Result<Vec<GoldenCommentEntry>> {
     let mut entries = Vec::new();
@@ -50,11 +27,11 @@ pub fn load_golden_datasets(dataset_dir: &Path) -> Result<Vec<GoldenCommentEntry
         return Ok(entries);
     }
 
-    for entry in std::fs::read_dir(dataset_dir)? {
+    for entry in fs::read_dir(dataset_dir)? {
         let entry = entry?;
         let path = entry.path();
         if path.extension().is_some_and(|e| e == "json") {
-            let content = std::fs::read_to_string(&path)?;
+            let content = fs::read_to_string(&path)?;
             match serde_json::from_str::<DatasetFile>(&content) {
                 Ok(dataset) => {
                     info!(
@@ -76,7 +53,7 @@ pub fn load_golden_datasets(dataset_dir: &Path) -> Result<Vec<GoldenCommentEntry
                             entries.extend(raw_entries);
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to parse {}: {}", path.display(), e);
+                            warn!("Failed to parse {}: {}", path.display(), e);
                         }
                     }
                 }
@@ -87,83 +64,10 @@ pub fn load_golden_datasets(dataset_dir: &Path) -> Result<Vec<GoldenCommentEntry
     Ok(entries)
 }
 
-impl crb_shared::url::HasUrl for GoldenCommentEntry {
-    fn url(&self) -> &str {
-        &self.url
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
-
-    #[test]
-    fn test_golden_comment_entry_serialization() {
-        let entry = GoldenCommentEntry {
-            pr_title: "Fix memory leak".into(),
-            url: "https://github.com/owner/repo/pull/42".into(),
-            comments: vec![GoldenComment {
-                comment: "This introduces a memory leak".into(),
-                severity: Severity::Critical,
-            }],
-        };
-        insta::assert_json_snapshot!(&entry);
-    }
-
-    #[test]
-    fn test_golden_comment_severity_roundtrip() {
-        let comment = GoldenComment {
-            comment: "Use checked arithmetic".into(),
-            severity: Severity::Critical,
-        };
-        let json = serde_json::to_string(&comment).expect("serialization should succeed");
-        let deserialized: GoldenComment =
-            serde_json::from_str(&json).expect("deserialization should succeed");
-        assert_eq!(deserialized.severity, Severity::Critical);
-    }
-
-    #[test]
-    fn test_load_golden_datasets_standard_format() {
-        let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
-        let json_content = r#"{
-            "entries": [
-                {
-                    "pr_title": "Fix bug",
-                    "url": "https://github.com/a/b/pull/1",
-                    "comments": [
-                        {"comment": "off by one", "severity": "high"}
-                    ]
-                }
-            ]
-        }"#;
-        let file_path = dir.path().join("dataset.json");
-        fs::write(&file_path, json_content).expect("write should succeed");
-
-        let entries = load_golden_datasets(dir.path()).expect("load should succeed");
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].pr_title, "Fix bug");
-    }
-
-    #[test]
-    fn test_load_golden_datasets_raw_array_format() {
-        let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
-        let json_content = r#"[
-            {
-                "pr_title": "Raw entry",
-                "url": "https://github.com/a/b/pull/2",
-                "comments": [
-                    {"comment": "needs null check", "severity": "critical"}
-                ]
-            }
-        ]"#;
-        let file_path = dir.path().join("raw.json");
-        fs::write(&file_path, json_content).expect("write should succeed");
-
-        let entries = load_golden_datasets(dir.path()).expect("load should succeed");
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].pr_title, "Raw entry");
-    }
 
     #[test]
     fn test_load_golden_datasets_empty_dir() {

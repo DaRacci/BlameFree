@@ -195,11 +195,11 @@ pub fn run(dataset_dir: &Path, benchmark_dir: &Path) -> Result<()> {
     );
 
     if !unique_repos.is_empty() {
-        println!("Scaffolded repos:");
+        info!("Scaffolded repos:");
         for repo in &unique_repos {
-            println!("  https://github.com/{}.git", repo);
+            info!("  https://github.com/{}.git", repo);
         }
-        println!("Pre-fetched {} PR merge refs", total_fetched);
+        info!("Pre-fetched {} PR merge refs", total_fetched);
     }
 
     Ok(())

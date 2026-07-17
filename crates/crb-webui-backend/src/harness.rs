@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::api::runs::BenchmarkConfig;
+use crate::server::ActiveRun;
 use crb_agents::agent::AgentEntry;
 use crb_agents::prompts::PromptLibrary;
 use crb_benchmark::pr;
@@ -18,23 +20,20 @@ use crb_reporting::golden::load_golden_datasets;
 use crb_reporting::write_report;
 use crb_rules::RuleSet;
 use crb_shared::diff::Diff;
+use crb_shared::url::parse_github_url;
 use crb_tools::linters::config::LinterConfig;
+use crb_tools::linters::config::load_linter_config;
+use crb_types::RunEvent;
+use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
+use crb_types::wrappers::Model;
 use crb_webui_shared::config::DatasetConfig;
 use rig_core::client::CompletionClient;
 use rig_core::client::ProviderClient;
 use rig_core::providers::openai;
-use rig_core::tool::server::ToolServerHandle;
 use rig_core::tool::server::ToolServer;
-use crb_types::RunEvent;
-use crb_types::benchmark::Metrics;
-use crb_types::benchmark::MetricsProvider;
-use crb_types::wrappers::Model;
+use rig_core::tool::server::ToolServerHandle;
 use tokio::sync::{RwLock, broadcast};
 use tracing::{error, info, warn};
-use crate::api::runs::BenchmarkConfig;
-use crate::server::ActiveRun;
-use crb_shared::url::parse_github_url;
-use crb_tools::linters::config::load_linter_config;
 
 /// Build an `EvalConfig` from a `BenchmarkConfig` and runtime dependencies.
 ///
@@ -167,7 +166,9 @@ pub async fn run_harness(
     anyhow::ensure!(!agents.is_empty(), "No agents resolved from PromptLibrary");
     let agents: &'static [&'static _] = Box::leak(agents.into_boxed_slice());
 
-    let bench_dir = benchmark_dir.unwrap_or(Path::new("benchmark")).to_path_buf();
+    let bench_dir = benchmark_dir
+        .unwrap_or(Path::new("benchmark"))
+        .to_path_buf();
     let tool_server = ToolServer::new().run();
     let reasoning_effort = config
         .reasoning_effort
@@ -318,7 +319,6 @@ pub async fn run_harness(
         total_agent_calls: results.len(),
     });
 
-    crb_reporting::print_terminal_summary(&results).await;
     info!(run_id = %run_id, prs = results.len(), elapsed_secs = %start.elapsed().as_secs_f64(), "Harness run finished");
     Ok(())
 }

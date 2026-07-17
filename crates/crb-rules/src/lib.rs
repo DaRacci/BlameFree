@@ -2,7 +2,7 @@
 //!
 //! `crb-rules` implements a rule system loosely inspired by Cursor, Continue,
 //! and Cline: markdown files with YAML frontmatter, directory-based discovery
-//! under `.crb/rules/`, `always_apply` and `globs` fields for matching.
+//! under `.riv/rules/`, `always_apply` and `globs` fields for matching.
 //!
 //! The crate exposes [`RuleSet`] as its primary API: load rules from a
 //! directory, match them against changed file paths, and format an optional
@@ -12,34 +12,44 @@ pub mod matcher;
 pub mod parser;
 pub mod preamble;
 
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use tracing::{info, warn};
+
+pub const RULES_DIR: &str = ".riv/rules";
 
 /// A single rule loaded from a `.md` file with optional YAML frontmatter.
 #[derive(Debug, Clone)]
 pub struct Rule {
-    /// Human-readable description of the rule (from frontmatter `description`).
+    /// Human-readable description of the rule.
     pub description: Option<String>,
+
     /// Glob patterns that determine which file paths this rule applies to.
     pub globs: Vec<String>,
+
     /// If `true`, this rule always applies regardless of file paths.
     pub always_apply: bool,
-    /// Markdown body — the content after the YAML frontmatter (or the whole file
-    /// when no frontmatter is present).
+
+    /// The content after the YAML frontmatter,
+    /// or the whole file when no frontmatter is present.
     pub body: String,
+
     /// Origin file path from which this rule was loaded.
     pub source_file: PathBuf,
 }
 
 /// A loaded ruleset, cached from a directory of `.md` rule files.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RuleSet {
-    /// All non-always-apply rules (those with globs that must be matched).
+    /// All non-always-apply rules.
     pub rules: Vec<Rule>,
+
     /// Rules with `always_apply == true`, cached at load time so that
     /// [`RuleSet::matching`] avoids re-filtering on every call.
     pub always_rules: Vec<Rule>,
-    /// The directory from which the ruleset was loaded.
-    pub source_dir: PathBuf,
 }
 
 impl RuleSet {
@@ -54,26 +64,19 @@ impl RuleSet {
     #[allow(clippy::cognitive_complexity)]
     pub fn load_from_dir(dir: &Path) -> anyhow::Result<Self> {
         if !dir.exists() || !dir.is_dir() {
-            tracing::info!(
-                "Rules directory does not exist: {} — returning empty ruleset",
-                dir.display()
-            );
-            return Ok(RuleSet {
-                rules: Vec::new(),
-                always_rules: Vec::new(),
-                source_dir: dir.to_path_buf(),
-            });
+            info!("Rules directory does not exist: {}", dir.display());
+            return Ok(RuleSet::default());
         }
 
-        let mut rules: Vec<Rule> = Vec::new();
-        let mut bad_files: usize = 0;
+        let mut rules = Vec::new();
+        let mut bad_files = 0;
 
-        let readdir = std::fs::read_dir(dir)?;
+        let readdir = fs::read_dir(dir)?;
         for entry in readdir {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
-                    tracing::warn!("Error reading directory entry in {}: {e}", dir.display());
+                    warn!("Error reading directory entry in {}: {e}", dir.display());
                     continue;
                 }
             };
@@ -83,10 +86,10 @@ impl RuleSet {
                 continue;
             }
 
-            let content = match std::fs::read_to_string(&path) {
+            let content = match fs::read_to_string(&path) {
                 Ok(c) => c,
                 Err(e) => {
-                    tracing::warn!("Failed to read rule file {}: {e}", path.display());
+                    warn!("Failed to read rule file {}: {e}", path.display());
                     bad_files += 1;
                     continue;
                 }
@@ -95,27 +98,24 @@ impl RuleSet {
             match crate::parser::parse_rule_file(&content, &path) {
                 Ok(rule) => rules.push(rule),
                 Err(e) => {
-                    tracing::warn!("Failed to parse rule file {}: {e}", path.display());
+                    warn!("Failed to parse rule file {}: {e}", path.display());
                     bad_files += 1;
                 }
             }
         }
 
-        tracing::info!(
+        info!(
             "Loaded {} rule(s) from {} ({} skipped due to errors)",
             rules.len(),
             dir.display(),
             bad_files,
         );
 
-        // Partition: always-apply rules go into the cached subset.
-        let (always_rules, non_always_rules): (Vec<Rule>, Vec<Rule>) =
-            rules.into_iter().partition(|r| r.always_apply);
+        let (always_rules, non_always_rules) = rules.into_iter().partition(|r| r.always_apply);
 
         Ok(RuleSet {
             rules: non_always_rules,
             always_rules,
-            source_dir: dir.to_path_buf(),
         })
     }
 

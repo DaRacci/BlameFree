@@ -11,7 +11,7 @@ required-features = ["binary"]
 
 [features]
 default = []
-binary = ["clap", "dotenvy", "tracing-subscriber"]
+binary = ["clap", "dotenvy", "tracing-subscriber", "crb-shared/backend"]
 exp14_template_vars = ["crb-tools/exp14_template_vars"]
 exp16_adaptive_agents = ["crb-consensus/exp16_adaptive_agents"]
 
@@ -21,18 +21,15 @@ crb-agents = { path = "../crb-agents" }
 crb-auditor = { path = "../crb-auditor" }
 crb-cache = { path = "../crb-cache" }
 crb-consensus = { path = "../crb-consensus" }
-crb-types = { path = "../crb-types" }
 crb-reporting = { path = "../crb-reporting" }
 crb-rules = { path = "../crb-rules" }
 crb-shared = { path = "../crb-shared" }
 crb-tools = { path = "../crb-tools" }
-regex = { workspace = true }
+crb-types = { path = "../crb-types" }
 reqwest = { workspace = true, features = ["blocking"] }
 rig-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tempfile = { workspace = true }
-
 tokio = { workspace = true }
 tracing = { workspace = true }
 
@@ -43,6 +40,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"], optional = t
 
 [dev-dependencies]
 insta = { workspace = true }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

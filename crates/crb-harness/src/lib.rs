@@ -11,6 +11,7 @@ pub mod model_capabilities;
 pub mod paths;
 pub mod pipeline;
 pub mod review;
+#[cfg(test)]
 pub mod test_utils;
 
 /// Describes which kind of diff to review.

@@ -1,18 +1,20 @@
 //! Cost and analytics types for PR evaluation.
 //!
 //! Tracks token counts, cache hit rates, and computes USD cost estimates.
-//! These types are shared between crb-reporting (where they're populated)
-//! and crb-webui (where they're displayed).
 
 use std::collections::HashMap;
 
+use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};
 
-/// Snapshot of cost and usage statistics.
+/// Cost and usage statistics.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct AnalyticsSnapshot {
-    pub sessions: HashMap<String, SessionUsage>,
-    pub cache_usage: HashMap<String, CacheUsage>,
+    /// Session statistics for each agent session, keyed by session ID.
+    pub sessions: HashMap<MagicTypeId, SessionUsage>,
+
+    /// Cache usage statistics for each agent session, keyed by session ID.
+    pub cache_usage: HashMap<MagicTypeId, CacheUsage>,
 }
 
 /// Token usage and call counts for a single agent session
@@ -101,7 +103,7 @@ impl AnalyticsSnapshot {
     ///
     /// Pricing rates are read from environment variables (see module docs for defaults).
     /// The formula is:
-    /// ```text
+    /// ```ignore
     /// cost = (tokens_in * input_price_per_token) + (tokens_out * output_price_per_token)
     /// ```
     /// where prices are per-token (derived from per-1M-token rates).
@@ -109,17 +111,16 @@ impl AnalyticsSnapshot {
         let input_price = default_input_price_per_token();
         let output_price = default_output_price_per_token();
 
-        self.sessions
-            .values()
-            .fold(0.0, |acc, usage| {
-                acc + usage.input_tokens as f64 * input_price
-                    + usage.output_tokens as f64 * output_price
-            })
+        self.sessions.values().fold(0.0, |acc, usage| {
+            acc + usage.input_tokens as f64 * input_price
+                + usage.output_tokens as f64 * output_price
+        })
     }
 
-    // Total token counts across both agent and judge calls.
+    /// Total token counts across both agent and judge calls.
+    ///
     /// Returns `(total_tokens_in, total_tokens_out)`.
-    pub async fn total_tokens(&self) -> (u64, u64) {
+    pub fn total_tokens(&self) -> (u64, u64) {
         self.sessions
             .iter()
             .fold((0, 0), |(acc_in, acc_out), (_, usage)| {

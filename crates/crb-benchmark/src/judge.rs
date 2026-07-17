@@ -3,7 +3,8 @@ use rig_core::client::CompletionClient;
 use rig_core::completion::{Prompt, Usage};
 use rig_core::providers::openai::{Client, responses_api::ResponsesCompletionModel};
 
-use crb_types::benchmark::{JudgeVerdict, Metrics};
+use crb_types::benchmark::judge::JudgeVerdict;
+use crb_types::benchmark::metrics::Metrics;
 
 /// The Martian JUDGE_PROMPT template used for LLM-as-judge evaluation.
 ///
@@ -165,9 +166,10 @@ pub fn compute_metrics(verdicts: &[JudgeVerdict], golden_count: usize) -> Metric
 
 #[cfg(test)]
 mod tests {
-    use crate::judge::{compute_metrics, format_judge_prompt, jaccard_match};
     use crate::judge::JUDGE_PROMPT;
-    use crb_types::benchmark::{JudgeVerdict, MetricsProvider};
+    use crate::judge::{compute_metrics, format_judge_prompt, jaccard_match};
+    use crb_types::benchmark::judge::JudgeVerdict;
+    use crb_types::benchmark::metrics::Metrics;
 
     const THRESHOLD: f64 = 0.12;
 

@@ -18,7 +18,7 @@ use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::api::{adhoc, admin, config, runs};
-use crate::auth::SessionStore;
+use crate::auth::{self, SessionStore};
 use crate::config::WebUiConfig;
 use crate::static_assets::StaticAssets;
 use crb_types::RunEvent;
@@ -108,7 +108,7 @@ impl AppState {
 }
 
 pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
-    let api_router = Router::new()
+    let app = Router::new()
         .route(routes::API_RUNS, get(runs::list_runs).post(runs::start_run))
         .route(routes::API_RUNS_ID, get(runs::get_run))
         .route(routes::API_RUNS_ID_LIVE, get(crate::api::live::live_stream))
@@ -128,16 +128,11 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         .route(routes::API_ADHOC_RUNS_ID, get(adhoc::get_adhoc_run))
         .route(routes::API_ADHOC_PRS_OWNER_REPO, get(adhoc::list_repo_prs))
         .route(routes::API_ADMIN_LOGS, get(admin::get_logs))
-        .route(routes::API_ADMIN_LOGS_STREAM, get(admin::get_logs_stream));
-
-    let mut app = Router::new().merge(api_router);
-
-    if state.config.oauth.is_some() {
-        info!("OAuth is enabled — adding authentication routes");
-        app = app.merge(crate::auth::router());
-    } else {
-        info!("OAuth is disabled — skipping authentication routes");
-    }
+        .route(routes::API_ADMIN_LOGS_STREAM, get(admin::get_logs_stream))
+        .route(routes::AUTH_LOGIN, get(auth::login))
+        .route(routes::AUTH_LOGOUT, get(auth::logout))
+        .route(routes::AUTH_CALLBACK, get(auth::callback))
+        .route(routes::AUTH_ME, get(auth::me));
 
     let app = app
         .fallback(static_or_index)

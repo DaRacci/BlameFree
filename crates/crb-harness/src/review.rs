@@ -1,7 +1,6 @@
-use std::sync::Arc;
-
 use anyhow::{Context, Result};
-use crb_shared::{diff::Diff, finding::Finding};
+use crb_shared::diff::Diff;
+use crb_types::finding::Finding;
 use crb_types::wrappers::WrappedData;
 use tracing::info;
 

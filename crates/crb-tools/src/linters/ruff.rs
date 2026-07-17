@@ -1,4 +1,4 @@
-use crb_shared::{finding::Finding, severity::Severity};
+use crb_types::{finding::Finding, severity::Severity};
 use serde::Deserialize;
 
 use crate::error::LinterError;

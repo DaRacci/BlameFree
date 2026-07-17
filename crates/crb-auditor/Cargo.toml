@@ -9,6 +9,7 @@ name = "crb_auditor"
 path = "src/lib.rs"
 
 [dependencies]
+crb-types = { path = "../crb-types" }
 crb-shared = { path = "../crb-shared" }
 regex = { workspace = true }
 

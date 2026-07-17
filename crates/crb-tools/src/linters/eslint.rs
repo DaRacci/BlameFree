@@ -1,4 +1,4 @@
-use crb_shared::{
+use crb_types::{
     finding::{ConfidenceLevel, Finding},
     severity::Severity,
 };

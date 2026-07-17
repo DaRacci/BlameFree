@@ -12,21 +12,28 @@ use axum::Json;
 use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use crb_agents::AgentEntry;
 use crb_agents::prompts;
+use crb_cache::filesystem::FilesystemBackend;
+use crb_cache::traits::CacheBackend;
+use crb_reporting::cost::AnalyticsTracker;
 use crb_shared::DEFAULT_MODEL;
+use crb_shared::diff::Diff;
 use crb_shared::sanitize_filename;
 use crb_shared::url::parse_github_url;
-use crb_types::benchmark::Metrics;
-use crb_types::benchmark::MetricsProvider;
+use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
+use crb_types::benchmark::result::PrResult;
+use crb_types::vcs::repository::RepositoryMeta;
+use crb_types::wrappers::Model;
 use crb_webui_shared::adhoc::{AdhocReviewResponse, AdhocRunSummary, GithubPrListItem};
 use crb_webui_shared::runs::RunStatus;
+use rig_core::tool::server::ToolServer;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::api::runs::{self};
 use crate::server::AppState;
-use crb_reporting::PrResult;
 use crb_webui_shared::runs::{PrResultRow, RunConfig, RunDetail, RunMeta};
 use rig_core::client::CompletionClient;
 use rig_core::client::ProviderClient;
@@ -83,7 +90,7 @@ pub async fn start_adhoc_review(
     let (pr_title, diff) = match fetch_pr_diff(&state, &owner, &repo, pr_number).await {
         Ok(result) => result,
         Err(e) => {
-            tracing::error!("Failed to fetch PR {}: {}", req.url, e);
+            error!("Failed to fetch PR {}: {}", req.url, e);
             return (
                 StatusCode::BAD_GATEWAY,
                 Json(json!({
@@ -116,7 +123,7 @@ pub async fn start_adhoc_review(
         )
         .await
         {
-            tracing::error!("Ad-hoc review {run_id_bg} failed: {e}");
+            error!("Ad-hoc review {run_id_bg} failed: {e}");
         }
     });
 
@@ -131,8 +138,6 @@ pub async fn start_adhoc_review(
         .into_response()
 }
 
-/// GET /api/adhoc/runs
-///
 /// List all previous ad-hoc review runs.
 pub async fn list_adhoc_runs(State(state): State<AppState>) -> impl IntoResponse {
     let adhoc_dir = state.output_dir.join("adhoc");
@@ -165,8 +170,6 @@ pub async fn list_adhoc_runs(State(state): State<AppState>) -> impl IntoResponse
     Json(runs).into_response()
 }
 
-/// GET /api/adhoc/runs/:id
-///
 /// Get details for a specific ad-hoc review run.
 pub async fn get_adhoc_run(
     State(state): State<AppState>,
@@ -265,8 +268,6 @@ pub async fn get_adhoc_run(
         }
     }
 
-    // Remove old averaging block — MetricsProvider derives f1/precision/recall from aggregates.
-
     let detail = RunDetail {
         meta: RunMeta {
             id: id.clone(),
@@ -290,7 +291,7 @@ pub async fn get_adhoc_run(
     Json(detail).into_response()
 }
 
-/// List open PRs from a GitHub repo (proxied to avoid CORS).
+/// List open PRs from a GitHub repo
 pub async fn list_repo_prs(
     State(state): State<AppState>,
     AxumPath((owner, repo)): AxumPath<(String, String)>,
@@ -419,7 +420,6 @@ async fn run_adhoc_review_inner(
 
     let prompt_lib = Arc::new(prompts::PromptLibrary::get_instance());
 
-    // Create a GoldenCommentEntry with empty comments
     use crb_reporting::golden::GoldenCommentEntry;
     let pr = GoldenCommentEntry {
         pr_title: pr_title.to_string(),
@@ -428,16 +428,7 @@ async fn run_adhoc_review_inner(
     };
 
     let pr_key = sanitize_filename(pr_title);
-    use crb_agents::AgentEntry;
-    use crb_cache::filesystem::FilesystemBackend;
-    use crb_cache::traits::CacheBackend;
-    use crb_reporting::cost::AnalyticsTracker;
-    use crb_shared::diff::Diff;
-    use crb_types::wrappers::Model;
-    use rig_core::tool::server::ToolServer;
-
     let cost_tracker = Arc::new(AnalyticsTracker::new());
-
     let diff = Diff::new(diff.to_string());
 
     if diff.sections.is_empty() {
@@ -505,10 +496,11 @@ async fn run_adhoc_review_inner(
 
     let pr_result_path = output_subdir.join(format!("{}.json", pr_key));
     let cost_snapshot = result.cost.clone();
-    let pr_json = crb_reporting::PrResult {
-        pr_title: result.pr_title.clone(),
-        url: result.url.clone(),
-        findings_count: result.findings_count,
+    let pr_json = PrResult {
+        meta: PrMeta {
+            title: result.pr_title.clone(),
+            url: result.url.clone(),
+        },
         golden_count: 0,
         metrics: result.metrics.clone(),
         verdicts: result.verdicts.clone(),
@@ -521,6 +513,7 @@ async fn run_adhoc_review_inner(
     fs::write(&pr_result_path, &pr_json_str)?;
 
     let elapsed = Instant::now().elapsed();
+    //TOOD: DISGUSTING!
     let summary = json!({
         "model": model,
         "judge_model": model,

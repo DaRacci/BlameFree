@@ -107,6 +107,7 @@ pub struct PrEntry {
 
 /// Response for GET /api/config/reasoning-efforts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated]
 pub struct ReasoningEffortsResponse {
     /// Available reasoning effort levels.
     pub levels: Vec<String>,

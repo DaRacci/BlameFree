@@ -18,4 +18,9 @@ define_routes! {
     API_ADHOC_PRS_OWNER_REPO, "/api/adhoc/prs/:owner/:repo";
     API_ADMIN_LOGS,           "/api/admin/logs";
     API_ADMIN_LOGS_STREAM,    "/api/admin/logs/stream";
+
+    AUTH_LOGIN,     "/auth/login";
+    AUTH_CALLBACK,  "/auth/callback";
+    AUTH_LOGOUT,    "/auth/logout";
+    AUTH_ME,        "/auth/me";
 }

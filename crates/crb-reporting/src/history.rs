@@ -1,7 +1,6 @@
 use std::{fs, path::Path};
 
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crb_webui_shared::runs::RunMeta;

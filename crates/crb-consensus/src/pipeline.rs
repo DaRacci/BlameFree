@@ -4,15 +4,15 @@
 use std::sync::Arc;
 
 use crb_reporting::cost::AnalyticsSnapshot;
-use crb_reporting::golden::GoldenComment;
+use crb_types::benchmark::golden::GoldenComment;
 use rig_core::agent::Agent;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
 
-use crb_shared::finding::Finding;
+use crb_types::finding::Finding;
 
+use crate::Role;
 use crate::judge::judge_comment;
 use crate::{ConsensusReport, MatchResult};
-use crate::Role;
 use crb_cache::traits::CacheBackend;
 
 /// Run the consensus judging step on already-completed review findings.
@@ -100,8 +100,8 @@ pub async fn run_consensus_post(
 
 #[cfg(test)]
 mod tests {
-    use crb_shared::finding::Finding;
-    use crb_shared::severity::Severity;
+    use crb_types::finding::Finding;
+    use crb_types::severity::Severity;
 
     /// Replicates the sort_by closure from `run_consensus_post` for testability.
     fn sort_findings(findings: &mut Vec<Finding>) {

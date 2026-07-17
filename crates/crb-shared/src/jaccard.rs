@@ -1,20 +1,20 @@
+use std::collections::HashSet;
+
 use crate::normalize_text;
 
 /// Compute Jaccard word-overlap similarity between two strings.
 ///
-/// Splits each string into lowercase word tokens and computes
-/// `|intersection| / |union|`.
+/// Splits each string into lowercase word tokens and computes `|intersection| / |union|`.
 ///
-/// If `normalize_markdown` is `true`, calls [`normalize_text`] first to strip
-/// markdown formatting and punctuation.  Otherwise only lowercases and splits
-/// on whitespace.
+/// If `normalize_markdown` is `true`, calls [`normalize_text`] first to strip markdown formatting and punctuation.
+/// Otherwise only lowercases and splits on whitespace.
 ///
 /// Returns `0.0` if either string produces no tokens.
 ///
 /// # Examples
 ///
-/// ```ignore
-/// use crb_shared::jaccard_similarity;
+/// ```rust
+/// use crb_shared::jaccard::jaccard_similarity;
 ///
 /// // Identical strings
 /// assert_eq!(jaccard_similarity("hello world", "hello world", false), 1.0);
@@ -40,8 +40,8 @@ pub fn jaccard_similarity(a: &str, b: &str, normalize_markdown: bool) -> f64 {
             .collect()
     };
 
-    let words_a: std::collections::HashSet<_> = tokenize(a).into_iter().collect();
-    let words_b: std::collections::HashSet<_> = tokenize(b).into_iter().collect();
+    let words_a: HashSet<_> = tokenize(a).into_iter().collect();
+    let words_b: HashSet<_> = tokenize(b).into_iter().collect();
 
     if words_a.is_empty() || words_b.is_empty() {
         return 0.0;

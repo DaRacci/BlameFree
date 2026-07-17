@@ -1,14 +1,19 @@
 use std::{collections::HashMap, fs};
 
-use crb_reporting::{write_report, PrResult};
-use crb_types::benchmark::{JudgeVerdict, Metrics};
-
 use crb_reporting::cost::{AnalyticsSnapshot, CacheUsage, SessionUsage};
+use crb_reporting::write_report;
+use crb_types::benchmark::golden::GoldenComment;
+use crb_types::benchmark::judge::JudgeVerdict;
+use crb_types::benchmark::metrics::Metrics;
+use crb_types::benchmark::result::{JudgedFinding, PrResult};
+use crb_types::vcs::pr::PrMeta;
+use mti::prelude::{MagicTypeIdExt, V7};
 
 fn make_cost_snapshot() -> AnalyticsSnapshot {
+    let id = "agent".create_type_id::<V7>();
     let mut sessions = HashMap::new();
     sessions.insert(
-        "agent:test".to_string(),
+        id.clone(),
         SessionUsage {
             input_tokens: 100,
             output_tokens: 50,
@@ -22,7 +27,7 @@ fn make_cost_snapshot() -> AnalyticsSnapshot {
     );
     let mut cache_usage = HashMap::new();
     cache_usage.insert(
-        "agent:test".to_string(),
+        id.clone(),
         CacheUsage {
             cache_hits: 1,
             cache_misses: 0,
@@ -36,28 +41,48 @@ fn make_cost_snapshot() -> AnalyticsSnapshot {
 
 fn make_pr(pr_title: &str, url: &str, has_cost: bool) -> PrResult {
     PrResult {
-        pr_title: pr_title.to_string(),
-        url: url.to_string(),
-        findings_count: 3,
-        golden_count: 2,
+        meta: PrMeta {
+            title: pr_title.to_string(),
+            url: url.to_string(),
+            number: todo!(),
+        },
+        // findings_count: 3,
+        // golden_count: 2,
         metrics: Metrics {
             true_positives: 2,
             false_positives: 1,
             false_negatives: 0,
             duration_secs: 12.5,
         },
-        verdicts: vec![JudgeVerdict {
-            reasoning: "Match found".into(),
-            match_: true,
-            confidence: 0.95,
-        }],
-        findings: serde_json::Value::Null,
-        agent_responses: vec![],
-        cost: if has_cost {
-            Some(make_cost_snapshot())
-        } else {
-            None
-        },
+        findings_with_verdicts: vec![
+            JudgedFinding {
+                finding: todo!(),
+                verdict: JudgeVerdict {
+                    reasoning: "Match found".into(),
+                    match_: true,
+                    confidence: 0.95,
+                },
+            },
+            JudgedFinding {
+                finding: todo!(),
+                verdict: JudgeVerdict {
+                    reasoning: "No match".into(),
+                    match_: false,
+                    confidence: 0.1,
+                },
+            },
+        ],
+        golden_comments: vec![
+            GoldenComment {
+                comment: "This is a golden comment".into(),
+                severity: crb_types::severity::Severity::Info,
+            },
+            GoldenComment {
+                comment: "This is a medium severity".into(),
+                severity: crb_types::severity::Severity::Medium,
+            },
+        ],
+        repository: None,
     }
 }
 
@@ -117,7 +142,10 @@ fn test_write_report_output_dir_created() {
 
     let results = vec![make_pr("Deep Path", "https://github.com/a/b/pull/3", true)];
     let result = write_report(&results, &sub_path);
-    assert!(result.is_ok(), "write_report should create nested directory");
+    assert!(
+        result.is_ok(),
+        "write_report should create nested directory"
+    );
 
     assert!(sub_path.exists(), "sub/output directory should exist");
     let file_path = sub_path.join("Deep_Path.json");
@@ -133,7 +161,10 @@ fn test_write_report_empty_slice() {
     let results: Vec<PrResult> = Vec::new();
 
     let result = write_report(&results, dir.path());
-    assert!(result.is_ok(), "write_report with empty slice should succeed");
+    assert!(
+        result.is_ok(),
+        "write_report with empty slice should succeed"
+    );
 
     // Verify no files were created
     let count = fs::read_dir(dir.path())

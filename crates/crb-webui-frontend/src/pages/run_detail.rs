@@ -1,9 +1,9 @@
 use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
-use crb_types::benchmark::MetricsProvider;
+use crb_types::benchmark::metrics::MetricsProvider;
 use crb_webui_shared::{
     route,
-    runs::{PrResultRow, RunDetail},
+    runs::{PrResultRow, RunDetail, RunStatus},
 };
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -147,25 +147,13 @@ pub fn RunDetailPage() -> impl IntoView {
 
                         <div class="content-grid content-grid--metrics">
                             {move || {
-                                if let Some(ref agg) = detail_clone.aggregate {
-                                    view! {
-                                        <MetricsCard value={format!("{:.3}", agg.f1())} label="F1 Score" value_style="color: var(--accent-blue, #58a6ff);"/>
-                                        <MetricsCard value={format!("{:.3}", agg.precision())} label="Precision" value_style="color: var(--accent-green, #3fb950);"/>
-                                        <MetricsCard value={format!("{:.3}", agg.recall())} label="Recall" value_style="color: var(--accent-orange, #f0883e);"/>
-                                        <MetricsCard value={detail_clone.meta.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into())} label="Total Cost" />
-                                        <MetricsCard value={format!("{:.0}s", agg.duration_secs)} label="Duration" />
-                                    }.into_any()
-                                } else {
-                                    let cost_str = detail_clone.meta.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into());
-                                    let dur_str = detail_clone.meta.duration_secs.map(|d| format!("{:.0}s", d)).unwrap_or_else(|| "-".into());
-                                    view! {
-                                        <MetricsCard value={"-".to_string()} label="F1 Score" />
-                                        <MetricsCard value={"-".to_string()} label="Precision" />
-                                        <MetricsCard value={"-".to_string()} label="Recall" />
-                                        <MetricsCard value={cost_str} label="Total Cost" />
-                                        <MetricsCard value={dur_str} label="Duration" />
-                                    }.into_any()
-                                }
+                              view! {
+                                  <MetricsCard value={format!("{:.3}", detail_clone.aggregate.f1())} label="F1 Score" value_style="color: var(--accent-blue, #58a6ff);"/>
+                                  <MetricsCard value={format!("{:.3}", detail_clone.aggregate.precision())} label="Precision" value_style="color: var(--accent-green, #3fb950);"/>
+                                  <MetricsCard value={format!("{:.3}", detail_clone.aggregate.recall())} label="Recall" value_style="color: var(--accent-orange, #f0883e);"/>
+                                  <MetricsCard value={detail_clone.meta.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into())} label="Total Cost" />
+                                  <MetricsCard value={format!("{:.0}s", detail_clone.aggregate.duration_secs)} label="Duration" />
+                              }.into_any()
                             }}
                         </div>
 
@@ -191,32 +179,32 @@ pub fn RunDetailPage() -> impl IntoView {
                                     {move || {
                                         let results_clone2 = results_clone2.clone();
                                         results_clone2.iter().map(|pr: &PrResultRow| {
-                                        let pr_number = pr.pr_number;
-                                        let pr_title = pr.title.clone();
-                                        let f1 = pr.f1;
-                                        let precision = pr.precision;
-                                        let recall = pr.recall;
-                                        let cost = pr.cost;
+                                        let pr_number = pr.meta.number;
+                                        let pr_title = pr.meta.title.clone();
+                                        let f1 = pr.metrics.f1();
+                                        let precision = pr.metrics.precision();
+                                        let recall = pr.metrics.recall();
+                                        let cost = pr.analytics.total_cost();
                                         let status = pr.status.clone();
                                         let run_id = detail_id.clone();
                                         let has_agents = pr.has_agents;
                                         let pr_key = pr.pr_key.clone();
 
-                                        let pr_badge = match status.as_deref() {
-                                            Some("done") => "badge--success",
-                                            Some("failed") => "badge--danger",
-                                            Some("reviewing") => "badge--warning",
+                                        let pr_badge = match status {
+                                            Some(RunStatus::Completed) => "badge--success",
+                                            Some(RunStatus::Failed) => "badge--danger",
+                                            Some(RunStatus::Running) => "badge--warning",
                                             _ => "badge--neutral",
                                         };
-                                        let status_text = status.unwrap_or_else(|| "pending".into());
+                                        let status_text = status.unwrap().to_string();
                                         view! {
                                             <tr class="table__row">
                                                 <td class="table__td" style="font-weight: var(--weight-semibold, 600);">{format!("#{}", pr_number)}</td>
                                                 <td class="table__td">{pr_title}</td>
-                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into())}</td>
-                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{precision.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into())}</td>
-                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{recall.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into())}</td>
-                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "-".into())}</td>
+                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{format!("{f1:.3}")}</td>
+                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{format!("{precision:.3}")}</td>
+                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{format!("{recall:.3}")}</td>
+                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{format!("${cost:.4}")}</td>
                                                 <td class="table__td">
                                                     <span class=format!("badge {}", pr_badge)>
                                                         <span class="badge__dot"></span>

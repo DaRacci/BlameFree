@@ -1,0 +1,5 @@
+---
+source: crates/crb-types/src/benchmark/metrics.rs
+expression: (m.precision())
+---
+0.6666666666666666

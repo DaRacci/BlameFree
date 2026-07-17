@@ -1,5 +1,0 @@
----
-source: crates/crb-tools/src/error.rs
-expression: err3.to_string()
----
-MCP configuration error: missing server URL

@@ -233,34 +233,31 @@ mod tests {
 
     #[test]
     fn debug_minified_coverage() {
-        let mut diff = Diff::new(
-            include_str!("../tests/fixtures/mixed_real_and_generated.diff").to_string(),
-        );
+        let mut diff =
+            Diff::new(include_str!("../tests/fixtures/mixed_real_and_generated.diff").to_string());
 
         preprocess_diff(&mut diff);
-        println!("RESULT:\n---\n{}---\n", diff.raw);
-        println!(
+        info!("RESULT:\n---\n{}---\n", diff.raw);
+        info!(
             "Contains 'bundle.min.js': {}",
             diff.raw.contains("bundle.min.js")
         );
-        println!("Contains 'coverage': {}", diff.raw.contains("coverage"));
-        println!("Contains 'src/lib.rs': {}", diff.raw.contains("src/lib.rs"));
-        println!("Contains 'filtered': {}", diff.raw.contains("filtered"));
+        info!("Contains 'coverage': {}", diff.raw.contains("coverage"));
+        info!("Contains 'src/lib.rs': {}", diff.raw.contains("src/lib.rs"));
+        info!("Contains 'filtered': {}", diff.raw.contains("filtered"));
 
         // Check what the note says
         if let Some(start) = diff.raw.find('[') {
             if let Some(end) = diff.raw[start..].find(']') {
                 let note = &diff.raw[start..start + end + 1];
-                println!("FILTER NOTE: {:?}", note);
+                info!("FILTER NOTE: {:?}", note);
             }
         }
     }
 
     #[test]
     fn filter_removes_pnpm_lock() {
-        let mut diff = Diff::new(
-            include_str!("../tests/fixtures/pnpm_lock.diff").to_string(),
-        );
+        let mut diff = Diff::new(include_str!("../tests/fixtures/pnpm_lock.diff").to_string());
         preprocess_diff(&mut diff);
         assert!(
             diff.sections.iter().any(|s| s.path == "src/lib.rs"),
@@ -278,9 +275,7 @@ mod tests {
 
     #[test]
     fn filter_removes_node_modules() {
-        let mut diff = Diff::new(
-            include_str!("../tests/fixtures/node_modules.diff").to_string(),
-        );
+        let mut diff = Diff::new(include_str!("../tests/fixtures/node_modules.diff").to_string());
         preprocess_diff(&mut diff);
         assert!(
             diff.sections.iter().any(|s| s.path == "src/main.rs"),
@@ -301,9 +296,8 @@ mod tests {
 
     #[test]
     fn filter_removes_minified_and_coverage() {
-        let mut diff = Diff::new(
-            include_str!("../tests/fixtures/mixed_real_and_generated.diff").to_string(),
-        );
+        let mut diff =
+            Diff::new(include_str!("../tests/fixtures/mixed_real_and_generated.diff").to_string());
         preprocess_diff(&mut diff);
         assert!(
             !diff.sections.iter().any(|s| s.path == "dist/bundle.min.js"),
@@ -338,9 +332,7 @@ mod tests {
 
     #[test]
     fn filter_no_filterable_files_no_note() {
-        let mut diff = Diff::new(
-            include_str!("../tests/fixtures/only_src_lib.diff").to_string(),
-        );
+        let mut diff = Diff::new(include_str!("../tests/fixtures/only_src_lib.diff").to_string());
         preprocess_diff(&mut diff);
         assert!(
             diff.sections.iter().any(|s| s.path == "src/lib.rs"),
@@ -354,9 +346,8 @@ mod tests {
 
     #[test]
     fn filter_multiple_categories_noted() {
-        let mut diff = Diff::new(
-            include_str!("../tests/fixtures/multiple_categories.diff").to_string(),
-        );
+        let mut diff =
+            Diff::new(include_str!("../tests/fixtures/multiple_categories.diff").to_string());
         preprocess_diff(&mut diff);
         assert!(
             diff.notes.iter().any(|n| n.contains("filtered")),

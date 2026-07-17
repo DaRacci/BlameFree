@@ -8,9 +8,9 @@ pub mod adaptive;
 pub mod judge;
 pub mod pipeline;
 
-use crb_reporting::{cost::AnalyticsSnapshot, golden::GoldenComment};
-use crb_shared::finding::Finding;
-use crb_types::benchmark::MetricsProvider;
+use crb_reporting::cost::AnalyticsSnapshot;
+use crb_types::benchmark::{golden::GoldenComment, metrics::MetricsProvider};
+use crb_types::finding::Finding;
 use serde::{Deserialize, Serialize};
 
 /// The role of a reviewer agent.
@@ -107,7 +107,7 @@ impl MetricsProvider for ConsensusReport {
 
 #[cfg(test)]
 mod tests {
-    use crb_shared::severity::Severity;
+    use crb_types::severity::Severity;
 
     use super::*;
 

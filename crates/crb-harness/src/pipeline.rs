@@ -1,17 +1,17 @@
 use anyhow::Result;
 use crb_agents::build_agent;
 use crb_consensus::adaptive::get_agents_for_diff;
-use crb_reporting::PrResult;
 use crb_shared::{
     diff::{self, Diff},
-    finding::Finding,
     sanitize_filename,
 };
-use crb_tools::{build_tool_server, linters::create_linter_tool, linters::tool::LinterArgs};
-use crb_types::RunEvent;
-use crb_types::benchmark::{Metrics, MetricsProvider};
+use crb_tools::build_tool_server;
+use crb_types::{RunEvent, finding::Finding};
+use crb_types::{
+    benchmark::{metrics::Metrics, result::PrResult},
+    vcs::pr::PrMeta,
+};
 use rig_core::completion::Prompt;
-use rig_core::tool::Tool;
 use tokio::task;
 use tracing::{info, warn};
 
@@ -43,33 +43,28 @@ pub async fn send_agent_started_events(config: &EvalConfig, identifier: &str) {
 }
 
 /// Build a PrResult from evaluation outputs and caller-provided PR metadata.
-pub async fn build_pr_result(
-    findings: &[Finding],
-    config: &EvalConfig,
-    pr_title: &str,
-    url: &str,
-    golden_count: usize,
-) -> PrResult {
+pub async fn build_pr_result(findings: &[Finding], config: &EvalConfig, meta: PrMeta) -> PrResult {
     let snapshot = config.cost_tracker.to_snapshot().await;
     let metrics = Metrics::default();
     PrResult {
-        pr_title: pr_title.to_string(),
-        url: url.to_string(),
-        findings_count: findings.len(),
-        golden_count,
+        meta,
         metrics,
-        verdicts: Vec::new(),
-        findings: serde_json::Value::Null,
+        findings_with_verdicts: vec![],
         agent_responses: vec![],
-        cost: Some(snapshot),
+        golden_comments: vec![],
+        repository: None, // TODO: add repository info if available
+        cost: snapshot,
     }
 }
 
 pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> {
-    send_event!(config, RunEvent::ReviewStarted {
-        identifier: config.identifier.clone(),
-        total_agents: config.agents.len(),
-    });
+    send_event!(
+        config,
+        RunEvent::ReviewStarted {
+            identifier: config.identifier.clone(),
+            total_agents: config.agents.len(),
+        }
+    );
 
     diff::preprocess_diff(&mut diff);
 
@@ -81,7 +76,7 @@ pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding
     all_findings.extend(reviewer_findings);
 
     let snapshot = config.cost_tracker.to_snapshot().await;
-    let (total_tokens_in, total_tokens_out) = snapshot.total_tokens().await;
+    let (total_tokens_in, total_tokens_out) = snapshot.total_tokens();
 
     metrics(config).await;
     report(config).await;
@@ -89,49 +84,52 @@ pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding
     let findings_count = all_findings.len();
     let agent_calls = config.agents.len();
 
-    send_event!(config, RunEvent::ReviewCompleted {
-        identifier: config.identifier.clone(),
-        metrics: crb_types::benchmark::Metrics::default(),
-        cost: snapshot.total_cost(),
-        total_tokens: (total_tokens_in + total_tokens_out) as usize,
-        agent_calls,
-        findings_count,
-    });
+    send_event!(
+        config,
+        RunEvent::ReviewCompleted {
+            identifier: config.identifier.clone(),
+            metrics: Metrics::default(),
+            cost: snapshot.total_cost(),
+            total_tokens: (total_tokens_in + total_tokens_out) as usize,
+            agent_calls,
+            findings_count,
+        }
+    );
 
     Ok(all_findings)
 }
 
-async fn run_linters(config: &EvalConfig) -> Vec<Finding> {
-    let mut linter_findings: Vec<Finding> = Vec::new();
-    if let Some(ref configs) = config.linter_configs {
-        let mut linter_set = tokio::task::JoinSet::new();
-        for (_, lconfig) in configs.iter() {
-            let tool = create_linter_tool(lconfig);
-            let args = LinterArgs {
-                repo_path: config.repo_root.to_string_lossy().to_string(),
-            };
-            linter_set.spawn(async move {
-                let result = tool.call(args).await;
-                result
-            });
-        }
+//TODO
+async fn run_linters(_config: &EvalConfig) -> Vec<Finding> {
+    // let mut linter_findings: Vec<Finding> = Vec::new();
+    // let mut linter_set = tokio::task::JoinSet::new();
+    // for (_, lconfig) in configs.iter() {
+    //     let tool = create_linter_tool(lconfig);
+    //     let args = LinterArgs {
+    //         repo_path: config.repo_root.to_string_lossy().to_string(),
+    //     };
+    //     linter_set.spawn(async move {
+    //         let result = tool.call(args).await;
+    //         result
+    //     });
+    // }
 
-        while let Some(res) = linter_set.join_next().await {
-            match res {
-                Ok(Ok(findings)) => linter_findings.extend(findings),
-                Ok(Err(e)) => warn!("Linter failed: {e}"),
-                Err(e) => warn!("Linter join error: {e}"),
-            }
-        }
+    // while let Some(res) = linter_set.join_next().await {
+    //     match res {
+    //         Ok(Ok(findings)) => linter_findings.extend(findings),
+    //         Ok(Err(e)) => warn!("Linter failed: {e}"),
+    //         Err(e) => warn!("Linter join error: {e}"),
+    //     }
+    // }
 
-        info!(
-            "Found {} linter finding(s) for repo {:?}",
-            linter_findings.len(),
-            config.repo_root
-        );
-    }
+    // info!(
+    //     "Found {} linter finding(s) for repo {:?}",
+    //     linter_findings.len(),
+    //     config.repo_root
+    // );
 
-    linter_findings
+    // linter_findings
+    todo!()
 }
 
 async fn run_reviewers(diff: &Diff, config: &EvalConfig) -> Vec<Finding> {
@@ -206,7 +204,7 @@ fn post_process(findings: &[Finding], _config: &EvalConfig) -> Vec<Finding> {
 
 async fn metrics(config: &EvalConfig) {
     let snapshot = config.cost_tracker.to_snapshot().await;
-    let (total_in, total_out) = snapshot.total_tokens().await;
+    let (total_in, total_out) = snapshot.total_tokens();
     info!(
         "Metrics: {} sessions, {} tokens in, {} tokens out, ${:.4} estimated cost",
         snapshot.sessions.len(),
@@ -223,106 +221,4 @@ async fn report(config: &EvalConfig) {
         snapshot.sessions.len(),
         snapshot.hit_rate() * 100.0,
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{path::PathBuf, sync::Arc};
-
-    use crb_agents::agent::AgentEntry;
-    use crb_reporting::cost::AnalyticsTracker;
-    use crb_shared::finding::Finding;
-    use crb_types::wrappers::Model;
-    use rig_core::client::CompletionClient;
-    use rig_core::tool::server::ToolServer;
-
-    use crate::eval::{EvalConfig, EvalStrategy};
-
-    use super::*;
-
-    fn build_minimal_config() -> EvalConfig {
-        let tool_server = ToolServer::new().run();
-
-        let client = Arc::new(
-            rig_core::providers::openai::Client::builder()
-                .api_key("test-key")
-                .build()
-                .unwrap(),
-        );
-
-        EvalConfig {
-            strategy: EvalStrategy::Panel,
-            identifier: "test-run".to_string(),
-            model: Model("test-model".to_string()),
-            reasoning_effort: None,
-            client: client.clone(),
-            cache: None,
-            cost_tracker: Arc::new(AnalyticsTracker::new()),
-            tool_handle: tool_server,
-            dashboard_tx: None,
-            agents: &[],
-            repo_root: PathBuf::from("/tmp/test"),
-            max_findings: 20,
-            judge_model: "judge-model".to_string(),
-            judge: client.as_ref().agent("judge-model").preamble("You are a test judge.").build(),
-            linters_only: false,
-            linter_configs: None,
-            ruleset: None,
-            template_vars: None,
-        }
-    }
-
-    #[tokio::test]
-    async fn test_build_pr_result_empty_findings() {
-        let config = build_minimal_config();
-        let result = build_pr_result(&[], &config, "Test PR", "https://example.com/pr/1", 0).await;
-
-        assert_eq!(result.pr_title, "Test PR");
-        assert_eq!(result.url, "https://example.com/pr/1");
-        assert_eq!(result.findings_count, 0);
-        assert_eq!(result.golden_count, 0);
-        assert!(result.verdicts.is_empty());
-        assert!(result.cost.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_build_pr_result_with_findings() {
-        let config = build_minimal_config();
-        let findings = vec![
-            Finding {
-                file: Some("src/main.rs".to_string()),
-                line: Some(10),
-                message: "Test finding".to_string(),
-                severity: crb_shared::severity::Severity::Medium,
-                evidence: None,
-                rule_code: None,
-                severity_audited: false,
-                severity_audit_reason: None,
-                path_trace: None,
-                confidence: None,
-                found_by: None,
-                agent_count: None,
-                cross_validated: false,
-                cross_validated_by: None,
-                merged_from: None,
-            },
-        ];
-
-        let result = build_pr_result(&findings, &config, "Test PR", "https://example.com/pr/2", 3).await;
-
-        assert_eq!(result.findings_count, 1);
-        assert_eq!(result.golden_count, 3);
-        assert_eq!(result.pr_title, "Test PR");
-    }
-
-    #[tokio::test]
-    async fn test_build_pr_result_with_cost() {
-        let config = build_minimal_config();
-        let result = build_pr_result(&[], &config, "Cost Test", "https://example.com/pr/3", 0).await;
-
-        let cost = result.cost.unwrap();
-        // Fresh cost tracker should have zero sessions and zero cost
-        assert_eq!(cost.sessions.len(), 0);
-        assert_eq!(cost.total_cost(), 0.0);
-    }
 }

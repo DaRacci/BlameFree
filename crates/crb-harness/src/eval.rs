@@ -4,14 +4,13 @@ use crb_agents::agent::AgentEntry;
 use crb_cache::traits::CacheBackend;
 use crb_reporting::cost::AnalyticsTracker;
 use crb_rules::RuleSet;
-use crb_tools::linters::config::LinterConfig;
 use crb_types::{
     RunEvent,
+    capabilities::ReasoningEffort,
+    vcs::{pr::PrMeta, repository::RepositoryMeta},
     wrappers::{Model, WrappedData},
 };
 use rig_core::{agent::Agent, providers::openai, tool::server::ToolServerHandle};
-
-use crate::model_capabilities::ReasoningEffort;
 
 /// Strategy for evaluating a PR review.
 #[derive(Debug, Clone, PartialEq)]
@@ -32,6 +31,8 @@ pub trait EvalIdentifier: Send + Sync {
 pub struct EvalConfig {
     /// Unique identifier for the run.
     pub identifier: String,
+
+    pub context: EvalContext,
 
     /// The strategy to use.
     pub strategy: EvalStrategy,
@@ -54,7 +55,7 @@ pub struct EvalConfig {
     /// A shared tool handle for shared use across agents.
     pub tool_handle: ToolServerHandle,
 
-    /// Optional broadcast channel for sending run events to a dashboard.
+    /// broadcast channel for sending run events to a dashboard.
     pub dashboard_tx: Option<tokio::sync::broadcast::Sender<RunEvent>>,
 
     /// The available agents for the evaluation.
@@ -70,22 +71,22 @@ pub struct EvalConfig {
     pub max_findings: usize,
 
     /// The model to use for the judge.
-    pub judge_model: String,
+    pub judge_model: Model,
 
     /// Judge agent for evaluating findings against goldens.
     pub judge: Agent<openai::responses_api::ResponsesCompletionModel>,
-
-    /// Only run linters, skip LLM agents.
-    pub linters_only: bool,
-
-    /// Linter configurations.
-    pub linter_configs: Option<Arc<HashMap<String, LinterConfig>>>,
 
     /// Ruleset for formatting additional context.
     pub ruleset: Option<Arc<RuleSet>>,
 
     /// Template variables for the agent prompts.
     pub template_vars: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[derive(Clone)]
+pub struct EvalContext {
+    repository: RepositoryMeta,
+    pull_request: Option<PrMeta>,
 }
 
 impl std::fmt::Debug for EvalConfig {
@@ -103,8 +104,6 @@ impl std::fmt::Debug for EvalConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // --- EvalStrategy tests ---
 
     #[test]
     fn test_eval_strategy_partial_eq() {
@@ -125,8 +124,6 @@ mod tests {
         let cloned = original.clone();
         assert_eq!(original, cloned);
     }
-
-    // --- EvalIdentifier tests ---
 
     #[test]
     fn test_eval_identifier_impl() {

@@ -1,0 +1,5 @@
+---
+source: crates/crb-types/src/benchmark/metrics.rs
+expression: m2.recall()
+---
+0.0

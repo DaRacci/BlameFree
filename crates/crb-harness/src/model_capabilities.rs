@@ -4,6 +4,7 @@
 //! Results are cached via [`std::sync::OnceLock`]; Initialised once, then read lock-free by all threads.
 
 use crb_types::wrappers::{Model, WrappedData};
+use rig_core::providers::openai::responses_api::ReasoningEffort;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -22,57 +23,9 @@ pub enum ReasoningConfig {
     /// Anthropic-style thinking: `{"thinking": {"type": "enabled", "budget_tokens": N}}`
     /// Used by Claude models with extended thinking.
     Thinking {
-        /// Token budget for thinking (Anthropic requires this).
-        budget_tokens: u32,
+        /// Token budget for thinking.
+        budget_tokens: u16,
     },
-}
-
-/// The reasoning effort level for OpenAI style reasoning.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReasoningEffort {
-    /// Faster responses, less deep reasoning.
-    Low,
-
-    /// Balanced depth and speed.
-    Medium,
-
-    /// More thorough reasoning.
-    High,
-
-    /// Most thorough, slowest.
-    Max,
-}
-
-impl ReasoningEffort {
-    /// Return all variants as a slice.
-    pub fn variants() -> &'static [Self] {
-        &[Self::Low, Self::Medium, Self::High, Self::Max]
-    }
-}
-
-impl std::fmt::Display for ReasoningEffort {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ReasoningEffort::Low => write!(f, "low"),
-            ReasoningEffort::Medium => write!(f, "medium"),
-            ReasoningEffort::High => write!(f, "high"),
-            ReasoningEffort::Max => write!(f, "max"),
-        }
-    }
-}
-
-impl ReasoningEffort {
-    /// Parse a reasoning effort from a string.
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "low" => Some(Self::Low),
-            "medium" | "med" => Some(Self::Medium),
-            "high" => Some(Self::High),
-            "max" => Some(Self::Max),
-            _ => None,
-        }
-    }
 }
 
 impl ReasoningConfig {
@@ -202,7 +155,6 @@ pub fn warm_model_cache_blocking() {
     set_reasoning_cache(fetch_reasoning_models_blocking(), " (blocking)");
 }
 
-/// Blocking HTTP call — must NOT be called from within a tokio async context.
 fn fetch_reasoning_models_blocking() -> Result<HashSet<String>, String> {
     let url = "https://openrouter.ai/api/v1/models";
     let response = reqwest::blocking::get(url).map_err(|e| format!("HTTP request failed: {e}"))?;
@@ -265,55 +217,34 @@ pub fn get_reasoning_config(model: &Model, effort: ReasoningEffort) -> Option<Re
         return None;
     }
 
-    let model_lower = model.get().to_lowercase();
-    if model_lower.contains("claude") {
+    if model.is_claude() {
         return Some(ReasoningConfig::Thinking {
-            budget_tokens: 2048,
+            budget_tokens: effort as u16,
         });
     }
 
     Some(ReasoningConfig::ReasoningEffort { effort })
 }
 
+/// Build the `additional_params` JSON value for a reasoning model.
+///
+/// If the model supports reasoning and `reasoning_effort` is `Some`,
+/// returns `Some({"reasoning": {"effort": "medium"}})`
+///
+/// If the model does NOT support reasoning, or `reasoning_effort` is `None`,
+/// returns `None`.
+pub fn make_additional_params(
+    model: &Model,
+    reasoning_effort: Option<ReasoningEffort>,
+) -> Option<serde_json::Value> {
+    let effort = reasoning_effort?;
+    let config = get_reasoning_config(model, effort)?;
+    Some(config.to_additional_params_json())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Compile-time check: verify reasoning_effort accepts Option<ReasoningEffort>, not String.
-    /// If the field type regresses back to Option<String>, this won't compile.
-    fn assert_reasoning_effort_type(val: Option<ReasoningEffort>) -> Option<ReasoningEffort> {
-        val
-    }
-
-    #[test]
-    fn test_reasoning_effort_enum_values() {
-        // All variants
-        assert_reasoning_effort_type(Some(ReasoningEffort::Low));
-        assert_reasoning_effort_type(Some(ReasoningEffort::Medium));
-        assert_reasoning_effort_type(Some(ReasoningEffort::High));
-        assert_reasoning_effort_type(Some(ReasoningEffort::Max));
-        assert_reasoning_effort_type(None);
-    }
-
-    #[test]
-    fn test_reasoning_effort_display() {
-        assert_eq!(format!("{}", ReasoningEffort::Low), "low");
-        assert_eq!(format!("{}", ReasoningEffort::Medium), "medium");
-        assert_eq!(format!("{}", ReasoningEffort::High), "high");
-        assert_eq!(format!("{}", ReasoningEffort::Max), "max");
-    }
-
-    #[test]
-    fn test_reasoning_effort_from_str() {
-        assert_eq!(ReasoningEffort::from_str("low"), Some(ReasoningEffort::Low));
-        assert_eq!(ReasoningEffort::from_str("medium"), Some(ReasoningEffort::Medium));
-        assert_eq!(ReasoningEffort::from_str("med"), Some(ReasoningEffort::Medium));
-        assert_eq!(ReasoningEffort::from_str("high"), Some(ReasoningEffort::High));
-        assert_eq!(ReasoningEffort::from_str("max"), Some(ReasoningEffort::Max));
-        assert_eq!(ReasoningEffort::from_str(""), None);
-        assert_eq!(ReasoningEffort::from_str("none"), None);
-        assert_eq!(ReasoningEffort::from_str("NONE"), None);
-    }
 
     #[test]
     fn test_make_additional_params_with_enum() {
@@ -332,41 +263,4 @@ mod tests {
         let params = make_additional_params(&model, None);
         assert!(params.is_none(), "None effort should produce no params");
     }
-
-    #[test]
-    fn test_benchmark_cli_parsing_flow() {
-        // Simulates the benchmark CLI parsing pattern used in main.rs
-        let cli_input = "high".to_string();
-        let parsed = if cli_input.is_empty() || cli_input == "none" {
-            None
-        } else {
-            ReasoningEffort::from_str(&cli_input)
-        };
-        assert_eq!(parsed, Some(ReasoningEffort::High));
-
-        let empty = String::new();
-        let parsed_empty = if empty.is_empty() || empty == "none" {
-            None
-        } else {
-            ReasoningEffort::from_str(&empty)
-        };
-        assert_eq!(parsed_empty, None);
-    }
-
-}
-
-/// Build the `additional_params` JSON value for a reasoning model.
-///
-/// If the model supports reasoning and `reasoning_effort` is `Some`,
-/// returns `Some({"reasoning": {"effort": "medium"}})`
-///
-/// If the model does NOT support reasoning, or `reasoning_effort` is `None`,
-/// returns `None`.
-pub fn make_additional_params(
-    model: &Model,
-    reasoning_effort: Option<ReasoningEffort>,
-) -> Option<serde_json::Value> {
-    let effort = reasoning_effort?;
-    let config = get_reasoning_config(model, effort)?;
-    Some(config.to_additional_params_json())
 }

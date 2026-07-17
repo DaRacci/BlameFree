@@ -1,12 +1,18 @@
 //! Shared event types for code review benchmark runs.
 
+pub mod agent;
 pub mod benchmark;
+pub mod capabilities;
 pub mod cost;
+pub mod finding;
+pub mod review;
+pub mod severity;
+pub mod vcs;
 pub mod wrappers;
 
 use serde::{Deserialize, Serialize};
 
-use crate::benchmark::Metrics;
+use crate::benchmark::metrics::Metrics;
 
 /// Events for the entire lifecycle of a review.
 ///

@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
+use crb_types::finding::Finding;
 use regex::Regex;
 
-use crate::{finding::Finding, jaccard::jaccard_similarity};
+use crate::jaccard::jaccard_similarity;
 
 /// Try to extract a function/method name from finding text.
 #[allow(clippy::unwrap_used)]

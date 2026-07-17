@@ -1,0 +1,10 @@
+---
+source: crates/crb-types/src/benchmark/metrics.rs
+expression: m
+---
+Metrics {
+    true_positives: 0,
+    false_positives: 0,
+    false_negatives: 0,
+    duration_secs: 0.0,
+}

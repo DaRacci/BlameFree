@@ -1,9 +1,0 @@
----
-source: crates/crb-types/src/benchmark.rs
-expression: "(m.true_positives(), m.false_positives(), m.false_negatives())"
----
-(
-    10,
-    5,
-    3,
-)

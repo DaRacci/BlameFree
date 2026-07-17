@@ -17,11 +17,14 @@ use log::{error, warn};
 use lucide_leptos::{ArrowLeft, Check, TriangleAlert};
 use std::collections::HashMap;
 
-/// State for a single agent (role) within a single PR.
+/// State for a single agent within a single PR.
 #[derive(Debug, Clone)]
 struct PerAgentState {
     status: RunStatus,
-    response: String, // accumulated response chunks
+
+    /// Acumulated response chunks from the provider.
+    response: String,
+
     findings: Option<usize>,
 }
 
@@ -35,11 +38,10 @@ impl PerAgentState {
     }
 }
 
-/// State for a single PR, containing the state of all agents (roles) working on it.
+/// State for a single PR, containing the state of all agents working on it.
 #[derive(Debug, Clone)]
 struct PrState {
     agents: HashMap<String, PerAgentState>,
-    completed: bool,
 }
 
 impl PrState {
@@ -48,10 +50,7 @@ impl PrState {
         for role in roles {
             agents.insert(role.clone(), PerAgentState::new());
         }
-        Self {
-            agents,
-            completed: false,
-        }
+        Self { agents }
     }
 
     fn all_completed(&self) -> bool {
@@ -153,7 +152,7 @@ pub fn LivePage() -> impl IntoView {
         let states = pr_states.get();
         order
             .iter()
-            .filter_map(|key| states.get(key).map(|s| (key.clone(), s.completed)))
+            .filter_map(|key| states.get(key).map(|s| (key.clone(), s.all_completed())))
             .collect::<Vec<_>>()
     };
 
@@ -263,7 +262,7 @@ pub fn LivePage() -> impl IntoView {
                                     let sel = selected_pr.get();
                                     order.into_iter().map(|key| {
                                         let is_sel = sel.as_deref() == Some(&key);
-                                        let completed = states.get(&key).map(|s| s.completed).unwrap_or(false);
+                                        let completed = states.get(&key).map(|s| s.all_completed()).unwrap_or(false);
                                         let click_key = key.clone();
                                         let set_sel = set_selected_pr;
                                         view! {
@@ -420,7 +419,7 @@ fn handle_event(
                     let should_switch = pr_states
                         .get()
                         .get(current)
-                        .map(|s| s.completed)
+                        .map(|s| s.all_completed())
                         .unwrap_or(true);
                     if should_switch {
                         *sel = Some(identifier.clone());
@@ -451,21 +450,9 @@ fn handle_event(
                 };
                 agent.findings = Some(findings);
             });
-            // Check if all agents for this PR are done
-            if let Some(pr_key) = role_current_pr.get().get(&role).cloned() {
-                set_states.update(|states| {
-                    if let Some(pr) = states.get_mut(&pr_key) {
-                        if pr.all_completed() {
-                            pr.completed = true;
-                        }
-                    }
-                });
-            }
         }
 
-        RunEvent::ReviewStarted { .. } => {
-            // Review started — progress signal, nothing to do on the dashboard
-        }
+        RunEvent::ReviewStarted { .. } => {}
 
         RunEvent::RunProgress {
             completed_prs,
@@ -498,15 +485,7 @@ fn handle_event(
             }
         }
 
-        RunEvent::ReviewCompleted {
-            identifier: pr_key, ..
-        } => {
-            set_states.update(|states| {
-                if let Some(pr) = states.get_mut(&pr_key) {
-                    pr.completed = true;
-                }
-            });
-        }
+        RunEvent::ReviewCompleted { .. } => {}
 
         RunEvent::RunFinished { .. } => {
             set_stat.update(|s| *s = RunStatus::Completed);

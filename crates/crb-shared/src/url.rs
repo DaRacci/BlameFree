@@ -1,6 +1,7 @@
 //! URL parsing utilities.
 
 use anyhow::{Result, anyhow};
+use crb_types::benchmark::golden::GoldenCommentEntry;
 use regex::Regex;
 
 /// Parse a standard GitHub PR URL into `(owner, repo, pr_number)`.
@@ -21,6 +22,12 @@ pub fn parse_github_url(url: &str) -> Result<(String, String, u32)> {
 /// A type that exposes a PR/issue URL string.
 pub trait HasUrl {
     fn url(&self) -> &str;
+}
+
+impl HasUrl for GoldenCommentEntry {
+    fn url(&self) -> &str {
+        &self.url
+    }
 }
 
 #[cfg(test)]

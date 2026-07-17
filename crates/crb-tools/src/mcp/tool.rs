@@ -1,27 +1,15 @@
-//! MCP (Model Context Protocol) tool integration backed by `rig-mcp`.
-//!
-//! This module replaces the previous hand-rolled JSON-RPC HTTP client with
-//! a config-driven approach using the [`rig_mcp::transport::McpTransport`] trait.
-//!
-//! # Architecture
-//!
-//! - [`HttpTransport`] implements [`rig_mcp::transport::McpTransport`] for HTTP MCP servers.
-//! - [`RigCoreMcpTool`] wraps a transport + discovered tool schema as a [`rig_core::tool::Tool`].
-//! - [`load_mcp_tools()`] reads the TOML config, connects to enabled servers, and returns
-//!   ready-to-use [`RigCoreMcpTool`] instances.
-//! - A SHA256 result cache wraps each tool's output for idempotent calls.
+//! MCP (Model Context Protocol) tool integration.
 
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rig_compose::tool::ToolSchema;
+use rig_compose::{registry::KernelError, tool::ToolSchema};
 use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use tracing::{info, warn};
 
 use crate::{
@@ -75,17 +63,15 @@ impl HttpTransport {
         }
     }
 
-    /// Check a JSON-RPC response body for an error field, returning
-    /// [`KernelError::ToolFailed`] if one is present.
-    fn check_json_rpc_error(body: &Value) -> Result<(), rig_compose::registry::KernelError> {
+    /// Check a JSON-RPC response body for an error field,
+    /// returning [`KernelError::ToolFailed`] if one is present.
+    fn check_json_rpc_error(body: &Value) -> Result<(), KernelError> {
         if let Some(error) = body.get("error") {
             let msg = error
                 .get("message")
                 .and_then(|m| m.as_str())
                 .unwrap_or("unknown MCP error");
-            return Err(rig_compose::registry::KernelError::ToolFailed(
-                msg.to_string(),
-            ));
+            return Err(KernelError::ToolFailed(msg.to_string()));
         }
         Ok(())
     }
@@ -98,7 +84,7 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
     }
 
     /// Discover tools from the MCP server via `list_tools`.
-    async fn list_tools(&self) -> Result<Vec<ToolSchema>, rig_compose::registry::KernelError> {
+    async fn list_tools(&self) -> Result<Vec<ToolSchema>, KernelError> {
         let url = format!("{}/list_tools", self.endpoint);
 
         let payload = serde_json::json!({
@@ -111,19 +97,11 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
             self.client.post(&url).json(&payload).send().await
         })
         .await
-        .map_err(|_| {
-            rig_compose::registry::KernelError::ToolFailed("MCP list_tools timed out".into())
-        })?
-        .map_err(|e| {
-            rig_compose::registry::KernelError::ToolFailed(format!(
-                "MCP list_tools request failed: {e}"
-            ))
-        })?;
+        .map_err(|_| KernelError::ToolFailed("MCP list_tools timed out".into()))?
+        .map_err(|e| KernelError::ToolFailed(format!("MCP list_tools request failed: {e}")))?;
 
         let body: Value = response.json().await.map_err(|e| {
-            rig_compose::registry::KernelError::ToolFailed(format!(
-                "MCP list_tools response parse failed: {e}"
-            ))
+            KernelError::ToolFailed(format!("MCP list_tools response parse failed: {e}"))
         })?;
 
         Self::check_json_rpc_error(&body)?;
@@ -134,17 +112,16 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
             .and_then(|r| r.get("tools"))
             .and_then(|t| t.as_array())
             .ok_or_else(|| {
-                rig_compose::registry::KernelError::ToolFailed(
-                    "MCP list_tools: no 'result.tools' in response".into(),
-                )
+                KernelError::ToolFailed("MCP list_tools: no 'result.tools' in response".into())
             })?;
 
         let schemas: Result<Vec<_>, _> = tools
             .iter()
             .map(|t| {
-                let name = t.get("name").and_then(|n| n.as_str()).ok_or_else(|| {
-                    rig_compose::registry::KernelError::ToolFailed("MCP tool missing 'name'".into())
-                })?;
+                let name = t
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .ok_or_else(|| KernelError::ToolFailed("MCP tool missing 'name'".into()))?;
                 let description = t
                     .get("description")
                     .and_then(|d| d.as_str())
@@ -155,7 +132,7 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
                     .cloned()
                     .unwrap_or(serde_json::json!({}));
 
-                Ok::<_, rig_compose::registry::KernelError>(ToolSchema {
+                Ok::<_, KernelError>(ToolSchema {
                     name: name.to_string(),
                     description,
                     args_schema: input_schema,
@@ -168,11 +145,7 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
     }
 
     /// Call a tool on the MCP server via `call_tool`.
-    async fn call_tool(
-        &self,
-        name: &str,
-        args: Value,
-    ) -> Result<Value, rig_compose::registry::KernelError> {
+    async fn call_tool(&self, name: &str, args: Value) -> Result<Value, KernelError> {
         let url = format!("{}/call_tool", self.endpoint);
 
         let payload = serde_json::json!({
@@ -201,19 +174,11 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
                 .await
         })
         .await
-        .map_err(|_| {
-            rig_compose::registry::KernelError::ToolFailed("MCP call_tool timed out".into())
-        })?
-        .map_err(|e| {
-            rig_compose::registry::KernelError::ToolFailed(format!(
-                "MCP call_tool request failed: {e}"
-            ))
-        })?;
+        .map_err(|_| KernelError::ToolFailed("MCP call_tool timed out".into()))?
+        .map_err(|e| KernelError::ToolFailed(format!("MCP call_tool request failed: {e}")))?;
 
         let body: Value = response.json().await.map_err(|e| {
-            rig_compose::registry::KernelError::ToolFailed(format!(
-                "MCP call_tool response parse failed: {e}"
-            ))
+            KernelError::ToolFailed(format!("MCP call_tool response parse failed: {e}"))
         })?;
 
         Self::check_json_rpc_error(&body)?;
@@ -228,8 +193,6 @@ impl rig_mcp::transport::McpTransport for HttpTransport {
 /// A [`rig_core::tool::Tool`] wrapper around an MCP transport + tool schema.
 ///
 /// Each instance wraps a single discovered tool from a remote MCP server.
-/// The call is delegated to the underlying transport, and results are cached
-/// by SHA256 of (tool_name, args_json) for the lifetime of the tool.
 pub struct RigCoreMcpTool {
     /// Full display name for this tool (e.g. "context7_web_search").
     tool_name: String,
@@ -237,8 +200,6 @@ pub struct RigCoreMcpTool {
     schema: ToolSchema,
     /// Transport to the MCP server.
     transport: Arc<dyn rig_mcp::transport::McpTransport>,
-    /// Scratch buffer keyed by SHA256 hex of (tool_name + ":" + args_json).
-    cache: std::sync::Mutex<std::collections::HashMap<String, String>>,
 }
 
 impl RigCoreMcpTool {
@@ -253,27 +214,7 @@ impl RigCoreMcpTool {
             tool_name,
             schema,
             transport,
-            cache: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
-    }
-
-    /// SHA256 hash for caching (tool_name + ":" + args_json).
-    fn cache_key(tool_name: &str, args: &str) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(tool_name.as_bytes());
-        hasher.update(b":");
-        hasher.update(args.as_bytes());
-        format!("{:x}", hasher.finalize())
-    }
-
-    /// Number of cached results.
-    pub fn cache_size(&self) -> usize {
-        self.cache.lock().map_or(0, |guard| guard.len())
-    }
-
-    /// The display name of this tool (server_toolname).
-    pub fn tool_name(&self) -> &str {
-        &self.tool_name
     }
 }
 
@@ -293,23 +234,6 @@ impl Tool for RigCoreMcpTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let key = Self::cache_key(&self.tool_name, &args.arguments);
-
-        {
-            let cache = self
-                .cache
-                .lock()
-                .map_err(|e| McpError::ToolError(format!("cache lock poisoned: {e}")))?;
-            if let Some(cached) = cache.get(&key) {
-                info!(
-                    "MCP cache hit for tool '{}' (key={})",
-                    self.tool_name,
-                    &key[..12]
-                );
-                return Ok(cached.clone());
-            }
-        }
-
         let parsed_args: Value = serde_json::from_str(&args.arguments).map_err(|e| {
             McpError::ToolError(format!(
                 "invalid JSON arguments for '{}': {e}",
@@ -326,14 +250,6 @@ impl Tool for RigCoreMcpTool {
             })?;
 
         let result_str = result.to_string();
-
-        {
-            let mut cache = self
-                .cache
-                .lock()
-                .map_err(|e| McpError::ToolError(format!("cache lock poisoned: {e}")))?;
-            cache.insert(key, result_str.clone());
-        }
 
         Ok(result_str)
     }
@@ -446,27 +362,6 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_key_deterministic() {
-        let key1 = RigCoreMcpTool::cache_key("test_tool", r#"{"a":1}"#);
-        let key2 = RigCoreMcpTool::cache_key("test_tool", r#"{"a":1}"#);
-        assert_eq!(key1, key2);
-    }
-
-    #[test]
-    fn test_cache_key_different_args() {
-        let key1 = RigCoreMcpTool::cache_key("tool", r#"{"a":1}"#);
-        let key2 = RigCoreMcpTool::cache_key("tool", r#"{"a":2}"#);
-        assert_ne!(key1, key2);
-    }
-
-    #[test]
-    fn test_cache_key_different_tools() {
-        let key1 = RigCoreMcpTool::cache_key("tool_a", r#"{"a":1}"#);
-        let key2 = RigCoreMcpTool::cache_key("tool_b", r#"{"a":1}"#);
-        assert_ne!(key1, key2);
-    }
-
-    #[test]
     fn test_mcp_args_serde() {
         let json = r#"{"arguments": "{\"query\": \"hello\"}"}"#;
         let args: McpArgs = serde_json::from_str(json).unwrap();
@@ -496,13 +391,6 @@ mod tests {
         assert!(!has_enabled_servers(Path::new(
             "/tmp/nonexistent_mcp_file.toml"
         )));
-    }
-
-    #[test]
-    fn test_cache_key_format() {
-        let key = RigCoreMcpTool::cache_key("test", "{}");
-        insta::assert_debug_snapshot!(key.len());
-        insta::assert_debug_snapshot!(key.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]

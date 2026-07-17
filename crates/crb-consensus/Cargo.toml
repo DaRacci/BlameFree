@@ -10,19 +10,14 @@ exp14_submit_finding = ["crb-agents/exp14_submit_finding"]
 exp16_adaptive_agents = []
 
 [dependencies]
-anyhow = { workspace = true }
 crb-agents = { path = "../crb-agents" }
-crb-tools = { path = "../crb-tools" }
 crb-types = { path = "../crb-types" }
 crb-reporting = { path = "../crb-reporting" }
 crb-cache = { path = "../crb-cache" }
 crb-shared = { path = "../crb-shared" }
-futures = { workspace = true }
-regex = { workspace = true }
 rig-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

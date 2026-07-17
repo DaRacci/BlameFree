@@ -1,5 +1,8 @@
-use crb_types::benchmark::{JudgeVerdict, Metrics};
+use crb_types::benchmark::metrics::Metrics;
+use crb_types::benchmark::{judge::JudgeVerdict, result::PrResult};
 use crb_types::cost::AnalyticsSnapshot;
+use crb_types::vcs::pr::PrMeta;
+use crb_types::wrappers::Model;
 use serde::{Deserialize, Serialize};
 use strum::{Display, IntoStaticStr};
 
@@ -24,6 +27,7 @@ pub struct RunMeta {
 
     /// Total tokens consumed.
     #[serde(default)]
+    #[deprecated = "Use [`crb_types::cost::AnalyticsSnapshot`]"]
     pub total_tokens: usize,
 
     /// Duration in seconds.
@@ -32,7 +36,7 @@ pub struct RunMeta {
 
     /// Model used for evaluation.
     #[serde(default)]
-    pub model: Option<String>,
+    pub model: Option<Model>,
 
     /// The state of the run.
     pub status: RunStatus,
@@ -44,19 +48,22 @@ pub struct RunSummary {
     /// Shared run metadata
     pub meta: RunMeta,
 
+    /// Aggregate metrics across all PRs.
+    pub metrics: Metrics,
+
     /// Average F1 score, if computed.
     #[serde(default)]
-    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
+    #[deprecated = "Use [`crb_types::benchmark::metrics::Metrics`]"]
     pub avg_f1: Option<f64>,
 
     /// Average precision, if computed.
     #[serde(default)]
-    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
+    #[deprecated = "Use [`crb_types::benchmark::metrics::Metrics`]"]
     pub avg_precision: Option<f64>,
 
     /// Average recall, if computed.
     #[serde(default)]
-    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
+    #[deprecated = "Use [`crb_types::benchmark::metrics::Metrics`]"]
     pub avg_recall: Option<f64>,
 
     // TODO: Convert to time type
@@ -88,7 +95,7 @@ pub struct RunDetail {
 
     /// Aggregate metrics across all PRs.
     #[serde(default)]
-    pub aggregate: Option<Metrics>,
+    pub aggregate: Metrics,
 
     /// Run configuration.
     #[serde(default)]
@@ -98,37 +105,47 @@ pub struct RunDetail {
 /// A single PR result in the API response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrResultRow {
+    pub meta: PrMeta,
+
     /// PR number.
+    #[deprecated = "Use [`crb_types::vcs::pr::PrMeta`]"]
     pub pr_number: u32,
 
     /// PR key (e.g. "owner/repo/pull/N").
+    #[deprecated]
     pub pr_key: String,
 
     /// PR title.
+    #[deprecated = "Use [`crb_types::vcs::pr::PrMeta`]"]
     pub title: String,
 
     /// F1 score, if computed.
     #[serde(default)]
-    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
+    #[deprecated = "Use [`crb_types::benchmark::metrics::Metrics`]"]
     pub f1: Option<f64>,
 
     /// Precision score, if computed.
     #[serde(default)]
-    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
+    #[deprecated = "Use [`crb_types::benchmark::metrics::Metrics`]"]
     pub precision: Option<f64>,
 
     /// Recall score, if computed.
     #[serde(default)]
-    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
+    #[deprecated = "Use [`crb_types::benchmark::metrics::Metrics`]"]
     pub recall: Option<f64>,
+
+    pub metrics: Metrics,
+
+    pub analytics: AnalyticsSnapshot,
 
     /// Cost in USD.
     #[serde(default)]
+    #[deprecated = "Use [`crb_types::cost::AnalyticsSnapshot`]"]
     pub cost: Option<f64>,
 
-    /// Status string.
+    /// Status.
     #[serde(default)]
-    pub status: Option<String>,
+    pub status: Option<RunStatus>,
 
     /// Whether this PR has agent data available.
     #[serde(default)]
@@ -153,7 +170,7 @@ pub struct RunConfig {
     pub dataset: String,
 
     /// Reviewer roles.
-    pub roles: Vec<String>,
+    pub roles: Vec<RoleInfo>,
 }
 
 /// Response from GET /api/runs/:id/logs
@@ -162,10 +179,6 @@ pub struct LogsListResponse {
     /// Run ID for this log response.
     pub run_id: String,
 
-    /// Whether cache data is available for this run.
-    #[deprecated = "Data is now always available"]
-    pub cache_available: bool,
-
     /// Per-PR log entries.
     pub prs: Vec<PrLogsEntry>,
 }
@@ -173,11 +186,8 @@ pub struct LogsListResponse {
 /// A single PR's available log entries
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrLogsEntry {
-    /// PR key (e.g. "owner/repo/pull/N").
-    pub pr_key: String,
-
-    /// PR title.
-    pub pr_title: String,
+    /// PR Details.
+    pub meta: PrMeta,
 
     /// Agent roles available for this PR.
     pub agents: Vec<RoleInfo>,
@@ -188,12 +198,6 @@ pub struct PrLogsEntry {
 pub struct AgentLogResponse {
     /// Run ID.
     pub run_id: String,
-
-    /// PR key.
-    pub pr_key: String,
-
-    /// Agent role abbreviation.
-    pub role: String,
 
     /// The prompt sent to the agent, if available.
     pub prompt: Option<String>,
@@ -276,16 +280,8 @@ pub struct PrResultPayload {
 /// Detailed per-PR response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrDetailResponse {
-    /// Run ID.
-    pub run_id: String,
-
     /// Shared payload fields.
-    #[serde(flatten)]
-    pub payload: PrResultPayload,
-
-    /// Raw findings data.
-    #[serde(default)]
-    pub findings: serde_json::Value,
+    pub payload: PrResult,
 
     /// Raw agent response texts.
     #[serde(default)]

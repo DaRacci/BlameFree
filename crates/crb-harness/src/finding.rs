@@ -1,8 +1,9 @@
+use crb_types::finding::Finding;
 use std::collections::HashSet;
 use tracing::info;
 
 use crb_auditor::apply_severity_auditor;
-use crb_shared::{deduplicate::semantic_dedup, finding::Finding};
+use crb_shared::deduplicate::semantic_dedup;
 
 const MAX_FINDINGS: usize = 20;
 
@@ -59,7 +60,7 @@ mod tests {
             file: file.map(String::from),
             line,
             message: msg.to_string(),
-            severity: crb_shared::severity::Severity::Medium,
+            severity: crb_types::severity::Severity::Medium,
             evidence: None,
             rule_code: None,
             severity_audited: false,

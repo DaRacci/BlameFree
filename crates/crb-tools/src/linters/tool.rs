@@ -1,6 +1,6 @@
 use std::{io, time::Duration};
 
-use crb_shared::finding::Finding;
+use crb_types::finding::Finding;
 use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;

@@ -1,15 +1,19 @@
+use std::sync::Arc;
+
 use crate::AppConfig;
 use crate::components::role_selector::RoleSelector;
 use crate::{NewRunRequest, NewRunResponse};
 use crb_shared::{DEFAULT_MODEL, DEFAULT_MODEL_PRO};
-use crb_webui_shared::config::{DatasetInfo, PrEntry, ReasoningEffortsResponse};
+use crb_types::capabilities::ReasoningEffort;
+use crb_webui_shared::config::{DatasetInfo, PrEntry};
 use crb_webui_shared::route;
-use crb_webui_shared::routes::{API_CONFIG, API_CONFIG_DATASETS, API_RUNS};
+use crb_webui_shared::routes::{API_CONFIG, API_CONFIG_DATASETS, API_CONFIG_REASONING, API_RUNS};
 use gloo_net::http::Request;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 
+#[derive(Clone, Copy)]
 struct NewRunSignals {
     config: ReadSignal<Option<AppConfig>>,
     set_config: WriteSignal<Option<AppConfig>>,
@@ -32,55 +36,44 @@ struct NewRunSignals {
     set_selected_prs: WriteSignal<Vec<String>>,
     prs_loading: ReadSignal<bool>,
     set_prs_loading: WriteSignal<bool>,
-    concurrency: ReadSignal<String>,
-    set_concurrency: WriteSignal<String>,
     max_findings: ReadSignal<String>,
     set_max_findings: WriteSignal<String>,
-    use_cache: ReadSignal<bool>,
-    set_use_cache: WriteSignal<bool>,
-    reasoning_effort: ReadSignal<Option<String>>,
-    set_reasoning_effort: WriteSignal<Option<String>>,
+    reasoning_effort: ReadSignal<Option<ReasoningEffort>>,
+    set_reasoning_effort: WriteSignal<Option<ReasoningEffort>>,
     submitting: ReadSignal<bool>,
     set_submitting: WriteSignal<bool>,
     submit_error: ReadSignal<Option<String>>,
     set_submit_error: WriteSignal<Option<String>>,
     set_submit_result: WriteSignal<Option<String>>,
-    effort_levels: ReadSignal<Vec<String>>,
-    set_effort_levels: WriteSignal<Vec<String>>,
+    effort_levels: ReadSignal<Vec<ReasoningEffort>>,
+    set_effort_levels: WriteSignal<Vec<ReasoningEffort>>,
     effort_loading: ReadSignal<bool>,
     set_effort_loading: WriteSignal<bool>,
     roles: ReadSignal<Vec<String>>,
     judge_model: ReadSignal<String>,
     set_judge_model: WriteSignal<String>,
-    cache_dir: ReadSignal<String>,
-    set_cache_dir: WriteSignal<String>,
-    skip_consensus: ReadSignal<bool>,
-    set_skip_consensus: WriteSignal<bool>,
-    linters_only: ReadSignal<bool>,
-    set_linters_only: WriteSignal<bool>,
 }
 
 fn create_form_signals() -> NewRunSignals {
-    let (config, set_config) = signal::<Option<AppConfig>>(None);
+    let (config, set_config) = signal(None);
     let (config_loading, set_config_loading) = signal(true);
-    let (config_error, set_config_error) = signal::<Option<String>>(None);
-    let (datasets, set_datasets) = signal::<Vec<DatasetInfo>>(Vec::new());
+    let (config_error, set_config_error) = signal(None);
+    let (datasets, set_datasets) = signal(Vec::new());
     let (datasets_loading, set_datasets_loading) = signal(true);
     let (model, set_model) = signal(String::new());
     let (dataset, set_dataset) = signal(String::new());
-    let (roles, set_roles) = signal::<Vec<String>>(Vec::new());
-    let (available_prs, set_available_prs) = signal::<Vec<PrEntry>>(Vec::new());
-    let (selected_prs, set_selected_prs) = signal::<Vec<String>>(Vec::new());
+    let (roles, set_roles) = signal(Vec::new());
+    let (available_prs, set_available_prs) = signal(Vec::new());
+    let (selected_prs, set_selected_prs) = signal(Vec::new());
     let (prs_loading, set_prs_loading) = signal(false);
     let (concurrency, set_concurrency) = signal(String::new());
     let (max_findings, set_max_findings) = signal(String::new());
     let (use_cache, set_use_cache) = signal(true);
-    let (reasoning_effort, set_reasoning_effort) =
-        signal::<Option<String>>(Some("medium".to_string()));
+    let (reasoning_effort, set_reasoning_effort) = signal(Some(ReasoningEffort::Medium));
     let (submitting, set_submitting) = signal(false);
-    let (submit_error, set_submit_error) = signal::<Option<String>>(None);
-    let (_submit_result, set_submit_result) = signal::<Option<String>>(None);
-    let (effort_levels, set_effort_levels) = signal::<Vec<String>>(Vec::new());
+    let (submit_error, set_submit_error) = signal(None);
+    let (_submit_result, set_submit_result) = signal(None);
+    let (effort_levels, set_effort_levels) = signal(Vec::new());
     let (effort_loading, set_effort_loading) = signal(true);
     let (judge_model, set_judge_model) = signal(String::new());
     let (cache_dir, set_cache_dir) = signal(String::new());
@@ -109,12 +102,8 @@ fn create_form_signals() -> NewRunSignals {
         set_selected_prs,
         prs_loading,
         set_prs_loading,
-        concurrency,
-        set_concurrency,
         max_findings,
         set_max_findings,
-        use_cache,
-        set_use_cache,
         reasoning_effort,
         set_reasoning_effort,
         submitting,
@@ -129,76 +118,58 @@ fn create_form_signals() -> NewRunSignals {
         roles,
         judge_model,
         set_judge_model,
-        cache_dir,
-        set_cache_dir,
-        skip_consensus,
-        set_skip_consensus,
-        linters_only,
-        set_linters_only,
     }
 }
 
-fn create_fetch_prs_handler(
-    set_available_prs: WriteSignal<Vec<PrEntry>>,
-    set_selected_prs: WriteSignal<Vec<String>>,
-    set_prs_loading: WriteSignal<bool>,
-) -> impl Fn(String) {
+fn create_fetch_prs_handler(signals: NewRunSignals) -> impl Fn(String) {
     move |ds_id: String| {
         if ds_id.is_empty() {
-            set_available_prs.set(Vec::new());
-            set_selected_prs.set(Vec::new());
+            signals.set_available_prs.set(Vec::new());
+            signals.set_selected_prs.set(Vec::new());
             return;
         }
         set_prs_loading.set(true);
-        let set_available = set_available_prs;
-        let set_selected = set_selected_prs;
-        let set_loading = set_prs_loading;
         spawn_local(async move {
             match crate::fetch_json::<Vec<PrEntry>>(&route!(API_DATASETS_ID_PRS, ds_id)).await {
                 Ok(prs) => {
                     let all_keys: Vec<String> = prs.iter().map(|p| p.key.clone()).collect();
-                    set_available.set(prs);
-                    set_selected.set(all_keys);
+                    signals.set_available.set(prs);
+                    signals.set_selected.set(all_keys);
                 }
                 Err(_) => {
-                    set_available.set(Vec::new());
-                    set_selected.set(Vec::new());
+                    signals.set_available.set(Vec::new());
+                    signals.set_selected.set(Vec::new());
                 }
             }
-            set_loading.set(false);
+            signals.set_loading.set(false);
         });
     }
 }
 
 fn create_dataset_change_handler(
-    set_dataset: WriteSignal<String>,
-    set_model: WriteSignal<String>,
-    datasets: ReadSignal<Vec<DatasetInfo>>,
-    set_concurrency: WriteSignal<String>,
-    set_max_findings: WriteSignal<String>,
-    set_roles: WriteSignal<Vec<String>>,
-    fetch_prs: std::sync::Arc<dyn Fn(String) + 'static>,
+    signals: NewRunSignals,
+    fetch_prs: Arc<dyn Fn(String) + 'static>,
 ) -> impl Fn(leptos::ev::Event) {
     move |ev: leptos::ev::Event| {
         let new_ds = event_target_value(&ev);
-        set_dataset.set(new_ds.clone());
+        signals.set_dataset.set(new_ds.clone());
 
-        let ds_list = datasets.get();
+        let ds_list = signals.datasets.get();
         if let Some(ds_info) = ds_list.iter().find(|d| d.id == new_ds) {
             if let Some(ref cfg) = ds_info.config {
                 let defaults = &cfg.defaults;
                 if let Some(ref m) = defaults.model {
-                    set_model.set(m.clone());
+                    signals.set_model.set(m.clone());
                 }
                 if let Some(c) = defaults.concurrency {
-                    set_concurrency.set(c.to_string());
+                    signals.set_concurrency.set(c.to_string());
                 }
                 if let Some(mf) = defaults.max_findings {
-                    set_max_findings.set(mf.to_string());
+                    signals.set_max_findings.set(mf.to_string());
                 }
                 if let Some(ref r) = defaults.roles {
                     let roles_vec: Vec<String> = r.clone();
-                    set_roles.set(roles_vec);
+                    signals.set_roles.set(roles_vec);
                 }
             }
         }
@@ -207,58 +178,27 @@ fn create_dataset_change_handler(
     }
 }
 
-fn init_config_spawn(
-    set_config: WriteSignal<Option<AppConfig>>,
-    set_config_loading: WriteSignal<bool>,
-    set_config_error: WriteSignal<Option<String>>,
-    set_model: WriteSignal<String>,
-    dataset: ReadSignal<String>,
-    set_dataset: WriteSignal<String>,
-    set_datasets: WriteSignal<Vec<DatasetInfo>>,
-    set_datasets_loading: WriteSignal<bool>,
-    set_concurrency: WriteSignal<String>,
-    set_max_findings: WriteSignal<String>,
-    set_roles: WriteSignal<Vec<String>>,
-    set_effort_levels: WriteSignal<Vec<String>>,
-    set_effort_loading: WriteSignal<bool>,
-    reasoning_effort: ReadSignal<Option<String>>,
-    set_reasoning_effort: WriteSignal<Option<String>>,
-    fetch_prs: std::sync::Arc<dyn Fn(String) + 'static>,
-) {
+fn init_config_spawn(signals: NewRunSignals, fetch_prs: Arc<dyn Fn(String) + 'static>) {
     spawn_local({
-        let set_config = set_config;
-        let set_loading = set_config_loading;
-        let set_error = set_config_error;
-        let set_model = set_model;
-        let dataset = dataset;
-        let set_dataset = set_dataset;
-        let set_datasets = set_datasets;
-        let set_datasets_loading = set_datasets_loading;
-        let set_concurrency = set_concurrency;
-        let set_max_findings = set_max_findings;
-        let set_roles = set_roles;
-        let set_effort_levels = set_effort_levels;
-        let set_effort_loading = set_effort_loading;
-        let reasoning_effort = reasoning_effort;
-        let set_reasoning_effort = set_reasoning_effort;
+        let signals = signals;
         let fetch_prs = fetch_prs;
         async move {
-            set_loading.set(true);
-            set_datasets_loading.set(true);
+            signals.set_loading.set(true);
+            signals.set_datasets_loading.set(true);
             match async move { crate::fetch_json::<AppConfig>(API_CONFIG).await }.await {
                 Ok(cfg) => {
                     if let Some(m) = cfg.models.first() {
-                        set_model.set(m.clone());
+                        signals.set_model.set(m.clone());
                     }
                     if let Some(d) = cfg.datasets.first() {
-                        set_dataset.set(d.clone());
+                        signals.set_dataset.set(d.clone());
                     }
-                    set_config.set(Some(cfg));
-                    set_loading.set(false);
+                    signals.set_config.set(Some(cfg));
+                    signals.set_loading.set(false);
                 }
                 Err(e) => {
-                    set_error.set(Some(e));
-                    set_loading.set(false);
+                    signals.set_error.set(Some(e));
+                    signals.set_loading.set(false);
                 }
             }
 
@@ -271,26 +211,26 @@ fn init_config_spawn(
                         if first.id == current_ds {
                             if let Some(ref cfg) = first.config {
                                 if let Some(ref m) = cfg.defaults.model {
-                                    set_model.set(m.clone());
+                                    signals.set_model.set(m.clone());
                                 }
                                 if let Some(c) = cfg.defaults.concurrency {
-                                    set_concurrency.set(c.to_string());
+                                    signals.set_concurrency.set(c.to_string());
                                 }
                                 if let Some(mf) = cfg.defaults.max_findings {
-                                    set_max_findings.set(mf.to_string());
+                                    signals.set_max_findings.set(mf.to_string());
                                 }
                                 if let Some(ref r) = cfg.defaults.roles {
                                     let roles_vec: Vec<String> = r.clone();
-                                    set_roles.set(roles_vec);
+                                    signals.set_roles.set(roles_vec);
                                 }
                             }
                         }
                     }
-                    set_datasets.set(ds);
-                    set_datasets_loading.set(false);
+                    signals.set_datasets.set(ds);
+                    signals.set_datasets_loading.set(false);
                 }
                 Err(_) => {
-                    set_datasets_loading.set(false);
+                    signals.set_datasets_loading.set(false);
                 }
             }
 
@@ -299,69 +239,40 @@ fn init_config_spawn(
                 fetch_prs(initial_ds);
             }
 
-            match async move {
-                crate::fetch_json::<ReasoningEffortsResponse>("/api/config/reasoning-efforts").await
-            }
-            .await
+            if let Ok(resp) =
+                async move { crate::fetch_json::<Vec<ReasoningEffort>>(API_CONFIG_REASONING).await }
+                    .await
             {
-                Ok(resp) => {
-                    let has_medium = resp.levels.contains(&"medium".to_string());
-                    let current = reasoning_effort.get();
-                    if current == Some("medium".to_string()) && !has_medium {
-                        let first = resp.levels.first().cloned();
-                        if let Some(l) = first {
-                            set_reasoning_effort.set(Some(l));
-                        }
-                    }
-                    set_effort_levels.set(resp.levels);
-                }
-                Err(_) => {
-                    set_effort_levels.set(vec![
-                        "low".into(),
-                        "medium".into(),
-                        "high".into(),
-                        "max".into(),
-                    ]);
-                }
+                signals.set_effort_levels.set(resp.levels);
             }
-            set_effort_loading.set(false);
+            signals.set_effort_loading.set(false);
         }
     });
 }
 
 fn create_submit_handler(
-    available_prs: ReadSignal<Vec<PrEntry>>,
-    selected_prs: ReadSignal<Vec<String>>,
-    model: ReadSignal<String>,
-    dataset: ReadSignal<String>,
-    roles: ReadSignal<Vec<String>>,
-    use_cache: ReadSignal<bool>,
-    reasoning_effort: ReadSignal<Option<String>>,
-    judge_model: ReadSignal<String>,
-    max_findings: ReadSignal<String>,
-    cache_dir: ReadSignal<String>,
-    skip_consensus: ReadSignal<bool>,
-    linters_only: ReadSignal<bool>,
-    set_submitting: WriteSignal<bool>,
-    set_submit_error: WriteSignal<Option<String>>,
-    set_submit_result: WriteSignal<Option<String>>,
+    signals: NewRunSignals,
     navigator: impl Fn(&str, leptos_router::NavigateOptions) + Clone + 'static,
 ) -> impl Fn(leptos::ev::SubmitEvent) {
     move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
-        set_submitting.set(true);
-        set_submit_error.set(None);
-        set_submit_result.set(None);
+        signals.set_submitting.set(true);
+        signals.set_submit_error.set(None);
+        signals.set_submit_result.set(None);
 
-        let total_keys = available_prs.get().len();
-        let selected = selected_prs.get();
+        let total_keys = signals.available_prs.get().len();
+        let selected = signals.selected_prs.get();
         let pr_filter = if selected.len() == total_keys || selected.is_empty() {
             None
         } else {
             Some(selected.join(","))
         };
 
-        let max_f = max_findings.get().parse::<usize>().unwrap_or(20);
+        let max_f = signals
+            .max_findings
+            .get()
+            .parse::<usize>()
+            .unwrap_or(FINDINGS);
         let cache = cache_dir.get();
         let cache_dir_val = if cache.is_empty() { None } else { Some(cache) };
 
@@ -370,26 +281,22 @@ fn create_submit_handler(
             dataset: dataset.get(),
             roles: roles.get(),
             pr_filter,
-            use_cache: use_cache.get(),
             reasoning_effort: reasoning_effort.get(),
             judge_model: judge_model.get(),
             max_findings: max_f,
-            cache_dir: cache_dir_val,
-            skip_consensus: skip_consensus.get(),
-            linters_only: linters_only.get(),
         };
 
         let navigator = navigator.clone();
         spawn_local(async move {
             match create_run(req).await {
                 Ok(resp) => {
-                    set_submitting.set(false);
-                    set_submit_result.set(Some(resp.run_id.clone()));
+                    signals.set_submitting.set(false);
+                    signals.set_submit_result.set(Some(resp.run_id.clone()));
                     navigator(&format!("/runs/{}", resp.run_id), Default::default());
                 }
                 Err(e) => {
-                    set_submitting.set(false);
-                    set_submit_error.set(Some(e));
+                    signals.set_submitting.set(false);
+                    signals.set_submit_error.set(Some(e));
                 }
             }
         });
@@ -446,11 +353,7 @@ fn render_reduce_diff_badge() -> impl IntoView {
 }
 
 fn render_config_section(
-    config: ReadSignal<Option<AppConfig>>,
-    datasets: ReadSignal<Vec<DatasetInfo>>,
-    dataset: ReadSignal<String>,
-    model: ReadSignal<String>,
-    set_model: WriteSignal<String>,
+    signals: NewRunSignals,
     on_dataset_change: impl Fn(leptos::ev::Event) + 'static,
 ) -> impl IntoView {
     view! {
@@ -459,18 +362,18 @@ fn render_config_section(
             <div class="form-section__fields">
                 <div class="form-field">
                     <label class="form-field__label" for="model">"Model"</label>
-                    <select id="model" class="input select" prop:value=model.get() on:change=move |ev| {
-                        set_model.set(event_target_value(&ev));
+                    <select id="model" class="input select" prop:value=signals.model.get() on:change=move |ev| {
+                        signals.set_model.set(event_target_value(&ev));
                     }>
                         {move || {
-                            let cfg = config.get();
+                            let cfg = signals.config.get();
                             let models = if let Some(ref c) = cfg {
                                 c.models.clone()
                             } else {
                                 vec![DEFAULT_MODEL.into(), DEFAULT_MODEL_PRO.into()]
                             };
                             models.into_iter().map(|m| {
-                            let is_selected = model.get() == m;
+                            let is_selected = signals.model.get() == m;
                             view! { <option value=m.clone() selected=is_selected>{m.clone()}</option> }
                         }).collect::<Vec<_>>()
                         }}
@@ -480,24 +383,24 @@ fn render_config_section(
 
                 <div class="form-field">
                     <label class="form-field__label" for="dataset">"Dataset"</label>
-                    <select id="dataset" class="input select" prop:value=dataset.get() on:change=on_dataset_change>
+                    <select id="dataset" class="input select" prop:value=signals.dataset.get() on:change=on_dataset_change>
                         {move || {
-                            let ds = datasets.get();
+                            let ds = signals.datasets.get();
                             if !ds.is_empty() {
                                 ds.into_iter().map(|d| {
-                                    let is_selected = dataset.get() == d.id;
+                                    let is_selected = signals.dataset.get() == d.id;
                                     let label = format!("{} ({} PRs)", d.id, d.pr_count);
                                     view! { <option value=d.id.clone() selected=is_selected>{label}</option> }
                                 }).collect::<Vec<_>>()
                             } else {
-                                let cfg = config.get();
+                                let cfg = signals.config.get();
                                 let datasets = if let Some(ref c) = cfg {
                                     c.datasets.clone()
                                 } else {
                                     vec!["golden_comments".into()]
                                 };
                                 datasets.into_iter().map(|d| {
-                                    let is_selected = dataset.get() == d;
+                                    let is_selected = signals.dataset.get() == d;
                                     view! { <option value=d.clone() selected=is_selected>{d.clone()}</option> }
                                 }).collect::<Vec<_>>()
                             }
@@ -633,26 +536,7 @@ fn render_pr_selection_section(
     }
 }
 
-fn render_advanced_section(
-    concurrency: ReadSignal<String>,
-    set_concurrency: WriteSignal<String>,
-    max_findings: ReadSignal<String>,
-    set_max_findings: WriteSignal<String>,
-    use_cache: ReadSignal<bool>,
-    set_use_cache: WriteSignal<bool>,
-    reasoning_effort: ReadSignal<Option<String>>,
-    set_reasoning_effort: WriteSignal<Option<String>>,
-    effort_levels: ReadSignal<Vec<String>>,
-    effort_loading: ReadSignal<bool>,
-    judge_model: ReadSignal<String>,
-    set_judge_model: WriteSignal<String>,
-    cache_dir: ReadSignal<String>,
-    set_cache_dir: WriteSignal<String>,
-    skip_consensus: ReadSignal<bool>,
-    set_skip_consensus: WriteSignal<bool>,
-    linters_only: ReadSignal<bool>,
-    set_linters_only: WriteSignal<bool>,
-) -> impl IntoView {
+fn render_advanced_section(signals: NewRunSignals) -> impl IntoView {
     view! {
         <section class="form-section">
             <h2 class="form-section__title">"Advanced"</h2>
@@ -663,24 +547,11 @@ fn render_advanced_section(
                         id="judge_model"
                         class="input"
                         type="text"
-                        prop:value=judge_model.get()
-                        on:input=move |ev| { set_judge_model.set(event_target_value(&ev)); }
-                        placeholder="deepseek/deepseek-v4-flash"
+                        prop:value=signals.judge_model.get()
+                        on:input=move |ev| { signals.set_judge_model.set(event_target_value(&ev)); }
+                        placeholder="..."
                     />
                     <p class="form-field__helper">"Model used for judge evaluations"</p>
-                </div>
-                <div class="form-field">
-                    <label class="form-field__label" for="concurrency">"Concurrency"</label>
-                    <input
-                        id="concurrency"
-                        class="input"
-                        type="number"
-                        prop:value=concurrency.get()
-                        on:input=move |ev| { set_concurrency.set(event_target_value(&ev)); }
-                        placeholder="4"
-                        min="1"
-                    />
-                    <p class="form-field__helper">"Number of concurrent agent evaluations"</p>
                 </div>
                 <div class="form-field">
                     <label class="form-field__label" for="max_findings">"Max Findings per Agent"</label>
@@ -688,23 +559,12 @@ fn render_advanced_section(
                         id="max_findings"
                         class="input"
                         type="number"
-                        prop:value=max_findings.get()
-                        on:input=move |ev| { set_max_findings.set(event_target_value(&ev)); }
+                        prop:value=signals.max_findings.get()
+                        on:input=move |ev| { signals.set_max_findings.set(event_target_value(&ev)); }
                         placeholder="20"
                         min="1"
                     />
                     <p class="form-field__helper">"Maximum number of findings per agent per PR"</p>
-                </div>
-                <div class="form-field">
-                    <label class="checkbox-label">
-                        <input
-                            type="checkbox"
-                            prop:checked=use_cache.get()
-                            on:click=move |_| set_use_cache.update(|v| *v = !*v)
-                        />
-                        "Use cache (reuse LLM responses from previous runs)"
-                    </label>
-                    <p class="form-field__helper">"Check to cache LLM responses. Uncheck to force fresh API calls."</p>
                 </div>
                 <div class="form-field">
                     <label class="form-field__label" for="reasoning_effort">"Reasoning Effort"</label>
@@ -714,27 +574,27 @@ fn render_advanced_section(
                         on:change=move |ev| {
                             let val = event_target_value(&ev);
                             if val == "none" {
-                                set_reasoning_effort.set(None);
+                                signals.set_reasoning_effort.set(None);
                             } else {
-                                set_reasoning_effort.set(Some(val));
+                                signals.set_reasoning_effort.set(Some(ReasoningEffort::try_from(val.as_str()).unwrap_or(ReasoningEffort::Medium)));
                             }
                         }
                     >
                         {move || {
-                            let current = reasoning_effort.get();
-                            let levels = effort_levels.get();
-                            let loading = effort_loading.get();
+                            let current = signals.reasoning_effort.get();
+                            let levels = signals.effort_levels.get();
+                            let loading = signals.effort_loading.get();
                             let mut options: Vec<AnyView> = Vec::new();
                             options.push(view! { <option value="none">"None (disable reasoning)"</option> }.into_view().into_any());
                             if loading {
                                 options.push(view! { <option value="loading" disabled>"Loading..."</option> }.into_view().into_any());
                             } else {
                                 for level in &levels {
-                                    let val = level.clone();
-                                    let label = level[..1].to_uppercase() + &level[1..];
+                                    let val = level.clone().to_string();
+                                    let label = val[..1].to_uppercase() + &val[1..];
                                     let is_selected = match &current {
-                                        Some(s) if s == &val => true,
-                                        None if val == "medium" => true,
+                                        Some(curr) if curr == level => true,
+                                        None if level == &ReasoningEffort::Medium => true,
                                         _ => false,
                                     };
                                     options.push(view! { <option value=val selected=is_selected>{label}</option> }.into_view().into_any());
@@ -744,40 +604,6 @@ fn render_advanced_section(
                         }}
                     </select>
                     <p class="form-field__helper">"Set reasoning/thinking effort for compatible models (DeepSeek, OpenAI o-series, etc.)"</p>
-                </div>
-                <div class="form-field">
-                    <label class="form-field__label" for="cache_dir">"Cache Directory"</label>
-                    <input
-                        id="cache_dir"
-                        class="input"
-                        type="text"
-                        prop:value=cache_dir.get()
-                        on:input=move |ev| { set_cache_dir.set(event_target_value(&ev)); }
-                        placeholder="cache"
-                    />
-                    <p class="form-field__helper">"Override default cache directory"</p>
-                </div>
-                <div class="form-field">
-                    <label class="checkbox-label">
-                        <input
-                            type="checkbox"
-                            prop:checked=skip_consensus.get()
-                            on:click=move |_| set_skip_consensus.update(|v| *v = !*v)
-                        />
-                        "Skip consensus (single-agent mode)"
-                    </label>
-                    <p class="form-field__helper">"Skip consensus orchestration and use single-agent evaluation"</p>
-                </div>
-                <div class="form-field">
-                    <label class="checkbox-label">
-                        <input
-                            type="checkbox"
-                            prop:checked=linters_only.get()
-                            on:click=move |_| set_linters_only.update(|v| *v = !*v)
-                        />
-                        "Linters only (skip LLM agents)"
-                    </label>
-                    <p class="form-field__helper">"Only run linters without LLM-based review agents"</p>
                 </div>
             </div>
         </section>
@@ -825,60 +651,10 @@ fn render_submit_error(submit_error: ReadSignal<Option<String>>) -> impl IntoVie
 pub fn NewRunPage() -> impl IntoView {
     let s = create_form_signals();
     let navigator = use_navigate();
-
-    let fetch_prs = std::sync::Arc::new(create_fetch_prs_handler(
-        s.set_available_prs,
-        s.set_selected_prs,
-        s.set_prs_loading,
-    ));
-
-    let on_dataset_change = create_dataset_change_handler(
-        s.set_dataset,
-        s.set_model,
-        s.datasets,
-        s.set_concurrency,
-        s.set_max_findings,
-        s.set_roles,
-        fetch_prs.clone(),
-    );
-
-    init_config_spawn(
-        s.set_config,
-        s.set_config_loading,
-        s.set_config_error,
-        s.set_model,
-        s.dataset,
-        s.set_dataset,
-        s.set_datasets,
-        s.set_datasets_loading,
-        s.set_concurrency,
-        s.set_max_findings,
-        s.set_roles,
-        s.set_effort_levels,
-        s.set_effort_loading,
-        s.reasoning_effort,
-        s.set_reasoning_effort,
-        fetch_prs,
-    );
-
-    let on_submit = create_submit_handler(
-        s.available_prs,
-        s.selected_prs,
-        s.model,
-        s.dataset,
-        s.roles,
-        s.use_cache,
-        s.reasoning_effort,
-        s.judge_model,
-        s.max_findings,
-        s.cache_dir,
-        s.skip_consensus,
-        s.linters_only,
-        s.set_submitting,
-        s.set_submit_error,
-        s.set_submit_result,
-        navigator,
-    );
+    let fetch_prs = Arc::new(create_fetch_prs_handler(s));
+    let on_dataset_change = create_dataset_change_handler(s, fetch_prs.clone());
+    let on_submit = create_submit_handler(s, navigator);
+    init_config_spawn(s, fetch_prs);
 
     view! {
         <div class="new-run-page">
@@ -887,24 +663,10 @@ pub fn NewRunPage() -> impl IntoView {
             {render_config_error_view(s.config_error)}
             {render_reduce_diff_badge()}
             <form on:submit=on_submit>
-                {render_config_section(
-                    s.config, s.datasets, s.dataset, s.model, s.set_model, on_dataset_change,
-                )}
+                {render_config_section(s, on_dataset_change)}
                 {render_execution_section(s.config, s.roles, s.set_roles)}
-                {render_pr_selection_section(
-                    s.prs_loading, s.available_prs, s.selected_prs, s.set_selected_prs,
-                )}
-                {render_advanced_section(
-                    s.concurrency, s.set_concurrency,
-                    s.max_findings, s.set_max_findings,
-                    s.use_cache, s.set_use_cache,
-                    s.reasoning_effort, s.set_reasoning_effort,
-                    s.effort_levels, s.effort_loading,
-                    s.judge_model, s.set_judge_model,
-                    s.cache_dir, s.set_cache_dir,
-                    s.skip_consensus, s.set_skip_consensus,
-                    s.linters_only, s.set_linters_only,
-                )}
+                {render_pr_selection_section(s.prs_loading, s.available_prs, s.selected_prs, s.set_selected_prs)}
+                {render_advanced_section(s)}
                 {render_submit_button(s.submitting, s.roles)}
                 {render_submit_error(s.submit_error)}
             </form>

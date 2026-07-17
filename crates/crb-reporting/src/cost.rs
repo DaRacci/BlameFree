@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 
+use mti::prelude::MagicTypeId;
 use rig_core::completion::Usage;
 use tokio::sync::Mutex;
 
@@ -44,9 +45,9 @@ pub struct AnalyticsTracker {
 
 #[derive(Debug, Clone, Default)]
 struct AnalyticsTrackerInner {
-    sessions: HashMap<String, SessionUsage>,
+    sessions: HashMap<MagicTypeId, SessionUsage>,
 
-    cache_usage: HashMap<String, CacheUsage>,
+    cache_usage: HashMap<MagicTypeId, CacheUsage>,
 }
 
 impl AnalyticsTracker {
@@ -57,8 +58,8 @@ impl AnalyticsTracker {
         }
     }
 
-    /// Record a call with API usage data.
-    pub async fn record<T>(&self, key: String, provider: T, cache_hit: bool)
+    /// Record a call
+    pub async fn record<T>(&self, key: MagicTypeId, provider: T, cache_hit: bool)
     where
         T: SessionUsageProvider,
     {
@@ -96,7 +97,7 @@ impl AnalyticsTracker {
         }
     }
 
-    /// Build a [`CostSnapshot`] of the current state.
+    /// Build a [`crb_types::cost::AnalyticsSnapshot`] of the current state.
     pub async fn to_snapshot(&self) -> AnalyticsSnapshot {
         let inner = self.inner.lock().await;
         AnalyticsSnapshot {

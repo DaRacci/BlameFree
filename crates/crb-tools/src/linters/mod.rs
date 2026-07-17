@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crb_shared::finding::Finding;
+use crb_types::finding::Finding;
 
 use crate::{
     error::LinterError,
@@ -18,6 +18,8 @@ pub mod eslint;
 pub mod govet;
 pub mod ruff;
 pub mod tool;
+
+pub const LINTER_CONFIG_FILE: &str = ".riv/linters.toml";
 
 /// Internal helper to create a [`LinterTool`] from a [`LinterConfig`] and a parser function.
 fn create_linter_tool_inner(

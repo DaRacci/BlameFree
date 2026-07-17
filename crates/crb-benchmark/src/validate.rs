@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
 
 use anyhow::{Result, bail};
-use crb_shared::severity::Severity;
+use crb_types::severity::Severity;
 use strum::IntoEnumIterator;
 use tracing::{info, warn};
 
@@ -75,24 +75,24 @@ pub(crate) fn run_validate(dataset_dir: &Path) -> Result<()> {
         }
     }
 
-    println!("Dataset validation report for: {}", dataset_dir.display());
-    println!("  PRs:           {}", entries.len());
-    println!("  Golden comments: {}", total_golden_comments);
-    println!("  Unique repos:   {}", repos.len());
-    println!(
+    info!("Dataset validation report for: {}", dataset_dir.display());
+    info!("  PRs:           {}", entries.len());
+    info!("  Golden comments: {}", total_golden_comments);
+    info!("  Unique repos:   {}", repos.len());
+    info!(
         "  Repos: {}",
         repos.iter().cloned().collect::<Vec<_>>().join(", ")
     );
 
     if errors.is_empty() {
-        println!("  Status: ✅ All checks passed");
+        info!("  Status: ✅ All checks passed");
         info!("Dataset validation passed for {}", dataset_dir.display());
         Ok(())
     } else {
-        println!("  Status: ❌ {} error(s) found", errors.len());
+        info!("  Status: ❌ {} error(s) found", errors.len());
         for err in &errors {
             warn!("Validation error: {}", err);
-            println!("    - {}", err);
+            info!("    - {}", err);
         }
         bail!("Dataset validation failed with {} error(s)", errors.len());
     }

@@ -37,8 +37,8 @@ pub struct ServerConfig {
 /// OAuth authentication configuration.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct OAuthConfig {
-    /// Provider name: "github", "google", or "gitlab".
-    pub provider: String,
+    /// Provider
+    pub provider: OAuthProvider,
 
     /// OAuth App client ID.
     pub client_id: String,
@@ -46,7 +46,7 @@ pub struct OAuthConfig {
     /// OAuth App client secret.
     pub client_secret: String,
 
-    /// Redirect URL (must match the provider's registered redirect URI).
+    /// Redirect URL for OAuth callback.
     pub redirect_url: String,
 
     /// OAuth scopes to request.
@@ -174,7 +174,7 @@ mod tests {
                 port: 9090,
             },
             oauth: Some(OAuthConfig {
-                provider: "github".to_string(),
+                provider: OAuthProvider::GitHub,
                 client_id: "my-client".to_string(),
                 client_secret: "my-secret".to_string(),
                 redirect_url: "http://localhost:9090/callback".to_string(),
@@ -230,7 +230,7 @@ mod tests {
                 port: 8080,
             },
             oauth: Some(OAuthConfig {
-                provider: "gitlab".to_string(),
+                provider: OAuthProvider::GitLab,
                 client_id: "gl-id".to_string(),
                 client_secret: "gl-secret".to_string(),
                 redirect_url: "http://10.0.0.1:8080/callback".to_string(),

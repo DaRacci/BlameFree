@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 
+use crb_types::benchmark::metrics::MetricsProvider;
+use crb_types::wrappers::WrappedData;
 use crb_webui_shared::runs::{RunStatus, RunSummary};
 use leptos::either::{Either, EitherOf3};
 use leptos::prelude::*;
@@ -26,19 +28,19 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
             SortColumn::Name => sort_by(&a.meta.name, &b.meta.name, asc),
             SortColumn::Status => sort_by(&a.meta.status, &b.meta.status, asc),
             SortColumn::Model => {
-                let a_m = a.meta.model.as_deref().unwrap_or("");
-                let b_m = b.meta.model.as_deref().unwrap_or("");
+                let a_m = a.meta.model.as_ref().map(|m| m.get()).unwrap_or("");
+                let b_m = b.meta.model.as_ref().map(|m| m.get()).unwrap_or("");
                 sort_by(a_m, b_m, asc)
             }
             SortColumn::F1 => {
-                let a_v = a.avg_f1.unwrap_or(-1.0);
-                let b_v = b.avg_f1.unwrap_or(-1.0);
+                let a_v = a.metrics.f1();
+                let b_v = b.metrics.f1();
                 sort_by(a_v, b_v, asc)
             }
             SortColumn::PrCount => a.meta.pr_count.cmp(&b.meta.pr_count),
             SortColumn::Cost => {
-                let a_v = a.meta.total_cost.unwrap_or(0.0);
-                let b_v = b.meta.total_cost.unwrap_or(0.0);
+                let a_v = a.meta.total_cost;
+                let b_v = b.meta.total_cost;
                 sort_by(a_v, b_v, asc)
             }
             SortColumn::Date => a.meta.id.cmp(&b.meta.id),
@@ -92,9 +94,9 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
                             RunStatus::Running => "badge--warning",
                             RunStatus::Pending | RunStatus::Cancelled => "badge--neutral",
                         };
-                        let f1_str = run.avg_f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into());
+                        let f1_str = format!("{:.3}", run.metrics.f1());
                         let cost_str = run.meta.total_cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "-".into());
-                        let model_str = run.meta.model.unwrap_or_else(|| "-".to_string());
+                        let model_str = run.meta.model.as_ref().map(|m| m.get()).unwrap_or_else(|| "-");
                         let detail_path = format!("/runs/{}/", run.meta.id);
                         let live_path = format!("/runs/{}/live", run.meta.id);
 

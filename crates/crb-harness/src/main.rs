@@ -20,33 +20,11 @@ pub enum Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    match dotenvy::dotenv() {
-        Ok(path) => eprintln!("[dotenv] Loaded .env from: {}", path.display()),
-        Err(e) => eprintln!("[dotenv] No .env file loaded: {e}"),
-    }
-
-    if env::var("OPENAI_API_KEY").is_err() {
-        if let Ok(_key) = env::var("OPENROUTER_API_KEY") {
-            // In Rust 1.96+, env::set_var is unsafe and the workspace denies unsafe_code.
-            // The Client::from_env() reads OPENAI_API_KEY; fallback is handled by the
-            // user setting the environment variable explicitly or via .env file.
-            eprintln!(
-                "[dotenv] OPENAI_API_KEY not found. \
-                 Set OPENAI_API_KEY or ensure OPENAI_API_KEY is in your .env file. \
-                 (OPENROUTER_API_KEY detected but automatic fallback disabled due to \
-                 workspace safety policy.)"
-            );
-        }
-    }
-
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
-
-    // Initialize the prompt library early so agent resolution works
-    PromptLibrary::new().map_err(|e| anyhow!("Failed to initialize prompt library: {e}"))?;
-
+    crb_shared::init_dotload();
+    crb_shared::init_logging(None);
     let cli = Cli::parse();
+
+    PromptLibrary::new().map_err(|e| anyhow!("Failed to initialize prompt library: {e}"))?;
 
     match cli {
         Cli::Review(args) => run_review(args).await,
@@ -78,8 +56,8 @@ async fn run_review(args: ReviewArgs) -> Result<()> {
         return Err(anyhow!("git diff failed: {stderr}"));
     }
 
-    let diff_str = String::from_utf8(output.stdout)
-        .context("git diff output is not valid UTF-8")?;
+    let diff_str =
+        String::from_utf8(output.stdout).context("git diff output is not valid UTF-8")?;
 
     if diff_str.is_empty() {
         eprintln!("No changes to review (empty diff).");
@@ -109,13 +87,7 @@ async fn run_review(args: ReviewArgs) -> Result<()> {
         for (i, finding) in findings.iter().enumerate() {
             let file_str = finding.file.as_deref().unwrap_or("<unknown>");
             let line_str = finding.line.map(|l| format!(":{}", l)).unwrap_or_default();
-            eprintln!(
-                "{}. [{}] {}{}",
-                i + 1,
-                finding.severity,
-                file_str,
-                line_str,
-            );
+            eprintln!("{}. [{}] {}{}", i + 1, finding.severity, file_str, line_str,);
             eprintln!("   {}", finding.message);
             if let Some(ref evidence) = finding.evidence {
                 eprintln!("   Evidence: {evidence}");

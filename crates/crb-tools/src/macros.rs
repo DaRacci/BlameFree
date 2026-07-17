@@ -1,19 +1,4 @@
 //! Declarative macros for reducing tool boilerplate.
-//!
-//! The [`impl_tool!`] macro generates the full [`rig_core::tool::Tool`]
-//! implementation for a tool, including the `call()` method body.
-//!
-//! # Usage
-//!
-//! ```ignore
-//! crate::impl_tool! { MyTool, MyArgs, MyError, String, "my_tool",
-//!     "Description of what my_tool does.",
-//!     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-//!         // custom logic here
-//!         Ok("result".into())
-//!     }
-//! }
-//! ```
 
 /// Generate a full [`rig_core::tool::Tool`] implementation.
 ///
@@ -28,15 +13,25 @@
 ///
 /// # Arguments
 ///
-/// | Position | Symbol   | Description                                    |
-/// |----------|----------|------------------------------------------------|
-/// | 0        | `$tool`  | The tool struct type (e.g. `GrepTool`)         |
-/// | 1        | `$args`  | The arguments struct type (e.g. `GrepArgs`)   |
-/// | 2        | `$error` | The error enum type (e.g. `GrepError`)         |
-/// | 3        | `$output`| The output type (e.g. `String`)                |
-/// | 4        | `$name`  | String literal — tool name for `Self::NAME`    |
+/// | Position | Symbol   | Description                                             |
+/// |----------|----------|---------------------------------------------------------|
+/// | 0        | `$tool`  | The tool struct type (e.g. `GrepTool`)                  |
+/// | 1        | `$args`  | The arguments struct type (e.g. `GrepArgs`)             |
+/// | 2        | `$error` | The error enum type (e.g. `GrepError`)                  |
+/// | 3        | `$output`| The output type (e.g. `String`)                         |
+/// | 4        | `$name`  | String literal — tool name for `Self::NAME`             |
 /// | 5        | `$description` | String literal — description for `ToolDefinition` |
-/// | 6+       | `$($call:tt)*` | The entire `async fn call(...)` method     |
+/// | 6+       | `$($call:tt)*` | The entire `async fn call(...)` method            |
+///
+/// ```ignore
+/// crate::impl_tool! { MyTool, MyArgs, MyError, String, "my_tool",
+///     "Description of what my_tool does.",
+///     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+///         // custom logic here
+///         Ok("result".into())
+///     }
+/// }
+/// ```
 #[macro_export]
 macro_rules! impl_tool {
     ($tool:ty, $args:ty, $error:ty, $output:ty, $name:expr, $description:expr, $($call:tt)*) => {
@@ -63,7 +58,6 @@ macro_rules! impl_tool {
 
 #[cfg(test)]
 mod tests {
-    use crate::impl_tool;
     use rig_core::tool::Tool;
     use schemars::JsonSchema;
     use serde::Deserialize;
@@ -75,6 +69,7 @@ mod tests {
 
     #[derive(Debug, thiserror::Error)]
     enum MockError {
+        #[allow(unused)]
         #[error("mock error: {0}")]
         General(String),
     }

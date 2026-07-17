@@ -9,7 +9,7 @@
 pub mod deflation;
 pub mod inflation;
 
-use crb_shared::{finding::Finding, severity::Severity};
+use crb_types::{finding::Finding, severity::Severity};
 
 use crate::{
     deflation::has_never_downgrade_pattern,
@@ -78,8 +78,8 @@ pub fn apply_severity_auditor(findings: &mut Vec<Finding>) {
         finding.severity_audited = true;
         finding.severity_audit_reason = Some(format!(
             "downgraded: {}->{} by category='{}' pattern='{}' (quantum={})",
-            finding.severity.as_str(),
-            new_severity.as_str(),
+            finding.severity.to_string(),
+            new_severity.to_string(),
             match_category,
             match_pattern,
             quantum

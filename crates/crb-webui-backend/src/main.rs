@@ -70,15 +70,16 @@ static CANDIDATES: LazyLock<Vec<&'static Path>> = LazyLock::new(|| {
 /// Auto-detect a writable log file path when `--log-file` is not provided.
 ///
 /// Tries candidates in order, silently skipping paths that can't be created.
-fn resolve_log_path(custom: Option<PathBuf>) -> PathBuf {
+fn resolve_log_path(custom: Option<&Path>) -> PathBuf {
     if let Some(path) = custom {
-        return path;
+        return path.to_path_buf();
     }
 
     for candidate in CANDIDATES.iter() {
         if let Some(parent) = candidate.parent() {
             let _ = fs::create_dir_all(parent); // Ignore — best-effort log directory setup
         }
+
         if OpenOptions::new()
             .create(true)
             .append(true)
@@ -92,6 +93,24 @@ fn resolve_log_path(custom: Option<PathBuf>) -> PathBuf {
     Path::new("./output/server.log").to_path_buf()
 }
 
+fn log_layers(
+    path: Option<&Path>,
+) -> Vec<Box<dyn tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync>> {
+    let log_path = resolve_log_path(path);
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(move || {
+            OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+                .expect("failed to open log file")
+        })
+        .with_ansi(false);
+    let stderr_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stderr);
+
+    vec![Box::new(stderr_layer), Box::new(file_layer)]
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Required by octocrab (hyper-rustls) and reqwest (rustls-tls).
@@ -99,15 +118,10 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Failed to install rustls ring crypto provider");
 
+    crb_shared::dotenv_load();
+    crb_shared::init_logging(None);
+
     let args = CliArgs::parse();
-
-    let dotenv_result = dotenvy::dotenv();
-    match &dotenv_result {
-        Ok(path) => println!("Loaded .env from: {}", path.display()),
-        Err(e) => println!("No .env file loaded: {e}"),
-    }
-
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
 
     let log_path = resolve_log_path(args.log_file.clone());
     let log_path_for_tracing = log_path.clone();
@@ -129,14 +143,6 @@ async fn main() -> Result<()> {
         .init();
 
     info!(
-        "Loaded .env from: {}",
-        dotenv_result
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| "none".to_string())
-    );
-
-    info!(
         "Starting crb-webui on port {} (output={}, datasets={})",
         args.port,
         args.output_dir.display(),
@@ -153,14 +159,14 @@ async fn main() -> Result<()> {
 
     let octocrab = match env::var("GITHUB_TOKEN") {
         Ok(token) => {
-            info!("GITHUB_TOKEN found — octocrab will use it for authenticated requests");
+            info!("GITHUB_TOKEN found, octocrab will use it for authenticated requests");
             Octocrab::builder()
                 .personal_token(token)
                 .build()
                 .map_err(|e| anyhow!("Failed to build octocrab client: {e}"))?
         }
         Err(_) => {
-            warn!("GITHUB_TOKEN not set — GitHub API rate limits will be low (60 req/hr)");
+            warn!("GITHUB_TOKEN not set, GitHub API rate limits will be low (60 req/hr)");
             Octocrab::default()
         }
     };

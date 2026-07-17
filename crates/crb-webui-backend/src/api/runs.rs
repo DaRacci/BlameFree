@@ -9,14 +9,16 @@ use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::response::Response;
+use crb_types::benchmark::result::PrResult;
+use crb_types::capabilities::ReasoningEffort;
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use crate::harness;
 use crate::server::{ActiveRun, AppState};
 use crb_shared::DEFAULT_MODEL;
-use crb_types::benchmark::{Metrics, MetricsProvider};
+use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
 use crb_webui_shared::config::RoleInfo;
-use crb_reporting::PrResult;
 use crb_webui_shared::runs::LogsListResponse;
 use crb_webui_shared::runs::PrAgentEntry;
 use crb_webui_shared::runs::PrAgentsResponse;
@@ -109,7 +111,7 @@ fn compute_duration_from_dir(dir: &Path) -> f64 {
 pub struct BenchmarkConfig {
     pub model: String,
 
-    #[serde(default = "default_judge_model")]
+    #[serde(default = "crb_shared::default_model")]
     pub judge_model: String,
 
     #[serde(default = "default_dataset_dir", alias = "dataset")]
@@ -119,31 +121,14 @@ pub struct BenchmarkConfig {
     pub max_findings: usize,
 
     #[serde(default)]
-    pub roles: Vec<String>,
-
-    #[serde(default)]
-    pub skip_consensus: bool,
-
-    #[serde(default)]
-    pub linters_only: bool,
+    pub roles: Vec<RoleInfo>,
 
     #[serde(default)]
     pub pr_filter: Option<String>,
 
-    #[serde(default = "default_use_cache")]
-    pub use_cache: bool,
-
-    /// Reasoning effort for supported models (None = disabled, Some = low/medium/high).
+    /// Reasoning effort for supported models
     #[serde(default)]
-    pub reasoning_effort: Option<String>,
-}
-
-fn default_use_cache() -> bool {
-    true
-}
-
-fn default_judge_model() -> String {
-    DEFAULT_MODEL.to_string()
+    pub reasoning_effort: Option<ReasoningEffort>,
 }
 
 fn default_dataset_dir() -> String {
@@ -266,6 +251,7 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
             .to_string_lossy()
             .to_string();
 
+        // TODO: HOLY FUCK CLEAN THIS SHIT UP
         if file_name == crb_harness::paths::SUMMARY_FILE {
             if let Ok(content) = fs::read_to_string(&file_path) {
                 if let Ok(summary) =
@@ -279,10 +265,8 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
                                 .get("avg_precision")
                                 .and_then(|v| v.as_f64())
                                 .unwrap_or(0.0);
-                            let avg_recall = am
-                                .get("avg_recall")
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(0.0);
+                            let avg_recall =
+                                am.get("avg_recall").and_then(|v| v.as_f64()).unwrap_or(0.0);
                             let pr_count = summary
                                 .get("total_prs")
                                 .and_then(|v| v.as_u64())
@@ -341,7 +325,8 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
 
     let pr_count = results.len();
     let avg_f1 = results.iter().map(|r| r.metrics.f1()).sum::<f64>() / pr_count as f64;
-    let avg_precision = results.iter().map(|r| r.metrics.precision()).sum::<f64>() / pr_count as f64;
+    let avg_precision =
+        results.iter().map(|r| r.metrics.precision()).sum::<f64>() / pr_count as f64;
     let avg_recall = results.iter().map(|r| r.metrics.recall()).sum::<f64>() / pr_count as f64;
 
     // Aggregate per-PR cost if available
@@ -539,8 +524,7 @@ pub async fn get_run(State(state): State<AppState>, AxumPath(id): AxumPath<Strin
 
     // Read summary metadata
     let (model, mut duration_secs, mut total_cost, mut total_tokens) =
-        read_summary_from_dir(&run_path)
-            .unwrap_or(("unknown".to_string(), 0.0, 0.0, 0));
+        read_summary_from_dir(&run_path).unwrap_or(("unknown".to_string(), 0.0, 0.0, 0));
 
     // Resolve cache dir once for agent checking
     let cache_dir = resolve_cache_dir(&state.output_dir, &id);
@@ -555,7 +539,9 @@ pub async fn get_run(State(state): State<AppState>, AxumPath(id): AxumPath<Strin
     }
 
     // Merge config from active run state if available (it isn't stored on disk)
-    let config = active_run_config.as_ref().map(|ar| RunConfig::from(&ar.config));
+    let config = active_run_config
+        .as_ref()
+        .map(|ar| RunConfig::from(&ar.config));
 
     let aggregate = compute_aggregate_metrics(&results, total_cost, duration_secs);
 
@@ -571,7 +557,7 @@ pub async fn get_run(State(state): State<AppState>, AxumPath(id): AxumPath<Strin
             status: RunStatus::Completed,
         },
         results,
-        aggregate: Some(aggregate),
+        aggregate: aggregate,
         config,
     };
 
@@ -815,7 +801,7 @@ pub async fn list_logs(
                 if fname == crb_harness::paths::SUMMARY_FILE || fname.starts_with("candidates") {
                     continue;
                 }
-                // Filename stem is the pr_key
+
                 let stem = file_path
                     .file_stem()
                     .unwrap_or_default()
@@ -824,14 +810,10 @@ pub async fn list_logs(
                 if stem.is_empty() || stem.starts_with('_') || stem.starts_with('.') {
                     continue;
                 }
-                // Try to get a more descriptive title from the JSON content
+
                 let title = if let Ok(content) = std::fs::read_to_string(&file_path) {
                     if let Ok(pr) = serde_json::from_str::<PrResult>(&content) {
-                        if !pr.pr_title.is_empty() {
-                            pr.pr_title
-                        } else {
-                            stem.clone()
-                        }
+                        pr.meta.title.clone()
                     } else {
                         stem.clone()
                     }
@@ -895,19 +877,10 @@ pub async fn list_logs(
             vec![]
         };
 
-        prs.push(PrLogsEntry {
-            pr_key: pr_key.clone(),
-            pr_title,
-            agents,
-        });
+        prs.push(PrLogsEntry { agents });
     }
 
-    Json(LogsListResponse {
-        run_id: id,
-        cache_available: cache_dir.is_some(),
-        prs,
-    })
-    .into_response()
+    Json(LogsListResponse { run_id: id, prs }).into_response()
 }
 
 /// Try to resolve a PR title from the run's output files.
@@ -964,8 +937,6 @@ pub async fn get_agent_log(
         None => {
             return Json(AgentLogResponse {
                 run_id: id.clone(),
-                pr_key,
-                role,
                 prompt: None,
                 response: None,
                 reasoning: None,
@@ -979,8 +950,6 @@ pub async fn get_agent_log(
     if !pr_dir.exists() || !pr_dir.is_dir() {
         return Json(AgentLogResponse {
             run_id: id,
-            pr_key,
-            role,
             prompt: None,
             response: None,
             reasoning: None,
@@ -996,8 +965,6 @@ pub async fn get_agent_log(
 
     Json(AgentLogResponse {
         run_id: id,
-        pr_key,
-        role,
         prompt,
         response,
         reasoning,
@@ -1138,19 +1105,14 @@ pub async fn get_pr_detail(
             || (pr_num_from_url.is_some() && pr_num_from_url == pr_num_from_key)
             || pr.pr_title.to_lowercase().contains(&pr_key_lower);
 
-        tracing::debug!(
+        debug!(
             "pr-detail matching: pr_key='{}', fname='{}', fname_lower='{}', pr_key_normalized='{}', matches={}",
-            pr_key,
-            fname,
-            fname_lower,
-            pr_key_normalized,
-            matches
+            pr_key, fname, fname_lower, pr_key_normalized, matches
         );
 
         if matches {
             return Json(PrDetailResponse {
-                run_id: id,
-                payload: PrResultPayload {
+                payload: PrResult {
                     pr_title: pr.pr_title,
                     url: pr.url,
                     findings_count: pr.findings_count,

@@ -1,8 +1,10 @@
+use serde::{Deserialize, Serialize};
+
 pub trait WrappedData {
     fn get(&self) -> &str;
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Prompt(pub String);
 
 impl WrappedData for Prompt {
@@ -11,12 +13,18 @@ impl WrappedData for Prompt {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Model(pub String);
 
 impl WrappedData for Model {
     fn get(&self) -> &str {
         &self.0
+    }
+}
+
+impl Model {
+    pub fn is_claude(&self) -> bool {
+        self.0.to_lowercase().contains("claude")
     }
 }
 
