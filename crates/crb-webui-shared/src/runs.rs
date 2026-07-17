@@ -1,12 +1,13 @@
-use crb_types::benchmark::Metrics;
+use crb_types::benchmark::{JudgeVerdict, Metrics};
+use crb_types::cost::AnalyticsSnapshot;
 use serde::{Deserialize, Serialize};
-use strum::Display;
+use strum::{Display, IntoStaticStr};
 
 use crate::config::RoleInfo;
 
-/// Summary of a past benchmark run.
+/// Shared metadata fields used by both [`RunSummary`] and [`RunDetail`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RunSummary {
+pub struct RunMeta {
     /// Unique run identifier.
     pub id: String,
 
@@ -15,7 +16,33 @@ pub struct RunSummary {
 
     /// Number of PRs in this run.
     #[serde(default)]
-    pub pr_count: u32,
+    pub pr_count: usize,
+
+    /// Total cost in USD.
+    #[serde(default)]
+    pub total_cost: Option<f64>,
+
+    /// Total tokens consumed.
+    #[serde(default)]
+    pub total_tokens: usize,
+
+    /// Duration in seconds.
+    #[serde(default)]
+    pub duration_secs: Option<f64>,
+
+    /// Model used for evaluation.
+    #[serde(default)]
+    pub model: Option<String>,
+
+    /// The state of the run.
+    pub status: RunStatus,
+}
+
+/// Summary of a past benchmark run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunSummary {
+    /// Shared run metadata
+    pub meta: RunMeta,
 
     /// Average F1 score, if computed.
     #[serde(default)]
@@ -32,69 +59,37 @@ pub struct RunSummary {
     #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
     pub avg_recall: Option<f64>,
 
-    /// Total cost in USD.
-    #[serde(default)]
-    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
-    pub total_cost: Option<f64>,
-
-    /// Total tokens consumed.
-    #[serde(default)]
-    pub total_tokens: usize,
-
-    /// Duration in seconds.
-    #[serde(default)]
-    pub duration_secs: Option<f64>,
-
     // TODO: Convert to time type
     /// ISO-8601 timestamp of creation.
     #[serde(default)]
     pub created_at: String,
-
-    /// Model used for evaluation.
-    #[serde(default)]
-    pub model: Option<String>,
-
-    /// The state of the run.
-    pub status: RunStatus,
 }
 
-#[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Display, IntoStaticStr, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord,
+)]
 pub enum RunStatus {
     Pending,
     Running,
     Failed,
     Completed,
+    Cancelled,
 }
 
 /// Detailed run result with per-PR data.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunDetail {
-    /// Unique run identifier.
-    pub id: String,
-    /// Human-readable run name.
-    pub name: String,
-    /// Number of PRs in this run.
-    #[serde(default)]
-    pub pr_count: usize,
+    /// Shared run metadata
+    pub meta: RunMeta,
+
     /// Per-PR results.
     #[serde(default)]
-    pub results: Vec<PrResult>,
+    pub results: Vec<PrResultRow>,
+
     /// Aggregate metrics across all PRs.
     #[serde(default)]
     pub aggregate: Option<Metrics>,
-    /// Total cost in USD.
-    #[serde(default)]
-    pub total_cost: Option<f64>,
-    /// Total tokens consumed.
-    #[serde(default)]
-    pub total_tokens: usize,
-    /// Duration in seconds.
-    #[serde(default)]
-    pub duration_secs: Option<f64>,
-    /// Model used for evaluation.
-    pub model: String,
-    /// Run status.
-    pub status: String,
+
     /// Run configuration.
     #[serde(default)]
     pub config: Option<RunConfig>,
@@ -102,31 +97,50 @@ pub struct RunDetail {
 
 /// A single PR result in the API response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrResult {
+pub struct PrResultRow {
     /// PR number.
     pub pr_number: u32,
+
     /// PR key (e.g. "owner/repo/pull/N").
     pub pr_key: String,
+
     /// PR title.
     pub title: String,
+
     /// F1 score, if computed.
     #[serde(default)]
+    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
     pub f1: Option<f64>,
+
     /// Precision score, if computed.
     #[serde(default)]
+    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
     pub precision: Option<f64>,
+
     /// Recall score, if computed.
     #[serde(default)]
+    #[deprecated = "Use [`crb_types::benchmark::Metrics`]"]
     pub recall: Option<f64>,
+
     /// Cost in USD.
     #[serde(default)]
     pub cost: Option<f64>,
+
     /// Status string.
     #[serde(default)]
     pub status: Option<String>,
+
     /// Whether this PR has agent data available.
     #[serde(default)]
     pub has_agents: bool,
+}
+
+/// Response returned when a benchmark run is started.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StartRunResponse {
+    pub run_id: String,
+    pub status: String,
+    pub total_prs: u32,
 }
 
 /// Run config returned in the run detail response.
@@ -134,73 +148,12 @@ pub struct PrResult {
 pub struct RunConfig {
     /// Model used for the run.
     pub model: String,
+
     /// Dataset identifier.
     pub dataset: String,
+
     /// Reviewer roles.
     pub roles: Vec<String>,
-}
-
-/// A single JSON result file on disk (for per-PR data).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CostJson {
-    /// Total cost in USD.
-    #[serde(default)]
-    pub total_usd: f64,
-    /// Agent input tokens consumed.
-    #[serde(default)]
-    pub agent_tokens_in: u64,
-    /// Agent output tokens produced.
-    #[serde(default)]
-    pub agent_tokens_out: u64,
-    /// Judge input tokens consumed.
-    #[serde(default)]
-    pub judge_tokens_in: u64,
-    /// Judge output tokens produced.
-    #[serde(default)]
-    pub judge_tokens_out: u64,
-    /// Number of agent API calls.
-    #[serde(default)]
-    pub agent_call_count: u64,
-    /// Number of judge API calls.
-    #[serde(default)]
-    pub judge_call_count: u64,
-}
-
-/// Metrics embedded in per-PR result JSON files.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct MetricsJson {
-    /// True positives count.
-    #[serde(default)]
-    pub true_positives: usize,
-    /// False positives count.
-    #[serde(default)]
-    pub false_positives: usize,
-    /// False negatives count.
-    #[serde(default)]
-    pub false_negatives: usize,
-    /// Precision score.
-    #[serde(default)]
-    pub precision: f64,
-    /// Recall score.
-    #[serde(default)]
-    pub recall: f64,
-    /// F1 score.
-    #[serde(default)]
-    pub f1: f64,
-}
-
-/// A single judge verdict embedded in per-PR result JSON.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VerdictJson {
-    /// Reasoning text from the judge.
-    #[serde(default)]
-    pub reasoning: String,
-    /// Whether the finding matched the golden comment.
-    #[serde(default, rename = "match")]
-    pub match_: bool,
-    /// Confidence score for the judgment (0.0–1.0).
-    #[serde(default)]
-    pub confidence: f64,
 }
 
 /// Response from GET /api/runs/:id/logs
@@ -208,8 +161,11 @@ pub struct VerdictJson {
 pub struct LogsListResponse {
     /// Run ID for this log response.
     pub run_id: String,
+
     /// Whether cache data is available for this run.
+    #[deprecated = "Data is now always available"]
     pub cache_available: bool,
+
     /// Per-PR log entries.
     pub prs: Vec<PrLogsEntry>,
 }
@@ -219,8 +175,10 @@ pub struct LogsListResponse {
 pub struct PrLogsEntry {
     /// PR key (e.g. "owner/repo/pull/N").
     pub pr_key: String,
+
     /// PR title.
     pub pr_title: String,
+
     /// Agent roles available for this PR.
     pub agents: Vec<RoleInfo>,
 }
@@ -230,16 +188,22 @@ pub struct PrLogsEntry {
 pub struct AgentLogResponse {
     /// Run ID.
     pub run_id: String,
+
     /// PR key.
     pub pr_key: String,
+
     /// Agent role abbreviation.
     pub role: String,
+
     /// The prompt sent to the agent, if available.
     pub prompt: Option<String>,
+
     /// The agent's response, if available.
     pub response: Option<String>,
+
     /// Reasoning text, if available.
     pub reasoning: Option<String>,
+
     /// Whether this log entry is accessible.
     pub available: bool,
 }
@@ -249,12 +213,16 @@ pub struct AgentLogResponse {
 pub struct PrAgentsResponse {
     /// Run ID.
     pub run_id: String,
+
     /// PR key.
     pub pr_key: String,
+
     /// PR title.
     pub pr_title: String,
+
     /// Per-agent availability list.
     pub agents: Vec<PrAgentEntry>,
+
     /// Whether any agent output exists.
     pub has_output: bool,
 }
@@ -264,12 +232,45 @@ pub struct PrAgentsResponse {
 pub struct PrAgentEntry {
     /// Role abbreviation.
     pub role: String,
+
     /// Whether a prompt is available for this agent.
     pub has_prompt: bool,
+
     /// Whether a response is available for this agent.
     pub has_response: bool,
+
     /// Whether reasoning text is available for this agent.
     pub has_reasoning: bool,
+}
+
+/// Common payload shared between [`PrDetailResponse`] and the on-disk result format ([`crb_reporting::PrResult`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrResultPayload {
+    /// PR title.
+    pub pr_title: String,
+
+    /// PR URL.
+    pub url: String,
+
+    /// Number of findings.
+    #[serde(default)]
+    pub findings_count: usize,
+
+    /// Number of golden comments.
+    #[serde(default)]
+    pub golden_count: usize,
+
+    /// Evaluation metrics.
+    #[serde(default)]
+    pub metrics: Metrics,
+
+    /// Judge verdicts for each finding-vs-golden comparison.
+    #[serde(default)]
+    pub verdicts: Vec<JudgeVerdict>,
+
+    /// Cost data for this PR.
+    #[serde(default)]
+    pub cost: Option<AnalyticsSnapshot>,
 }
 
 /// Detailed per-PR response.
@@ -277,23 +278,15 @@ pub struct PrAgentEntry {
 pub struct PrDetailResponse {
     /// Run ID.
     pub run_id: String,
-    /// PR title.
-    pub pr_title: String,
-    /// PR URL.
-    pub url: String,
-    /// Number of findings.
-    pub findings_count: usize,
-    /// Number of golden comments.
-    pub golden_count: usize,
-    /// Evaluation metrics.
-    pub metrics: MetricsJson,
-    /// Judge verdicts for each finding-vs-golden comparison.
-    pub verdicts: Vec<VerdictJson>,
-    /// Cost data for this PR.
-    pub cost: Option<CostJson>,
+
+    /// Shared payload fields.
+    #[serde(flatten)]
+    pub payload: PrResultPayload,
+
     /// Raw findings data.
     #[serde(default)]
     pub findings: serde_json::Value,
+
     /// Raw agent response texts.
     #[serde(default)]
     pub agent_responses: Vec<String>,
@@ -305,7 +298,7 @@ mod tests {
 
     #[test]
     fn test_run_summary_default_fields() {
-        let json = r#"{"id":"r1","name":"test","status":"running"}"#;
+        let json = r#"{"id":"r1","name":"test","status":"Running"}"#;
         let summary: RunSummary = serde_json::from_str(json).unwrap();
         insta::assert_debug_snapshot!(summary);
     }
@@ -313,65 +306,13 @@ mod tests {
     #[test]
     fn test_pr_result_default_fields() {
         let json = r#"{"pr_number":1,"pr_key":"a/b/pull/1","title":"T"}"#;
-        let result: PrResult = serde_json::from_str(json).unwrap();
+        let result: PrResultRow = serde_json::from_str(json).unwrap();
         insta::assert_debug_snapshot!(result);
     }
 
     #[test]
-    fn test_cost_json_default() {
-        let cost = CostJson::default();
-        insta::assert_debug_snapshot!(cost);
-    }
-
-    #[test]
-    fn test_cost_json_empty_json() {
-        let json = "{}";
-        let cost: CostJson = serde_json::from_str(json).unwrap();
-        insta::assert_debug_snapshot!(cost);
-    }
-
-    #[test]
-    fn test_metrics_json_default() {
-        let metrics = MetricsJson::default();
-        insta::assert_debug_snapshot!(metrics);
-    }
-
-    #[test]
-    fn test_metrics_json_empty_json() {
-        let json = "{}";
-        let metrics: MetricsJson = serde_json::from_str(json).unwrap();
-        insta::assert_debug_snapshot!(metrics);
-    }
-
-    #[test]
-    fn test_verdict_json_rename_match() {
-        let json = r#"{"reasoning":"ok","match":true,"confidence":0.8}"#;
-        let verdict: VerdictJson = serde_json::from_str(json).unwrap();
-        insta::assert_debug_snapshot!(verdict);
-    }
-
-    #[test]
-    fn test_verdict_json_default_fields() {
-        let json = r#"{}"#;
-        let verdict: VerdictJson = serde_json::from_str(json).unwrap();
-        insta::assert_debug_snapshot!(verdict);
-    }
-
-    // ── LogsListResponse ──────────────────────────────────────────────────
-
-    // ── PrLogsEntry ───────────────────────────────────────────────────────
-
-    // ── AgentLogResponse ──────────────────────────────────────────────────
-
-    // ── PrAgentsResponse ──────────────────────────────────────────────────
-
-    // ── PrAgentEntry ──────────────────────────────────────────────────────
-
-    // ── PrDetailResponse ──────────────────────────────────────────────────
-
-    #[test]
     fn test_pr_detail_response_default_findings() {
-        let json = r#"{"run_id":"r1","pr_title":"Test","url":"https://example.com","findings_count":0,"golden_count":0,"metrics":{},"verdicts":[],"cost":null}"#;
+        let json = r#"{"run_id":"r1","pr_title":"Test","url":"https://example.com","findings_count":0,"golden_count":0,"metrics":{"true_positives":0,"false_positives":0,"false_negatives":0,"duration_secs":0.0},"verdicts":[],"cost":null}"#;
         let detail: PrDetailResponse = serde_json::from_str(json).unwrap();
         insta::assert_debug_snapshot!(detail);
     }

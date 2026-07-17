@@ -4,20 +4,20 @@ expression: detail
 ---
 PrDetailResponse {
     run_id: "r1",
-    pr_title: "Test",
-    url: "https://example.com",
-    findings_count: 0,
-    golden_count: 0,
-    metrics: MetricsJson {
-        true_positives: 0,
-        false_positives: 0,
-        false_negatives: 0,
-        precision: 0.0,
-        recall: 0.0,
-        f1: 0.0,
+    payload: PrResultPayload {
+        pr_title: "Test",
+        url: "https://example.com",
+        findings_count: 0,
+        golden_count: 0,
+        metrics: Metrics {
+            true_positives: 0,
+            false_positives: 0,
+            false_negatives: 0,
+            duration_secs: 0.0,
+        },
+        verdicts: [],
+        cost: None,
     },
-    verdicts: [],
-    cost: None,
     findings: Null,
     agent_responses: [],
 }

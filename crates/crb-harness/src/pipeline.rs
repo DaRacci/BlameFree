@@ -59,6 +59,8 @@ pub async fn build_pr_result(
         golden_count,
         metrics,
         verdicts: Vec::new(),
+        findings: serde_json::Value::Null,
+        agent_responses: vec![],
         cost: Some(snapshot),
     }
 }

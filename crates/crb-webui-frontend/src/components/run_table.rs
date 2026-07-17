@@ -23,11 +23,11 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
         let mut runs = runs.clone();
         let asc = sort_asc.get();
         runs.sort_by(|a, b| match sort_column.get() {
-            SortColumn::Name => sort_by(&a.name, &b.name, asc),
-            SortColumn::Status => sort_by(&a.status, &b.status, asc),
+            SortColumn::Name => sort_by(&a.meta.name, &b.meta.name, asc),
+            SortColumn::Status => sort_by(&a.meta.status, &b.meta.status, asc),
             SortColumn::Model => {
-                let a_m = a.model.as_deref().unwrap_or("");
-                let b_m = b.model.as_deref().unwrap_or("");
+                let a_m = a.meta.model.as_deref().unwrap_or("");
+                let b_m = b.meta.model.as_deref().unwrap_or("");
                 sort_by(a_m, b_m, asc)
             }
             SortColumn::F1 => {
@@ -35,13 +35,13 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
                 let b_v = b.avg_f1.unwrap_or(-1.0);
                 sort_by(a_v, b_v, asc)
             }
-            SortColumn::PrCount => a.pr_count.cmp(&b.pr_count),
+            SortColumn::PrCount => a.meta.pr_count.cmp(&b.meta.pr_count),
             SortColumn::Cost => {
-                let a_v = a.total_cost.unwrap_or(0.0);
-                let b_v = b.total_cost.unwrap_or(0.0);
+                let a_v = a.meta.total_cost.unwrap_or(0.0);
+                let b_v = b.meta.total_cost.unwrap_or(0.0);
                 sort_by(a_v, b_v, asc)
             }
-            SortColumn::Date => a.id.cmp(&b.id),
+            SortColumn::Date => a.meta.id.cmp(&b.meta.id),
         });
         runs
     };
@@ -86,37 +86,37 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
                 </thead>
                 <tbody>
                     {move || sorted_runs().into_iter().map(|run| {
-                        let badge_variant = match run.status {
+                        let badge_variant = match run.meta.status {
                             RunStatus::Completed => "badge--success",
                             RunStatus::Failed => "badge--danger",
                             RunStatus::Running => "badge--warning",
-                            RunStatus::Pending => "badge--neutral",
+                            RunStatus::Pending | RunStatus::Cancelled => "badge--neutral",
                         };
                         let f1_str = run.avg_f1.map(|v| format!("{:.3}", v)).unwrap_or_else(|| "-".into());
-                        let cost_str = run.total_cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "-".into());
-                        let model_str = run.model.unwrap_or_else(|| "-".to_string());
-                        let detail_path = format!("/runs/{}", run.id);
-                        let live_path = format!("/runs/{}/live", run.id);
+                        let cost_str = run.meta.total_cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "-".into());
+                        let model_str = run.meta.model.unwrap_or_else(|| "-".to_string());
+                        let detail_path = format!("/runs/{}/", run.meta.id);
+                        let live_path = format!("/runs/{}/live", run.meta.id);
 
                         let detail_path = detail_path;
                         let live_path = live_path;
                         view! {
                             <tr class="table__row table__row--clickable" data-href=detail_path.clone()>
-                                <td class="table__td" style="font-weight: var(--weight-medium, 500);"><a href=detail_path.clone() style="color: var(--text-link, #58a6ff);">{run.name.clone()}</a></td>
+                                <td class="table__td" style="font-weight: var(--weight-medium, 500);"><a href=detail_path.clone() style="color: var(--text-link, #58a6ff);">{run.meta.name.clone()}</a></td>
                                 <td class="table__td">
                                     <span class=format!("badge {}", badge_variant)>
                                         <span class="badge__dot"></span>
-                                        <span class="badge__label">{run.status.to_string()}</span>
+                                        <span class="badge__label">{run.meta.status.to_string()}</span>
                                     </span>
                                 </td>
                                 <td class="table__td">{model_str}</td>
-                                <td class="table__td">{run.pr_count}</td>
+                                <td class="table__td">{run.meta.pr_count}</td>
                                 <td class="table__td" style="font-family: var(--font-mono, monospace);">{f1_str}</td>
                                 <td class="table__td" style="font-family: var(--font-mono, monospace);">{cost_str}</td>
                                 <td class="table__td">
                                     <div style="display: flex; gap: 0.5rem;">
                                         <a href=detail_path.clone() class="btn btn--sm btn--secondary">"View"</a>
-                                        {if run.status == RunStatus::Running || run.status == RunStatus::Pending {
+                                        {if run.meta.status == RunStatus::Running || run.meta.status == RunStatus::Pending {
                                             Either::Left(
                                                 view! {
                                                     <a href=live_path class="btn btn--sm btn--secondary">"Live"</a>

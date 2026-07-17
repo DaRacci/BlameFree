@@ -7,22 +7,12 @@ use axum::extract::{Path as AxumPath, State};
 use serde::Serialize;
 
 use crate::server::AppState;
+use crb_webui_shared::config::AppConfig;
 use crb_webui_shared::config::DatasetConfig;
 use crb_webui_shared::config::DatasetInfo;
 use crb_webui_shared::config::PrEntry;
 use crb_webui_shared::config::ReasoningEffortsResponse;
 use crb_webui_shared::config::RoleInfo;
-
-/// Available configuration options.
-#[derive(Debug, Clone, Serialize)]
-pub struct ConfigResponse {
-    pub models: Vec<String>,
-    pub datasets: Vec<String>,
-    pub roles: Vec<RoleInfo>,
-    /// Whether OAuth authentication is configured.
-    #[serde(default)]
-    pub auth_enabled: bool,
-}
 
 /// Information about an available model.
 #[derive(Debug, Clone, Serialize)]
@@ -32,7 +22,7 @@ pub struct ModelInfo {
 }
 
 /// List available models, datasets, and roles.
-pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
+pub async fn get_config(State(state): State<AppState>) -> Json<AppConfig> {
     tracing::info!("GET /api/config");
     let models: Vec<String> = state
         .models
@@ -58,7 +48,7 @@ pub async fn get_config(State(state): State<AppState>) -> Json<ConfigResponse> {
         .collect();
     roles.sort_by(|a, b| a.abbreviation.cmp(&b.abbreviation));
 
-    Json(ConfigResponse {
+    Json(AppConfig {
         models,
         datasets,
         roles,

@@ -44,5 +44,7 @@ expression: "&result"
         "cache_misses": 0
       }
     }
-  }
+  },
+  "findings": null,
+  "agent_responses": []
 }

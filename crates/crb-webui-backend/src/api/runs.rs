@@ -14,37 +14,22 @@ use serde::{Deserialize, Serialize};
 use crate::harness;
 use crate::server::{ActiveRun, AppState};
 use crb_shared::DEFAULT_MODEL;
-use crb_types::benchmark::Metrics;
+use crb_types::benchmark::{Metrics, MetricsProvider};
 use crb_webui_shared::config::RoleInfo;
-use crb_webui_shared::runs::CostJson;
+use crb_reporting::PrResult;
 use crb_webui_shared::runs::LogsListResponse;
-use crb_webui_shared::runs::MetricsJson;
 use crb_webui_shared::runs::PrAgentEntry;
 use crb_webui_shared::runs::PrAgentsResponse;
 use crb_webui_shared::runs::PrDetailResponse;
 use crb_webui_shared::runs::PrLogsEntry;
-use crb_webui_shared::runs::PrResult;
+use crb_webui_shared::runs::PrResultPayload;
+use crb_webui_shared::runs::PrResultRow;
 use crb_webui_shared::runs::RunConfig;
 use crb_webui_shared::runs::RunDetail;
 use crb_webui_shared::runs::RunSummary;
-use crb_webui_shared::runs::VerdictJson;
-use crb_webui_shared::runs::{AgentLogResponse, RunStatus};
+use crb_webui_shared::runs::StartRunResponse;
+use crb_webui_shared::runs::{AgentLogResponse, RunMeta, RunStatus};
 use rustls::pki_types::UnixTime;
-
-/// Aggregate metrics computed from a run's summary.json.
-#[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
-struct AggregateMetrics {
-    avg_f1: f64,
-    avg_precision: f64,
-    avg_recall: f64,
-    total_tp: usize,
-    total_fp: usize,
-    total_fn: usize,
-    total_cost: f64,
-    total_prs: u32,
-    duration_secs: f64,
-}
 
 /// Helper to build a JSON error response with a given status code and message.
 pub fn err_json(status: StatusCode, msg: impl std::fmt::Display) -> Response {
@@ -119,31 +104,6 @@ fn compute_duration_from_dir(dir: &Path) -> f64 {
     }
 }
 
-/// A single PR result as it appears in the JSON files.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PrResultJson {
-    #[serde(default)]
-    pub pr_title: String,
-    #[serde(default)]
-    pub url: String,
-    #[serde(default)]
-    pub findings_count: usize,
-    #[serde(default)]
-    pub golden_count: usize,
-    #[serde(default)]
-    pub metrics: MetricsJson,
-    #[serde(default)]
-    pub verdicts: Vec<VerdictJson>,
-    #[serde(default)]
-    pub cost: Option<CostJson>,
-    /// Raw findings JSON from agents (optional, may not exist in older files)
-    #[serde(default)]
-    pub findings: serde_json::Value,
-    /// Raw agent response texts (optional, may not exist in older files)
-    #[serde(default)]
-    pub agent_responses: Vec<String>,
-}
-
 /// Configuration for starting a new benchmark run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkConfig {
@@ -155,13 +115,8 @@ pub struct BenchmarkConfig {
     #[serde(default = "default_dataset_dir", alias = "dataset")]
     pub dataset_dir: String,
 
-    #[serde(default = "default_concurrency")]
-    pub concurrency: usize,
-
     #[serde(default = "default_max_findings")]
     pub max_findings: usize,
-
-    pub cache_dir: Option<String>,
 
     #[serde(default)]
     pub roles: Vec<String>,
@@ -170,7 +125,7 @@ pub struct BenchmarkConfig {
     pub skip_consensus: bool,
 
     #[serde(default)]
-    pub skip_linters: bool,
+    pub linters_only: bool,
 
     #[serde(default)]
     pub pr_filter: Option<String>,
@@ -195,20 +150,18 @@ fn default_dataset_dir() -> String {
     "datasets/golden_comments".to_string()
 }
 
-fn default_concurrency() -> usize {
-    4
-}
-
 fn default_max_findings() -> usize {
     20
 }
 
-/// Response returned when a benchmark is started.
-#[derive(Debug, Clone, Serialize)]
-pub struct StartRunResponse {
-    pub run_id: String,
-    pub status: String,
-    pub total_prs: usize,
+impl From<&BenchmarkConfig> for RunConfig {
+    fn from(cfg: &BenchmarkConfig) -> Self {
+        RunConfig {
+            model: cfg.model.clone(),
+            dataset: cfg.dataset_dir.clone(),
+            roles: cfg.roles.clone(),
+        }
+    }
 }
 
 /// List all benchmark runs, including active and completed runs.
@@ -245,30 +198,32 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
         let active = state.active_runs.read().await;
         for (id, ar) in active.iter() {
             // Skip if already in the completed list (duplicate)
-            if runs.iter().any(|r| r.id == *id) {
+            if runs.iter().any(|r| r.meta.id == *id) {
                 continue;
             }
             runs.push(RunSummary {
-                id: id.clone(),
-                name: id.clone(),
-                pr_count: ar.total_prs as u32,
+                meta: RunMeta {
+                    id: id.clone(),
+                    name: id.clone(),
+                    pr_count: ar.total_prs,
+                    total_cost: Some(0.0),
+                    total_tokens: 0,
+                    duration_secs: Some(0.0),
+                    model: Some(ar.config.model.clone()),
+                    status: if ar.finished {
+                        RunStatus::Completed
+                    } else {
+                        RunStatus::Running
+                    },
+                },
                 avg_f1: Some(0.0),
                 avg_precision: Some(0.0),
                 avg_recall: Some(0.0),
-                total_cost: Some(0.0),
-                total_tokens: 0,
-                duration_secs: Some(0.0),
                 created_at: {
                     let secs = ar.created_at.as_secs();
                     chrono::DateTime::from_timestamp(secs as i64, 0)
                         .map(|dt| dt.to_rfc3339())
                         .unwrap_or_else(|| "unknown".to_string())
-                },
-                model: Some(ar.config.model.clone()),
-                status: if ar.finished {
-                    RunStatus::Completed
-                } else {
-                    "running".to_string()
                 },
             });
         }
@@ -276,8 +231,8 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
 
     // 3) Sort: active (running) first by creation time, then completed by time
     runs.sort_by(|a, b| {
-        let a_running = a.status == RunStatus::Running;
-        let b_running = b.status == RunStatus::Running;
+        let a_running = a.meta.status == RunStatus::Running;
+        let b_running = b.meta.status == RunStatus::Running;
         // Active runs come first
         a_running
             .cmp(&b_running)
@@ -319,44 +274,15 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
                     has_summary = true;
                     if let Some(metrics) = summary.get("aggregate_metrics") {
                         if let Some(am) = metrics.as_object() {
-                            let ag = AggregateMetrics {
-                                avg_f1: am.get("avg_f1").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                                avg_precision: am
-                                    .get("avg_precision")
-                                    .and_then(|v| v.as_f64())
-                                    .unwrap_or(0.0),
-                                avg_recall: am
-                                    .get("avg_recall")
-                                    .and_then(|v| v.as_f64())
-                                    .unwrap_or(0.0),
-                                total_tp: am
-                                    .get("total_true_positives")
-                                    .and_then(|v| v.as_u64())
-                                    .unwrap_or(0)
-                                    as usize,
-                                total_fp: am
-                                    .get("total_false_positives")
-                                    .and_then(|v| v.as_u64())
-                                    .unwrap_or(0)
-                                    as usize,
-                                total_fn: am
-                                    .get("total_false_negatives")
-                                    .and_then(|v| v.as_u64())
-                                    .unwrap_or(0)
-                                    as usize,
-                                total_cost: summary
-                                    .get("total_cost_usd")
-                                    .and_then(|v| v.as_f64())
-                                    .unwrap_or(0.0),
-                                total_prs: summary
-                                    .get("total_prs")
-                                    .and_then(|v| v.as_u64())
-                                    .unwrap_or(0) as u32,
-                                duration_secs: summary
-                                    .get("duration_secs")
-                                    .and_then(|v| v.as_f64())
-                                    .unwrap_or(0.0),
-                            };
+                            let avg_f1 = am.get("avg_f1").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let avg_precision = am
+                                .get("avg_precision")
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0);
+                            let avg_recall = am
+                                .get("avg_recall")
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0);
                             let pr_count = summary
                                 .get("total_prs")
                                 .and_then(|v| v.as_u64())
@@ -380,18 +306,20 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
                                 .unwrap_or(0) as usize;
 
                             return Ok(RunSummary {
-                                id: name.to_string(),
-                                name: name.to_string(),
-                                pr_count: pr_count as u32,
-                                avg_f1: Some(ag.avg_f1),
-                                avg_precision: Some(ag.avg_precision),
-                                avg_recall: Some(ag.avg_recall),
-                                total_cost: Some(total_cost),
-                                total_tokens,
-                                duration_secs: Some(duration_secs),
+                                meta: RunMeta {
+                                    id: name.to_string(),
+                                    name: name.to_string(),
+                                    pr_count,
+                                    total_cost: Some(total_cost),
+                                    total_tokens,
+                                    duration_secs: Some(duration_secs),
+                                    model: Some(model),
+                                    status: RunStatus::Completed,
+                                },
+                                avg_f1: Some(avg_f1),
+                                avg_precision: Some(avg_precision),
+                                avg_recall: Some(avg_recall),
                                 created_at: get_file_modified(path),
-                                model: Some(model),
-                                status: RunStatus::Completed,
                             });
                         }
                     }
@@ -401,7 +329,7 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
         }
 
         if let Ok(content) = fs::read_to_string(&file_path) {
-            if let Ok(pr_result) = serde_json::from_str::<PrResultJson>(&content) {
+            if let Ok(pr_result) = serde_json::from_str::<PrResult>(&content) {
                 results.push(pr_result);
             }
         }
@@ -412,15 +340,15 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
     }
 
     let pr_count = results.len();
-    let avg_f1 = results.iter().map(|r| r.metrics.f1).sum::<f64>() / pr_count as f64;
-    let avg_precision = results.iter().map(|r| r.metrics.precision).sum::<f64>() / pr_count as f64;
-    let avg_recall = results.iter().map(|r| r.metrics.recall).sum::<f64>() / pr_count as f64;
+    let avg_f1 = results.iter().map(|r| r.metrics.f1()).sum::<f64>() / pr_count as f64;
+    let avg_precision = results.iter().map(|r| r.metrics.precision()).sum::<f64>() / pr_count as f64;
+    let avg_recall = results.iter().map(|r| r.metrics.recall()).sum::<f64>() / pr_count as f64;
 
     // Aggregate per-PR cost if available
     if total_cost == 0.0 {
         total_cost = results
             .iter()
-            .filter_map(|r| r.cost.as_ref().map(|c| c.total_usd))
+            .filter_map(|r| r.cost.as_ref().map(|c| c.total_cost()))
             .sum();
     }
 
@@ -430,18 +358,20 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
     }
 
     Ok(RunSummary {
-        id: name.to_string(),
-        name: name.to_string(),
-        pr_count: pr_count as u32,
+        meta: RunMeta {
+            id: name.to_string(),
+            name: name.to_string(),
+            pr_count,
+            total_cost: Some(total_cost),
+            total_tokens,
+            duration_secs: Some(duration_secs),
+            model: Some("unknown".to_string()),
+            status: RunStatus::Completed,
+        },
         avg_f1: Some(avg_f1),
         avg_precision: Some(avg_precision),
         avg_recall: Some(avg_recall),
-        total_cost: Some(total_cost),
-        total_tokens,
-        duration_secs: Some(duration_secs),
         created_at: get_file_modified(path),
-        model: Some("unknown".to_string()),
-        status: RunStatus::Completed,
     })
 }
 
@@ -464,61 +394,51 @@ fn get_file_modified(path: &Path) -> String {
 fn format_running_response(id: &str, active_run: &ActiveRun) -> impl IntoResponse {
     let roles = active_run.config.roles.clone();
     let detail = RunDetail {
-        id: id.to_string(),
-        name: id.to_string(),
-        pr_count: active_run.total_prs,
+        meta: RunMeta {
+            id: id.to_string(),
+            name: id.to_string(),
+            pr_count: active_run.total_prs,
+            total_cost: None,
+            total_tokens: 0,
+            duration_secs: None,
+            model: Some(active_run.config.model.clone()),
+            status: RunStatus::Running,
+        },
         results: vec![],
         aggregate: None,
-        total_cost: None,
-        total_tokens: 0,
-        duration_secs: None,
-        model: active_run.config.model.clone(),
-        status: "running".to_string(),
-        config: Some(RunConfig {
-            model: active_run.config.model.clone(),
-            dataset: active_run.config.dataset_dir.clone(),
-            roles,
-        }),
+        config: Some(RunConfig::from(&active_run.config)),
     };
     Json(detail).into_response()
 }
 
-/// Summary data extracted from a `_summary.json` file.
-struct RunDirSummary {
-    model: String,
-    duration_secs: f64,
-    total_cost: f64,
-    total_tokens: usize,
-}
-
 /// Read `_summary.json` from a run directory, if it exists.
-fn read_summary_from_dir(run_path: &Path) -> Option<RunDirSummary> {
+fn read_summary_from_dir(run_path: &Path) -> Option<(String, f64, f64, usize)> {
     let summary_path = run_path.join(crb_harness::paths::SUMMARY_FILE);
     let content = std::fs::read_to_string(&summary_path).ok()?;
     let summary: HashMap<String, serde_json::Value> = serde_json::from_str(&content).ok()?;
-    Some(RunDirSummary {
-        model: summary
+    Some((
+        summary
             .get("model")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string(),
-        duration_secs: summary
+        summary
             .get("duration_secs")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0),
-        total_cost: summary
+        summary
             .get("total_cost_usd")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0),
-        total_tokens: summary
+        summary
             .get("total_tokens")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize,
-    })
+    ))
 }
 
 /// Read all PR result files from a run directory.
-fn read_pr_results_from_dir(run_path: &Path, cache_dir: &Option<PathBuf>) -> Vec<PrResult> {
+fn read_pr_results_from_dir(run_path: &Path, cache_dir: &Option<PathBuf>) -> Vec<PrResultRow> {
     let mut results = Vec::new();
     let entries = match std::fs::read_dir(run_path) {
         Ok(e) => e,
@@ -546,7 +466,7 @@ fn read_pr_results_from_dir(run_path: &Path, cache_dir: &Option<PathBuf>) -> Vec
             Err(_) => continue,
         };
 
-        if let Ok(pr) = serde_json::from_str::<PrResultJson>(&content) {
+        if let Ok(pr) = serde_json::from_str::<PrResult>(&content) {
             let pr_number = pr
                 .url
                 .rsplit('/')
@@ -560,14 +480,14 @@ fn read_pr_results_from_dir(run_path: &Path, cache_dir: &Option<PathBuf>) -> Vec
                 .to_string();
             let pr_key_for_agents = pr_key.clone();
 
-            results.push(PrResult {
+            results.push(PrResultRow {
                 pr_number,
                 pr_key,
                 title: pr.pr_title,
-                f1: Some(pr.metrics.f1),
-                precision: Some(pr.metrics.precision),
-                recall: Some(pr.metrics.recall),
-                cost: pr.cost.as_ref().map(|c| c.total_usd),
+                f1: Some(pr.metrics.f1()),
+                precision: Some(pr.metrics.precision()),
+                recall: Some(pr.metrics.recall()),
+                cost: pr.cost.as_ref().map(|c| c.total_cost()),
                 status: Some("done".to_string()),
                 has_agents: cache_dir.as_ref().map_or(false, |cd| {
                     let pr_dir = cd.join(&pr_key_for_agents);
@@ -582,7 +502,7 @@ fn read_pr_results_from_dir(run_path: &Path, cache_dir: &Option<PathBuf>) -> Vec
 
 /// Compute aggregate metrics from PR results.
 fn compute_aggregate_metrics(
-    _results: &[PrResult],
+    _results: &[PrResultRow],
     _total_cost: f64,
     duration_secs: f64,
 ) -> Metrics {
@@ -620,8 +540,7 @@ pub async fn get_run(State(state): State<AppState>, AxumPath(id): AxumPath<Strin
     // Read summary metadata
     let (model, mut duration_secs, mut total_cost, mut total_tokens) =
         read_summary_from_dir(&run_path)
-            .map(|s| (s.model, s.duration_secs, s.total_cost, s.total_tokens))
-            .unwrap_or_else(|| ("unknown".to_string(), 0.0, 0.0, 0));
+            .unwrap_or(("unknown".to_string(), 0.0, 0.0, 0));
 
     // Resolve cache dir once for agent checking
     let cache_dir = resolve_cache_dir(&state.output_dir, &id);
@@ -636,25 +555,23 @@ pub async fn get_run(State(state): State<AppState>, AxumPath(id): AxumPath<Strin
     }
 
     // Merge config from active run state if available (it isn't stored on disk)
-    let config = active_run_config.as_ref().map(|ar| RunConfig {
-        model: ar.config.model.clone(),
-        dataset: ar.config.dataset_dir.clone(),
-        roles: ar.config.roles.clone(),
-    });
+    let config = active_run_config.as_ref().map(|ar| RunConfig::from(&ar.config));
 
     let aggregate = compute_aggregate_metrics(&results, total_cost, duration_secs);
 
     let detail = RunDetail {
-        id: id.clone(),
-        name: id.clone(),
-        pr_count,
+        meta: RunMeta {
+            id: id.clone(),
+            name: id.clone(),
+            pr_count,
+            total_cost: Some(total_cost),
+            total_tokens,
+            duration_secs: Some(duration_secs),
+            model: Some(model),
+            status: RunStatus::Completed,
+        },
         results,
         aggregate: Some(aggregate),
-        total_cost: Some(total_cost),
-        total_tokens,
-        duration_secs: Some(duration_secs),
-        model,
-        status: "completed".to_string(),
         config,
     };
 
@@ -728,7 +645,7 @@ pub async fn start_run(
     let response = StartRunResponse {
         run_id,
         status: "started".to_string(),
-        total_prs,
+        total_prs: total_prs as u32,
     };
 
     (StatusCode::CREATED, Json(response))
@@ -909,7 +826,7 @@ pub async fn list_logs(
                 }
                 // Try to get a more descriptive title from the JSON content
                 let title = if let Ok(content) = std::fs::read_to_string(&file_path) {
-                    if let Ok(pr) = serde_json::from_str::<PrResultJson>(&content) {
+                    if let Ok(pr) = serde_json::from_str::<PrResult>(&content) {
                         if !pr.pr_title.is_empty() {
                             pr.pr_title
                         } else {
@@ -1011,7 +928,7 @@ fn resolve_pr_title(output_dir: &Path, run_id: &str, pr_key: &str) -> String {
                 continue;
             }
             if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(pr) = serde_json::from_str::<PrResultJson>(&content) {
+                if let Ok(pr) = serde_json::from_str::<PrResult>(&content) {
                     // Match by PR number from URL being equal to parsed pr_key
                     let pr_num_from_url = pr
                         .url
@@ -1200,7 +1117,7 @@ pub async fn get_pr_detail(
             Ok(c) => c,
             Err(_) => continue,
         };
-        let pr: PrResultJson = match serde_json::from_str(&content) {
+        let pr: PrResult = match serde_json::from_str(&content) {
             Ok(p) => p,
             Err(_) => continue,
         };
@@ -1233,13 +1150,15 @@ pub async fn get_pr_detail(
         if matches {
             return Json(PrDetailResponse {
                 run_id: id,
-                pr_title: pr.pr_title,
-                url: pr.url,
-                findings_count: pr.findings_count,
-                golden_count: pr.golden_count,
-                metrics: pr.metrics,
-                verdicts: pr.verdicts,
-                cost: pr.cost,
+                payload: PrResultPayload {
+                    pr_title: pr.pr_title,
+                    url: pr.url,
+                    findings_count: pr.findings_count,
+                    golden_count: pr.golden_count,
+                    metrics: pr.metrics,
+                    verdicts: pr.verdicts,
+                    cost: pr.cost,
+                },
                 findings: pr.findings,
                 agent_responses: pr.agent_responses,
             })

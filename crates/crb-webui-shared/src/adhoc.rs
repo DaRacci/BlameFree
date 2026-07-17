@@ -37,8 +37,7 @@ pub struct AdhocRunSummary {
     /// Model used for the review.
     pub model: String,
 
-    /// Reviewer roles assigned for this run (abbreviation strings).
-    /// Now aligned to `Vec<String>` across all API boundaries (see B3/B8/B10).
+    /// Reviewer roles assigned for this run
     pub roles: Vec<String>,
 
     /// Number of findings produced.

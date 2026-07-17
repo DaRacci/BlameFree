@@ -8,6 +8,7 @@ license.workspace = true
 anyhow = { workspace = true }
 crb-shared = { path = "../crb-shared" }
 crb-types = { path = "../crb-types" }
+crb-webui-shared = { path = "../crb-webui-shared" }
 rig-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

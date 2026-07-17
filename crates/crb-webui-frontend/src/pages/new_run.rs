@@ -1,5 +1,6 @@
+use crate::AppConfig;
 use crate::components::role_selector::RoleSelector;
-use crate::{AppConfig, NewRunRequest, NewRunResponse};
+use crate::{NewRunRequest, NewRunResponse};
 use crb_shared::{DEFAULT_MODEL, DEFAULT_MODEL_PRO};
 use crb_webui_shared::config::{DatasetInfo, PrEntry, ReasoningEffortsResponse};
 use crb_webui_shared::route;
@@ -49,6 +50,14 @@ struct NewRunSignals {
     effort_loading: ReadSignal<bool>,
     set_effort_loading: WriteSignal<bool>,
     roles: ReadSignal<Vec<String>>,
+    judge_model: ReadSignal<String>,
+    set_judge_model: WriteSignal<String>,
+    cache_dir: ReadSignal<String>,
+    set_cache_dir: WriteSignal<String>,
+    skip_consensus: ReadSignal<bool>,
+    set_skip_consensus: WriteSignal<bool>,
+    linters_only: ReadSignal<bool>,
+    set_linters_only: WriteSignal<bool>,
 }
 
 fn create_form_signals() -> NewRunSignals {
@@ -73,6 +82,10 @@ fn create_form_signals() -> NewRunSignals {
     let (_submit_result, set_submit_result) = signal::<Option<String>>(None);
     let (effort_levels, set_effort_levels) = signal::<Vec<String>>(Vec::new());
     let (effort_loading, set_effort_loading) = signal(true);
+    let (judge_model, set_judge_model) = signal(String::new());
+    let (cache_dir, set_cache_dir) = signal(String::new());
+    let (skip_consensus, set_skip_consensus) = signal(false);
+    let (linters_only, set_linters_only) = signal(false);
 
     NewRunSignals {
         config,
@@ -114,6 +127,14 @@ fn create_form_signals() -> NewRunSignals {
         effort_loading,
         set_effort_loading,
         roles,
+        judge_model,
+        set_judge_model,
+        cache_dir,
+        set_cache_dir,
+        skip_consensus,
+        set_skip_consensus,
+        linters_only,
+        set_linters_only,
     }
 }
 
@@ -176,11 +197,7 @@ fn create_dataset_change_handler(
                     set_max_findings.set(mf.to_string());
                 }
                 if let Some(ref r) = defaults.roles {
-                    let roles_vec: Vec<String> = r
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect();
+                    let roles_vec: Vec<String> = r.clone();
                     set_roles.set(roles_vec);
                 }
             }
@@ -263,11 +280,7 @@ fn init_config_spawn(
                                     set_max_findings.set(mf.to_string());
                                 }
                                 if let Some(ref r) = cfg.defaults.roles {
-                                    let roles_vec: Vec<String> = r
-                                        .split(',')
-                                        .map(|s| s.trim().to_string())
-                                        .filter(|s| !s.is_empty())
-                                        .collect();
+                                    let roles_vec: Vec<String> = r.clone();
                                     set_roles.set(roles_vec);
                                 }
                             }
@@ -324,6 +337,11 @@ fn create_submit_handler(
     roles: ReadSignal<Vec<String>>,
     use_cache: ReadSignal<bool>,
     reasoning_effort: ReadSignal<Option<String>>,
+    judge_model: ReadSignal<String>,
+    max_findings: ReadSignal<String>,
+    cache_dir: ReadSignal<String>,
+    skip_consensus: ReadSignal<bool>,
+    linters_only: ReadSignal<bool>,
     set_submitting: WriteSignal<bool>,
     set_submit_error: WriteSignal<Option<String>>,
     set_submit_result: WriteSignal<Option<String>>,
@@ -343,6 +361,10 @@ fn create_submit_handler(
             Some(selected.join(","))
         };
 
+        let max_f = max_findings.get().parse::<usize>().unwrap_or(20);
+        let cache = cache_dir.get();
+        let cache_dir_val = if cache.is_empty() { None } else { Some(cache) };
+
         let req = NewRunRequest {
             model: model.get(),
             dataset: dataset.get(),
@@ -350,6 +372,11 @@ fn create_submit_handler(
             pr_filter,
             use_cache: use_cache.get(),
             reasoning_effort: reasoning_effort.get(),
+            judge_model: judge_model.get(),
+            max_findings: max_f,
+            cache_dir: cache_dir_val,
+            skip_consensus: skip_consensus.get(),
+            linters_only: linters_only.get(),
         };
 
         let navigator = navigator.clone();
@@ -497,14 +524,14 @@ fn render_execution_section(
                     if let Some(ref c) = cfg {
                         let role_infos = c.roles.clone();
                         view! {
-                    <div class="form-field">
-                        <label class="form-field__label">"Roles / Agents"</label>
-                        <div class="checkbox-group">
-                            <RoleSelector available_roles=role_infos selected_roles=roles set_selected_roles=set_roles />
-                        </div>
-                        <p class="form-field__helper">"Select at least one role for this run."</p>
-                    </div>
-                    }.into_view().into_any()
+                            <div class="form-field">
+                                <label class="form-field__label">"Roles / Agents"</label>
+                                <div class="checkbox-group">
+                                    <RoleSelector available_roles=role_infos selected_roles=roles set_selected_roles=set_roles />
+                                </div>
+                                <p class="form-field__helper">"Select at least one role for this run."</p>
+                            </div>
+                        }.into_view().into_any()
                     } else {
                         view! { <span></span> }.into_view().into_any()
                     }
@@ -617,11 +644,31 @@ fn render_advanced_section(
     set_reasoning_effort: WriteSignal<Option<String>>,
     effort_levels: ReadSignal<Vec<String>>,
     effort_loading: ReadSignal<bool>,
+    judge_model: ReadSignal<String>,
+    set_judge_model: WriteSignal<String>,
+    cache_dir: ReadSignal<String>,
+    set_cache_dir: WriteSignal<String>,
+    skip_consensus: ReadSignal<bool>,
+    set_skip_consensus: WriteSignal<bool>,
+    linters_only: ReadSignal<bool>,
+    set_linters_only: WriteSignal<bool>,
 ) -> impl IntoView {
     view! {
         <section class="form-section">
             <h2 class="form-section__title">"Advanced"</h2>
             <div class="form-section__fields">
+                <div class="form-field">
+                    <label class="form-field__label" for="judge_model">"Judge Model"</label>
+                    <input
+                        id="judge_model"
+                        class="input"
+                        type="text"
+                        prop:value=judge_model.get()
+                        on:input=move |ev| { set_judge_model.set(event_target_value(&ev)); }
+                        placeholder="deepseek/deepseek-v4-flash"
+                    />
+                    <p class="form-field__helper">"Model used for judge evaluations"</p>
+                </div>
                 <div class="form-field">
                     <label class="form-field__label" for="concurrency">"Concurrency"</label>
                     <input
@@ -697,6 +744,40 @@ fn render_advanced_section(
                         }}
                     </select>
                     <p class="form-field__helper">"Set reasoning/thinking effort for compatible models (DeepSeek, OpenAI o-series, etc.)"</p>
+                </div>
+                <div class="form-field">
+                    <label class="form-field__label" for="cache_dir">"Cache Directory"</label>
+                    <input
+                        id="cache_dir"
+                        class="input"
+                        type="text"
+                        prop:value=cache_dir.get()
+                        on:input=move |ev| { set_cache_dir.set(event_target_value(&ev)); }
+                        placeholder="cache"
+                    />
+                    <p class="form-field__helper">"Override default cache directory"</p>
+                </div>
+                <div class="form-field">
+                    <label class="checkbox-label">
+                        <input
+                            type="checkbox"
+                            prop:checked=skip_consensus.get()
+                            on:click=move |_| set_skip_consensus.update(|v| *v = !*v)
+                        />
+                        "Skip consensus (single-agent mode)"
+                    </label>
+                    <p class="form-field__helper">"Skip consensus orchestration and use single-agent evaluation"</p>
+                </div>
+                <div class="form-field">
+                    <label class="checkbox-label">
+                        <input
+                            type="checkbox"
+                            prop:checked=linters_only.get()
+                            on:click=move |_| set_linters_only.update(|v| *v = !*v)
+                        />
+                        "Linters only (skip LLM agents)"
+                    </label>
+                    <p class="form-field__helper">"Only run linters without LLM-based review agents"</p>
                 </div>
             </div>
         </section>
@@ -788,6 +869,11 @@ pub fn NewRunPage() -> impl IntoView {
         s.roles,
         s.use_cache,
         s.reasoning_effort,
+        s.judge_model,
+        s.max_findings,
+        s.cache_dir,
+        s.skip_consensus,
+        s.linters_only,
         s.set_submitting,
         s.set_submit_error,
         s.set_submit_result,
@@ -814,6 +900,10 @@ pub fn NewRunPage() -> impl IntoView {
                     s.use_cache, s.set_use_cache,
                     s.reasoning_effort, s.set_reasoning_effort,
                     s.effort_levels, s.effort_loading,
+                    s.judge_model, s.set_judge_model,
+                    s.cache_dir, s.set_cache_dir,
+                    s.skip_consensus, s.set_skip_consensus,
+                    s.linters_only, s.set_linters_only,
                 )}
                 {render_submit_button(s.submitting, s.roles)}
                 {render_submit_error(s.submit_error)}

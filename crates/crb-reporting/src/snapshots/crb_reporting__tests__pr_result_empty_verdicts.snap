@@ -13,5 +13,7 @@ expression: "&result"
     "false_negatives": 0,
     "duration_secs": 0.0
   },
-  "verdicts": []
+  "verdicts": [],
+  "findings": null,
+  "agent_responses": []
 }

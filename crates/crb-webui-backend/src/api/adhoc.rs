@@ -19,13 +19,15 @@ use crb_shared::url::parse_github_url;
 use crb_types::benchmark::Metrics;
 use crb_types::benchmark::MetricsProvider;
 use crb_webui_shared::adhoc::{AdhocReviewResponse, AdhocRunSummary, GithubPrListItem};
+use crb_webui_shared::runs::RunStatus;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{info, warn};
 
-use crate::api::runs::{self, PrResultJson};
+use crate::api::runs::{self};
 use crate::server::AppState;
-use crb_webui_shared::runs::{CostJson, MetricsJson, PrResult, RunConfig, RunDetail, VerdictJson};
+use crb_reporting::PrResult;
+use crb_webui_shared::runs::{PrResultRow, RunConfig, RunDetail, RunMeta};
 use rig_core::client::CompletionClient;
 use rig_core::client::ProviderClient;
 
@@ -45,6 +47,7 @@ fn default_adhoc_model() -> String {
 }
 
 // TODO: No string defaults for dynamic roles.
+#[deprecated(note = "Use PromptLibrary::get_instance().abbreviations() instead")]
 fn default_adhoc_roles() -> Vec<String> {
     crb_agents::prompts::PromptLibrary::get_instance()
         .abbreviations()
@@ -231,7 +234,7 @@ pub async fn get_adhoc_run(
     };
     let total_cost = summary_f64("total_cost_usd", 0.0);
 
-    let mut results: Vec<PrResult> = Vec::new();
+    let mut results: Vec<PrResultRow> = Vec::new();
     let mut aggregate_metrics = Metrics {
         true_positives: 0,
         false_positives: 0,
@@ -241,16 +244,16 @@ pub async fn get_adhoc_run(
 
     for (file_path, fname) in runs::iter_json_files(&run_dir) {
         if let Ok(content) = fs::read_to_string(&file_path) {
-            if let Ok(pr_json) = serde_json::from_str::<PrResultJson>(&content) {
+            if let Ok(pr_json) = serde_json::from_str::<PrResult>(&content) {
                 let metrics = &pr_json.metrics;
-                results.push(PrResult {
+                results.push(PrResultRow {
                     pr_number: 0,
                     pr_key: fname.trim_end_matches(".json").to_string(),
                     title: pr_json.pr_title,
-                    f1: Some(metrics.f1),
-                    precision: Some(metrics.precision),
-                    recall: Some(metrics.recall),
-                    cost: pr_json.cost.as_ref().map(|c| c.total_usd),
+                    f1: Some(metrics.f1()),
+                    precision: Some(metrics.precision()),
+                    recall: Some(metrics.recall()),
+                    cost: pr_json.cost.as_ref().map(|c| c.total_cost()),
                     status: Some("done".to_string()),
                     has_agents: false,
                 });
@@ -265,16 +268,18 @@ pub async fn get_adhoc_run(
     // Remove old averaging block — MetricsProvider derives f1/precision/recall from aggregates.
 
     let detail = RunDetail {
-        id: id.clone(),
-        name: id,
-        pr_count: results.len(),
+        meta: RunMeta {
+            id: id.clone(),
+            name: id,
+            pr_count: results.len(),
+            total_cost: Some(total_cost),
+            total_tokens: 0,
+            duration_secs,
+            model: Some(model.clone()),
+            status: RunStatus::Completed,
+        },
         results,
         aggregate: Some(aggregate_metrics),
-        total_cost: Some(total_cost),
-        total_tokens: 0,
-        duration_secs,
-        model: model.clone(),
-        status,
         config: Some(RunConfig {
             model,
             dataset: String::new(),
@@ -499,43 +504,16 @@ async fn run_adhoc_review_inner(
     fs::create_dir_all(&output_subdir)?;
 
     let pr_result_path = output_subdir.join(format!("{}.json", pr_key));
-    let pr_json = PrResultJson {
+    let cost_snapshot = result.cost.clone();
+    let pr_json = crb_reporting::PrResult {
         pr_title: result.pr_title.clone(),
         url: result.url.clone(),
         findings_count: result.findings_count,
         golden_count: 0,
-        metrics: MetricsJson {
-            true_positives: result.metrics.true_positives,
-            false_positives: result.metrics.false_positives,
-            false_negatives: result.metrics.false_negatives,
-            precision: result.metrics.precision(),
-            recall: result.metrics.recall(),
-            f1: result.metrics.f1(),
-        },
-        verdicts: result
-            .verdicts
-            .iter()
-            .map(|v| VerdictJson {
-                reasoning: v.reasoning.clone(),
-                match_: v.match_,
-                confidence: v.confidence as f64,
-            })
-            .collect(),
-        cost: result.cost.map(|c| {
-            let total_tokens_in: u64 = c.sessions.values().map(|s| s.input_tokens).sum();
-            let total_tokens_out: u64 = c.sessions.values().map(|s| s.output_tokens).sum();
-            let total_call_count: u64 = c.sessions.values().map(|s| s.call_count).sum();
-            CostJson {
-                total_usd: c.total_cost(),
-                agent_tokens_in: total_tokens_in,
-                agent_tokens_out: total_tokens_out,
-                judge_tokens_in: 0,
-                judge_tokens_out: 0,
-                agent_call_count: total_call_count,
-                judge_call_count: 0,
-            }
-        }),
-        findings: json!([]),
+        metrics: result.metrics.clone(),
+        verdicts: result.verdicts.clone(),
+        cost: cost_snapshot,
+        findings: serde_json::json!([]),
         agent_responses: vec![],
     };
 
@@ -616,7 +594,14 @@ fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<AdhocRunSummary> {
 
     let pr_title = summary_str(&summary_data, "pr_title", "Unknown");
     let pr_url = summary_str(&summary_data, "pr_url", "");
-    let status = summary_str(&summary_data, "status", "unknown");
+    let status_str = summary_str(&summary_data, "status", "unknown");
+    let status = match status_str.as_str() {
+        "completed" => RunStatus::Completed,
+        "failed" => RunStatus::Failed,
+        "cancelled" => RunStatus::Cancelled,
+        "running" => RunStatus::Running,
+        _ => RunStatus::Pending,
+    };
     let model = summary_str(&summary_data, "model", "unknown");
     let total_cost = summary_f64(&summary_data, "total_cost_usd", 0.0);
     let roles: Vec<String> = summary_data
@@ -687,7 +672,7 @@ fn count_adhoc_findings(path: &Path) -> usize {
             continue;
         }
         if let Ok(content) = fs::read_to_string(&fpath) {
-            if let Ok(pr_json) = serde_json::from_str::<PrResultJson>(&content) {
+            if let Ok(pr_json) = serde_json::from_str::<PrResult>(&content) {
                 return pr_json.findings_count;
             }
         }

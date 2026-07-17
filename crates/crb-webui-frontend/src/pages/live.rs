@@ -13,6 +13,7 @@ use leptos::either::{Either, EitherOf3};
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_params_map;
+use log::{error, warn};
 use lucide_leptos::{ArrowLeft, Check, TriangleAlert};
 use std::collections::HashMap;
 
@@ -74,7 +75,7 @@ pub fn LivePage() -> impl IntoView {
 
     let (progress_done, set_progress_done) = signal(0usize);
     let (progress_total, set_progress_total) = signal(0usize);
-    let (status, set_status) = signal::<String>("connecting".into());
+    let (status, set_status) = signal::<RunStatus>(RunStatus::Pending);
     let (_connected, set_connected) = signal(false);
 
     // Fetch available roles on mount
@@ -103,7 +104,7 @@ pub fn LivePage() -> impl IntoView {
 
         spawn_local(async move {
             if id.is_empty() {
-                set_stat.update(|s| *s = "no_run_id".into());
+                set_stat.update(|s| *s = RunStatus::Pending);
                 return;
             }
 
@@ -112,7 +113,7 @@ pub fn LivePage() -> impl IntoView {
             match sse::connect_sse(&url).await {
                 Ok(mut rx) => {
                     set_conn.set(true);
-                    set_stat.update(|s| *s = "running".into());
+                    set_stat.update(|s| *s = RunStatus::Running);
                     while let Ok(event) = rx.recv().await {
                         match serde_json::from_str::<RunEvent>(&event) {
                             Ok(ev) => {
@@ -132,14 +133,15 @@ pub fn LivePage() -> impl IntoView {
                                 );
                             }
                             Err(e) => {
-                                log::warn!("Failed to parse SSE event: {}", e);
+                                warn!("Failed to parse SSE event: {}", e);
                             }
                         }
                     }
-                    set_stat.update(|s| *s = "complete".into());
+                    set_stat.update(|s| *s = RunStatus::Completed);
                 }
                 Err(e) => {
-                    set_stat.update(|s| *s = format!("error: {}", e));
+                    error!("Failed to connect to SSE: {}", e);
+                    set_stat.update(|s| *s = RunStatus::Failed);
                 }
             }
         });
@@ -170,7 +172,6 @@ pub fn LivePage() -> impl IntoView {
         let key = selected_pr.get()?;
         pr_states.get().get(&key).cloned()
     };
-    let _is_complete = move || status.get() == "complete";
 
     let total = move || progress_total.get();
     let done = move || progress_done.get();
@@ -191,10 +192,10 @@ pub fn LivePage() -> impl IntoView {
                     <span>
                         {move || {
                             let s = status.get();
-                            match s.as_str() {
-                                "connecting" => format!("Live: {}", run_id()),
-                                "running" => format!("Live: {}", run_id()),
-                                "complete" => format!("{} (completed)", run_id()),
+                            match s {
+                                RunStatus::Pending => format!("Live: {}", run_id()),
+                                RunStatus::Running => format!("Live: {}", run_id()),
+                                RunStatus::Completed => format!("{} (completed)", run_id()),
                                 s => format!("{}: {}", s, run_id()),
                             }
                         }}
@@ -210,7 +211,7 @@ pub fn LivePage() -> impl IntoView {
 
             {move || {
                 let s = status.get();
-                if s == "connecting" {
+                if s == RunStatus::Pending {
                     EitherOf3::A(view! {
                         <div class="content-grid content-grid--metrics">
                             <div class="skeleton skeleton--metric"></div>
@@ -225,7 +226,7 @@ pub fn LivePage() -> impl IntoView {
                             <div class="skeleton skeleton--card" style="height: 200px;"></div>
                         </div>
                     })
-                } else if s.starts_with("error") || s == "no_run_id" {
+                } else if s == RunStatus::Failed {
                     EitherOf3::B(view! {
                         <div class="error-state" role="alert">
                             <div class="error-state__icon">
@@ -241,7 +242,7 @@ pub fn LivePage() -> impl IntoView {
                 } else {
                     EitherOf3::C(view! {
                             <MetricsCard value={format!("{}/{}", done(), total())} label="Progress" />
-                            <MetricsCard value={status.get().clone()} label="Status" />
+                            <MetricsCard value={status.get().to_string()} label="Status" />
                             <MetricsCard value={format!("{}%", pct())} label="Completed" />
                             {move || {
                                 let t = total();
@@ -300,7 +301,7 @@ pub fn LivePage() -> impl IntoView {
                                 if let Some(state) = pr_state {
                                     roles.iter().map(|ri| {
                                         let agent_ref = state.agents.get(&ri.abbreviation);
-                                        let status_val = agent_ref.map(|a| a.status.clone()).unwrap_or_else(|| "pending".into());
+                                        let status_val = agent_ref.map(|a| a.status.clone()).unwrap_or_else(|| RunStatus::Pending);
                                         let resp_val = agent_ref.and_then(|a| {
                                             if a.response.is_empty() { None } else { Some(a.response.clone()) }
                                         });
@@ -378,7 +379,7 @@ fn handle_event(
     role_current_pr: &ReadSignal<HashMap<String, String>>,
     set_done: &WriteSignal<usize>,
     set_total: &WriteSignal<usize>,
-    set_stat: &WriteSignal<String>,
+    set_stat: &WriteSignal<RunStatus>,
     roles: &[RoleInfo],
 ) {
     match ev {
@@ -444,9 +445,9 @@ fn handle_event(
         } => {
             with_role_pr(role_current_pr, set_states, &role, |agent| {
                 agent.status = if success {
-                    "done".into()
+                    RunStatus::Completed
                 } else {
-                    "failed".into()
+                    RunStatus::Failed
                 };
                 agent.findings = Some(findings);
             });
@@ -508,7 +509,7 @@ fn handle_event(
         }
 
         RunEvent::RunFinished { .. } => {
-            set_stat.update(|s| *s = "complete".into());
+            set_stat.update(|s| *s = RunStatus::Completed);
         }
     }
 }

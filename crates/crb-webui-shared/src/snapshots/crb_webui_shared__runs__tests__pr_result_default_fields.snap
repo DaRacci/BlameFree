@@ -2,7 +2,7 @@
 source: crates/crb-webui-shared/src/runs.rs
 expression: result
 ---
-PrResult {
+PrResultRow {
     pr_number: 1,
     pr_key: "a/b/pull/1",
     title: "T",

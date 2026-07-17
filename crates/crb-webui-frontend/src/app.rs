@@ -11,13 +11,11 @@ use leptos_router::path;
 use lucide_leptos::{ChartBar, FlaskConical, LayoutDashboard, Menu, Settings};
 use wasm_bindgen::prelude::wasm_bindgen;
 
-use crate::{
-    AppConfig,
-    pages::{
+use crate::AppConfig;
+use crate::pages::{
         adhoc_review::AdhocReviewPage, adhoc_runs::AdhocRunsPage, admin::AdminPage, home::HomePage,
         live::LivePage, new_run::NewRunPage, pr_detail::PrDetailPage, run_detail::RunDetailPage,
-    },
-};
+    };
 
 #[wasm_bindgen(start)]
 pub fn main() {

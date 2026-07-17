@@ -1,7 +1,4 @@
-//! Shared types used by both `crb-webui` (backend) and `crb-webui-frontend` (WASM).
-//!
-//! This crate has minimal dependencies (`serde` + `serde_json`) to stay WASM-compatible.
-//! Every type defined here is `Serialize` + `Deserialize` so the backend can send it over JSON and the frontend can receive it.
+//! Shared types used by both `crb-webui-backend` (server) and `crb-webui-frontend` (WASM).
 
 pub mod adhoc;
 pub mod admin;
@@ -10,10 +7,12 @@ pub mod config;
 pub mod routes;
 pub mod runs;
 
-/// Deterministically maps a role abbreviation string to a hex color code.
+/// Deterministically maps an agent abbreviation string to a hex colour code.
 ///
-/// The same input always produces the same output. Different role abbreviations
-/// generally produce different colors. Empty strings return a neutral gray.
+/// The same input always produces the same output.
+/// Different agent abbreviations generally produce different colours.
+///
+/// Empty strings return a neutral gray.
 pub fn role_color(role: &str) -> String {
     if role.is_empty() {
         return "#808080".to_string();

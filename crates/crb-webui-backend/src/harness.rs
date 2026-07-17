@@ -4,9 +4,10 @@
 //! EvalConfig setup, SSE event forwarding, and result file writing.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crb_agents::agent::AgentEntry;
 use crb_agents::prompts::PromptLibrary;
 use crb_benchmark::pr;
 use crb_harness::eval::{EvalConfig, EvalStrategy};
@@ -17,9 +18,12 @@ use crb_reporting::golden::load_golden_datasets;
 use crb_reporting::write_report;
 use crb_rules::RuleSet;
 use crb_shared::diff::Diff;
+use crb_tools::linters::config::LinterConfig;
+use crb_webui_shared::config::DatasetConfig;
 use rig_core::client::CompletionClient;
 use rig_core::client::ProviderClient;
 use rig_core::providers::openai;
+use rig_core::tool::server::ToolServerHandle;
 use rig_core::tool::server::ToolServer;
 use crb_types::RunEvent;
 use crb_types::benchmark::Metrics;
@@ -31,6 +35,90 @@ use crate::api::runs::BenchmarkConfig;
 use crate::server::ActiveRun;
 use crb_shared::url::parse_github_url;
 use crb_tools::linters::config::load_linter_config;
+
+/// Build an `EvalConfig` from a `BenchmarkConfig` and runtime dependencies.
+///
+/// Encapsulates the mapping so callers don't need to construct `EvalConfig`
+/// field-by-field.
+#[allow(clippy::too_many_arguments)]
+fn build_eval_config(
+    run_id: &str,
+    config: &BenchmarkConfig,
+    client: Arc<openai::Client>,
+    judge: rig_core::agent::Agent<openai::responses_api::ResponsesCompletionModel>,
+    agents: &'static [&'static AgentEntry],
+    tool_handle: ToolServerHandle,
+    webui_tx: broadcast::Sender<RunEvent>,
+    repo_root: PathBuf,
+    reasoning_effort: Option<ReasoningEffort>,
+    linter_configs: Option<Arc<HashMap<String, LinterConfig>>>,
+    ruleset: Option<Arc<RuleSet>>,
+) -> EvalConfig {
+    EvalConfig {
+        identifier: run_id.to_string(),
+        strategy: if config.skip_consensus {
+            EvalStrategy::Single
+        } else {
+            EvalStrategy::Panel
+        },
+        model: Model(config.model.clone()),
+        reasoning_effort,
+        client,
+        cache: None,
+        cost_tracker: Arc::new(AnalyticsTracker::new()),
+        tool_handle,
+        dashboard_tx: Some(webui_tx),
+        agents,
+        repo_root,
+        max_findings: config.max_findings,
+        judge_model: config.judge_model.clone(),
+        judge,
+        linters_only: false,
+        linter_configs,
+        ruleset,
+        template_vars: None,
+    }
+}
+
+/// Apply dataset-level defaults from `dataset.toml` (if present) as overrides
+/// on a `BenchmarkConfig`.
+fn apply_dataset_defaults(config: &BenchmarkConfig, dataset_dir: &Path) -> BenchmarkConfig {
+    let dataset_config_path = dataset_dir.join("dataset.toml");
+    if !dataset_config_path.exists() {
+        return config.clone();
+    }
+    let content = match std::fs::read_to_string(&dataset_config_path) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("Failed to read {}: {e}", dataset_config_path.display());
+            return config.clone();
+        }
+    };
+    let ds_config: DatasetConfig = match toml::from_str(&content) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(
+                "Failed to parse {}: {e}. Ignoring dataset defaults.",
+                dataset_config_path.display()
+            );
+            return config.clone();
+        }
+    };
+    let defaults = &ds_config.defaults;
+    let mut overridden = config.clone();
+    if let Some(ref model) = defaults.model {
+        overridden.model = model.clone();
+    }
+    if let Some(max_findings) = defaults.max_findings {
+        overridden.max_findings = max_findings;
+    }
+    if let Some(ref roles) = defaults.roles {
+        if !roles.is_empty() {
+            overridden.roles = roles.clone();
+        }
+    }
+    overridden
+}
 
 /// Run the harness inline, calling library functions directly.
 ///
@@ -47,6 +135,13 @@ pub async fn run_harness(
 ) -> anyhow::Result<()> {
     let output_subdir = output_dir.join(run_id);
     std::fs::create_dir_all(&output_subdir)?;
+
+    // --- Apply dataset-level defaults ---
+    let config = apply_dataset_defaults(config, dataset_dir);
+    info!(
+        "Benchmark config after dataset defaults: model={}, roles={:?}, max_findings={}",
+        config.model, config.roles, config.max_findings
+    );
 
     // --- EvalConfig setup ---
     let client = Arc::new(
@@ -83,7 +178,7 @@ pub async fn run_harness(
     let ruleset = RuleSet::load_from_dir(Path::new(".crb/rules/"))
         .ok()
         .map(Arc::new);
-    let linter_configs = if config.skip_linters {
+    let linter_configs = if config.linters_only {
         None
     } else {
         load_linter_config("linters.toml").ok().map(Arc::new)
@@ -123,30 +218,19 @@ pub async fn run_harness(
             .unwrap_or_default();
 
         let mut aggregate = Metrics::default();
-        let cfg = EvalConfig {
-            identifier: run_id.to_string(),
-            strategy: if config.skip_consensus {
-                EvalStrategy::Single
-            } else {
-                EvalStrategy::Panel
-            },
-            model: Model(config.model.clone()),
-            reasoning_effort,
-            client: client.clone(),
-            cache: None,
-            cost_tracker: Arc::new(AnalyticsTracker::new()),
-            tool_handle: tool_server.clone(),
-            dashboard_tx: Some(webui_tx.clone()),
+        let cfg = build_eval_config(
+            run_id,
+            &config,
+            client.clone(),
+            judge.clone(),
             agents,
-            repo_root: bench_dir.clone(),
-            max_findings: config.max_findings,
-            judge_model: config.judge_model.clone(),
-            judge: judge.clone(),
-            linters_only: false,
-            linter_configs: linter_configs.clone(),
-            ruleset: ruleset.clone(),
-            template_vars: None,
-        };
+            tool_server.clone(),
+            webui_tx.clone(),
+            bench_dir.clone(),
+            reasoning_effort,
+            linter_configs.clone(),
+            ruleset.clone(),
+        );
 
         match pipeline::evaluate(Diff::new(diff_str), &cfg).await {
             Ok(findings) => {

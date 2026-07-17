@@ -1,4 +1,5 @@
-use crb_webui_shared::config::RoleInfo;
+pub use crb_webui_shared::config::AppConfig;
+pub use crb_webui_shared::runs::StartRunResponse as NewRunResponse;
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 
@@ -22,33 +23,38 @@ pub struct NewRunRequest {
     /// Reasoning effort: None (disabled) or Some("low"/"medium"/"high").
     #[serde(default)]
     pub reasoning_effort: Option<String>,
+
+    /// Judge model for evaluating findings against goldens.
+    #[serde(default = "default_judge_model")]
+    pub judge_model: String,
+
+    /// Maximum findings per agent per PR.
+    #[serde(default = "default_max_findings")]
+    pub max_findings: usize,
+
+    /// Cache directory override.
+    #[serde(default)]
+    pub cache_dir: Option<String>,
+
+    /// Skip consensus orchestration (use single-agent mode).
+    #[serde(default)]
+    pub skip_consensus: bool,
+
+    /// Only run linters, skip LLM agents.
+    #[serde(default)]
+    pub linters_only: bool,
 }
 
 fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NewRunResponse {
-    pub run_id: String,
-    pub status: String,
-    pub total_prs: u32,
+fn default_judge_model() -> String {
+    crb_shared::DEFAULT_MODEL.to_string()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AppConfig {
-    #[serde(default)]
-    pub models: Vec<String>,
-
-    #[serde(default)]
-    pub datasets: Vec<String>,
-
-    #[serde(default)]
-    pub roles: Vec<RoleInfo>,
-
-    /// Whether OAuth authentication is configured server-side.
-    #[serde(default)]
-    pub auth_enabled: bool,
+fn default_max_findings() -> usize {
+    20
 }
 
 /// Deterministic HSL color from a role abbreviation — no hardcoded color map.
@@ -198,6 +204,11 @@ mod tests {
             pr_filter: None,
             use_cache: default_true(),
             reasoning_effort: None,
+            judge_model: default_judge_model(),
+            max_findings: default_max_findings(),
+            cache_dir: None,
+            skip_consensus: false,
+            linters_only: false,
         };
         insta::assert_debug_snapshot!(req);
     }
@@ -211,6 +222,11 @@ mod tests {
             pr_filter: Some("feature/".into()),
             use_cache: false,
             reasoning_effort: Some("high".into()),
+            judge_model: "gpt-4-turbo".into(),
+            max_findings: 30,
+            cache_dir: Some("/tmp/cache".into()),
+            skip_consensus: true,
+            linters_only: false,
         };
         let json = serde_json::to_string(&req).expect("serialize");
         let deserialized: NewRunRequest = serde_json::from_str(&json).expect("deserialize");

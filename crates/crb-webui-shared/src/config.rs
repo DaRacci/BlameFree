@@ -21,6 +21,26 @@ impl RoleInfo {
     }
 }
 
+/// Application configuration returned by the backend config endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppConfig {
+    /// Available model identifiers.
+    #[serde(default)]
+    pub models: Vec<String>,
+
+    /// Available dataset identifiers.
+    #[serde(default)]
+    pub datasets: Vec<String>,
+
+    /// Available reviewer roles/agents.
+    #[serde(default)]
+    pub roles: Vec<RoleInfo>,
+
+    /// Whether OAuth authentication is configured server-side.
+    #[serde(default)]
+    pub auth_enabled: bool,
+}
+
 /// Per-dataset config loaded from dataset.toml.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DatasetConfig {
@@ -44,10 +64,9 @@ pub struct DatasetDefaults {
     #[serde(default)]
     pub max_findings: Option<usize>,
 
-    /// Default reviewer roles (comma-separated for legacy frontend compat).
-    /// TODO: Change to `Option<Vec<String>>` when frontend is updated.
+    /// Default reviewer roles.
     #[serde(default)]
-    pub roles: Option<String>,
+    pub roles: Option<Vec<String>>,
 }
 
 /// Information about an available dataset.

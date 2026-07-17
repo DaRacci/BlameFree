@@ -3,16 +3,18 @@ source: crates/crb-webui-shared/src/runs.rs
 expression: summary
 ---
 RunSummary {
-    id: "r1",
-    name: "test",
-    pr_count: 0,
+    meta: RunMeta {
+        id: "r1",
+        name: "test",
+        pr_count: 0,
+        total_cost: None,
+        total_tokens: 0,
+        duration_secs: None,
+        model: None,
+        status: Running,
+    },
     avg_f1: None,
     avg_precision: None,
     avg_recall: None,
-    total_cost: None,
-    total_tokens: 0,
-    duration_secs: None,
     created_at: "",
-    model: None,
-    status: "running",
 }

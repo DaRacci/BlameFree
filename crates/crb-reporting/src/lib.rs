@@ -8,7 +8,7 @@ use std::{fs, path::Path};
 
 use anyhow::Result;
 use crb_shared::{sanitize_filename, url::parse_github_url};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crb_types::benchmark::{JudgeVerdict, Metrics, MetricsProvider};
@@ -16,7 +16,7 @@ use crb_types::benchmark::{JudgeVerdict, Metrics, MetricsProvider};
 use crate::cost::AnalyticsSnapshot;
 
 /// Result of evaluating a single PR.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrResult {
     /// PR title.
     pub pr_title: String,
@@ -39,6 +39,14 @@ pub struct PrResult {
     /// Cost tracking data for this PR evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost: Option<AnalyticsSnapshot>,
+
+    /// Raw findings data.
+    #[serde(default)]
+    pub findings: serde_json::Value,
+
+    /// Raw agent response texts.
+    #[serde(default)]
+    pub agent_responses: Vec<String>,
 }
 
 /// Write per-PR JSON result files to `output_dir`.
@@ -181,6 +189,8 @@ mod tests {
                     confidence: 0.3,
                 },
             ],
+            findings: serde_json::Value::Null,
+            agent_responses: vec![],
             cost,
         }
     }
@@ -235,6 +245,8 @@ mod tests {
             golden_count: 0,
             metrics: Metrics::default(),
             verdicts: Vec::new(),
+            findings: serde_json::Value::Null,
+            agent_responses: vec![],
             cost: None,
         };
         insta::assert_json_snapshot!(&result);

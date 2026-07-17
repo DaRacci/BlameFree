@@ -3,7 +3,7 @@ use crate::components::progress_bar::ProgressBar;
 use crb_types::benchmark::MetricsProvider;
 use crb_webui_shared::{
     route,
-    runs::{PrResult, RunDetail},
+    runs::{PrResultRow, RunDetail},
 };
 use leptos::prelude::*;
 use leptos_router::components::A;
@@ -77,25 +77,25 @@ pub fn RunDetailPage() -> impl IntoView {
                 } else if let Some(detail) = run.get() {
                     let detail_clone = detail.clone();
                     let _detail_clone2 = detail.clone();
-                    let detail_id = detail.id.clone();
+                    let detail_id = detail.meta.id.clone();
                     let results_clone = detail.results.clone();
                     let results_clone2 = detail.results.clone();
 
-                    let badge_variant = match detail.status.as_str() {
-                        "completed" | "done" => "badge--success",
-                        "failed" => "badge--danger",
-                        "running" => "badge--warning",
-                        _ => "badge--neutral",
+                    let badge_variant = match detail.meta.status {
+                        crb_webui_shared::runs::RunStatus::Completed => "badge--success",
+                        crb_webui_shared::runs::RunStatus::Failed => "badge--danger",
+                        crb_webui_shared::runs::RunStatus::Running => "badge--warning",
+                        crb_webui_shared::runs::RunStatus::Pending | crb_webui_shared::runs::RunStatus::Cancelled => "badge--neutral",
                     };
 
-                    let is_running = detail.status == "running" || detail.status == "pending";
+                    let is_running = detail.meta.status == crb_webui_shared::runs::RunStatus::Running || detail.meta.status == crb_webui_shared::runs::RunStatus::Pending;
                     let _has_results = !detail.results.is_empty();
 
-                    let live_url = format!("/runs/{}/live", detail.id);
+                    let live_url = format!("/runs/{}/live", detail.meta.id);
 
-                    let name = detail.name.clone();
-                    let status = detail.status.clone();
-                    let model = detail.model.clone();
+                    let name = detail.meta.name.clone();
+                    let status: String = detail.meta.status.to_string();
+                    let model = detail.meta.model.clone().unwrap_or_default();
 
                     view! {
                         <div class="page-header">
@@ -152,12 +152,12 @@ pub fn RunDetailPage() -> impl IntoView {
                                         <MetricsCard value={format!("{:.3}", agg.f1())} label="F1 Score" value_style="color: var(--accent-blue, #58a6ff);"/>
                                         <MetricsCard value={format!("{:.3}", agg.precision())} label="Precision" value_style="color: var(--accent-green, #3fb950);"/>
                                         <MetricsCard value={format!("{:.3}", agg.recall())} label="Recall" value_style="color: var(--accent-orange, #f0883e);"/>
-                                        <MetricsCard value={detail_clone.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into())} label="Total Cost" />
+                                        <MetricsCard value={detail_clone.meta.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into())} label="Total Cost" />
                                         <MetricsCard value={format!("{:.0}s", agg.duration_secs)} label="Duration" />
                                     }.into_any()
                                 } else {
-                                    let cost_str = detail_clone.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into());
-                                    let dur_str = detail_clone.duration_secs.map(|d| format!("{:.0}s", d)).unwrap_or_else(|| "-".into());
+                                    let cost_str = detail_clone.meta.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into());
+                                    let dur_str = detail_clone.meta.duration_secs.map(|d| format!("{:.0}s", d)).unwrap_or_else(|| "-".into());
                                     view! {
                                         <MetricsCard value={"-".to_string()} label="F1 Score" />
                                         <MetricsCard value={"-".to_string()} label="Precision" />
@@ -190,7 +190,7 @@ pub fn RunDetailPage() -> impl IntoView {
                                 <tbody>
                                     {move || {
                                         let results_clone2 = results_clone2.clone();
-                                        results_clone2.iter().map(|pr: &PrResult| {
+                                        results_clone2.iter().map(|pr: &PrResultRow| {
                                         let pr_number = pr.pr_number;
                                         let pr_title = pr.title.clone();
                                         let f1 = pr.f1;

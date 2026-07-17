@@ -28,7 +28,7 @@ pub fn HomePage() -> impl IntoView {
 
             match fetch_json::<Vec<RunSummary>>(API_RUNS).await {
                 Ok(data) => {
-                    if data.iter().any(|r| r.status == RunStatus::Running) {
+                    if data.iter().any(|r| r.meta.status == RunStatus::Running) {
                         active = true;
                     }
                     sb.set(data);
@@ -132,21 +132,21 @@ pub fn HomePage() -> impl IntoView {
                     let adhoc = adhoc_runs.get();
 
                     let completed_bench: Vec<&RunSummary> = bench.iter()
-                        .filter(|r| r.status != RunStatus::Running && r.status != RunStatus::Pending)
+                        .filter(|r| r.meta.status != RunStatus::Running && r.meta.status != RunStatus::Pending)
                         .collect();
                     let completed_adhoc: Vec<&AdhocRunSummary> = adhoc.iter()
                         .filter(|r| r.status != RunStatus::Running && r.status != RunStatus::Pending)
                         .collect();
 
                     let total_runs = completed_bench.len() + completed_adhoc.len();
-                    let total_prs: u32 = completed_bench.iter().map(|r| r.pr_count).sum();
+                    let total_prs: usize = completed_bench.iter().map(|r| r.meta.pr_count).sum();
                     let avg_f1 = {
                         let vals: Vec<f64> = completed_bench.iter().filter_map(|r| r.avg_f1).collect();
                         if vals.is_empty() { 0.0 } else { vals.iter().sum::<f64>() / vals.len() as f64 }
                     };
 
                     let active_bench: Vec<&RunSummary> = bench.iter()
-                        .filter(|r| r.status == RunStatus::Running || r.status == RunStatus::Pending)
+                        .filter(|r| r.meta.status == RunStatus::Running || r.meta.status == RunStatus::Pending)
                         .collect();
                     let active_adhoc: Vec<&AdhocRunSummary> = adhoc.iter()
                         .filter(|r| r.status == RunStatus::Running || r.status == RunStatus::Pending)
@@ -191,14 +191,14 @@ pub fn HomePage() -> impl IntoView {
                                     </div>
                                     <div class="content-grid content-grid--cards">
                                         {active_bench.into_iter().map(|run| {
-                                            let live_path = format!("/runs/{}/live", run.id);
-                                            let detail_path = format!("/runs/{}", run.id);
+                                            let live_path = format!("/runs/{}/live", run.meta.id);
+                                            let detail_path = format!("/runs/{}/", run.meta.id);
                                             let detail_path2 = detail_path.clone();
-                                            let elapsed = run.duration_secs
+                                            let elapsed = run.meta.duration_secs
                                                 .map(format_elapsed)
                                                 .unwrap_or_else(|| "Just started".into());
-                                            let pr_progress = if run.pr_count > 0 {
-                                                format!("{} PRs", run.pr_count)
+                                            let pr_progress = if run.meta.pr_count > 0 {
+                                                format!("{} PRs", run.meta.pr_count)
                                             } else {
                                                 String::new()
                                             };
@@ -206,7 +206,7 @@ pub fn HomePage() -> impl IntoView {
                                             view! {
                                                 <a href=live_path class="card card--interactive card--active-run" style="display: block; text-decoration: none;">
                                                     <div class="card__header">
-                                                        <h3 class="card__title">{run.name.clone()}</h3>
+                                                        <h3 class="card__title">{run.meta.name.clone()}</h3>
                                                         <span class="badge badge--running">
                                                             <span class="badge__dot badge__dot--pulse"></span>
                                                             <span class="badge__label">"Running"</span>
@@ -221,7 +221,7 @@ pub fn HomePage() -> impl IntoView {
                                                             }}
                                                             <span>{elapsed}</span>
                                                         </div>
-                                                        {run.model.as_ref().map(|m| {
+                                                        {run.meta.model.as_ref().map(|m| {
                                                             view! { <span class="card__meta" style="font-size: var(--text-sm); color: var(--text-secondary);">{format!("Model: {}", m)}</span> }
                                                         })}
                                                     </div>
@@ -345,7 +345,7 @@ enum RecentRunItem {
 impl RecentRunItem {
     fn status(&self) -> &RunStatus {
         match self {
-            RecentRunItem::Benchmark(r) => &r.status,
+            RecentRunItem::Benchmark(r) => &r.meta.status,
             RecentRunItem::Adhoc(r) => &r.status,
         }
     }
@@ -359,7 +359,7 @@ impl RecentRunItem {
 
     fn display_name(&self) -> String {
         match self {
-            RecentRunItem::Benchmark(r) => r.name.clone(),
+            RecentRunItem::Benchmark(r) => r.meta.name.clone(),
             RecentRunItem::Adhoc(r) => r.pr_title.clone(),
         }
     }
@@ -373,8 +373,8 @@ impl RecentRunItem {
 
     fn detail_path(&self) -> String {
         match self {
-            RecentRunItem::Benchmark(r) => format!("/runs/{}", r.id),
-            RecentRunItem::Adhoc(r) => format!("/adhoc/runs/{}", r.id),
+            RecentRunItem::Benchmark(r) => format!("/runs/{}/", r.meta.id),
+            RecentRunItem::Adhoc(r) => format!("/adhoc/runs/{}/", r.id),
         }
     }
 }

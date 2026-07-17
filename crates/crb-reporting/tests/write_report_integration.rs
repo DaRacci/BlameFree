@@ -51,6 +51,8 @@ fn make_pr(pr_title: &str, url: &str, has_cost: bool) -> PrResult {
             match_: true,
             confidence: 0.95,
         }],
+        findings: serde_json::Value::Null,
+        agent_responses: vec![],
         cost: if has_cost {
             Some(make_cost_snapshot())
         } else {

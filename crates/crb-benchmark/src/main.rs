@@ -1,8 +1,8 @@
 use std::collections::HashSet;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::io::Write;
 use std::{env, fs, io};
 use std::{process, time};
 
@@ -17,17 +17,17 @@ use crb_harness::eval::EvalStrategy;
 use crb_harness::model_capabilities;
 use crb_reporting::cost::AnalyticsTracker;
 use crb_reporting::golden::{GoldenCommentEntry, load_golden_datasets};
-use crb_reporting::history::{RunHistoryEntry, append_run_history};
+use crb_reporting::history::append_run_history;
 use crb_reporting::{print_terminal_summary, write_report};
 use crb_rules::RuleSet;
 use crb_shared::diff::Diff;
-use crb_shared::url::parse_github_url;
 use crb_shared::sanitize_filename;
+use crb_shared::url::parse_github_url;
+use crb_types::RunEvent;
 use crb_types::benchmark::{Metrics, MetricsProvider};
 use crb_types::wrappers::Model;
-use rig_core::tool::server::ToolServer;
-use crb_types::RunEvent;
 use rig_core::client::ProviderClient;
+use rig_core::tool::server::ToolServer;
 use tokio::sync::broadcast;
 use tracing::{error, info, info_span, warn};
 
@@ -371,9 +371,11 @@ fn main() -> Result<()> {
             // Pre-warm model capabilities cache (uses blocking HTTP, must be called outside the async runtime)
             model_capabilities::warm_model_cache_blocking();
 
-            let roles = roles.unwrap_or_else(||
-                crb_agents::prompts::PromptLibrary::get_instance().abbreviations().join(",")
-            );
+            let roles = roles.unwrap_or_else(|| {
+                crb_agents::prompts::PromptLibrary::get_instance()
+                    .abbreviations()
+                    .join(",")
+            });
 
             rt.block_on(run_benchmark(
                 benchmark_dir,
@@ -751,8 +753,13 @@ async fn run_benchmark(
     for pr in prs_to_evaluate {
         let diff_str = match parse_github_url(&pr.url) {
             Ok((owner, repo, pr_num)) => {
-                let d = crb_benchmark::diff_cache::load_cached_diff(&benchmark_dir, &owner, &repo, pr_num)
-                    .unwrap_or_default();
+                let d = crb_benchmark::diff_cache::load_cached_diff(
+                    &benchmark_dir,
+                    &owner,
+                    &repo,
+                    pr_num,
+                )
+                .unwrap_or_default();
                 if d.is_empty() {
                     warn!("Empty diff for PR: {} (url: {})", pr.pr_title, pr.url);
                 } else {
@@ -761,7 +768,10 @@ async fn run_benchmark(
                 d
             }
             Err(_) => {
-                warn!("Could not extract PR info from URL '{}'. Using empty diff.", pr.url);
+                warn!(
+                    "Could not extract PR info from URL '{}'. Using empty diff.",
+                    pr.url
+                );
                 String::new()
             }
         };
@@ -931,12 +941,15 @@ async fn run_benchmark(
     fs::write(&summary_path, serde_json::to_string_pretty(&summary)?)?;
     info!("Cache summary written to: {}", summary_path.display());
 
-    let run_entry = RunHistoryEntry {
-        run_id: summary["run_id"].as_str().unwrap_or("").to_string(),
-        timestamp: format!("{:?}", std::time::SystemTime::now()),
-        model: model.clone(),
-        judge_model: judge_model.clone(),
-        total_prs: results.len(),
+    let run_entry = crb_webui_shared::runs::RunMeta {
+        id: summary["run_id"].as_str().unwrap_or("").to_string(),
+        name: summary["run_id"].as_str().unwrap_or("").to_string(),
+        pr_count: results.len(),
+        total_cost: Some(total_cost_usd),
+        total_tokens: total_tokens as usize,
+        duration_secs: Some(eval_elapsed.as_secs_f64()),
+        model: Some(model.clone()),
+        status: crb_webui_shared::runs::RunStatus::Completed,
     };
     append_run_history(&cache_dir, &run_entry)?;
 

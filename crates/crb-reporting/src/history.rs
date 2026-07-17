@@ -4,26 +4,16 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use crb_webui_shared::runs::RunMeta;
+
 /// Append-only run-history log.
 pub const RUNS_FILE: &str = "_runs.json";
 
-/// A single run entry appended to [`RUNS_FILE`] in the cache directory.
-///
-/// Records metadata about each run for historical tracking.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RunHistoryEntry {
-    pub run_id: String,
-    pub timestamp: String,
-    pub model: String,
-    pub judge_model: String,
-    pub total_prs: usize,
-}
-
 // TODO: Is this needed or does the new cache system handle this automatically?
 /// Append a run history entry to the runs file in the cache directory.
-pub fn append_run_history(cache_dir: &Path, entry: &RunHistoryEntry) -> Result<()> {
+pub fn append_run_history(cache_dir: &Path, entry: &RunMeta) -> Result<()> {
     let path = cache_dir.join(RUNS_FILE);
-    let mut runs: Vec<RunHistoryEntry> = if path.exists() {
+    let mut runs: Vec<RunMeta> = if path.exists() {
         let content = fs::read_to_string(&path).unwrap_or_else(|_| "[]".to_string());
         serde_json::from_str(&content).unwrap_or_else(|_| Vec::new())
     } else {
@@ -42,12 +32,15 @@ mod tests {
     #[test]
     fn test_append_run_history_creates_file() {
         let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
-        let entry = RunHistoryEntry {
-            run_id: "run-001".into(),
-            timestamp: "2026-07-16T12:00:00Z".into(),
-            model: "gpt-4".into(),
-            judge_model: "gpt-4".into(),
-            total_prs: 5,
+        let entry = RunMeta {
+            id: "run-001".into(),
+            name: "run-001".into(),
+            pr_count: 5,
+            total_cost: None,
+            total_tokens: 0,
+            duration_secs: None,
+            model: Some("gpt-4".into()),
+            status: crb_webui_shared::runs::RunStatus::Completed,
         };
 
         let result = append_run_history(dir.path(), &entry);
@@ -60,27 +53,32 @@ mod tests {
     #[test]
     fn test_append_run_history_appends_to_existing() {
         let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
-        let entry1 = RunHistoryEntry {
-            run_id: "run-001".into(),
-            timestamp: "2026-07-16T12:00:00Z".into(),
-            model: "gpt-4".into(),
-            judge_model: "gpt-4".into(),
-            total_prs: 5,
+        let entry1 = RunMeta {
+            id: "run-001".into(),
+            name: "run-001".into(),
+            pr_count: 5,
+            total_cost: None,
+            total_tokens: 0,
+            duration_secs: None,
+            model: Some("gpt-4".into()),
+            status: crb_webui_shared::runs::RunStatus::Completed,
         };
-        let entry2 = RunHistoryEntry {
-            run_id: "run-002".into(),
-            timestamp: "2026-07-16T13:00:00Z".into(),
-            model: "claude-3".into(),
-            judge_model: "gpt-4".into(),
-            total_prs: 3,
+        let entry2 = RunMeta {
+            id: "run-002".into(),
+            name: "run-002".into(),
+            pr_count: 3,
+            total_cost: None,
+            total_tokens: 0,
+            duration_secs: None,
+            model: Some("claude-3".into()),
+            status: crb_webui_shared::runs::RunStatus::Completed,
         };
 
         assert!(append_run_history(dir.path(), &entry1).is_ok());
         assert!(append_run_history(dir.path(), &entry2).is_ok());
 
-        let content =
-            fs::read_to_string(dir.path().join(RUNS_FILE)).expect("read should succeed");
-        let runs: Vec<RunHistoryEntry> =
+        let content = fs::read_to_string(dir.path().join(RUNS_FILE)).expect("read should succeed");
+        let runs: Vec<RunMeta> =
             serde_json::from_str(&content).expect("deserialization should succeed");
         assert_eq!(runs.len(), 2);
     }
@@ -88,24 +86,26 @@ mod tests {
     #[test]
     fn test_append_run_history_content() {
         let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
-        let entry = RunHistoryEntry {
-            run_id: "run-001".into(),
-            timestamp: "2026-07-16T12:00:00Z".into(),
-            model: "gpt-4".into(),
-            judge_model: "gpt-4-turbo".into(),
-            total_prs: 10,
+        let entry = RunMeta {
+            id: "run-001".into(),
+            name: "run-001".into(),
+            pr_count: 10,
+            total_cost: None,
+            total_tokens: 0,
+            duration_secs: None,
+            model: Some("gpt-4".into()),
+            status: crb_webui_shared::runs::RunStatus::Completed,
         };
 
         assert!(append_run_history(dir.path(), &entry).is_ok());
 
-        let content =
-            fs::read_to_string(dir.path().join(RUNS_FILE)).expect("read should succeed");
-        let runs: Vec<RunHistoryEntry> =
+        let content = fs::read_to_string(dir.path().join(RUNS_FILE)).expect("read should succeed");
+        let runs: Vec<RunMeta> =
             serde_json::from_str(&content).expect("deserialization should succeed");
         assert_eq!(runs.len(), 1);
-        assert_eq!(runs[0].run_id, "run-001");
-        assert_eq!(runs[0].model, "gpt-4");
-        assert_eq!(runs[0].total_prs, 10);
+        assert_eq!(runs[0].id, "run-001");
+        assert_eq!(runs[0].model, Some("gpt-4".to_string()));
+        assert_eq!(runs[0].pr_count, 10);
     }
 
     #[test]

@@ -8,40 +8,47 @@
 //! 5. `/etc/crb-webui/config.toml`
 //! 6. Built-in defaults (OAuth disabled)
 
-use std::path::Path;
+use std::{env, fs, path::Path};
 
 use serde::{Deserialize, Serialize};
+use tracing::{debug, info, warn};
 
 /// Top-level web UI configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct WebUiConfig {
     #[serde(default)]
     pub server: ServerConfig,
+
     /// OAuth is disabled by default. Set to `Some(...)` to enable.
     #[serde(default)]
     pub oauth: Option<OAuthConfig>,
 }
 
 /// Server binding configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
     #[serde(default = "default_host")]
     pub host: String,
+
     #[serde(default = "default_port")]
     pub port: u16,
 }
 
 /// OAuth authentication configuration.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct OAuthConfig {
     /// Provider name: "github", "google", or "gitlab".
     pub provider: String,
+
     /// OAuth App client ID.
     pub client_id: String,
+
     /// OAuth App client secret.
     pub client_secret: String,
+
     /// Redirect URL (must match the provider's registered redirect URI).
     pub redirect_url: String,
+
     /// OAuth scopes to request.
     #[serde(default = "default_scopes")]
     pub scopes: Vec<String>,
@@ -59,92 +66,68 @@ fn default_scopes() -> Vec<String> {
     vec!["read:user".to_string(), "user:email".to_string()]
 }
 
-impl Default for WebUiConfig {
-    fn default() -> Self {
-        Self {
-            server: ServerConfig::default(),
-            oauth: None,
-        }
-    }
-}
-
-impl Default for ServerConfig {
-    fn default() -> Self {
-        Self {
-            host: default_host(),
-            port: default_port(),
-        }
-    }
-}
-
 /// Load configuration using Linux standard search path.
 ///
 /// `cli_config_path` is the optional `--config` CLI flag value.
 pub fn load_config(cli_config_path: Option<&Path>) -> WebUiConfig {
-    // 1. --config CLI flag
     if let Some(path) = cli_config_path {
         if path.exists() {
-            tracing::info!("Loading config from --config flag: {}", path.display());
+            info!("Loading config from --config flag: {}", path.display());
             return load_from_file(path).unwrap_or_default();
         }
-        tracing::warn!(
+        warn!(
             "Config file specified via --config not found: {}",
             path.display()
         );
     }
 
-    // 2. CRB_WEBUI_CONFIG env var
-    if let Ok(env_path) = std::env::var("CRB_WEBUI_CONFIG") {
+    if let Ok(env_path) = env::var("CRB_WEBUI_CONFIG") {
         let path = Path::new(&env_path);
         if path.exists() {
-            tracing::info!("Loading config from CRB_WEBUI_CONFIG: {}", path.display());
+            info!("Loading config from CRB_WEBUI_CONFIG: {}", path.display());
             return load_from_file(path).unwrap_or_default();
         }
     }
 
-    // 3. ./webui.toml (current working directory)
     let cwd_path = Path::new("webui.toml");
     if cwd_path.exists() {
-        tracing::info!("Loading config from ./webui.toml");
+        info!("Loading config from ./webui.toml");
         return load_from_file(cwd_path).unwrap_or_default();
     }
 
-    // 4. $XDG_CONFIG_HOME/crb-webui/config.toml
-    if let Ok(xdg_home) = std::env::var("XDG_CONFIG_HOME") {
+    if let Ok(xdg_home) = env::var("XDG_CONFIG_HOME") {
         let xdg_path = Path::new(&xdg_home).join("crb-webui/config.toml");
         if xdg_path.exists() {
-            tracing::info!("Loading config from XDG config: {}", xdg_path.display());
+            info!("Loading config from XDG config: {}", xdg_path.display());
             return load_from_file(&xdg_path).unwrap_or_default();
         }
-    } else if let Ok(home) = std::env::var("HOME") {
+    } else if let Ok(home) = env::var("HOME") {
         let fallback_path = Path::new(&home).join(".config/crb-webui/config.toml");
         if fallback_path.exists() {
-            tracing::info!("Loading config from ~/.config: {}", fallback_path.display());
+            info!("Loading config from ~/.config: {}", fallback_path.display());
             return load_from_file(&fallback_path).unwrap_or_default();
         }
     }
 
-    // 5. /etc/crb-webui/config.toml
     let etc_path = Path::new("/etc/crb-webui/config.toml");
     if etc_path.exists() {
-        tracing::info!("Loading config from /etc: {}", etc_path.display());
+        info!("Loading config from /etc: {}", etc_path.display());
         return load_from_file(etc_path).unwrap_or_default();
     }
 
-    // 6. Built-in defaults
-    tracing::info!("No config file found; using built-in defaults");
+    info!("No config file found; using defaults");
     WebUiConfig::default()
 }
 
 fn load_from_file(path: &Path) -> Option<WebUiConfig> {
-    let content = std::fs::read_to_string(path).ok()?;
+    let content = fs::read_to_string(path).ok()?;
     match toml::from_str::<WebUiConfig>(&content) {
         Ok(cfg) => {
-            tracing::debug!("Parsed config from {}", path.display());
+            debug!("Parsed config from {}", path.display());
             Some(cfg)
         }
         Err(e) => {
-            tracing::warn!("Failed to parse config file {}: {}", path.display(), e);
+            warn!("Failed to parse config file {}: {}", path.display(), e);
             None
         }
     }
@@ -178,7 +161,8 @@ mod tests {
             client_secret = "secret"
             redirect_url = "http://localhost:8080/callback"
         "#;
-        let deserialized: OAuthConfig = toml::from_str(toml_str).expect("should deserialize with scopes default");
+        let deserialized: OAuthConfig =
+            toml::from_str(toml_str).expect("should deserialize with scopes default");
         insta::assert_debug_snapshot!(deserialized.scopes);
     }
 
@@ -223,7 +207,8 @@ mod tests {
     fn test_config_load_minimal() {
         // Minimal config — server defaults, no oauth
         let toml_str = r#""#;
-        let cfg: WebUiConfig = toml::from_str(toml_str).expect("empty TOML should parse with defaults");
+        let cfg: WebUiConfig =
+            toml::from_str(toml_str).expect("empty TOML should parse with defaults");
         insta::assert_debug_snapshot!(cfg);
     }
 

@@ -190,6 +190,9 @@
 .agent-pane--failed {
   border-color: var(--accent-red);
 }
+.agent-pane--cancelled {
+  border-color: var(--accent-yellow);
+}
 
 .agent-pane__header {
   display: flex;

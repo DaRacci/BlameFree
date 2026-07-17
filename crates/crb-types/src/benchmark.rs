@@ -85,14 +85,16 @@ impl AddAssign for Metrics {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JudgeVerdict {
     /// Brief explanation of why the judge determined a match or no match.
+    #[serde(default)]
     pub reasoning: String,
 
     /// Whether the candidate finding matches the golden comment.
-    #[serde(rename = "match")]
+    #[serde(default, rename = "match")]
     pub match_: bool,
 
-    /// Confidence level for this judgment
-    pub confidence: f32,
+    /// Confidence level for this judgment (0.0–1.0).
+    #[serde(default)]
+    pub confidence: f64,
 }
 
 #[cfg(test)]

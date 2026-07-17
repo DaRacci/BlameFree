@@ -20,6 +20,7 @@ pub fn AgentPane(
             RunStatus::Completed => "agent-pane--completed",
             RunStatus::Failed => "agent-pane--failed",
             RunStatus::Pending => "agent-pane--pending",
+            RunStatus::Cancelled => "agent-pane--cancelled",
         }
     };
 
@@ -29,17 +30,11 @@ pub fn AgentPane(
             RunStatus::Completed => EitherOf4::B(view! { <Check size=16 /> }),
             RunStatus::Failed => EitherOf4::C(view! { <X size=16 /> }),
             RunStatus::Pending => EitherOf4::D(view! { <Circle size=16 /> }),
+            RunStatus::Cancelled => EitherOf4::D(view! { <Circle size=16 /> }),
         }
     };
 
-    let status_text = move || -> &'static str {
-        match status.get() {
-            RunStatus::Running => "reviewing...",
-            RunStatus::Completed => "completed",
-            RunStatus::Failed => "failed",
-            RunStatus::Pending => "pending",
-        }
-    };
+    let status_text = move || -> &'static str { status.get().into() };
 
     let short_name = {
         let name = name.clone();

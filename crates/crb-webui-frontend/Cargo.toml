@@ -24,6 +24,7 @@ log = { workspace = true }
 lucide-leptos = { workspace = true, features = ["all-icons"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+strum = { workspace = true }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 web-sys = { workspace = true, features = ["EventSource", "MessageEvent"] }

@@ -22,6 +22,7 @@ use crate::auth::SessionStore;
 use crate::config::WebUiConfig;
 use crate::static_assets::StaticAssets;
 use crb_types::RunEvent;
+use crb_webui_shared::routes::API_CONFIG_DATASETS;
 
 /// Shared application state.
 #[derive(Clone)]

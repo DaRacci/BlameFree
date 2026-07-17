@@ -1,6 +1,7 @@
 //! Shared event types for code review benchmark runs.
 
 pub mod benchmark;
+pub mod cost;
 pub mod wrappers;
 
 use serde::{Deserialize, Serialize};
