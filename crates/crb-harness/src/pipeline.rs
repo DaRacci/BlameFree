@@ -1,22 +1,19 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use crb_agents::build_agent;
 use crb_consensus::adaptive::get_agents_for_diff;
-use crb_shared::{
-    diff::{self, Diff},
-    sanitize_filename,
-};
+use crb_shared::diff::{self, Diff};
 use crb_tools::build_tool_server;
-use crb_types::{RunEvent, finding::Finding};
-use crb_types::{
-    benchmark::{metrics::Metrics, result::PrResult},
-    vcs::pr::PrMeta,
-};
-use rig_core::completion::Prompt;
-use tokio::task;
-use tracing::{info, warn};
 
-use crate::eval::EvalConfig;
+use crb_types::errors::ManyErrors;
+use crb_types::{RunEvent, finding::Finding};
+
+use tokio::task;
+use tracing::{error, info, warn};
+
 use crate::finding::post_process_findings;
+use crate::{eval::EvalConfig, review::stream_agent};
 
 // Helper macro to send events to the dashboard if the channel is available.
 // `$config` must be an expression that yields an `&EvalConfig`.
@@ -30,39 +27,24 @@ macro_rules! send_event {
 }
 
 /// Send AgentStarted events for each configured agent.
-pub async fn send_agent_started_events(config: &EvalConfig, identifier: &str) {
-    if let Some(ref tx) = config.dashboard_tx {
-        let pr_key = sanitize_filename(identifier);
-        for entry in config.agents {
-            let _ = tx.send(RunEvent::AgentStarted {
-                identifier: pr_key.clone(),
-                agent: entry.role_abbreviation.to_string(),
-            });
-        }
-    }
-}
-
-/// Build a PrResult from evaluation outputs and caller-provided PR metadata.
-pub async fn build_pr_result(findings: &[Finding], config: &EvalConfig, meta: PrMeta) -> PrResult {
-    let snapshot = config.cost_tracker.to_snapshot().await;
-    let metrics = Metrics::default();
-    PrResult {
-        meta,
-        metrics,
-        findings_with_verdicts: vec![],
-        agent_responses: vec![],
-        golden_comments: vec![],
-        repository: None, // TODO: add repository info if available
-        cost: snapshot,
-    }
-}
+// pub async fn send_agent_started_events(config: &EvalConfig, identifier: &str) {
+//     if let Some(ref tx) = config.dashboard_tx {
+//         let pr_key = sanitize_filename(identifier);
+//         for entry in config.agents {
+//             let _ = tx.send(RunEvent::AgentStarted {
+//                 identifier: pr_key.clone(),
+//                 agent: entry.role_abbreviation.to_string(),
+//             });
+//         }
+//     }
+// }
 
 pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> {
     send_event!(
         config,
         RunEvent::ReviewStarted {
-            identifier: config.identifier.clone(),
-            total_agents: config.agents.len(),
+            review_id: config.review_id.clone(),
+            agent_ids: config.agents.iter().map(|a| a.agent_id.clone()).collect(),
         }
     );
 
@@ -70,29 +52,27 @@ pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding
 
     let linters = run_linters(config);
     let reviewers = run_reviewers(&diff, config);
-    let (mut all_findings, reviewer_findings) = tokio::join!(linters, reviewers);
+    let (mut all_findings, (reviewer_findings, errors)) = tokio::join!(linters, reviewers);
 
     let reviewer_findings = post_process(reviewer_findings.as_slice(), config);
     all_findings.extend(reviewer_findings);
 
-    let snapshot = config.cost_tracker.to_snapshot().await;
-    let (total_tokens_in, total_tokens_out) = snapshot.total_tokens();
-
     metrics(config).await;
     report(config).await;
 
-    let findings_count = all_findings.len();
-    let agent_calls = config.agents.len();
+    if let Some(errors) = errors {
+        error!(
+            "Encountered {} error(s) during review\n{}",
+            errors.len(),
+            errors
+        );
+    }
 
     send_event!(
         config,
         RunEvent::ReviewCompleted {
-            identifier: config.identifier.clone(),
-            metrics: Metrics::default(),
-            cost: snapshot.total_cost(),
-            total_tokens: (total_tokens_in + total_tokens_out) as usize,
-            agent_calls,
-            findings_count,
+            review_id: config.review_id.clone(),
+            analytics: config.cost_tracker.to_snapshot().await,
         }
     );
 
@@ -132,70 +112,46 @@ async fn run_linters(_config: &EvalConfig) -> Vec<Finding> {
     todo!()
 }
 
-async fn run_reviewers(diff: &Diff, config: &EvalConfig) -> Vec<Finding> {
+/// Run the configured agents on the given diff and return their findings along with any errors encountered during execution.
+async fn run_reviewers(diff: &Diff, config: &EvalConfig) -> (Vec<Finding>, Option<ManyErrors>) {
     let effective_agents = get_agents_for_diff(diff, config.agents);
     if effective_agents.is_empty() {
-        return Vec::new();
+        return (Vec::new(), None);
     }
 
-    let tool_server = build_tool_server(config.repo_root.to_str()).run();
+    let tool_server = build_tool_server(config.context.repo_root.to_str()).run();
     let mut agent_set = task::JoinSet::new();
 
+    let config = Arc::new(config.clone());
     for agent_entry in effective_agents {
         let tool_server_handle = tool_server.clone();
         let diff_str = diff.raw.clone();
-        let client = config.client.clone();
-        let model = config.model.clone();
-        let rules_preamble = config.ruleset.as_ref().map(|rs| rs.format_preamble(&[]));
-        let template_vars = config.template_vars.clone();
-        let max_findings = config.max_findings;
 
+        let config = config.clone();
         agent_set.spawn(async move {
-            let agent = build_agent(
-                &client,
-                &model,
-                agent_entry,
-                rules_preamble.as_deref(),
-                template_vars.as_ref(),
-                None,
-                None,
-                tool_server_handle,
-            )
-            .output_schema::<Vec<Finding>>()
-            .build();
+            let agent_id = agent_entry.agent_id.clone();
+            let agent = build_agent(config.clone(), agent_entry, tool_server_handle)
+                .output_schema::<Vec<Finding>>()
+                .build();
 
-            match agent.prompt(diff_str).extended_details().await {
-                Ok(resp) => {
-                    let findings: Vec<Finding> =
-                        serde_json::from_str(&resp.output).unwrap_or_default();
-                    let mut findings = findings;
-                    if findings.len() > max_findings {
-                        info!(
-                            "Agent {} produced {} findings, capping at {max_findings}",
-                            agent_entry.role_abbreviation,
-                            findings.len(),
-                        );
-                        findings.truncate(max_findings);
-                    }
-                    findings
-                }
-                Err(e) => {
-                    warn!("Agent {} failed: {e}", agent_entry.role_abbreviation);
-                    Vec::new()
-                }
-            }
+            stream_agent::<Vec<Finding>, _, _>(config, &agent_id, &agent, &diff_str).await
         });
     }
 
-    let mut all_findings = Vec::new();
+    let mut errors = None;
+    let mut all_findings = Vec::<Finding>::new();
     while let Some(res) = agent_set.join_next().await {
         match res {
-            Ok(findings) => all_findings.extend(findings),
+            Ok(Ok(findings)) => all_findings.extend(findings),
+            Ok(Err(e)) => {
+                let errors = errors.get_or_insert_with(ManyErrors::new);
+                errors.push(e)
+            }
             Err(e) => warn!("Agent join error: {e}"),
         }
     }
 
-    all_findings
+    (all_findings, errors)
 }
 
 fn post_process(findings: &[Finding], _config: &EvalConfig) -> Vec<Finding> {

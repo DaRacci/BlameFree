@@ -35,9 +35,15 @@ impl SessionUsageProvider for Usage {
     }
 }
 
+impl SessionUsageProvider for SessionUsage {
+    fn get_usage(&self) -> SessionUsage {
+        *self
+    }
+}
+
 /// Thread-safe cost tracker for a single PR evaluation.
 ///
-/// Wraps all counters in a `Mutex` so it can be shared across concurrent agent calls via `Arc<CostTracker>`.
+/// Wraps all counters in a `Mutex` so it can be shared across concurrent agent calls via [`std::sync::Arc<AnalyticsTracker>`].
 #[derive(Debug, Default)]
 pub struct AnalyticsTracker {
     inner: Mutex<AnalyticsTrackerInner>,
@@ -59,17 +65,17 @@ impl AnalyticsTracker {
     }
 
     /// Record a call
-    pub async fn record<T>(&self, key: MagicTypeId, provider: T, cache_hit: bool)
+    pub async fn record<T>(&self, key: &MagicTypeId, provider: T, cache_hit: bool)
     where
         T: SessionUsageProvider,
     {
         let mut inner = self.inner.lock().await;
 
-        if !inner.sessions.contains_key(&key) {
+        if !inner.sessions.contains_key(key) {
             inner.sessions.insert(key.clone(), Default::default());
         }
 
-        if !inner.cache_usage.contains_key(&key) {
+        if !inner.cache_usage.contains_key(key) {
             inner.cache_usage.insert(key.clone(), Default::default());
         }
 
@@ -87,7 +93,7 @@ impl AnalyticsTracker {
         };
 
         {
-            let _ = inner.cache_usage.entry(key).and_modify(|c| {
+            let _ = inner.cache_usage.entry(key.clone()).and_modify(|c| {
                 if cache_hit {
                     c.cache_hits += 1;
                 } else {

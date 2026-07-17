@@ -167,9 +167,6 @@ fn main() -> Result<()> {
             run_clean(&benchmark_dir, outputs, dry_run)?;
         }
         Commands::Run {
-            benchmark_dir,
-            dataset_dir,
-            output_dir,
             model,
             judge_model,
             dry_run,
@@ -353,7 +350,7 @@ fn run_clean(benchmark_dir: &PathBuf, outputs: bool, dry_run: bool) -> Result<()
 /// Attempts to read from environment variables, falling back to default constants if not set.
 ///
 /// Returns a tuple of (benchmark_dir, dataset_dir, output_dir, cache_dir, rules_dir).
-pub fn get_paths() -> Result<(PathBuf, PathBuf, PathBuf, PathBuf, PathBuf)> {
+pub fn get_paths() -> Result<(PathBuf, PathBuf, PathBuf, PathBuf, PathBuf, PathBuf)> {
     let cwd = env::current_dir().context("Failed to determine current working directory")?;
 
     let benchmark_dir = env::var("BENCHMARK_DIR").unwrap_or_else(|_| BENCHMARK_DIR.to_string());
@@ -370,6 +367,7 @@ pub fn get_paths() -> Result<(PathBuf, PathBuf, PathBuf, PathBuf, PathBuf)> {
         PathBuf::from(output_dir),
         PathBuf::from(cache_dir),
         PathBuf::from(rules_dir),
+        PathBuf::from(linter_path),
     ))
 }
 

@@ -46,7 +46,6 @@ fn build_eval_config(
     client: Arc<openai::Client>,
     judge: rig_core::agent::Agent<openai::responses_api::ResponsesCompletionModel>,
     agents: &'static [&'static AgentEntry],
-    tool_handle: ToolServerHandle,
     webui_tx: broadcast::Sender<RunEvent>,
     repo_root: PathBuf,
     reasoning_effort: Option<ReasoningEffort>,
@@ -54,7 +53,7 @@ fn build_eval_config(
     ruleset: Option<Arc<RuleSet>>,
 ) -> EvalConfig {
     EvalConfig {
-        identifier: run_id.to_string(),
+        review_id: run_id.to_string(),
         strategy: if config.skip_consensus {
             EvalStrategy::Single
         } else {
@@ -65,7 +64,6 @@ fn build_eval_config(
         client,
         cache: None,
         cost_tracker: Arc::new(AnalyticsTracker::new()),
-        tool_handle,
         dashboard_tx: Some(webui_tx),
         agents,
         repo_root,
@@ -169,7 +167,6 @@ pub async fn run_harness(
     let bench_dir = benchmark_dir
         .unwrap_or(Path::new("benchmark"))
         .to_path_buf();
-    let tool_server = ToolServer::new().run();
     let reasoning_effort = config
         .reasoning_effort
         .as_deref()
@@ -225,7 +222,6 @@ pub async fn run_harness(
             client.clone(),
             judge.clone(),
             agents,
-            tool_server.clone(),
             webui_tx.clone(),
             bench_dir.clone(),
             reasoning_effort,

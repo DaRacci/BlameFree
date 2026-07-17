@@ -656,6 +656,7 @@ dependencies = [
  "crb-types",
  "handlebars",
  "include_dir",
+ "mti",
  "rig-core",
  "serde",
  "serde_fields",
@@ -744,7 +745,9 @@ dependencies = [
  "crb-tools",
  "crb-types",
  "dotenvy",
+ "futures",
  "insta",
+ "mti",
  "reqwest 0.12.28",
  "rig-core",
  "serde",
@@ -775,7 +778,6 @@ name = "crb-reporting"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "crb-shared",
  "crb-types",
  "crb-webui-shared",
  "insta",
@@ -845,11 +847,11 @@ dependencies = [
 name = "crb-types"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "insta",
  "mti",
  "schemars",
  "serde",
- "serde_json",
  "strum",
 ]
 

@@ -429,7 +429,7 @@ fn handle_event(
         }
 
         RunEvent::AgentChunk {
-            identifier: role,
+            review_id: role,
             chunk,
         } => {
             with_role_pr(role_current_pr, set_states, &role, |agent| {
@@ -438,7 +438,7 @@ fn handle_event(
         }
 
         RunEvent::AgentFinished {
-            identifier: role,
+            review_id: role,
             findings,
             success,
         } => {

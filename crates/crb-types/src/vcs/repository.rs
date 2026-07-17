@@ -1,7 +1,9 @@
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RepositoryMeta {
+pub struct RemoteRepositoryMeta {
     /// The owner of the repository.
     pub owner: String,
 
@@ -12,13 +14,19 @@ pub struct RepositoryMeta {
     pub platform: VCSPlatform,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitRepositoryMeta {
+    /// The path to the repository root on the local filesystem.
+    pub repo_root: PathBuf,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum VCSPlatform {
     GitHub,
     Codeberg,
 }
 
-impl RepositoryMeta {
+impl RemoteRepositoryMeta {
     pub fn get_url(&self) -> String {
         match self.platform {
             VCSPlatform::GitHub => format!("github.com/{}/{}", self.owner, self.name),
@@ -33,7 +41,7 @@ mod tests {
 
     #[test]
     fn test_get_url() {
-        let repo_meta = RepositoryMeta {
+        let repo_meta = RemoteRepositoryMeta {
             owner: "octocat".to_string(),
             name: "Hello-World".to_string(),
             platform: VCSPlatform::GitHub,

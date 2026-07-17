@@ -1,21 +1,17 @@
+use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     benchmark::{golden::GoldenComment, judge::JudgeVerdict, metrics::Metrics},
     cost::AnalyticsSnapshot,
     finding::Finding,
-    review::Review,
-    vcs::{pr::PrMeta, repository::RepositoryMeta},
 };
 
 /// Result of evaluating a benchmark PR.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrResult {
-    /// The repository of the PR.
-    pub repository: Option<RepositoryMeta>,
-
-    /// Metadata about the PR.
-    pub meta: PrMeta,
+    /// The [`crate::review::Review::id`] of this PR result.
+    pub id: MagicTypeId,
 
     /// Golden comments for this PR.
     pub golden_comments: Vec<GoldenComment>,
@@ -25,9 +21,6 @@ pub struct PrResult {
 
     /// Findings and their corresponding verdicts.
     pub findings_with_verdicts: Vec<JudgedFinding>,
-
-    /// The review that was generated for this PR.
-    pub review: Review,
 
     /// Cost tracking data for this PR evaluation.
     #[deprecated = "Use review.analytics instead"]

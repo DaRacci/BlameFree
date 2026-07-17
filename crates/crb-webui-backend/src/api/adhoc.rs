@@ -23,7 +23,7 @@ use crb_shared::sanitize_filename;
 use crb_shared::url::parse_github_url;
 use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
 use crb_types::benchmark::result::PrResult;
-use crb_types::vcs::repository::RepositoryMeta;
+use crb_types::vcs::repository::RemoteRepositoryMeta;
 use crb_types::wrappers::Model;
 use crb_webui_shared::adhoc::{AdhocReviewResponse, AdhocRunSummary, GithubPrListItem};
 use crb_webui_shared::runs::RunStatus;
@@ -443,8 +443,6 @@ async fn run_adhoc_review_inner(
     let cache_backend: Option<Arc<dyn CacheBackend>> =
         Some(Arc::new(FilesystemBackend::new(&cache_dir)));
 
-    let tool_server = ToolServer::new().run();
-
     let agents: Vec<&'static AgentEntry> = if roles.is_empty() {
         prompt_lib.agents().into_iter().collect()
     } else {
@@ -458,14 +456,13 @@ async fn run_adhoc_review_inner(
     let wrapped_model = Model(model.to_string());
 
     let cfg = crb_harness::eval::EvalConfig {
-        identifier: format!("adhoc-{}", run_id),
+        review_id: format!("adhoc-{}", run_id),
         strategy: crb_harness::eval::EvalStrategy::Panel,
         model: wrapped_model,
         reasoning_effort: None,
         client: Arc::new(client),
         cache: cache_backend,
         cost_tracker,
-        tool_handle: tool_server,
         dashboard_tx: None,
         agents,
         repo_root: output_subdir.clone(),

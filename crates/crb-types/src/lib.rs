@@ -4,101 +4,71 @@ pub mod agent;
 pub mod benchmark;
 pub mod capabilities;
 pub mod cost;
+pub mod errors;
 pub mod finding;
 pub mod review;
 pub mod severity;
 pub mod vcs;
 pub mod wrappers;
 
+use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};
 
-use crate::benchmark::metrics::Metrics;
+use crate::{
+    agent::AgentChunk,
+    cost::{AnalyticsSnapshot, SessionUsage},
+};
 
 /// Events for the entire lifecycle of a review.
 ///
-/// Serialized with a JSON tag/envelope format suitable for SSE streaming:
-/// `{"event":"pr_completed","data":{...}}`.
+/// Serialized with a JSON tag/envelope format suitable for SSE streaming
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "event", content = "data")]
 pub enum RunEvent {
-    /// An agent has started its review for a given PR.
-    AgentStarted { identifier: String, agent: String },
+    /// An [`crate::agent::AgentSession`] has started running on a Review.
+    AgentStarted {
+        /// The [`crate::review::Review::id`] of this event.
+        review_id: MagicTypeId,
+
+        /// The [`crate::agent::AgentSession::id`] of this event.
+        agent_id: MagicTypeId,
+    },
 
     /// A chunk of streaming response text from an agent.
-    AgentChunk { identifier: String, chunk: String },
+    AgentChunk {
+        /// The [`crate::review::Review::id`] of this event.
+        review_id: MagicTypeId,
 
-    /// An agent has finished its review.
+        chunk: AgentChunk,
+    },
+
+    /// An [`crate::agent::AgentSession`] has finished its review.
     AgentFinished {
-        identifier: String,
-        findings: usize,
-        success: bool,
+        /// The [`crate::review::Review::id`] of this event.
+        review_id: MagicTypeId,
+
+        /// The [`crate::agent::AgentSession::id`] of this event.
+        agent_id: MagicTypeId,
+
+        /// The final [`crate::cost::SessionUsage`] for this agent.
+        analytics: SessionUsage,
     },
 
+    /// A [`crate::review::Review`] has started running.
     ReviewStarted {
-        identifier: String,
-        total_agents: usize,
+        /// The [`crate::review::Review::id`] of this event.
+        review_id: MagicTypeId,
+
+        /// The [`crate::agent::AgentSession::id`]'s of the agents that will run on this review.
+        agent_ids: Vec<MagicTypeId>,
     },
 
-    /// A single has been fully evaluated.
+    /// A [`crate::review::Review`] has finished running.
     ReviewCompleted {
-        identifier: String,
-        metrics: Metrics,
-        cost: f64,
-        total_tokens: usize,
-        agent_calls: usize,
-        findings_count: usize,
+        /// The [`crate::review::Review::id`] of this event.
+        review_id: MagicTypeId,
+
+        /// The snapshot of the final [`crate::cost::AnalyticsSnapshot`] for this review.
+        analytics: AnalyticsSnapshot,
     },
-
-    /// Progress update during a run.
-    RunProgress {
-        completed_prs: usize,
-        total_prs: usize,
-        elapsed_secs: f64,
-        total_cost: f64,
-        current_pr: Option<String>,
-    },
-
-    /// The entire run has finished.
-    RunFinished {
-        total_prs: usize,
-        aggregated: Metrics,
-        total_cost: f64,
-        total_tokens: usize,
-        total_agent_calls: usize,
-    },
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_run_event_adjacent_tagging() {
-        let started = RunEvent::AgentStarted {
-            identifier: "test".into(),
-            agent: "bot".into(),
-        };
-        let v = serde_json::to_value(&started).unwrap();
-        insta::assert_json_snapshot!(&v);
-
-        let progress = RunEvent::RunProgress {
-            completed_prs: 0,
-            total_prs: 5,
-            elapsed_secs: 0.0,
-            total_cost: 0.0,
-            current_pr: None,
-        };
-        let v = serde_json::to_value(&progress).unwrap();
-        insta::assert_json_snapshot!(&v);
-
-        let finished = RunEvent::RunFinished {
-            total_prs: 1,
-            aggregated: Metrics::default(),
-            total_cost: 0.0,
-            total_tokens: 0,
-            total_agent_calls: 0,
-        };
-        let v = serde_json::to_value(&finished).unwrap();
-        insta::assert_json_snapshot!(&v);
-    }
 }

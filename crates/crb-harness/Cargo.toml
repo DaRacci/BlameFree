@@ -3,6 +3,7 @@ name = "crb-harness"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "crb-harness"
@@ -26,6 +27,8 @@ crb-rules = { path = "../crb-rules" }
 crb-shared = { path = "../crb-shared" }
 crb-tools = { path = "../crb-tools" }
 crb-types = { path = "../crb-types" }
+futures = { workspace = true }
+mti = { workspace = true, features = ["serde"] }
 reqwest = { workspace = true, features = ["blocking"] }
 rig-core = { workspace = true }
 serde = { workspace = true }

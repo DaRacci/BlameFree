@@ -82,7 +82,6 @@ fn make_pr(pr_title: &str, url: &str, has_cost: bool) -> PrResult {
                 severity: crb_types::severity::Severity::Medium,
             },
         ],
-        repository: None,
     }
 }
 

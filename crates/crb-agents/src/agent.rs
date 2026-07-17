@@ -1,10 +1,17 @@
 use anyhow::{Result, anyhow, bail};
+use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
 use serde::Deserialize;
 use serde_fields::SerdeField;
 
 /// A single agent entry parsed from a markdown manifest file.
 #[derive(Debug, Clone, Deserialize, SerdeField, Default)]
 pub struct AgentEntry {
+    /// Unique identifier for this agent.
+    ///
+    /// This is not stable between instances and should not be used for any persistent storage.
+    #[serde(default = "new_agent_id")]
+    pub agent_id: MagicTypeId,
+
     /// Human-readable role name.
     pub role_name: String,
 
@@ -38,6 +45,10 @@ pub struct AgentEntry {
     /// This section is only filled after parsing the markdown file and is not part of the YAML frontmatter.
     #[serde(skip)]
     pub role_prompt: String,
+}
+
+fn new_agent_id() -> MagicTypeId {
+    "agent".create_type_id::<V7>()
 }
 
 impl AgentEntry {
