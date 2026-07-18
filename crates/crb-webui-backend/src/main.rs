@@ -34,11 +34,6 @@ pub struct CliArgs {
     #[arg(long, env = "DATASET_DIR", default_value = "datasets")]
     pub dataset_dir: PathBuf,
 
-    /// Directory of the static frontend files to serve.
-    /// If not set, frontend assets embedded at build time are used.
-    #[arg(long)]
-    pub static_dir: Option<PathBuf>,
-
     /// Comma-separated list of available models.
     #[arg(
         long,
@@ -174,7 +169,6 @@ async fn main() -> Result<()> {
     let app_state = server::AppState::new(
         args.output_dir,
         args.dataset_dir,
-        args.static_dir,
         args.models,
         args.benchmark_dir,
         webui_config,

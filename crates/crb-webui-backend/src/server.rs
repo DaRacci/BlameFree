@@ -33,9 +33,6 @@ pub struct AppState {
     /// Directory containing datasets.
     pub dataset_dir: PathBuf,
 
-    /// Directory of the static frontend files. `None` uses embedded assets.
-    pub static_dir: Option<PathBuf>,
-
     /// Comma-separated list of available models.
     pub models: String,
 
@@ -84,7 +81,6 @@ impl AppState {
     pub fn new(
         output_dir: PathBuf,
         dataset_dir: PathBuf,
-        static_dir: Option<PathBuf>,
         models: String,
         benchmark_dir: Option<PathBuf>,
         config: WebUiConfig,
@@ -95,7 +91,6 @@ impl AppState {
         Self {
             output_dir,
             dataset_dir,
-            static_dir,
             models,
             benchmark_dir,
             active_runs: Arc::new(RwLock::new(HashMap::new())),
@@ -150,43 +145,8 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
 }
 
 /// Serve static files or fall back to index.html for SPA routing.
-///
-/// When `--static-dir` is set, serves from disk (dev mode).
-/// Otherwise, serves from assets embedded at build time via `rust-embed`.
 async fn static_or_index(State(state): State<AppState>, uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
-
-    // Try disk-based serving if a static directory is configured
-    if let Some(static_dir) = &state.static_dir {
-        let file_path = static_dir.join(path);
-
-        // If path is empty or points to a directory, serve index.html
-        if path.is_empty() || path.ends_with('/') || !file_path.extension().is_some() {
-            return serve_index_from_disk(static_dir).await;
-        }
-
-        // Try to serve the file directly from disk
-        if file_path.exists() && file_path.is_file() {
-            match tokio::fs::read(&file_path).await {
-                Ok(data) => {
-                    let content_type =
-                        mime_type_from_extension(file_path.extension().and_then(|e| e.to_str()));
-                    return Response::builder()
-                        .header("Content-Type", content_type)
-                        .body(Body::from(data))
-                        .unwrap();
-                }
-                Err(_) => {
-                    return StatusCode::NOT_FOUND.into_response();
-                }
-            }
-        }
-
-        // SPA fallback: serve index.html from disk
-        return serve_index_from_disk(static_dir).await;
-    }
-
-    // Embedded asset serving (no --static-dir)
     let asset_path = if path.is_empty() { "index.html" } else { path };
 
     if let Some(asset) = StaticAssets::get(asset_path) {
@@ -207,6 +167,7 @@ async fn static_or_index(State(state): State<AppState>, uri: Uri) -> Response {
         return (StatusCode::NOT_FOUND, "Not found").into_response();
     }
 
+    //TODO: 404 for SPA fallback if index.html is not found in embedded assets or disk
     // SPA fallback: serve embedded index.html for any unrecognized path
     if let Some(index) = StaticAssets::get("index.html") {
         return Response::builder()
@@ -216,8 +177,8 @@ async fn static_or_index(State(state): State<AppState>, uri: Uri) -> Response {
     }
 
     (
-        StatusCode::NOT_FOUND,
-        "Frontend assets not found. Build the frontend or use --static-dir.".to_string(),
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("There was an error serving the {} or index.html. Please check the server logs for more information.", path),
     )
         .into_response()
 }
