@@ -1,5 +1,5 @@
 name: CI
-"on":
+on:
   push:
     branches: [main]
   pull_request:
@@ -18,6 +18,25 @@ jobs:
           toolchain: stable
           targets: x86_64-unknown-linux-gnu,wasm32-unknown-unknown
 
+      - name: Install binstall
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install Trunk
+        uses: &retry https://github.com/nick-fields/retry@v4
+        with:
+          max_attempts: 3
+          timeout_minutes: 30
+          retry_wait_seconds: 15
+          command: cargo binstall trunk --no-confirm
+
+      - name: Install nextest
+        uses: *retry
+        with:
+          max_attempts: 3
+          timeout_minutes: 30
+          retry_wait_seconds: 15
+          command: cargo binstall cargo-nextest --locked --no-confirm
+
       - name: Cache cargo dependencies
         uses: actions/cache@v6
         with:
@@ -33,4 +52,4 @@ jobs:
         run: cargo check --workspace
 
       - name: cargo test
-        run: cargo test --workspace
+        run: cargo nextest --workspace
