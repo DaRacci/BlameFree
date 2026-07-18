@@ -52,4 +52,4 @@ jobs:
         run: cargo check --workspace
 
       - name: cargo test
-        run: cargo nextest
+        run: cargo nextest run
