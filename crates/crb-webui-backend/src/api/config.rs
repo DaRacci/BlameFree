@@ -1,17 +1,18 @@
 //! API handler for configuration endpoints.
 
+use std::fs;
 use std::path::Path;
 
 use axum::Json;
 use axum::extract::{Path as AxumPath, State};
+use crb_webui_shared::routes::{API_CONFIG, API_CONFIG_DATASETS, API_DATASETS_ID_PRS};
 use serde::Serialize;
+use tracing::{error, instrument, warn};
 
 use crate::server::AppState;
 use crb_webui_shared::config::AppConfig;
-use crb_webui_shared::config::DatasetConfig;
 use crb_webui_shared::config::DatasetInfo;
 use crb_webui_shared::config::PrEntry;
-use crb_webui_shared::config::ReasoningEffortsResponse;
 use crb_webui_shared::config::RoleInfo;
 
 /// Information about an available model.
@@ -22,8 +23,8 @@ pub struct ModelInfo {
 }
 
 /// List available models, datasets, and roles.
+#[instrument(skip_all, name = API_CONFIG, fields(models = %state.models, dataset_dir = %state.dataset_dir.display()))]
 pub async fn get_config(State(state): State<AppState>) -> Json<AppConfig> {
-    tracing::info!("GET /api/config");
     let models: Vec<String> = state
         .models
         .split(',')
@@ -57,8 +58,8 @@ pub async fn get_config(State(state): State<AppState>) -> Json<AppConfig> {
 }
 
 /// List available datasets with PR counts.
+#[instrument(skip_all, name = API_CONFIG_DATASETS, fields(dataset_dir = %state.dataset_dir.display()))]
 pub async fn list_datasets(State(state): State<AppState>) -> Json<Vec<DatasetInfo>> {
-    tracing::info!("GET /api/config/datasets");
     Json(scan_datasets(&state.dataset_dir))
 }
 
@@ -69,115 +70,102 @@ fn scan_datasets(dataset_dir: &Path) -> Vec<DatasetInfo> {
         return datasets;
     }
 
-    if let Ok(entries) = std::fs::read_dir(dataset_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let id = path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-                let pr_count = count_prs_in_dir(&path);
+    let Ok(entries) = fs::read_dir(dataset_dir) else {
+        error!(
+            "Failed to read dataset directory: {}",
+            dataset_dir.display()
+        );
+        return datasets;
+    };
 
-                // Try to load dataset.toml config
-                let config = load_dataset_config(&path);
-
-                datasets.push(DatasetInfo {
-                    id,
-                    path: path.to_string_lossy().to_string(),
-                    pr_count,
-                    config,
-                });
-            }
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
         }
+
+        let id = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let pr_count = count_prs_in_dir(&path);
+
+        datasets.push(DatasetInfo {
+            id,
+            path: path.to_string_lossy().to_string(),
+            pr_count,
+        });
     }
 
     datasets.sort_by(|a, b| b.pr_count.cmp(&a.pr_count));
     datasets
 }
 
-fn load_dataset_config(dir: &Path) -> Option<DatasetConfig> {
-    let config_path = dir.join("dataset.toml");
-    if !config_path.exists() {
-        return None;
-    }
-    match std::fs::read_to_string(&config_path) {
-        Ok(content) => match toml::from_str::<DatasetConfig>(&content) {
-            Ok(cfg) => Some(cfg),
-            Err(e) => {
-                tracing::warn!("Failed to parse dataset.toml in {}: {e}", dir.display());
-                None
-            }
-        },
-        Err(e) => {
-            tracing::warn!("Failed to read dataset.toml in {}: {e}", dir.display());
-            None
-        }
-    }
-}
-
-/// List available reasoning effort levels.
-pub async fn list_reasoning_efforts() -> Json<ReasoningEffortsResponse> {
-    let levels: Vec<String> = crb_harness::model_capabilities::ReasoningEffort::variants()
-        .iter()
-        .map(|v| v.to_string())
-        .collect();
-    Json(ReasoningEffortsResponse { levels })
-}
-
 fn count_prs_in_dir(dir: &Path) -> usize {
     let mut count = 0;
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().map_or(false, |e| e == "json") {
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    // Dataset files are JSON arrays of PR entries
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                        match val {
-                            serde_json::Value::Array(arr) => {
-                                count += arr.len();
-                            }
-                            serde_json::Value::Object(obj) => {
-                                // Also support {"entries": [...]} format
-                                if let Some(entries) = obj.get("entries").and_then(|v| v.as_array())
-                                {
-                                    count += entries.len();
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return count;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.extension().map_or(false, |e| e == "json") {
+            continue;
+        }
+
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) else {
+            continue;
+        };
+
+        match val {
+            serde_json::Value::Array(arr) => {
+                count += arr.len();
+            }
+            serde_json::Value::Object(obj) => {
+                // Also support {"entries": [...]} format
+                if let Some(entries) = obj.get("entries").and_then(|v| v.as_array()) {
+                    count += entries.len();
                 }
             }
+            _ => {}
         }
     }
     count
 }
 
 /// List all PRs in a dataset.
+#[instrument(skip_all, name = API_DATASETS_ID_PRS, fields(dataset_id = %id))]
 pub async fn list_dataset_prs(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Json<Vec<PrEntry>> {
-    tracing::info!("GET /api/datasets/{id}/prs");
+    const EMPTY_VEC: Vec<PrEntry> = Vec::new();
     let dataset_dir = state.dataset_dir.join(&id);
 
     if !dataset_dir.exists() || !dataset_dir.is_dir() {
-        tracing::warn!("Dataset directory not found: {}", dataset_dir.display());
-        return Json(Vec::new());
+        warn!("Dataset directory not found: {}", dataset_dir.display());
+        return Json(EMPTY_VEC);
     }
 
-    let mut prs = Vec::new();
+    let Ok(entries) = fs::read_dir(&dataset_dir) else {
+        error!(
+            "Failed to read dataset directory: {}",
+            dataset_dir.display()
+        );
+        return Json(EMPTY_VEC);
+    };
 
-    if let Ok(entries) = std::fs::read_dir(&dataset_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().map_or(false, |e| e == "json") {
-                if let Ok(content) = std::fs::read_to_string(&path) {
-                    read_prs_from_json(&path, &content, &mut prs);
-                }
+    let mut prs = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().map_or(false, |e| e == "json") {
+            if let Ok(content) = fs::read_to_string(&path) {
+                read_prs_from_json(&path, &content, &mut prs);
             }
         }
     }
@@ -316,34 +304,6 @@ mod tests {
     #[test]
     fn test_count_prs_in_dir_nonexistent() {
         insta::assert_debug_snapshot!(count_prs_in_dir(Path::new("/nonexistent/path")));
-    }
-
-    #[test]
-    fn test_load_dataset_config_valid() {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let toml_content = r#"
-            name = "test-dataset"
-            description = "A test dataset"
-        "#;
-        std::fs::write(dir.path().join("dataset.toml"), toml_content).expect("write");
-
-        let config = load_dataset_config(dir.path());
-        insta::assert_debug_snapshot!(config.is_some());
-    }
-
-    #[test]
-    fn test_load_dataset_config_missing() {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let config = load_dataset_config(dir.path());
-        insta::assert_debug_snapshot!(config.is_none());
-    }
-
-    #[test]
-    fn test_load_dataset_config_invalid() {
-        let dir = tempfile::tempdir().expect("temp dir");
-        std::fs::write(dir.path().join("dataset.toml"), "not valid toml {{{").expect("write");
-        let config = load_dataset_config(dir.path());
-        insta::assert_debug_snapshot!(config.is_none());
     }
 
     #[test]

@@ -13,6 +13,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use anyhow::{Context, anyhow};
 use axum::Router;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -30,12 +31,11 @@ use oauth2::{
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use reqwest::Client as HttpClient;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumDiscriminants, IntoStaticStr, VariantArray};
 use tokio::sync::RwLock;
-use uuid::Uuid;
 
-use crate::config::{OAuthConfig, OAuthProvider};
+use crate::config::OAuthConfig;
 use crate::server::AppState;
 
 /// Name of the session cookie.
@@ -59,7 +59,7 @@ pub struct CallbackQuery {
     pub state: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, IntoStaticStr, EnumDiscriminants)]
+#[derive(Debug, Clone, Serialize, Deserialize, IntoStaticStr, EnumDiscriminants, Display)]
 #[strum_discriminants(derive(VariantArray))]
 pub enum OAuthProvider {
     GitHub,
@@ -113,20 +113,21 @@ impl OAuthProvider {
         }
     }
 
-    pub fn base_url(&self) -> &'static str {
+    pub fn base_url(&self) -> String {
         const GITHUB_BASE_URL: &str = "api.github.com";
         const GOOGLE_BASE_URL: &str = "www.googleapis.com";
         const GITLAB_BASE_URL: &str = "gitlab.com";
 
         match self {
-            OAuthProvider::GitHub => Self::GITHUB_BASE_URL,
-            OAuthProvider::Google => Self::GOOGLE_BASE_URL,
-            OAuthProvider::GitLab => Self::GITLAB_BASE_URL,
+            OAuthProvider::GitHub => GITHUB_BASE_URL,
+            OAuthProvider::Google => GOOGLE_BASE_URL,
+            OAuthProvider::GitLab => GITLAB_BASE_URL,
             OAuthProvider::Custom { .. } => "",
         }
+        .to_string()
     }
 
-    pub fn auth_url(&self) -> &'static str {
+    pub fn auth_url(&self) -> String {
         const GITHUB_AUTH_URL: &str = "login/oauth/authorize";
         const GOOGLE_AUTH_URL: &str = "o/oauth2/v2/auth";
         const GITLAB_AUTH_URL: &str = "oauth/authorize";
@@ -140,12 +141,12 @@ impl OAuthProvider {
         };
 
         match base.is_empty() {
-            true => path,
-            false => &format!("https://{}/{}", base, path),
+            true => path.to_string(),
+            false => format!("https://{}/{}", base, path),
         }
     }
 
-    pub fn token_url(&self) -> &'static str {
+    pub fn token_url(&self) -> String {
         const GITHUB_TOKEN_URL: &str = "login/oauth/access_token";
         const GOOGLE_TOKEN_URL: &str = "oauth2/v4/token";
         const GITLAB_TOKEN_URL: &str = "oauth/token";
@@ -159,12 +160,12 @@ impl OAuthProvider {
         };
 
         match base.is_empty() {
-            true => path,
-            false => &format!("https://{}/{}", base, path),
+            true => path.to_string(),
+            false => format!("https://{}/{}", base, path),
         }
     }
 
-    pub fn callback_url(&self) -> &'static str {
+    pub fn callback_url(&self) -> String {
         const GITHUB_CALLBACK_URL: &str = "auth/callback";
         const GOOGLE_CALLBACK_URL: &str = "auth/callback";
         const GITLAB_CALLBACK_URL: &str = "auth/callback";
@@ -178,12 +179,12 @@ impl OAuthProvider {
         };
 
         match base.is_empty() {
-            true => path,
-            false => &format!("https://{}/{}", base, path),
+            true => path.to_string(),
+            false => format!("https://{}/{}", base, path),
         }
     }
 
-    pub fn user_url(&self) -> &'static str {
+    pub fn user_url(&self) -> String {
         const GITHUB_PATH: &str = "user";
         const GOOGLE_PATH: &str = "oauth2/v2/userinfo";
         const GITLAB_PATH: &str = "api/v4/user";
@@ -197,8 +198,8 @@ impl OAuthProvider {
         };
 
         match base.is_empty() {
-            true => path,
-            false => &format!("https://{}/{}", base, path),
+            true => path.to_string(),
+            false => format!("https://{}/{}", base, path),
         }
     }
 }
@@ -224,7 +225,7 @@ pub async fn login(
         .as_ref()
         .ok_or_else(|| err_tuple("OAuth not configured"))?;
 
-    let provider = query.provider.as_deref().unwrap_or(&oauth.provider);
+    let provider = query.provider.as_ref().unwrap_or(&oauth.provider);
     let client = build_oauth_client(oauth, provider).map_err(err_tuple)?;
     let csrf_token = CsrfToken::new(random_string(32));
     let scopes: Vec<Scope> = oauth.scopes.iter().map(|s| Scope::new(s.clone())).collect();
@@ -322,18 +323,18 @@ fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
     None
 }
 
-/// Build an `oauth2::BasicClient` for the given provider.
+/// Build an [`oauth2::BasicClient`] for the given provider.
 fn build_oauth_client(
     config: &OAuthConfig,
     provider: &OAuthProvider,
-) -> Result<BasicClient, String> {
+) -> anyhow::Result<BasicClient> {
     let auth_url = provider.auth_url();
     let token_url = provider.token_url();
 
     let auth_url = AuthUrl::new(auth_url.to_string()).context("Invalid authorization URL")?;
     let token_url = TokenUrl::new(token_url.to_string()).context("Invalid token URL")?;
     let redirect_url = RedirectUrl::new(config.redirect_url.clone())
-        .map_err(|e| format!("Invalid redirect URL: {e}"))?;
+        .context(format!("Invalid redirect URL: {}", config.redirect_url))?;
 
     let client = BasicClient::new(
         ClientId::new(config.client_id.clone()),
@@ -347,7 +348,7 @@ fn build_oauth_client(
 }
 
 /// Fetch JSON from an OAuth provider endpoint,
-/// checking for success and returning the parsed `serde_json::Value`.
+/// checking for success and returning the parsed [`serde_json::Value`].
 async fn fetch_oauth_json(
     url: &str,
     access_token: &str,
@@ -359,28 +360,28 @@ async fn fetch_oauth_json(
         .header(header::AUTHORIZATION, format!("Bearer {access_token}"))
         .header(
             header::USER_AGENT,
-            format!("crb-webui/{}", env!("CARGO_PKG_VERSION");),
+            format!("crb-webui/{}", env!("CARGO_PKG_VERSION")),
         )
         .send()
         .await
         .map_err(|e| {
             (
                 StatusCode::BAD_GATEWAY,
-                format!("Failed to fetch {provider_name} user: {e}"),
+                format!("Failed to fetch {provider} user: {e}"),
             )
         })?;
 
     if !resp.status().is_success() {
         return Err((
             StatusCode::BAD_GATEWAY,
-            format!("{provider_name} API returned {}", resp.status()),
+            format!("{provider} API returned {}", resp.status()),
         ));
     }
 
     resp.json().await.map_err(|e| {
         (
             StatusCode::BAD_GATEWAY,
-            format!("Failed to parse {provider_name} response: {e}"),
+            format!("Failed to parse {provider} response: {e}"),
         )
     })
 }
@@ -392,7 +393,7 @@ async fn fetch_user(
 ) -> Result<AuthUser, (StatusCode, String)> {
     let provider_name = provider.into();
     let url = provider.user_url();
-    let body = fetch_oauth_json(url, access_token, provider_name).await?;
+    let body = fetch_oauth_json(&url, access_token, provider_name).await?;
     let (id, login, name, email, avatar_url) = provider.auth_parameters();
 
     Ok(AuthUser {
@@ -473,52 +474,52 @@ mod tests {
     #[test]
     fn test_build_oauth_client_github() {
         let config = OAuthConfig {
-            provider: "github".to_string(),
+            provider: OAuthProvider::GitHub,
             client_id: "test-client-id".to_string(),
             client_secret: "test-client-secret".to_string(),
             redirect_url: "http://localhost:8080/auth/callback".to_string(),
             scopes: vec!["read:user".to_string()],
         };
-        let client = build_oauth_client(&config, "github");
+        let client = build_oauth_client(&config, &OAuthProvider::GitHub);
         insta::assert_debug_snapshot!(client.is_ok());
     }
 
     #[test]
     fn test_build_oauth_client_google() {
         let config = OAuthConfig {
-            provider: "google".to_string(),
+            provider: OAuthProvider::Google,
             client_id: "test-client-id".to_string(),
             client_secret: "test-client-secret".to_string(),
             redirect_url: "http://localhost:8080/auth/callback".to_string(),
             scopes: vec!["openid".to_string()],
         };
-        let client = build_oauth_client(&config, "google");
+        let client = build_oauth_client(&config, &OAuthProvider::Google);
         insta::assert_debug_snapshot!(client.is_ok());
     }
 
     #[test]
     fn test_build_oauth_client_gitlab() {
         let config = OAuthConfig {
-            provider: "gitlab".to_string(),
+            provider: OAuthProvider::GitLab,
             client_id: "test-client-id".to_string(),
             client_secret: "test-client-secret".to_string(),
             redirect_url: "http://localhost:8080/auth/callback".to_string(),
             scopes: vec!["read_user".to_string()],
         };
-        let client = build_oauth_client(&config, "gitlab");
+        let client = build_oauth_client(&config, &OAuthProvider::GitLab);
         insta::assert_debug_snapshot!(client.is_ok());
     }
 
     #[test]
     fn test_build_oauth_client_invalid_redirect_url() {
         let config = OAuthConfig {
-            provider: "github".to_string(),
+            provider: OAuthProvider::GitHub,
             client_id: "id".to_string(),
             client_secret: "secret".to_string(),
             redirect_url: String::new(), // empty URL → invalid
             scopes: vec![],
         };
-        let result = build_oauth_client(&config, "github");
+        let result = build_oauth_client(&config, &OAuthProvider::GitHub);
         insta::assert_debug_snapshot!(result.is_err());
     }
 

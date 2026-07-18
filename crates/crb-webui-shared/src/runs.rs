@@ -3,6 +3,7 @@ use crb_types::benchmark::{judge::JudgeVerdict, result::PrResult};
 use crb_types::cost::AnalyticsSnapshot;
 use crb_types::vcs::pr::PrMeta;
 use crb_types::wrappers::Model;
+use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};
 use strum::{Display, IntoStaticStr};
 
@@ -12,23 +13,7 @@ use crate::config::RoleInfo;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunMeta {
     /// Unique run identifier.
-    pub id: String,
-
-    /// Human-readable run name.
-    pub name: String,
-
-    /// Number of PRs in this run.
-    #[serde(default)]
-    pub pr_count: usize,
-
-    /// Total cost in USD.
-    #[serde(default)]
-    pub total_cost: Option<f64>,
-
-    /// Total tokens consumed.
-    #[serde(default)]
-    #[deprecated = "Use [`crb_types::cost::AnalyticsSnapshot`]"]
-    pub total_tokens: usize,
+    pub id: MagicTypeId,
 
     /// Duration in seconds.
     #[serde(default)]

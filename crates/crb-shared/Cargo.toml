@@ -21,5 +21,8 @@ dotenvy = { workspace = true, optional = true }
 rig-core = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [lints]
 workspace = true

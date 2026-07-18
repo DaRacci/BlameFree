@@ -13,6 +13,8 @@ use std::{env, fs, path::Path};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
+use crate::auth::OAuthProvider;
+
 /// Top-level web UI configuration.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct WebUiConfig {
@@ -35,7 +37,7 @@ pub struct ServerConfig {
 }
 
 /// OAuth authentication configuration.
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthConfig {
     /// Provider
     pub provider: OAuthProvider,

@@ -1,7 +1,7 @@
 //! Axum server setup, shared state, and router.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::Router;
@@ -10,8 +10,13 @@ use axum::extract::State;
 use axum::http::{StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use crb_types::RunEvent;
+use crb_types::capabilities::ReasoningEffort;
 use crb_webui_shared::routes;
+use mti::prelude::MagicTypeId;
+use reqwest::header;
 use rustls::pki_types::UnixTime;
+use strum::VariantArray;
 use tokio::sync::{RwLock, broadcast};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
@@ -21,8 +26,6 @@ use crate::api::{adhoc, admin, config, runs};
 use crate::auth::{self, SessionStore};
 use crate::config::WebUiConfig;
 use crate::static_assets::StaticAssets;
-use crb_types::RunEvent;
-use crb_webui_shared::routes::API_CONFIG_DATASETS;
 
 /// Shared application state.
 #[derive(Clone)]
@@ -31,18 +34,21 @@ pub struct AppState {
     pub output_dir: PathBuf,
 
     /// Directory containing datasets.
+    #[deprecated = "This should be managed by the benchmark config instead of being a global state."]
     pub dataset_dir: PathBuf,
 
     /// Comma-separated list of available models.
+    #[deprecated = "This is a dynamic list not a app state."]
     pub models: String,
 
     /// Path to the code-review-benchmark directory (must contain offline/).
+    #[deprecated = "This should be managed by the benchmark config instead of being a global state."]
     pub benchmark_dir: Option<PathBuf>,
 
-    /// Active (running) benchmark runs.
-    pub active_runs: Arc<RwLock<HashMap<String, ActiveRun>>>,
+    /// Active review sessions.
+    pub active_runs: Arc<RwLock<HashMap<MagicTypeId, ActiveRun>>>,
 
-    /// Web UI configuration (includes optional OAuth).
+    /// Web UI configuration.
     pub config: WebUiConfig,
 
     /// Session store for OAuth-authenticated users.
@@ -62,18 +68,22 @@ pub struct ActiveRun {
     pub created_at: UnixTime,
 
     /// The config used to start this run.
+    #[deprecated = "A run isnt always a benchmark."]
     pub config: runs::BenchmarkConfig,
 
     /// Broadcast channel for SSE events.
     pub tx: broadcast::Sender<RunEvent>,
 
     /// Number of completed PRs.
+    #[deprecated]
     pub completed_prs: usize,
 
     /// Total number of PRs.
+    #[deprecated]
     pub total_prs: usize,
 
     /// Whether the run has finished.
+    #[deprecated]
     pub finished: bool,
 }
 
@@ -112,11 +122,8 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         .route(routes::API_RUNS_ID_LOGS_KEY_ROLE, get(runs::get_agent_log))
         .route(routes::API_RUNS_ID_DETAILS_KEY, get(runs::get_pr_detail))
         .route(routes::API_CONFIG, get(config::get_config))
-        .route(API_CONFIG_DATASETS, get(config::list_datasets))
-        .route(
-            routes::API_CONFIG_REASONING,
-            get(config::list_reasoning_efforts),
-        )
+        .route(routes::API_CONFIG_DATASETS, get(config::list_datasets))
+        .route(routes::API_CONFIG_REASONING, get(ReasoningEffort::VARIANTS))
         .route(routes::API_DATASETS_ID_PRS, get(config::list_dataset_prs))
         .route(routes::API_ADHOC_REVIEW, post(adhoc::start_adhoc_review))
         .route(routes::API_ADHOC_RUNS, get(adhoc::list_adhoc_runs))
@@ -145,25 +152,24 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
 }
 
 /// Serve static files or fall back to index.html for SPA routing.
-async fn static_or_index(State(state): State<AppState>, uri: Uri) -> Response {
+async fn static_or_index(State(_): State<AppState>, uri: Uri) -> Response {
+    const INDEX_HTML: &str = "index.html";
+
     let path = uri.path().trim_start_matches('/');
-    let asset_path = if path.is_empty() { "index.html" } else { path };
+    let asset_path = if path.is_empty() { INDEX_HTML } else { path };
 
     if let Some(asset) = StaticAssets::get(asset_path) {
-        let content_type = mime_type_from_extension(
-            std::path::Path::new(asset_path)
-                .extension()
-                .and_then(|e| e.to_str()),
-        );
+        let content_type =
+            mime_type_from_extension(Path::new(asset_path).extension().and_then(|e| e.to_str()));
         return Response::builder()
-            .header("Content-Type", content_type)
-            .header("Content-Length", asset.data.len().to_string())
+            .header(header::CONTENT_TYPE, content_type)
+            .header(header::CONTENT_LENGTH, asset.data.len().to_string())
             .body(Body::from(asset.data.to_vec()))
             .unwrap();
     }
 
     // If the path has an extension and wasn't found, return 404
-    if std::path::Path::new(path).extension().is_some() {
+    if Path::new(path).extension().is_some() {
         return (StatusCode::NOT_FOUND, "Not found").into_response();
     }
 
@@ -171,7 +177,7 @@ async fn static_or_index(State(state): State<AppState>, uri: Uri) -> Response {
     // SPA fallback: serve embedded index.html for any unrecognized path
     if let Some(index) = StaticAssets::get("index.html") {
         return Response::builder()
-            .header("Content-Type", "text/html; charset=utf-8")
+            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
             .body(Body::from(index.data.to_vec()))
             .unwrap();
     }
@@ -184,11 +190,11 @@ async fn static_or_index(State(state): State<AppState>, uri: Uri) -> Response {
 }
 
 /// Serve index.html from a disk directory.
-async fn serve_index_from_disk(static_dir: &std::path::Path) -> Response {
+async fn serve_index_from_disk(static_dir: &Path) -> Response {
     let index_path = static_dir.join("index.html");
     match tokio::fs::read(&index_path).await {
         Ok(data) => Response::builder()
-            .header("Content-Type", "text/html; charset=utf-8")
+            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
             .body(Body::from(data))
             .unwrap(),
         Err(_) => (

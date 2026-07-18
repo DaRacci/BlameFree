@@ -4,6 +4,7 @@ use anyhow::Result;
 pub mod deduplicate;
 pub mod diff;
 pub mod filter;
+pub mod fs;
 pub mod jaccard;
 pub mod pattern;
 pub mod url;

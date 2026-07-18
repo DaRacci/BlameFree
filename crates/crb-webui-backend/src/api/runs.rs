@@ -3,28 +3,28 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{fs, time};
 
+use crate::api::{internal_err, not_found};
+use crate::harness;
+use crate::server::{ActiveRun, AppState};
 use axum::Json;
 use axum::extract::{Path as AxumPath, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::response::Response;
+use crb_harness::paths;
+use crb_shared::fs::compute_duration_from_dir;
+use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
 use crb_types::benchmark::result::PrResult;
 use crb_types::capabilities::ReasoningEffort;
-use serde::{Deserialize, Serialize};
-use tracing::debug;
-
-use crate::harness;
-use crate::server::{ActiveRun, AppState};
-use crb_shared::DEFAULT_MODEL;
-use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
 use crb_webui_shared::config::RoleInfo;
+use crb_webui_shared::routes::{API_RUNS_ID_DETAILS_KEY, API_RUNS_ID_LOGS_KEY_ROLE};
 use crb_webui_shared::runs::LogsListResponse;
 use crb_webui_shared::runs::PrAgentEntry;
 use crb_webui_shared::runs::PrAgentsResponse;
 use crb_webui_shared::runs::PrDetailResponse;
 use crb_webui_shared::runs::PrLogsEntry;
-use crb_webui_shared::runs::PrResultPayload;
 use crb_webui_shared::runs::PrResultRow;
 use crb_webui_shared::runs::RunConfig;
 use crb_webui_shared::runs::RunDetail;
@@ -32,28 +32,14 @@ use crb_webui_shared::runs::RunSummary;
 use crb_webui_shared::runs::StartRunResponse;
 use crb_webui_shared::runs::{AgentLogResponse, RunMeta, RunStatus};
 use rustls::pki_types::UnixTime;
-
-/// Helper to build a JSON error response with a given status code and message.
-pub fn err_json(status: StatusCode, msg: impl std::fmt::Display) -> Response {
-    (status, Json(serde_json::json!({"error": msg.to_string()}))).into_response()
-}
-
-/// Helper to return a `NotFound` response.
-pub fn not_found(msg: impl std::fmt::Display) -> Response {
-    err_json(StatusCode::NOT_FOUND, msg)
-}
-
-/// Helper to return a `500` response.
-pub fn internal_err(msg: impl std::fmt::Display) -> Response {
-    err_json(StatusCode::INTERNAL_SERVER_ERROR, msg)
-}
+use serde::{Deserialize, Serialize};
+use tracing::{debug, instrument};
 
 /// Iterate over `.json` files in a directory, yielding (file_path, file_name) pairs.
 /// Skips files whose name starts with `_` and the summary file.
-pub fn iter_json_files(
-    dir: &std::path::Path,
-) -> impl Iterator<Item = (std::path::PathBuf, String)> {
-    let iter: Box<dyn Iterator<Item = _>> = if let Ok(entries) = std::fs::read_dir(dir) {
+#[deprecated = "This should be migrated to harness crate"]
+pub fn iter_json_files(dir: &Path) -> impl Iterator<Item = (PathBuf, String)> {
+    let iter: Box<dyn Iterator<Item = _>> = if let Ok(entries) = fs::read_dir(dir) {
         Box::new(entries.flatten().filter_map(|entry| {
             let path = entry.path();
             if path.extension().map_or(true, |e| e != "json") {
@@ -64,7 +50,7 @@ pub fn iter_json_files(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
-            if fname.starts_with('_') || fname == crb_harness::paths::SUMMARY_FILE {
+            if fname.starts_with('_') || fname == paths::SUMMARY_FILE {
                 return None;
             }
             Some((path, fname))
@@ -72,42 +58,13 @@ pub fn iter_json_files(
     } else {
         Box::new(std::iter::empty())
     };
-    iter
-}
 
-/// Compute directory duration from file modification timestamps (max - min).
-fn compute_duration_from_dir(dir: &Path) -> f64 {
-    let mut oldest = f64::MAX;
-    let mut newest = 0.0f64;
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            if let Ok(meta) = entry.path().metadata() {
-                if let Ok(modified) = meta.modified() {
-                    let secs = modified
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs_f64();
-                    if secs > 0.0 {
-                        if secs < oldest {
-                            oldest = secs;
-                        }
-                        if secs > newest {
-                            newest = secs;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if newest > oldest && oldest < f64::MAX {
-        newest - oldest
-    } else {
-        0.0
-    }
+    iter
 }
 
 /// Configuration for starting a new benchmark run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated = "There should be another type that is already used in the benchmark crate"]
 pub struct BenchmarkConfig {
     pub model: String,
 
@@ -131,10 +88,12 @@ pub struct BenchmarkConfig {
     pub reasoning_effort: Option<ReasoningEffort>,
 }
 
+#[deprecated]
 fn default_dataset_dir() -> String {
     "datasets/golden_comments".to_string()
 }
 
+#[deprecated]
 fn default_max_findings() -> usize {
     20
 }
@@ -150,13 +109,13 @@ impl From<&BenchmarkConfig> for RunConfig {
 }
 
 /// List all benchmark runs, including active and completed runs.
+#[instrument(skip(state), name = API_RUNS_ID_DETAILS_KEY)]
 pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
-    tracing::info!("GET /api/runs");
     let output_dir = state.output_dir.clone();
     let mut runs: Vec<RunSummary> = Vec::new();
 
     if output_dir.exists() {
-        let entries = match std::fs::read_dir(&output_dir) {
+        let entries = match fs::read_dir(&output_dir) {
             Ok(entries) => entries,
             Err(_) => return Json(Vec::<RunSummary>::new()).into_response(),
         };
@@ -166,6 +125,7 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
             if !path.is_dir() {
                 continue;
             }
+
             let name = path
                 .file_name()
                 .unwrap_or_default()
@@ -178,21 +138,17 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
         }
     }
 
-    // 2) Include active (in-memory) runs that haven't been written to disk yet
     {
         let active = state.active_runs.read().await;
         for (id, ar) in active.iter() {
-            // Skip if already in the completed list (duplicate)
             if runs.iter().any(|r| r.meta.id == *id) {
                 continue;
             }
+
+            todo!("Replace with new riv-stor");
             runs.push(RunSummary {
                 meta: RunMeta {
                     id: id.clone(),
-                    name: id.clone(),
-                    pr_count: ar.total_prs,
-                    total_cost: Some(0.0),
-                    total_tokens: 0,
                     duration_secs: Some(0.0),
                     model: Some(ar.config.model.clone()),
                     status: if ar.finished {
@@ -201,9 +157,6 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
                         RunStatus::Running
                     },
                 },
-                avg_f1: Some(0.0),
-                avg_precision: Some(0.0),
-                avg_recall: Some(0.0),
                 created_at: {
                     let secs = ar.created_at.as_secs();
                     chrono::DateTime::from_timestamp(secs as i64, 0)
@@ -214,7 +167,6 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
         }
     }
 
-    // 3) Sort: active (running) first by creation time, then completed by time
     runs.sort_by(|a, b| {
         let a_running = a.meta.status == RunStatus::Running;
         let b_running = b.meta.status == RunStatus::Running;
@@ -231,8 +183,6 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
 
 /// Scan a run directory and compute summary metrics.
 fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
-    use std::fs;
-
     let entries = fs::read_dir(path).map_err(|e| e.to_string())?;
     let mut results = Vec::new();
     let mut total_cost = 0.0f64;
@@ -252,7 +202,7 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
             .to_string();
 
         // TODO: HOLY FUCK CLEAN THIS SHIT UP
-        if file_name == crb_harness::paths::SUMMARY_FILE {
+        if file_name == paths::SUMMARY_FILE {
             if let Ok(content) = fs::read_to_string(&file_path) {
                 if let Ok(summary) =
                     serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
@@ -361,9 +311,9 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<RunSummary, String> {
 }
 
 fn get_file_modified(path: &Path) -> String {
-    if let Ok(metadata) = std::fs::metadata(path) {
+    if let Ok(metadata) = fs::metadata(path) {
         if let Ok(modified) = metadata.modified() {
-            if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
+            if let Ok(duration) = modified.duration_since(time::UNIX_EPOCH) {
                 let secs = duration.as_secs();
                 let naive = chrono::DateTime::from_timestamp(secs as i64, 0)
                     .map(|dt| dt.to_rfc3339())
@@ -398,8 +348,8 @@ fn format_running_response(id: &str, active_run: &ActiveRun) -> impl IntoRespons
 
 /// Read `_summary.json` from a run directory, if it exists.
 fn read_summary_from_dir(run_path: &Path) -> Option<(String, f64, f64, usize)> {
-    let summary_path = run_path.join(crb_harness::paths::SUMMARY_FILE);
-    let content = std::fs::read_to_string(&summary_path).ok()?;
+    let summary_path = run_path.join(paths::SUMMARY_FILE);
+    let content = fs::read_to_string(&summary_path).ok()?;
     let summary: HashMap<String, serde_json::Value> = serde_json::from_str(&content).ok()?;
     Some((
         summary
@@ -425,7 +375,7 @@ fn read_summary_from_dir(run_path: &Path) -> Option<(String, f64, f64, usize)> {
 /// Read all PR result files from a run directory.
 fn read_pr_results_from_dir(run_path: &Path, cache_dir: &Option<PathBuf>) -> Vec<PrResultRow> {
     let mut results = Vec::new();
-    let entries = match std::fs::read_dir(run_path) {
+    let entries = match fs::read_dir(run_path) {
         Ok(e) => e,
         Err(_) => return results,
     };
@@ -446,7 +396,7 @@ fn read_pr_results_from_dir(run_path: &Path, cache_dir: &Option<PathBuf>) -> Vec
             continue;
         }
 
-        let content = match std::fs::read_to_string(&file_path) {
+        let content = match fs::read_to_string(&file_path) {
             Ok(c) => c,
             Err(_) => continue,
         };
@@ -643,11 +593,11 @@ fn count_prs_in_dataset(dataset_dir: &Path) -> usize {
         return 0;
     }
     let mut count = 0;
-    if let Ok(entries) = std::fs::read_dir(dataset_dir) {
+    if let Ok(entries) = fs::read_dir(dataset_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().map_or(false, |e| e == "json") {
-                if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(content) = fs::read_to_string(&path) {
                     // Try parsing as an object with "entries" key first
                     if let Ok(val) =
                         serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
@@ -676,7 +626,7 @@ fn scan_agent_roles(pr_cache_dir: &Path) -> Vec<RoleInfo> {
     // Try content-addressed layout first: agents/*.agent_{role}_prompt.txt
     let agents_dir = pr_cache_dir.join("agents");
     if agents_dir.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+        if let Ok(entries) = fs::read_dir(&agents_dir) {
             for entry in entries.flatten() {
                 let fname = entry.file_name().to_string_lossy().to_string();
                 // Match: <hash>.agent_{role}_prompt.txt or <hash>.agent_{role}_response.txt
@@ -694,7 +644,7 @@ fn scan_agent_roles(pr_cache_dir: &Path) -> Vec<RoleInfo> {
     }
 
     // Also check simple layout: agent_{role}_prompt.txt / agent_{role}_response.txt
-    if let Ok(entries) = std::fs::read_dir(pr_cache_dir) {
+    if let Ok(entries) = fs::read_dir(pr_cache_dir) {
         for entry in entries.flatten() {
             let fname = entry.file_name().to_string_lossy().to_string();
             if let Some(rest) = fname.strip_prefix("agent_") {
@@ -726,11 +676,11 @@ fn read_agent_log_file(cache_dir: &Path, pr_key: &str, role: &str, suffix: &str)
     let agents_dir = pr_dir.join("agents");
     if agents_dir.is_dir() {
         let pattern = format!(".agent_{}_{}.txt", role, suffix);
-        if let Ok(entries) = std::fs::read_dir(&agents_dir) {
+        if let Ok(entries) = fs::read_dir(&agents_dir) {
             for entry in entries.flatten() {
                 let fname = entry.file_name().to_string_lossy().to_string();
                 if fname.ends_with(&pattern) {
-                    if let Ok(content) = std::fs::read(entry.path()) {
+                    if let Ok(content) = fs::read(entry.path()) {
                         return Some(String::from_utf8_lossy(&content).to_string());
                     }
                 }
@@ -741,7 +691,7 @@ fn read_agent_log_file(cache_dir: &Path, pr_key: &str, role: &str, suffix: &str)
     // Simple layout: agent_{role}_{suffix}.txt
     let simple_path = pr_dir.join(format!("agent_{}_{}.txt", role, suffix));
     if simple_path.is_file() {
-        if let Ok(content) = std::fs::read(&simple_path) {
+        if let Ok(content) = fs::read(&simple_path) {
             return Some(String::from_utf8_lossy(&content).to_string());
         }
     }
@@ -787,7 +737,7 @@ pub async fn list_logs(
     // 1. Collect PR keys from the output directory (canonical source)
     let mut output_prs: Vec<(String, String)> = Vec::new(); // (pr_key, pr_title)
     if run_path.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&run_path) {
+        if let Ok(entries) = fs::read_dir(&run_path) {
             for entry in entries.flatten() {
                 let file_path = entry.path();
                 if file_path.extension().map_or(true, |e| e != "json") {
@@ -798,7 +748,7 @@ pub async fn list_logs(
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                if fname == crb_harness::paths::SUMMARY_FILE || fname.starts_with("candidates") {
+                if fname == paths::SUMMARY_FILE || fname.starts_with("candidates") {
                     continue;
                 }
 
@@ -811,7 +761,7 @@ pub async fn list_logs(
                     continue;
                 }
 
-                let title = if let Ok(content) = std::fs::read_to_string(&file_path) {
+                let title = if let Ok(content) = fs::read_to_string(&file_path) {
                     if let Ok(pr) = serde_json::from_str::<PrResult>(&content) {
                         pr.meta.title.clone()
                     } else {
@@ -828,7 +778,7 @@ pub async fn list_logs(
     // 2. Collect PR keys from the cache directory (supplementary)
     let mut cached_prs: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     if let Some(ref cd) = cache_dir {
-        if let Ok(entries) = std::fs::read_dir(cd) {
+        if let Ok(entries) = fs::read_dir(cd) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if !path.is_dir() {
@@ -884,54 +834,64 @@ pub async fn list_logs(
 }
 
 /// Try to resolve a PR title from the run's output files.
+#[deprecated = "This should be migrated to benchmark crate"]
 fn resolve_pr_title(output_dir: &Path, run_id: &str, pr_key: &str) -> String {
     // The pr_key could be a number or URL fragment; try to find a matching result file
     let run_path = output_dir.join(run_id);
     if !run_path.is_dir() {
         return pr_key.to_string();
     }
-    if let Ok(entries) = std::fs::read_dir(&run_path) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().map_or(true, |e| e != "json") {
-                continue;
-            }
-            let fname = path.file_name().unwrap_or_default().to_string_lossy();
-            if fname == crb_harness::paths::SUMMARY_FILE {
-                continue;
-            }
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Ok(pr) = serde_json::from_str::<PrResult>(&content) {
-                    // Match by PR number from URL being equal to parsed pr_key
-                    let pr_num_from_url = pr
-                        .url
-                        .rsplit('/')
-                        .next()
-                        .and_then(|s| s.parse::<u32>().ok());
-                    let pr_num_from_key = pr_key.parse::<u32>().ok();
-                    if pr_num_from_url.is_some() && pr_num_from_url == pr_num_from_key {
-                        if !pr.pr_title.is_empty() {
-                            return pr.pr_title;
-                        }
-                    }
-                    // Also match if the filename contains the pr_key (filename is often {pr_number}.json)
-                    if fname.contains(pr_key) && !pr.pr_title.is_empty() {
-                        return pr.pr_title;
-                    }
-                }
+
+    let Ok(entries) = fs::read_dir(&run_path) else {
+        return pr_key.to_string();
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().map_or(true, |e| e != "json") {
+            continue;
+        }
+
+        let fname = path.file_name().unwrap_or_default().to_string_lossy();
+        if fname == paths::SUMMARY_FILE {
+            continue;
+        }
+
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+
+        let Ok(pr) = serde_json::from_str::<PrResult>(&content) else {
+            continue;
+        };
+
+        // Match by PR number from URL being equal to parsed pr_key
+        let pr_num_from_url = pr
+            .url
+            .rsplit('/')
+            .next()
+            .and_then(|s| s.parse::<u32>().ok());
+        let pr_num_from_key = pr_key.parse::<u32>().ok();
+        if pr_num_from_url.is_some() && pr_num_from_url == pr_num_from_key {
+            if !pr.pr_title.is_empty() {
+                return pr.pr_title;
             }
         }
+        // Also match if the filename contains the pr_key (filename is often {pr_number}.json)
+        if fname.contains(pr_key) && !pr.pr_title.is_empty() {
+            return pr.meta.title;
+        }
     }
+
     pr_key.to_string()
 }
 
 /// Get specific agent log
+#[instrument(skip(state), name = API_RUNS_ID_LOGS_KEY_ROLE)]
 pub async fn get_agent_log(
     State(state): State<AppState>,
     AxumPath((id, pr_key, role)): AxumPath<(String, String, String)>,
 ) -> impl IntoResponse {
-    tracing::info!("GET /api/runs/{}/logs/{}/{}", id, pr_key, role);
-
     let cache_dir = match resolve_cache_dir(&state.output_dir, &id) {
         Some(d) => d,
         None => {
@@ -1020,7 +980,7 @@ pub async fn get_pr_agents(
         if run_path.is_dir() {
             let pr_key_lower = pr_key.to_lowercase();
             let mut found = false;
-            if let Ok(entries) = std::fs::read_dir(&run_path) {
+            if let Ok(entries) = fs::read_dir(&run_path) {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if path.extension().map_or(true, |e| e != "json") {
@@ -1031,8 +991,7 @@ pub async fn get_pr_agents(
                         .unwrap_or_default()
                         .to_string_lossy()
                         .to_lowercase();
-                    if fname == crb_harness::paths::SUMMARY_FILE || fname.starts_with("candidates")
-                    {
+                    if fname == paths::SUMMARY_FILE || fname.starts_with("candidates") {
                         continue;
                     }
                     if fname.contains(&pr_key_lower) {
@@ -1058,19 +1017,18 @@ pub async fn get_pr_agents(
 }
 
 /// Get full details for a specific PR from its result file
+#[instrument(skip(state), name = API_RUNS_ID_DETAILS_KEY)]
 pub async fn get_pr_detail(
     State(state): State<AppState>,
     AxumPath((id, pr_key)): AxumPath<(String, String)>,
 ) -> impl IntoResponse {
-    tracing::info!("GET /api/runs/{}/pr-detail/{}", id, pr_key);
-
     let run_path = state.output_dir.join(&id);
     if !run_path.exists() || !run_path.is_dir() {
         return not_found(format!("Run not found: {id}"));
     }
 
     // Find the matching PR result file — pr_key could be a filename fragment or PR number
-    let entries = match std::fs::read_dir(&run_path) {
+    let entries = match fs::read_dir(&run_path) {
         Ok(e) => e,
         Err(_) => return internal_err("Cannot read run directory"),
     };
@@ -1080,7 +1038,7 @@ pub async fn get_pr_detail(
     let pr_key_lower = pr_key.to_lowercase();
     for (file_path, fname) in iter_json_files(&run_path) {
         // Match by filename containing pr_key, or by PR number extracted from URL
-        let content = match std::fs::read_to_string(&file_path) {
+        let content = match fs::read_to_string(&file_path) {
             Ok(c) => c,
             Err(_) => continue,
         };

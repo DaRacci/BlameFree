@@ -814,6 +814,7 @@ dependencies = [
  "regex",
  "rig-core",
  "sha2",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
 ]
@@ -930,6 +931,7 @@ dependencies = [
  "crb-macros",
  "crb-types",
  "insta",
+ "mti",
  "serde",
  "serde_json",
  "strum",

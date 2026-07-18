@@ -118,7 +118,7 @@ async fn main() -> Result<()> {
 
     let args = CliArgs::parse();
 
-    let log_path = resolve_log_path(args.log_file.clone());
+    let log_path = resolve_log_path(args.log_file.as_deref());
     let log_path_for_tracing = log_path.clone();
     let file_layer = tracing_subscriber::fmt::layer()
         .with_writer(move || {

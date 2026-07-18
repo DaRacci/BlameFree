@@ -8,24 +8,27 @@ use std::time::Duration;
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
+use crb_webui_shared::routes::API_ADMIN_LOGS_STREAM;
 use tokio::sync::mpsc;
 use tokio::time::interval;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{info, warn};
+use tracing::{instrument, warn};
 
 use crate::server::AppState;
 use crb_webui_shared::admin::LogsResponse;
 
+const READBACK_LINES: usize = 500;
+
 /// Get return recent server console logs.
 ///
-/// Reads the last 500 lines from the server's log file.
+/// Reads the last [`READBACK_LINES`] lines from the server's log file.
+#[instrument(skip(state), name = API_ADMIN_LOGS_STREAM)]
 pub async fn get_logs(State(state): State<AppState>) -> Json<LogsResponse> {
     let log_path = &state.log_file;
 
-    match read_last_n_lines(log_path, 500) {
+    match read_last_n_lines(log_path, READBACK_LINES) {
         Ok(lines) => {
             let text = lines.join("\n");
             Json(LogsResponse {
@@ -109,16 +112,16 @@ fn read_last_n_lines(path: &std::path::Path, n: usize) -> std::io::Result<Vec<St
 
 /// Get SSE stream of server console logs.
 ///
-/// On first connection, sends the last 500 lines as a batch.
+/// On first connection, sends the last [`READBACK_LINES`] lines as a batch.
 /// Then polls the log file every second for new lines and streams them.
 /// Uses Server-Sent Events (SSE) for real-time log delivery.
+#[instrument(skip(state), name = API_ADMIN_LOGS_STREAM)]
 pub async fn get_logs_stream(State(state): State<AppState>) -> impl IntoResponse {
     let log_path = state.log_file.clone();
-
     let (tx, rx) = mpsc::unbounded_channel::<Result<Event, Infallible>>();
 
     tokio::spawn(async move {
-        match read_last_n_lines(&log_path, 500) {
+        match read_last_n_lines(&log_path, READBACK_LINES) {
             Ok(lines) => {
                 for line in &lines {
                     if tx.send(Ok(Event::default().data(line.clone()))).is_err() {

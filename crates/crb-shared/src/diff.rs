@@ -229,6 +229,8 @@ fn filter_files(diff: &mut Diff) {
 
 #[cfg(test)]
 mod tests {
+    use tracing::info;
+
     use super::*;
 
     #[test]

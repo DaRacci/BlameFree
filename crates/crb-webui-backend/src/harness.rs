@@ -4,118 +4,30 @@
 //! EvalConfig setup, SSE event forwarding, and result file writing.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::api::runs::BenchmarkConfig;
 use crate::server::ActiveRun;
-use crb_agents::agent::AgentEntry;
 use crb_agents::prompts::PromptLibrary;
 use crb_benchmark::pr;
-use crb_harness::eval::{EvalConfig, EvalStrategy};
-use crb_harness::model_capabilities::ReasoningEffort;
+use crb_harness::eval::EvalConfig;
 use crb_harness::pipeline;
-use crb_reporting::cost::AnalyticsTracker;
 use crb_reporting::golden::load_golden_datasets;
 use crb_reporting::write_report;
 use crb_rules::RuleSet;
 use crb_shared::diff::Diff;
 use crb_shared::url::parse_github_url;
-use crb_tools::linters::config::LinterConfig;
 use crb_tools::linters::config::load_linter_config;
 use crb_types::RunEvent;
 use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
-use crb_types::wrappers::Model;
-use crb_webui_shared::config::DatasetConfig;
+use mti::prelude::{MagicTypeIdExt, V7};
 use rig_core::client::CompletionClient;
 use rig_core::client::ProviderClient;
-use rig_core::providers::openai;
-use rig_core::tool::server::ToolServer;
-use rig_core::tool::server::ToolServerHandle;
+use rig_core::providers::openrouter;
 use tokio::sync::{RwLock, broadcast};
 use tracing::{error, info, warn};
-
-/// Build an `EvalConfig` from a `BenchmarkConfig` and runtime dependencies.
-///
-/// Encapsulates the mapping so callers don't need to construct `EvalConfig`
-/// field-by-field.
-#[allow(clippy::too_many_arguments)]
-fn build_eval_config(
-    run_id: &str,
-    config: &BenchmarkConfig,
-    client: Arc<openai::Client>,
-    judge: rig_core::agent::Agent<openai::responses_api::ResponsesCompletionModel>,
-    agents: &'static [&'static AgentEntry],
-    webui_tx: broadcast::Sender<RunEvent>,
-    repo_root: PathBuf,
-    reasoning_effort: Option<ReasoningEffort>,
-    linter_configs: Option<Arc<HashMap<String, LinterConfig>>>,
-    ruleset: Option<Arc<RuleSet>>,
-) -> EvalConfig {
-    EvalConfig {
-        review_id: run_id.to_string(),
-        strategy: if config.skip_consensus {
-            EvalStrategy::Single
-        } else {
-            EvalStrategy::Panel
-        },
-        model: Model(config.model.clone()),
-        reasoning_effort,
-        client,
-        cache: None,
-        cost_tracker: Arc::new(AnalyticsTracker::new()),
-        dashboard_tx: Some(webui_tx),
-        agents,
-        repo_root,
-        max_findings: config.max_findings,
-        judge_model: config.judge_model.clone(),
-        judge,
-        linters_only: false,
-        linter_configs,
-        ruleset,
-        template_vars: None,
-    }
-}
-
-/// Apply dataset-level defaults from `dataset.toml` (if present) as overrides
-/// on a `BenchmarkConfig`.
-fn apply_dataset_defaults(config: &BenchmarkConfig, dataset_dir: &Path) -> BenchmarkConfig {
-    let dataset_config_path = dataset_dir.join("dataset.toml");
-    if !dataset_config_path.exists() {
-        return config.clone();
-    }
-    let content = match std::fs::read_to_string(&dataset_config_path) {
-        Ok(c) => c,
-        Err(e) => {
-            warn!("Failed to read {}: {e}", dataset_config_path.display());
-            return config.clone();
-        }
-    };
-    let ds_config: DatasetConfig = match toml::from_str(&content) {
-        Ok(c) => c,
-        Err(e) => {
-            warn!(
-                "Failed to parse {}: {e}. Ignoring dataset defaults.",
-                dataset_config_path.display()
-            );
-            return config.clone();
-        }
-    };
-    let defaults = &ds_config.defaults;
-    let mut overridden = config.clone();
-    if let Some(ref model) = defaults.model {
-        overridden.model = model.clone();
-    }
-    if let Some(max_findings) = defaults.max_findings {
-        overridden.max_findings = max_findings;
-    }
-    if let Some(ref roles) = defaults.roles {
-        if !roles.is_empty() {
-            overridden.roles = roles.clone();
-        }
-    }
-    overridden
-}
 
 /// Run the harness inline, calling library functions directly.
 ///
@@ -131,18 +43,10 @@ pub async fn run_harness(
     dataset_dir: &Path,
 ) -> anyhow::Result<()> {
     let output_subdir = output_dir.join(run_id);
-    std::fs::create_dir_all(&output_subdir)?;
+    fs::create_dir_all(&output_subdir)?;
 
-    // --- Apply dataset-level defaults ---
-    let config = apply_dataset_defaults(config, dataset_dir);
-    info!(
-        "Benchmark config after dataset defaults: model={}, roles={:?}, max_findings={}",
-        config.model, config.roles, config.max_findings
-    );
-
-    // --- EvalConfig setup ---
     let client = Arc::new(
-        openai::Client::from_env()
+        openrouter::Client::from_env()
             .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?,
     );
     let judge = client
@@ -216,18 +120,22 @@ pub async fn run_harness(
             .unwrap_or_default();
 
         let mut aggregate = Metrics::default();
-        let cfg = build_eval_config(
-            run_id,
-            &config,
-            client.clone(),
-            judge.clone(),
-            agents,
-            webui_tx.clone(),
-            bench_dir.clone(),
+        let config = EvalConfig {
+            review_id: "run".create_type_id::<V7>(),
+            client: client.clone(),
+            context: todo!(),
+            strategy: todo!(),
+            model: todo!(),
             reasoning_effort,
-            linter_configs.clone(),
-            ruleset.clone(),
-        );
+            cache: todo!(),
+            cost_tracker: todo!(),
+            dashboard_tx: todo!(),
+            agents,
+            repo_root: todo!(),
+            max_findings: todo!(),
+            ruleset,
+            template_vars: todo!(),
+        };
 
         match pipeline::evaluate(Diff::new(diff_str), &cfg).await {
             Ok(findings) => {
@@ -304,7 +212,7 @@ pub async fn run_harness(
     });
     let summary_path = output_subdir.join(crb_harness::paths::SUMMARY_FILE);
     if let Ok(json) = serde_json::to_string_pretty(&summary) {
-        let _ = std::fs::write(&summary_path, &json);
+        let _ = fs::write(&summary_path, &json);
     }
 
     let _ = webui_tx.send(RunEvent::RunFinished {
