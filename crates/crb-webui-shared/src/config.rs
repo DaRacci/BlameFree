@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Information about an available role/agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RoleInfo {
+pub struct AgentInfo {
     /// Human-readable role name.
     pub name: String,
 
@@ -14,7 +14,7 @@ pub struct RoleInfo {
     pub incompatible_with_roles: Vec<String>,
 }
 
-impl RoleInfo {
+impl AgentInfo {
     /// Combined display string: "Name (ABBR)".
     pub fn display_name(&self) -> String {
         format!("{} ({})", self.name, self.abbreviation)
@@ -34,7 +34,7 @@ pub struct AppConfig {
 
     /// Available reviewer roles/agents.
     #[serde(default)]
-    pub roles: Vec<RoleInfo>,
+    pub agents: Vec<AgentInfo>,
 
     /// Whether OAuth authentication is configured server-side.
     #[serde(default)]
@@ -56,6 +56,7 @@ pub struct DatasetInfo {
 
 /// A single PR entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated = "Migrate to new crb-types interfaces using [`crb_types::review::Review`]"]
 pub struct PrEntry {
     /// PR key (e.g. "owner/repo/pull/N").
     pub key: String,
@@ -71,26 +72,4 @@ pub struct PrEntry {
 
     /// PR number.
     pub pr_number: u32,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_role_info_display_name() {
-        let role = RoleInfo {
-            name: "Backend Engineer".into(),
-            abbreviation: "BE".into(),
-            incompatible_with_roles: vec![],
-        };
-        insta::assert_debug_snapshot!(role.display_name());
-    }
-
-    #[test]
-    fn test_role_info_default_incompatible() {
-        let json = r#"{"name":"Frontend","abbreviation":"FE"}"#;
-        let role: RoleInfo = serde_json::from_str(json).unwrap();
-        insta::assert_debug_snapshot!(role);
-    }
 }

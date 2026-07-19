@@ -81,20 +81,21 @@ pub fn init_dotenv() {
     }
 }
 
+/// Initialize tracing with an EnvFilter and return the subscriber builder.
+/// Callers chain `.with(layer).init()` to add their own layers.
+///
+/// ```ignore
+/// crb_shared::init_logging()
+///     .with(stderr_layer)
+///     .init();
+/// ```
 #[cfg(feature = "backend")]
-pub fn init_logging(
-    layers: Vec<tracing_subscriber::fmt::Layer<tracing_subscriber::fmt::format::DefaultFields>>,
-) {
-    use tracing_subscriber::filter::env::EnvFilter;
+pub fn init_logging() -> impl tracing::Subscriber + Send + Sync {
+    use tracing_subscriber::filter::EnvFilter;
+    use tracing_subscriber::layer::SubscriberExt;
 
     let env_layer = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let subscriber = tracing_subscriber::registry().with(env_layer);
-
-    let subscriber = layers
-        .into_iter()
-        .fold(subscriber, |sub, layer| sub.with(layer));
-
-    subscriber.init();
+    tracing_subscriber::registry().with(env_layer)
 }
 
 #[cfg(test)]

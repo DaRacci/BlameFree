@@ -6,61 +6,55 @@ use std::path::Path;
 use axum::Json;
 use axum::extract::{Path as AxumPath, State};
 use crb_webui_shared::routes::{API_CONFIG, API_CONFIG_DATASETS, API_DATASETS_ID_PRS};
-use serde::Serialize;
 use tracing::{error, instrument, warn};
 
 use crate::server::AppState;
+use crb_webui_shared::config::AgentInfo;
 use crb_webui_shared::config::AppConfig;
 use crb_webui_shared::config::DatasetInfo;
 use crb_webui_shared::config::PrEntry;
-use crb_webui_shared::config::RoleInfo;
-
-/// Information about an available model.
-#[derive(Debug, Clone, Serialize)]
-pub struct ModelInfo {
-    pub id: String,
-    pub name: String,
-}
 
 /// List available models, datasets, and roles.
-#[instrument(skip_all, name = API_CONFIG, fields(models = %state.models, dataset_dir = %state.dataset_dir.display()))]
+#[instrument(skip_all, name = API_CONFIG)]
 pub async fn get_config(State(state): State<AppState>) -> Json<AppConfig> {
     let models: Vec<String> = state
+        .config
+        .server
         .models
         .split(',')
         .map(|m| m.trim().to_string())
         .filter(|m| !m.is_empty())
         .collect();
 
-    let datasets: Vec<String> = scan_datasets(&state.dataset_dir)
+    let datasets: Vec<String> = scan_datasets(&state.config.server.dataset_dir)
         .into_iter()
         .map(|d| d.id)
         .collect();
 
     let lib = crb_agents::prompts::PromptLibrary::get_instance();
-    let mut roles: Vec<RoleInfo> = lib
+    let mut agents: Vec<AgentInfo> = lib
         .agents()
         .iter()
-        .map(|agent| RoleInfo {
+        .map(|agent| AgentInfo {
             abbreviation: agent.role_abbreviation.clone(),
             name: agent.role_abbreviation.clone(),
             incompatible_with_roles: agent.incompatible_with_roles.clone(),
         })
         .collect();
-    roles.sort_by(|a, b| a.abbreviation.cmp(&b.abbreviation));
+    agents.sort_by(|a, b| a.abbreviation.cmp(&b.abbreviation));
 
     Json(AppConfig {
         models,
         datasets,
-        roles,
+        agents,
         auth_enabled: state.config.oauth.is_some(),
     })
 }
 
 /// List available datasets with PR counts.
-#[instrument(skip_all, name = API_CONFIG_DATASETS, fields(dataset_dir = %state.dataset_dir.display()))]
+#[instrument(skip_all, name = API_CONFIG_DATASETS)]
 pub async fn list_datasets(State(state): State<AppState>) -> Json<Vec<DatasetInfo>> {
-    Json(scan_datasets(&state.dataset_dir))
+    Json(scan_datasets(&state.config.server.dataset_dir))
 }
 
 fn scan_datasets(dataset_dir: &Path) -> Vec<DatasetInfo> {
@@ -145,7 +139,7 @@ pub async fn list_dataset_prs(
     AxumPath(id): AxumPath<String>,
 ) -> Json<Vec<PrEntry>> {
     const EMPTY_VEC: Vec<PrEntry> = Vec::new();
-    let dataset_dir = state.dataset_dir.join(&id);
+    let dataset_dir = state.config.server.dataset_dir.join(&id);
 
     if !dataset_dir.exists() || !dataset_dir.is_dir() {
         warn!("Dataset directory not found: {}", dataset_dir.display());

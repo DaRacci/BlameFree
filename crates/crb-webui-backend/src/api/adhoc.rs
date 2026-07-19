@@ -3,9 +3,10 @@
 //! Provides endpoints to submit a GitHub PR URL for ad-hoc review,
 //! list previous ad-hoc reviews, and get their details.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use std::{env, fs};
 
 use axum::Json;
@@ -23,20 +24,21 @@ use crb_shared::sanitize_filename;
 use crb_shared::url::parse_github_url;
 use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
 use crb_types::benchmark::result::PrResult;
-use crb_types::vcs::repository::RemoteRepositoryMeta;
+use crb_types::review::{PullRequestReviewMetadata, Review, ReviewMetadata, ReviewStatus};
+use crb_types::vcs::pr::PrMeta;
+use crb_types::vcs::repository::{RemoteRepositoryMeta, VCSPlatform};
 use crb_types::wrappers::Model;
-use crb_webui_shared::adhoc::{AdhocReviewResponse, AdhocRunSummary, GithubPrListItem};
-use crb_webui_shared::runs::RunStatus;
-use rig_core::tool::server::ToolServer;
+use crb_webui_shared::config::AgentInfo;
+use mti::prelude::{MagicTypeIdExt, V7};
+use rig_core::client::ProviderClient;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{error, info, warn};
 
+use crate::api::runs::RunDetailResponse;
 use crate::api::runs::{self};
 use crate::server::AppState;
-use crb_webui_shared::runs::{PrResultRow, RunConfig, RunDetail, RunMeta};
-use rig_core::client::CompletionClient;
-use rig_core::client::ProviderClient;
+use crb_webui_shared::review::RunConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdhocReviewRequest {
@@ -53,8 +55,6 @@ fn default_adhoc_model() -> String {
     DEFAULT_MODEL.to_string()
 }
 
-// TODO: No string defaults for dynamic roles.
-#[deprecated(note = "Use PromptLibrary::get_instance().abbreviations() instead")]
 fn default_adhoc_roles() -> Vec<String> {
     crb_agents::prompts::PromptLibrary::get_instance()
         .abbreviations()
@@ -129,10 +129,13 @@ pub async fn start_adhoc_review(
 
     (
         StatusCode::OK,
-        Json(AdhocReviewResponse {
-            run_id,
-            pr_title,
-            status: RunStatus::Running,
+        Json(Review {
+            id: run_id.as_str().create_type_id::<V7>(),
+            agent_sessions: HashMap::new(),
+            analytics: None,
+            duration: None,
+            status: ReviewStatus::Running,
+            metadata: ReviewMetadata::Plain,
         }),
     )
         .into_response()
@@ -141,12 +144,12 @@ pub async fn start_adhoc_review(
 /// List all previous ad-hoc review runs.
 pub async fn list_adhoc_runs(State(state): State<AppState>) -> impl IntoResponse {
     let adhoc_dir = state.output_dir.join("adhoc");
-    let mut runs: Vec<AdhocRunSummary> = Vec::new();
+    let mut runs: Vec<Review> = Vec::new();
 
     if adhoc_dir.exists() {
         let entries = match fs::read_dir(&adhoc_dir) {
             Ok(entries) => entries,
-            Err(_) => return Json(Vec::<AdhocRunSummary>::new()).into_response(),
+            Err(_) => return Json(Vec::<Review>::new()).into_response(),
         };
 
         for entry in entries.flatten() {
@@ -160,13 +163,14 @@ pub async fn list_adhoc_runs(State(state): State<AppState>) -> impl IntoResponse
                 .to_string_lossy()
                 .to_string();
 
-            if let Some(summary) = scan_adhoc_run_dir(&path, &run_id) {
-                runs.push(summary);
+            if let Some(review) = scan_adhoc_run_dir(&path, &run_id) {
+                runs.push(review);
             }
         }
     }
 
-    runs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    // Sort by id (adhoc IDs embed a Unix timestamp)
+    runs.sort_by(|a, b| b.id.to_string().cmp(&a.id.to_string()));
     Json(runs).into_response()
 }
 
@@ -199,14 +203,6 @@ pub async fn get_adhoc_run(
             .to_string()
     };
 
-    let summary_f64 = |key: &str, default: f64| -> f64 {
-        summary_data
-            .as_ref()
-            .and_then(|s| s.get(key))
-            .and_then(|v| v.as_f64())
-            .unwrap_or(default)
-    };
-
     let model = summary_str("model", "unknown");
     let roles: Vec<String> = summary_data
         .as_ref()
@@ -226,7 +222,6 @@ pub async fn get_adhoc_run(
             }
         })
         .unwrap_or_default();
-    let status = summary_str("status", "unknown");
     let duration_secs = match summary_data
         .as_ref()
         .and_then(|s| s.get("duration_secs"))
@@ -235,30 +230,26 @@ pub async fn get_adhoc_run(
         Some(v) => Some(v),
         None => None,
     };
-    let total_cost = summary_f64("total_cost_usd", 0.0);
 
-    let mut results: Vec<PrResultRow> = Vec::new();
+    let mut results: Vec<PrResult> = Vec::new();
     let mut aggregate_metrics = Metrics {
         true_positives: 0,
         false_positives: 0,
         false_negatives: 0,
         duration_secs: duration_secs.unwrap_or(0.0),
     };
-
-    for (file_path, fname) in runs::iter_json_files(&run_dir) {
+    #[allow(deprecated)]
+    for (file_path, _) in runs::iter_json_files(&run_dir) {
         if let Ok(content) = fs::read_to_string(&file_path) {
             if let Ok(pr_json) = serde_json::from_str::<PrResult>(&content) {
                 let metrics = &pr_json.metrics;
-                results.push(PrResultRow {
-                    pr_number: 0,
-                    pr_key: fname.trim_end_matches(".json").to_string(),
-                    title: pr_json.pr_title,
-                    f1: Some(metrics.f1()),
-                    precision: Some(metrics.precision()),
-                    recall: Some(metrics.recall()),
-                    cost: pr_json.cost.as_ref().map(|c| c.total_cost()),
-                    status: Some("done".to_string()),
-                    has_agents: false,
+                #[allow(deprecated)]
+                results.push(PrResult {
+                    id: pr_json.id,
+                    golden_comments: vec![],
+                    metrics: pr_json.metrics.clone(),
+                    findings_with_verdicts: vec![],
+                    cost: pr_json.cost.clone(),
                 });
 
                 aggregate_metrics.true_positives += metrics.true_positives;
@@ -268,23 +259,28 @@ pub async fn get_adhoc_run(
         }
     }
 
-    let detail = RunDetail {
-        meta: RunMeta {
-            id: id.clone(),
-            name: id,
-            pr_count: results.len(),
-            total_cost: Some(total_cost),
-            total_tokens: 0,
-            duration_secs,
-            model: Some(model.clone()),
-            status: RunStatus::Completed,
+    let detail = RunDetailResponse {
+        meta: Review {
+            id: id.as_str().create_type_id::<V7>(),
+            agent_sessions: HashMap::new(),
+            analytics: None,
+            duration: duration_secs.map(Duration::from_secs_f64),
+            status: ReviewStatus::Completed,
+            metadata: ReviewMetadata::Plain,
         },
         results,
-        aggregate: Some(aggregate_metrics),
+        aggregate: aggregate_metrics,
         config: Some(RunConfig {
             model,
             dataset: String::new(),
-            roles,
+            agents: roles
+                .into_iter()
+                .map(|abbr| AgentInfo {
+                    abbreviation: abbr.clone(),
+                    name: abbr,
+                    incompatible_with_roles: vec![],
+                })
+                .collect(),
         }),
     };
 
@@ -317,13 +313,13 @@ pub async fn list_repo_prs(
         }
     };
 
-    let prs: Vec<GithubPrListItem> = page
+    let prs: Vec<PrMeta> = page
         .items
         .into_iter()
-        .map(|pr| GithubPrListItem {
+        .map(|pr| PrMeta {
             number: pr.number as u32,
             title: pr.title.unwrap_or_default(),
-            html_url: pr.html_url.map(|u| u.to_string()).unwrap_or_default(),
+            url: pr.html_url.map(|u| u.to_string()).unwrap_or_default(),
         })
         .collect();
 
@@ -392,40 +388,10 @@ async fn run_adhoc_review_inner(
         "Starting ad-hoc review"
     );
 
-    let client = rig_core::providers::openai::Client::from_env()
-        .map_err(|e| anyhow::anyhow!("Failed to create OpenAI client: {e}"))?;
-
-    let judge = client
-        .agent(model)
-        .preamble(
-            "You are evaluating AI code review tools.\n\
-            Determine if the candidate issue matches the golden (expected) comment.\n\
-            \n\
-            Golden Comment (the issue we're looking for):\n\
-            {golden_comment}\n\
-            \n\
-            Candidate Issue (from the tool's review):\n\
-            {candidate}\n\
-            \n\
-            Instructions:\n\
-            - Determine if the candidate identifies the SAME underlying issue as the golden comment\n\
-            - Accept semantic matches - different wording is fine if it's the same problem\n\
-            - Focus on whether they point to the same bug, concern, or code issue\n\
-            \n\
-            Respond with ONLY a JSON object:\n\
-            {\"reasoning\": \"brief explanation\", \"match\": true/false, \"confidence\": 0.0-1.0}",
-        )
-        .temperature(0.3)
-        .build();
+    let client = rig_core::providers::openrouter::Client::from_env()
+        .map_err(|e| anyhow::anyhow!("Failed to create OpenRouter client: {e}"))?;
 
     let prompt_lib = Arc::new(prompts::PromptLibrary::get_instance());
-
-    use crb_reporting::golden::GoldenCommentEntry;
-    let pr = GoldenCommentEntry {
-        pr_title: pr_title.to_string(),
-        url: pr_url.to_string(),
-        comments: vec![],
-    };
 
     let pr_key = sanitize_filename(pr_title);
     let cost_tracker = Arc::new(AnalyticsTracker::new());
@@ -455,8 +421,24 @@ async fn run_adhoc_review_inner(
 
     let wrapped_model = Model(model.to_string());
 
+    let context = crb_harness::eval::EvalContext {
+        repo_root: output_subdir.clone(),
+        ruleset: None,
+        repository: RemoteRepositoryMeta {
+            platform: VCSPlatform::GitHub,
+            owner: String::new(),
+            name: String::new(),
+        },
+        pull_request: Some(crb_types::vcs::pr::PrMeta {
+            title: pr_title.to_string(),
+            url: pr_url.to_string(),
+            number: 0,
+        }),
+    };
+
     let cfg = crb_harness::eval::EvalConfig {
-        review_id: format!("adhoc-{}", run_id),
+        review_id: format!("adhoc-{}", run_id).create_type_id::<V7>(),
+        context,
         strategy: crb_harness::eval::EvalStrategy::Panel,
         model: wrapped_model,
         reasoning_effort: None,
@@ -465,46 +447,32 @@ async fn run_adhoc_review_inner(
         cost_tracker,
         dashboard_tx: None,
         agents,
-        repo_root: output_subdir.clone(),
         max_findings: 20,
-        judge_model: model.to_string(),
-        judge,
-        linters_only: false,
-        linter_configs: None,
-        ruleset: None,
         template_vars: None,
     };
 
-    let findings = crb_harness::pipeline::evaluate(diff, &cfg).await?;
-    let result = crb_harness::pipeline::build_pr_result(
-        &findings,
-        &cfg,
-        &pr.pr_title,
-        &pr.url,
-        pr.comments.len(),
-    )
-    .await;
+    let findings = crb_harness::pipeline::evaluate(Diff::new(diff.raw.clone()), &cfg).await?;
 
-    let metrics_for_summary = result.metrics.clone();
+    let metrics_for_summary = Metrics::default();
 
-    let total_cost = result.cost.as_ref().map(|c| c.total_cost()).unwrap_or(0.0);
+    let total_cost = 0.0;
 
     fs::create_dir_all(&output_subdir)?;
 
     let pr_result_path = output_subdir.join(format!("{}.json", pr_key));
-    let cost_snapshot = result.cost.clone();
-    let pr_json = PrResult {
-        meta: PrMeta {
-            title: result.pr_title.clone(),
-            url: result.url.clone(),
-        },
-        golden_count: 0,
-        metrics: result.metrics.clone(),
-        verdicts: result.verdicts.clone(),
-        cost: cost_snapshot,
-        findings: serde_json::json!([]),
-        agent_responses: vec![],
-    };
+
+    let pr_json = serde_json::json!({
+        "id": format!("adhoc-{}", run_id),
+        "pr_title": pr_title,
+        "url": pr_url,
+        "findings_count": findings.len(),
+        "golden_count": 0,
+        "metrics": metrics_for_summary,
+        "verdicts": [],
+        "cost": null,
+        "findings": findings.iter().map(|f| serde_json::to_value(f)).collect::<Result<Vec<_>, _>>()?,
+        "agent_responses": [],
+    });
 
     let pr_json_str = serde_json::to_string_pretty(&pr_json)?;
     fs::write(&pr_result_path, &pr_json_str)?;
@@ -540,7 +508,7 @@ async fn run_adhoc_review_inner(
     info!(
         run_id = %run_id,
         pr_title = %pr_title,
-        findings = result.findings_count,
+        findings = findings.len(),
         cost = total_cost,
         elapsed_secs = elapsed.as_secs_f64(),
         "Ad-hoc review completed"
@@ -558,14 +526,6 @@ fn summary_str(data: &Option<serde_json::Value>, key: &str, default: &str) -> St
         .to_string()
 }
 
-/// Extract an f64 field from a JSON summary value.
-fn summary_f64(data: &Option<serde_json::Value>, key: &str, default: f64) -> f64 {
-    data.as_ref()
-        .and_then(|s| s.get(key))
-        .and_then(|v| v.as_f64())
-        .unwrap_or(default)
-}
-
 /// Load the JSON summary file for an ad-hoc run, if it exists.
 fn load_adhoc_summary(path: &Path) -> (Option<serde_json::Value>, bool) {
     let summary_path = path.join(crb_harness::paths::SUMMARY_FILE);
@@ -578,94 +538,39 @@ fn load_adhoc_summary(path: &Path) -> (Option<serde_json::Value>, bool) {
     }
 }
 
-/// Scan an ad-hoc run directory and produce a summary.
-fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<AdhocRunSummary> {
+/// Scan an ad-hoc run directory and produce a Review<PullRequestReviewMetadata>.
+fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<Review> {
     let (summary_data, _has_summary) = load_adhoc_summary(path);
 
     let pr_title = summary_str(&summary_data, "pr_title", "Unknown");
     let pr_url = summary_str(&summary_data, "pr_url", "");
     let status_str = summary_str(&summary_data, "status", "unknown");
     let status = match status_str.as_str() {
-        "completed" => RunStatus::Completed,
-        "failed" => RunStatus::Failed,
-        "cancelled" => RunStatus::Cancelled,
-        "running" => RunStatus::Running,
-        _ => RunStatus::Pending,
+        "completed" => ReviewStatus::Completed,
+        "failed" => ReviewStatus::Failed,
+        "cancelled" => ReviewStatus::Cancelled,
+        "running" => ReviewStatus::Running,
+        _ => ReviewStatus::Pending,
     };
     let model = summary_str(&summary_data, "model", "unknown");
-    let total_cost = summary_f64(&summary_data, "total_cost_usd", 0.0);
-    let roles: Vec<String> = summary_data
-        .as_ref()
-        .and_then(|s| s.get("roles"))
-        .and_then(|v| {
-            if let Some(arr) = v.as_array() {
-                Some(
-                    arr.iter()
-                        .filter_map(|r| r.as_str().map(String::from))
-                        .collect(),
-                )
-            } else if let Some(s) = v.as_str() {
-                // Backward compat: old format stored comma-separated string
-                Some(s.split(',').map(|r| r.trim().to_string()).collect())
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default();
-    let created_at = created_at_from_run_id(run_id);
-    let findings_count = count_adhoc_findings(path);
 
-    Some(AdhocRunSummary {
-        id: run_id.to_string(),
-        pr_url,
-        pr_title,
+    Some(Review {
+        id: run_id.create_type_id::<V7>(),
+        agent_sessions: HashMap::new(),
+        analytics: None,
+        duration: None,
         status,
-        created_at,
-        model,
-        roles,
-        findings_count,
-        total_cost,
+        metadata: ReviewMetadata::PullRequest(PullRequestReviewMetadata {
+            repository: RemoteRepositoryMeta {
+                platform: VCSPlatform::GitHub,
+                owner: String::new(),
+                name: String::new(),
+            },
+            meta: PrMeta {
+                title: pr_title,
+                url: pr_url,
+                number: 0,
+            },
+        }),
     })
-}
-
-/// Parse `created_at` from an ad-hoc run ID of the form `adhoc-{timestamp}`.
-fn created_at_from_run_id(run_id: &str) -> String {
-    if let Some(ts_str) = run_id.strip_prefix("adhoc-") {
-        if let Ok(ts) = ts_str.parse::<u64>() {
-            chrono::DateTime::from_timestamp(ts as i64, 0)
-                .map(|dt| dt.to_rfc3339())
-                .unwrap_or_else(|| "unknown".to_string())
-        } else {
-            "unknown".to_string()
-        }
-    } else {
-        "unknown".to_string()
-    }
-}
-
-/// Count findings from the per-PR result file in an ad-hoc run directory.
-fn count_adhoc_findings(path: &Path) -> usize {
-    let entries = match fs::read_dir(path) {
-        Ok(e) => e,
-        Err(_) => return 0,
-    };
-
-    for entry in entries.flatten() {
-        let fpath = entry.path();
-        if fpath.extension().map_or(true, |e| e != "json") {
-            continue;
-        }
-        if fpath
-            .file_name()
-            .map_or(true, |n| n == crb_harness::paths::SUMMARY_FILE)
-        {
-            continue;
-        }
-        if let Ok(content) = fs::read_to_string(&fpath) {
-            if let Ok(pr_json) = serde_json::from_str::<PrResult>(&content) {
-                return pr_json.findings_count;
-            }
-        }
-    }
-    0
 }

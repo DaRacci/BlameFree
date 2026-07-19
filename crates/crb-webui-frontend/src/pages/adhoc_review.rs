@@ -1,16 +1,27 @@
 use crate::AppConfig;
-use crate::components::role_selector::RoleSelector;
-use crb_webui_shared::adhoc::{AdhocReviewResponse, GithubPrListItem};
-use crb_webui_shared::config::RoleInfo;
+use crate::components::agent_selector::RoleSelector;
+use crb_types::review::ReviewStatus;
+use crb_types::vcs::pr::PrMeta;
+use crb_webui_shared::config::AgentInfo;
 use crb_webui_shared::route;
 use crb_webui_shared::routes::{API_ADHOC_REVIEW, API_CONFIG};
 use gloo_net::http::Request;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
+use serde::Deserialize;
+
+/// Local response type — matches the old `AdhocReviewResponse` JSON format.
+#[derive(Debug, Clone, Deserialize)]
+#[deprecated]
+struct AdhocStartResponse {
+    run_id: String,
+    pr_title: String,
+    status: ReviewStatus,
+}
 
 /// Fetch open PRs for a given owner/repo via the backend proxy.
-async fn fetch_repo_prs(owner: &str, repos: &str) -> Result<Vec<GithubPrListItem>, String> {
+async fn fetch_repo_prs(owner: &str, repos: &str) -> Result<Vec<PrMeta>, String> {
     let url = route!(API_ADHOC_PRS_OWNER_REPO, owner, repos);
     let resp = Request::get(&url)
         .send()
@@ -21,7 +32,7 @@ async fn fetch_repo_prs(owner: &str, repos: &str) -> Result<Vec<GithubPrListItem
         let text = resp.text().await.unwrap_or_default();
         return Err(format!("Server error ({}): {}", status, text));
     }
-    resp.json::<Vec<GithubPrListItem>>()
+    resp.json::<Vec<PrMeta>>()
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))
 }
@@ -35,16 +46,16 @@ struct AdhocSignals {
     set_model: WriteSignal<String>,
     selected_roles: ReadSignal<Vec<String>>,
     set_selected_roles: WriteSignal<Vec<String>>,
-    available_roles: ReadSignal<Vec<RoleInfo>>,
-    set_available_roles: WriteSignal<Vec<RoleInfo>>,
+    available_roles: ReadSignal<Vec<AgentInfo>>,
+    set_available_roles: WriteSignal<Vec<AgentInfo>>,
     loading: ReadSignal<bool>,
     set_loading: WriteSignal<bool>,
     error: ReadSignal<Option<String>>,
     set_error: WriteSignal<Option<String>>,
     prs_loading: ReadSignal<bool>,
     set_prs_loading: WriteSignal<bool>,
-    open_prs: ReadSignal<Vec<GithubPrListItem>>,
-    set_open_prs: WriteSignal<Vec<GithubPrListItem>>,
+    open_prs: ReadSignal<Vec<PrMeta>>,
+    set_open_prs: WriteSignal<Vec<PrMeta>>,
     pr_mode: ReadSignal<String>,
     set_pr_mode: WriteSignal<String>,
     selected_pr_number: ReadSignal<Option<u32>>,
@@ -60,11 +71,11 @@ fn create_adhoc_signals() -> AdhocSignals {
     let (repo, set_repo) = signal(String::new());
     let (model, set_model) = signal(String::new());
     let (selected_roles, set_selected_roles) = signal::<Vec<String>>(Vec::new());
-    let (available_roles, set_available_roles) = signal::<Vec<RoleInfo>>(Vec::new());
+    let (available_roles, set_available_roles) = signal::<Vec<AgentInfo>>(Vec::new());
     let (loading, set_loading) = signal(false);
     let (error, set_error) = signal::<Option<String>>(None);
     let (prs_loading, set_prs_loading) = signal(false);
-    let (open_prs, set_open_prs) = signal::<Vec<GithubPrListItem>>(Vec::new());
+    let (open_prs, set_open_prs) = signal::<Vec<PrMeta>>(Vec::new());
     let (pr_mode, set_pr_mode) = signal::<String>("open".to_string());
     let (selected_pr_number, set_selected_pr_number) = signal::<Option<u32>>(None);
     let (manual_pr_number, set_manual_pr_number) = signal(String::new());
@@ -102,7 +113,7 @@ fn create_adhoc_signals() -> AdhocSignals {
 
 fn fetch_initial_config(
     set_model: WriteSignal<String>,
-    set_available_roles: WriteSignal<Vec<RoleInfo>>,
+    set_available_roles: WriteSignal<Vec<AgentInfo>>,
 ) {
     spawn_local(async move {
         if let Ok(resp) = Request::get(&API_CONFIG).send().await
@@ -111,7 +122,7 @@ fn fetch_initial_config(
             if let Some(first) = config.models.first() {
                 set_model.set(first.clone());
             }
-            set_available_roles.set(config.roles);
+            set_available_roles.set(config.agents);
         }
     });
 }
@@ -121,7 +132,7 @@ fn build_load_prs_handler(
     repo: ReadSignal<String>,
     set_prs_loading: WriteSignal<bool>,
     set_prs_error: WriteSignal<Option<String>>,
-    set_open_prs: WriteSignal<Vec<GithubPrListItem>>,
+    set_open_prs: WriteSignal<Vec<PrMeta>>,
     set_selected_pr_number: WriteSignal<Option<u32>>,
 ) -> impl Fn(leptos::ev::MouseEvent) {
     move |_| {
@@ -235,7 +246,7 @@ fn build_submit_handler(
             match resp {
                 Ok(r) => {
                     if r.ok() {
-                        match r.json::<AdhocReviewResponse>().await {
+                        match r.json::<AdhocStartResponse>().await {
                             Ok(data) => {
                                 navigator(
                                     &format!("/adhoc/runs/{}", data.run_id),
@@ -316,7 +327,7 @@ fn render_repo_section(
 fn render_pr_selection_section(
     pr_mode: ReadSignal<String>,
     set_pr_mode: WriteSignal<String>,
-    open_prs: ReadSignal<Vec<GithubPrListItem>>,
+    open_prs: ReadSignal<Vec<PrMeta>>,
     prs_loading: ReadSignal<bool>,
     prs_error: ReadSignal<Option<String>>,
     selected_pr_number: ReadSignal<Option<u32>>,
@@ -435,7 +446,7 @@ fn render_pr_selection_section(
 fn render_config_section(
     model: ReadSignal<String>,
     set_model: WriteSignal<String>,
-    available_roles: ReadSignal<Vec<RoleInfo>>,
+    available_roles: ReadSignal<Vec<AgentInfo>>,
     selected_roles: ReadSignal<Vec<String>>,
     set_selected_roles: WriteSignal<Vec<String>>,
 ) -> impl IntoView {

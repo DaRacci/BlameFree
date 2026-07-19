@@ -1,17 +1,29 @@
 use std::sync::Arc;
 
 use crate::AppConfig;
-use crate::components::role_selector::RoleSelector;
+use crate::components::agent_selector::RoleSelector;
 use crate::{NewRunRequest, NewRunResponse};
 use crb_shared::{DEFAULT_MODEL, DEFAULT_MODEL_PRO};
 use crb_types::capabilities::ReasoningEffort;
-use crb_webui_shared::config::{DatasetInfo, PrEntry};
+use crb_webui_shared::config::DatasetInfo;
 use crb_webui_shared::route;
 use crb_webui_shared::routes::{API_CONFIG, API_CONFIG_DATASETS, API_CONFIG_REASONING, API_RUNS};
 use gloo_net::http::Request;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
+use log::error;
+use serde::Deserialize;
+
+#[derive(Debug, Clone, Deserialize)]
+#[deprecated]
+struct PrEntry {
+    key: String,
+    url: String,
+    title: String,
+    repo: String,
+    pr_number: u32,
+}
 
 #[derive(Clone, Copy)]
 struct NewRunSignals {
@@ -66,9 +78,7 @@ fn create_form_signals() -> NewRunSignals {
     let (available_prs, set_available_prs) = signal(Vec::new());
     let (selected_prs, set_selected_prs) = signal(Vec::new());
     let (prs_loading, set_prs_loading) = signal(false);
-    let (concurrency, set_concurrency) = signal(String::new());
     let (max_findings, set_max_findings) = signal(String::new());
-    let (use_cache, set_use_cache) = signal(true);
     let (reasoning_effort, set_reasoning_effort) = signal(Some(ReasoningEffort::Medium));
     let (submitting, set_submitting) = signal(false);
     let (submit_error, set_submit_error) = signal(None);
@@ -76,9 +86,6 @@ fn create_form_signals() -> NewRunSignals {
     let (effort_levels, set_effort_levels) = signal(Vec::new());
     let (effort_loading, set_effort_loading) = signal(true);
     let (judge_model, set_judge_model) = signal(String::new());
-    let (cache_dir, set_cache_dir) = signal(String::new());
-    let (skip_consensus, set_skip_consensus) = signal(false);
-    let (linters_only, set_linters_only) = signal(false);
 
     NewRunSignals {
         config,
@@ -128,20 +135,20 @@ fn create_fetch_prs_handler(signals: NewRunSignals) -> impl Fn(String) {
             signals.set_selected_prs.set(Vec::new());
             return;
         }
-        set_prs_loading.set(true);
+        signals.set_prs_loading.set(true);
         spawn_local(async move {
             match crate::fetch_json::<Vec<PrEntry>>(&route!(API_DATASETS_ID_PRS, ds_id)).await {
                 Ok(prs) => {
                     let all_keys: Vec<String> = prs.iter().map(|p| p.key.clone()).collect();
-                    signals.set_available.set(prs);
-                    signals.set_selected.set(all_keys);
+                    signals.set_available_prs.set(prs);
+                    signals.set_selected_prs.set(all_keys);
                 }
                 Err(_) => {
-                    signals.set_available.set(Vec::new());
-                    signals.set_selected.set(Vec::new());
+                    signals.set_available_prs.set(Vec::new());
+                    signals.set_selected_prs.set(Vec::new());
                 }
             }
-            signals.set_loading.set(false);
+            signals.set_prs_loading.set(false);
         });
     }
 }
@@ -155,23 +162,8 @@ fn create_dataset_change_handler(
         signals.set_dataset.set(new_ds.clone());
 
         let ds_list = signals.datasets.get();
-        if let Some(ds_info) = ds_list.iter().find(|d| d.id == new_ds) {
-            if let Some(ref cfg) = ds_info.config {
-                let defaults = &cfg.defaults;
-                if let Some(ref m) = defaults.model {
-                    signals.set_model.set(m.clone());
-                }
-                if let Some(c) = defaults.concurrency {
-                    signals.set_concurrency.set(c.to_string());
-                }
-                if let Some(mf) = defaults.max_findings {
-                    signals.set_max_findings.set(mf.to_string());
-                }
-                if let Some(ref r) = defaults.roles {
-                    let roles_vec: Vec<String> = r.clone();
-                    signals.set_roles.set(roles_vec);
-                }
-            }
+        if let Some(_ds_info) = ds_list.iter().find(|d| d.id == new_ds) {
+            // DatasetInfo no longer has config/defaults — skip default population
         }
 
         fetch_prs(new_ds);
@@ -183,7 +175,7 @@ fn init_config_spawn(signals: NewRunSignals, fetch_prs: Arc<dyn Fn(String) + 'st
         let signals = signals;
         let fetch_prs = fetch_prs;
         async move {
-            signals.set_loading.set(true);
+            signals.set_config_loading.set(true);
             signals.set_datasets_loading.set(true);
             match async move { crate::fetch_json::<AppConfig>(API_CONFIG).await }.await {
                 Ok(cfg) => {
@@ -194,11 +186,11 @@ fn init_config_spawn(signals: NewRunSignals, fetch_prs: Arc<dyn Fn(String) + 'st
                         signals.set_dataset.set(d.clone());
                     }
                     signals.set_config.set(Some(cfg));
-                    signals.set_loading.set(false);
+                    signals.set_config_loading.set(false);
                 }
                 Err(e) => {
-                    signals.set_error.set(Some(e));
-                    signals.set_loading.set(false);
+                    signals.set_config_error.set(Some(e));
+                    signals.set_config_loading.set(false);
                 }
             }
 
@@ -206,35 +198,16 @@ fn init_config_spawn(signals: NewRunSignals, fetch_prs: Arc<dyn Fn(String) + 'st
                 .await
             {
                 Ok(ds) => {
-                    if let Some(first) = ds.first() {
-                        let current_ds = dataset.get();
-                        if first.id == current_ds {
-                            if let Some(ref cfg) = first.config {
-                                if let Some(ref m) = cfg.defaults.model {
-                                    signals.set_model.set(m.clone());
-                                }
-                                if let Some(c) = cfg.defaults.concurrency {
-                                    signals.set_concurrency.set(c.to_string());
-                                }
-                                if let Some(mf) = cfg.defaults.max_findings {
-                                    signals.set_max_findings.set(mf.to_string());
-                                }
-                                if let Some(ref r) = cfg.defaults.roles {
-                                    let roles_vec: Vec<String> = r.clone();
-                                    signals.set_roles.set(roles_vec);
-                                }
-                            }
-                        }
-                    }
                     signals.set_datasets.set(ds);
                     signals.set_datasets_loading.set(false);
                 }
-                Err(_) => {
+                Err(err) => {
+                    error!("Failed to fetch datasets, see error:\n{}", err);
                     signals.set_datasets_loading.set(false);
                 }
             }
 
-            let initial_ds = dataset.get();
+            let initial_ds = signals.dataset.get();
             if !initial_ds.is_empty() {
                 fetch_prs(initial_ds);
             }
@@ -243,7 +216,7 @@ fn init_config_spawn(signals: NewRunSignals, fetch_prs: Arc<dyn Fn(String) + 'st
                 async move { crate::fetch_json::<Vec<ReasoningEffort>>(API_CONFIG_REASONING).await }
                     .await
             {
-                signals.set_effort_levels.set(resp.levels);
+                signals.set_effort_levels.set(resp);
             }
             signals.set_effort_loading.set(false);
         }
@@ -268,21 +241,15 @@ fn create_submit_handler(
             Some(selected.join(","))
         };
 
-        let max_f = signals
-            .max_findings
-            .get()
-            .parse::<usize>()
-            .unwrap_or(FINDINGS);
-        let cache = cache_dir.get();
-        let cache_dir_val = if cache.is_empty() { None } else { Some(cache) };
+        let max_f = signals.max_findings.get().parse::<usize>().unwrap_or(20);
 
         let req = NewRunRequest {
-            model: model.get(),
-            dataset: dataset.get(),
-            roles: roles.get(),
+            model: signals.model.get(),
+            dataset: signals.dataset.get(),
+            roles: signals.roles.get(),
             pr_filter,
-            reasoning_effort: reasoning_effort.get(),
-            judge_model: judge_model.get(),
+            reasoning_effort: signals.reasoning_effort.get(),
+            judge_model: signals.judge_model.get(),
             max_findings: max_f,
         };
 
@@ -425,7 +392,7 @@ fn render_execution_section(
                 {move || -> AnyView {
                     let cfg = config.get();
                     if let Some(ref c) = cfg {
-                        let role_infos = c.roles.clone();
+                        let role_infos = c.agents.clone();
                         view! {
                             <div class="form-field">
                                 <label class="form-field__label">"Roles / Agents"</label>

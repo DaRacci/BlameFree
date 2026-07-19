@@ -1,4 +1,4 @@
-use crb_webui_shared::config::RoleInfo;
+use crb_webui_shared::config::AgentInfo;
 use leptos::prelude::*;
 
 /// A reusable checkbox group for selecting roles/agents.
@@ -8,13 +8,13 @@ use leptos::prelude::*;
 #[component]
 pub fn RoleSelector(
     /// All available roles (with their incompatibility info).
-    available_roles: Vec<RoleInfo>,
+    available_roles: Vec<AgentInfo>,
     /// Write-signal for the currently selected role abbreviations.
     selected_roles: ReadSignal<Vec<String>>,
     /// Write-signal to update the selected role abbreviations.
     set_selected_roles: WriteSignal<Vec<String>>,
 ) -> impl IntoView {
-    let is_role_disabled = move |role_abbr: &str, role_infos: &Vec<RoleInfo>| -> bool {
+    let is_role_disabled = move |role_abbr: &str, role_infos: &Vec<AgentInfo>| -> bool {
         let selected = selected_roles.get();
         if selected.contains(&role_abbr.to_string()) {
             return false;

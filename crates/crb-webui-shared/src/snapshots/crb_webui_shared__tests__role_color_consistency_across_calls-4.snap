@@ -1,9 +1,0 @@
----
-source: crates/crb-webui-shared/src/lib.rs
-expression: "(role, c1, c2)"
----
-(
-    "INFRA",
-    "#DBC6BD",
-    "#DBC6BD",
-)

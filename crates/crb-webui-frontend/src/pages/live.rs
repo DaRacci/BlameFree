@@ -4,10 +4,11 @@ use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crate::sse;
 use crb_types::RunEvent;
-use crb_webui_shared::config::RoleInfo;
+use crb_types::agent::AgentChunk;
+use crb_webui_shared::config::AgentInfo;
+use crb_webui_shared::review::RunStatus;
 use crb_webui_shared::route;
 use crb_webui_shared::routes::API_CONFIG;
-use crb_webui_shared::runs::RunStatus;
 use gloo_net::http::Request;
 use leptos::either::{Either, EitherOf3};
 use leptos::prelude::*;
@@ -70,10 +71,10 @@ pub fn LivePage() -> impl IntoView {
     let (selected_pr, set_selected_pr) = signal::<Option<String>>(None);
     let (role_current_pr, set_role_current_pr) = signal::<HashMap<String, String>>(HashMap::new());
 
-    let (available_role_infos, set_available_role_infos) = signal::<Vec<RoleInfo>>(Vec::new());
+    let (available_role_infos, set_available_role_infos) = signal::<Vec<AgentInfo>>(Vec::new());
 
-    let (progress_done, set_progress_done) = signal(0usize);
-    let (progress_total, set_progress_total) = signal(0usize);
+    let (progress_done, _set_progress_done) = signal(0usize);
+    let (progress_total, _set_progress_total) = signal(0usize);
     let (status, set_status) = signal::<RunStatus>(RunStatus::Pending);
     let (_connected, set_connected) = signal(false);
 
@@ -81,7 +82,7 @@ pub fn LivePage() -> impl IntoView {
     spawn_local(async move {
         if let Ok(resp) = Request::get(&API_CONFIG).send().await {
             if let Ok(config) = resp.json::<AppConfig>().await {
-                set_available_role_infos.set(config.roles);
+                set_available_role_infos.set(config.agents);
             }
         }
     });
@@ -92,8 +93,6 @@ pub fn LivePage() -> impl IntoView {
         let set_order = set_pr_order;
         let set_selected = set_selected_pr;
         let set_role_pr = set_role_current_pr;
-        let set_done = set_progress_done;
-        let set_total = set_progress_total;
         let set_stat = set_status;
         let set_conn = set_connected;
 
@@ -125,8 +124,6 @@ pub fn LivePage() -> impl IntoView {
                                     &set_selected,
                                     &set_role_pr,
                                     &role_pr,
-                                    &set_done,
-                                    &set_total,
                                     &set_stat,
                                     &current_roles,
                                 );
@@ -293,7 +290,7 @@ pub fn LivePage() -> impl IntoView {
                                 let pr_state = active_pr_state();
                                 let sel_key = selected_pr.get().unwrap_or_default();
                                 let roles = available_role_infos.get();
-                                let role_lookup: HashMap<&str, &RoleInfo> = roles
+                                let role_lookup: HashMap<&str, &AgentInfo> = roles
                                     .iter()
                                     .map(|ri| (ri.abbreviation.as_str(), ri))
                                     .collect();
@@ -376,45 +373,47 @@ fn handle_event(
     set_selected: &WriteSignal<Option<String>>,
     set_role_pr: &WriteSignal<HashMap<String, String>>,
     role_current_pr: &ReadSignal<HashMap<String, String>>,
-    set_done: &WriteSignal<usize>,
-    set_total: &WriteSignal<usize>,
     set_stat: &WriteSignal<RunStatus>,
-    roles: &[RoleInfo],
+    roles: &[AgentInfo],
 ) {
     match ev {
-        RunEvent::AgentStarted { identifier, agent } => {
+        RunEvent::AgentStarted {
+            review_id,
+            agent_id,
+        } => {
             // Ensure PR state exists
             set_states.update(|states| {
-                if !states.contains_key(&identifier) {
+                if !states.contains_key(&review_id.to_string()) {
                     let role_abbrs: Vec<String> =
                         roles.iter().map(|r| r.abbreviation.clone()).collect();
-                    states.insert(identifier.clone(), PrState::new(&role_abbrs));
+                    states.insert(review_id.to_string(), PrState::new(&role_abbrs));
                 }
-                if let Some(pr) = states.get_mut(&identifier) {
+                if let Some(pr) = states.get_mut(&review_id.to_string()) {
                     // Dynamically add agent if it doesn't exist yet (roles may have been
                     // empty when the PrState was created, e.g. during the async roles fetch)
-                    if !pr.agents.contains_key(&agent) {
-                        pr.agents.insert(agent.clone(), PerAgentState::new());
+                    if !pr.agents.contains_key(&agent_id.to_string()) {
+                        pr.agents.insert(agent_id.to_string(), PerAgentState::new());
                     }
-                    if let Some(agent) = pr.agents.get_mut(&agent) {
+                    if let Some(agent) = pr.agents.get_mut(&agent_id.to_string()) {
                         agent.status = RunStatus::Running;
                     }
                 }
             });
             // Track which PR this role is working on
             set_role_pr.update(|rp| {
-                rp.insert(agent, identifier.clone());
+                rp.insert(agent_id.to_string(), review_id.to_string());
             });
             // Add to order list if new
             set_order.update(|order| {
-                if !order.contains(&identifier) {
-                    order.push(identifier.clone());
+                let id_str = review_id.to_string();
+                if !order.contains(&id_str) {
+                    order.push(id_str);
                 }
             });
             // Auto-select: pick the first PR, or switch to this PR if the
             // currently selected PR is already completed.
             set_selected.update(|sel| match sel {
-                None => *sel = Some(identifier.clone()),
+                None => *sel = Some(review_id.to_string()),
                 Some(current) => {
                     let should_switch = pr_states
                         .get()
@@ -422,72 +421,35 @@ fn handle_event(
                         .map(|s| s.all_completed())
                         .unwrap_or(true);
                     if should_switch {
-                        *sel = Some(identifier.clone());
+                        *sel = Some(review_id.to_string());
                     }
                 }
             });
         }
 
-        RunEvent::AgentChunk {
-            review_id: role,
-            chunk,
-        } => {
-            with_role_pr(role_current_pr, set_states, &role, |agent| {
-                agent.response.push_str(&chunk);
+        RunEvent::AgentChunk { review_id, chunk } => {
+            let role_str = review_id.to_string();
+            with_role_pr(role_current_pr, set_states, &role_str, |agent| {
+                agent.response.push_str(&match &chunk {
+                    AgentChunk::Thinking { content, .. } | AgentChunk::Output { content, .. } => {
+                        content.clone()
+                    }
+                    _ => String::new(),
+                });
             });
         }
 
-        RunEvent::AgentFinished {
-            review_id: role,
-            findings,
-            success,
-        } => {
-            with_role_pr(role_current_pr, set_states, &role, |agent| {
-                agent.status = if success {
-                    RunStatus::Completed
-                } else {
-                    RunStatus::Failed
-                };
-                agent.findings = Some(findings);
+        RunEvent::AgentFinished { agent_id, .. } => {
+            let role_str = agent_id.to_string();
+            with_role_pr(role_current_pr, set_states, &role_str, |agent| {
+                agent.status = RunStatus::Completed;
+                agent.findings = None;
             });
         }
 
         RunEvent::ReviewStarted { .. } => {}
 
-        RunEvent::RunProgress {
-            completed_prs,
-            total_prs,
-            current_pr,
-            ..
-        } => {
-            set_done.set(completed_prs);
-            set_total.set(total_prs);
-            if let Some(pr_key) = current_pr {
-                // Ensure this PR is tracked
-                set_states.update(|states| {
-                    if !states.contains_key(&pr_key) {
-                        let role_abbrs: Vec<String> =
-                            roles.iter().map(|r| r.abbreviation.clone()).collect();
-                        states.insert(pr_key.clone(), PrState::new(&role_abbrs));
-                    }
-                });
-                set_order.update(|order| {
-                    if !order.contains(&pr_key) {
-                        order.push(pr_key.clone());
-                    }
-                });
-                // Get first PR key for auto-selection (we can't read WriteSignal inside another update closure)
-                set_selected.update(|sel| {
-                    if sel.is_none() {
-                        *sel = Some(pr_key.clone());
-                    }
-                });
-            }
-        }
-
-        RunEvent::ReviewCompleted { .. } => {}
-
-        RunEvent::RunFinished { .. } => {
+        RunEvent::ReviewCompleted { .. } => {
             set_stat.update(|s| *s = RunStatus::Completed);
         }
     }

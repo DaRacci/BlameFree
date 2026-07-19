@@ -1,14 +1,12 @@
 use std::cmp::Ordering;
 
-use crb_types::benchmark::metrics::MetricsProvider;
-use crb_types::wrappers::WrappedData;
-use crb_webui_shared::runs::{RunStatus, RunSummary};
+use crb_types::review::{Review, ReviewStatus};
 use leptos::either::{Either, EitherOf3};
 use leptos::prelude::*;
 use lucide_leptos::{ArrowDown, ArrowUp};
 
 #[component]
-pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
+pub fn RunTable(runs: Vec<Review>) -> impl IntoView {
     let (sort_column, set_sort_column) = signal::<SortColumn>(SortColumn::Date);
     let (sort_asc, set_sort_asc) = signal(true);
 
@@ -25,25 +23,20 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
         let mut runs = runs.clone();
         let asc = sort_asc.get();
         runs.sort_by(|a, b| match sort_column.get() {
-            SortColumn::Name => sort_by(&a.meta.name, &b.meta.name, asc),
-            SortColumn::Status => sort_by(&a.meta.status, &b.meta.status, asc),
-            SortColumn::Model => {
-                let a_m = a.meta.model.as_ref().map(|m| m.get()).unwrap_or("");
-                let b_m = b.meta.model.as_ref().map(|m| m.get()).unwrap_or("");
-                sort_by(a_m, b_m, asc)
-            }
+            SortColumn::Name => sort_by(&a.id, &b.id, asc),
+            SortColumn::Status => sort_by(&a.status, &b.status, asc),
             SortColumn::F1 => {
-                let a_v = a.metrics.f1();
-                let b_v = b.metrics.f1();
-                sort_by(a_v, b_v, asc)
+                Ordering::Equal // REMOVED: metrics was benchmark-specific
             }
-            SortColumn::PrCount => a.meta.pr_count.cmp(&b.meta.pr_count),
+            SortColumn::PrCount => {
+                Ordering::Equal // REMOVED: results_len was benchmark-specific
+            }
             SortColumn::Cost => {
-                let a_v = a.meta.total_cost;
-                let b_v = b.meta.total_cost;
+                let a_v = a.analytics.as_ref().map(|a| a.total_cost());
+                let b_v = b.analytics.as_ref().map(|a| a.total_cost());
                 sort_by(a_v, b_v, asc)
             }
-            SortColumn::Date => a.meta.id.cmp(&b.meta.id),
+            SortColumn::Date => a.id.cmp(&b.id),
         });
         runs
     };
@@ -71,9 +64,6 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
                         <th class="table__th table__th--sortable" on:click=move |_| toggle_sort(SortColumn::Status)>
                             {move || view! { "Status " {sort_icon(SortColumn::Status)} }}
                         </th>
-                        <th class="table__th table__th--sortable" on:click=move |_| toggle_sort(SortColumn::Model)>
-                            {move || view! { "Model " {sort_icon(SortColumn::Model)} }}
-                        </th>
                         <th class="table__th table__th--sortable" on:click=move |_| toggle_sort(SortColumn::PrCount)>
                             {move || view! { "PRs " {sort_icon(SortColumn::PrCount)} }}
                         </th>
@@ -88,37 +78,35 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
                 </thead>
                 <tbody>
                     {move || sorted_runs().into_iter().map(|run| {
-                        let badge_variant = match run.meta.status {
-                            RunStatus::Completed => "badge--success",
-                            RunStatus::Failed => "badge--danger",
-                            RunStatus::Running => "badge--warning",
-                            RunStatus::Pending | RunStatus::Cancelled => "badge--neutral",
+                        let badge_variant = match run.status {
+                            ReviewStatus::Completed => "badge--success",
+                            ReviewStatus::Failed => "badge--danger",
+                            ReviewStatus::Running => "badge--warning",
+                            ReviewStatus::Pending | ReviewStatus::Cancelled => "badge--neutral",
                         };
-                        let f1_str = format!("{:.3}", run.metrics.f1());
-                        let cost_str = run.meta.total_cost.map(|v| format!("${:.4}", v)).unwrap_or_else(|| "-".into());
-                        let model_str = run.meta.model.as_ref().map(|m| m.get()).unwrap_or_else(|| "-");
-                        let detail_path = format!("/runs/{}/", run.meta.id);
-                        let live_path = format!("/runs/{}/live", run.meta.id);
+                        let f1_str = format!("{:.3}", 0.0); // REMOVED: metrics was benchmark-specific
+                        let cost_str = run.analytics.as_ref().map(|a| format!("${:.4}", a.total_cost())).unwrap_or_else(|| "-".into());
+                        let detail_path = format!("/runs/{}/", run.id);
+                        let live_path = format!("/runs/{}/live", run.id);
 
                         let detail_path = detail_path;
                         let live_path = live_path;
                         view! {
                             <tr class="table__row table__row--clickable" data-href=detail_path.clone()>
-                                <td class="table__td" style="font-weight: var(--weight-medium, 500);"><a href=detail_path.clone() style="color: var(--text-link, #58a6ff);">{run.meta.name.clone()}</a></td>
+                                <td class="table__td" style="font-weight: var(--weight-medium, 500);"><a href=detail_path.clone() style="color: var(--text-link, #58a6ff);">{run.id.to_string()}</a></td>
                                 <td class="table__td">
                                     <span class=format!("badge {}", badge_variant)>
                                         <span class="badge__dot"></span>
-                                        <span class="badge__label">{run.meta.status.to_string()}</span>
+                                        <span class="badge__label">{run.status.to_string()}</span>
                                     </span>
                                 </td>
-                                <td class="table__td">{model_str}</td>
-                                <td class="table__td">{run.meta.pr_count}</td>
+                                <td class="table__td">{0}</td>
                                 <td class="table__td" style="font-family: var(--font-mono, monospace);">{f1_str}</td>
                                 <td class="table__td" style="font-family: var(--font-mono, monospace);">{cost_str}</td>
                                 <td class="table__td">
                                     <div style="display: flex; gap: 0.5rem;">
                                         <a href=detail_path.clone() class="btn btn--sm btn--secondary">"View"</a>
-                                        {if run.meta.status == RunStatus::Running || run.meta.status == RunStatus::Pending {
+                                        {if run.status == ReviewStatus::Running || run.status == ReviewStatus::Pending {
                                             Either::Left(
                                                 view! {
                                                     <a href=live_path class="btn btn--sm btn--secondary">"Live"</a>
@@ -144,7 +132,6 @@ pub fn RunTable(runs: Vec<RunSummary>) -> impl IntoView {
 enum SortColumn {
     Name,
     Status,
-    Model,
     PrCount,
     F1,
     Cost,

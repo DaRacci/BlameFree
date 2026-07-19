@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crb_webui_shared::config::RoleInfo;
+use crb_webui_shared::config::AgentInfo;
 use crb_webui_shared::routes::API_CONFIG;
 use crb_webui_shared::runs::{AgentLogResponse, PrAgentEntry, PrAgentsResponse};
 use crb_webui_shared::{role_color, route};
@@ -25,7 +25,7 @@ pub fn PrDetailPage() -> impl IntoView {
     let (agent_logs, set_agent_logs) = signal::<HashMap<String, AgentLogResponse>>(HashMap::new());
     let (logs_loading, set_logs_loading) = signal(false);
 
-    let (role_info_map, set_role_info_map) = signal::<HashMap<String, RoleInfo>>(HashMap::new());
+    let (role_info_map, set_role_info_map) = signal::<HashMap<String, AgentInfo>>(HashMap::new());
 
     // Fetch available role info on mount for display-name lookups
     {
@@ -33,8 +33,8 @@ pub fn PrDetailPage() -> impl IntoView {
         spawn_local(async move {
             if let Ok(resp) = Request::get(&API_CONFIG).send().await {
                 if let Ok(config) = resp.json::<crate::AppConfig>().await {
-                    let map: HashMap<String, RoleInfo> = config
-                        .roles
+                    let map: HashMap<String, AgentInfo> = config
+                        .agents
                         .into_iter()
                         .map(|r| (r.abbreviation.clone(), r))
                         .collect();

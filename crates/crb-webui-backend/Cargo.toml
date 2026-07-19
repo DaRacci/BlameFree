@@ -9,7 +9,8 @@ name = "crb-webui"
 path = "src/main.rs"
 
 [features]
-default = ["oauth2", "exp16_adaptive_agents", "exp14_template_vars"]
+default = ["backend", "oauth2", "exp16_adaptive_agents", "exp14_template_vars"]
+backend = ["crb-shared/backend"]
 oauth2 = ["dep:oauth2", "dep:reqwest"]
 exp14_template_vars = ["crb-harness/exp14_template_vars"]
 exp16_adaptive_agents = ["crb-harness/exp16_adaptive_agents"]
@@ -25,11 +26,8 @@ crb-types = { path = "../crb-types" }
 crb-cache = { path = "../crb-cache" }
 crb-harness = { path = "../crb-harness" }
 crb-reporting = { path = "../crb-reporting" }
-crb-rules = { path = "../crb-rules" }
 crb-shared = { path = "../crb-shared" }
-crb-tools = { path = "../crb-tools" }
 crb-webui-shared = { path = "../crb-webui-shared" }
-dotenvy = { workspace = true }
 oauth2 = { workspace = true, optional = true }
 octocrab = { workspace = true }
 rand = { workspace = true }

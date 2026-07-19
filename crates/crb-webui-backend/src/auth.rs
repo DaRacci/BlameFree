@@ -1,26 +1,15 @@
 //! OAuth authentication routes and cookie-based session management.
 //!
-//! Sessions use a random token stored in a cookie, with user data kept
-//! in an in-memory store. This avoids external session crate dependencies
-//! while remaining secure for a development dashboard.
-//!
-//! Routes (only registered when OAuth is configured):
-//! - `GET /auth/login`     -> redirect to provider's OAuth authorization page
-//! - `GET /auth/callback`  -> handle provider callback, create session
-//! - `GET /auth/logout`    -> clear session
-//! - `GET /auth/me`        -> return current user (or 401)
-
+//! Sessions use a random token stored in a cookie, with user data kept in an in-memory store.
+//! This avoids external session crate dependencies while remaining secure for a development dashboard.
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::{Context, anyhow};
-use axum::Router;
+use anyhow::Context;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Json, Redirect};
-use axum::routing::get;
 use crb_webui_shared::auth::AuthUser;
-use crb_webui_shared::routes;
 use mti::prelude::{MagicTypeIdExt, V7};
 use oauth2::basic::BasicClient;
 use oauth2::reqwest::async_http_client;
@@ -56,6 +45,8 @@ pub struct LoginQuery {
 #[derive(Debug, Deserialize)]
 pub struct CallbackQuery {
     pub code: String,
+
+    #[allow(unused)]
     pub state: String,
 }
 
@@ -83,16 +74,8 @@ impl OAuthProvider {
     /// These are used to extract user information from the provider's API response.
     ///
     /// The order of the returned tuple is: (id, login, name, email, avatar_url).
-    pub fn auth_parameters(
-        &self,
-    ) -> (
-        &'static str,
-        &'static str,
-        &'static str,
-        &'static str,
-        &'static str,
-    ) {
-        match provider {
+    pub fn auth_parameters(&self) -> (&str, &str, &str, &str, &str) {
+        match self {
             OAuthProvider::GitHub => ("id", "login", "name", "email", "avatar_url"),
             OAuthProvider::Google => ("id", "email", "name", "email", "picture"),
             OAuthProvider::GitLab => ("id", "username", "name", "email", "avatar_url"),
@@ -104,11 +87,11 @@ impl OAuthProvider {
                 avatar_url_field,
                 ..
             } => (
-                &id_field,
-                &login_field,
-                &name_field,
-                &email_field,
-                &avatar_url_field,
+                id_field,
+                login_field,
+                name_field,
+                email_field,
+                avatar_url_field,
             ),
         }
     }
@@ -226,7 +209,7 @@ pub async fn login(
         .ok_or_else(|| err_tuple("OAuth not configured"))?;
 
     let provider = query.provider.as_ref().unwrap_or(&oauth.provider);
-    let client = build_oauth_client(oauth, provider).map_err(err_tuple)?;
+    let client = build_oauth_client(oauth, provider).map_err(|e| err_tuple(e.to_string()))?;
     let csrf_token = CsrfToken::new(random_string(32));
     let scopes: Vec<Scope> = oauth.scopes.iter().map(|s| Scope::new(s.clone())).collect();
     let (auth_url, _csrf) = client.authorize_url(|| csrf_token).add_scopes(scopes).url();
@@ -246,7 +229,8 @@ pub async fn callback(
         .as_ref()
         .ok_or_else(|| err_tuple("OAuth not configured"))?;
 
-    let client = build_oauth_client(oauth, &oauth.provider).map_err(err_tuple)?;
+    let client =
+        build_oauth_client(oauth, &oauth.provider).map_err(|e| err_tuple(e.to_string()))?;
     let token_response = client
         .exchange_code(AuthorizationCode::new(query.code.clone()))
         .request_async(async_http_client)

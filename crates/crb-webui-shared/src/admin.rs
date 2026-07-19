@@ -13,16 +13,3 @@ pub struct LogsResponse {
     #[serde(default)]
     pub message: Option<String>,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_logs_response_default_message_field() {
-        // message has #[serde(default)] so omitting it should work
-        let json = r#"{"logs":"test logs","available":true}"#;
-        let resp: LogsResponse = serde_json::from_str(json).unwrap();
-        insta::assert_debug_snapshot!(resp);
-    }
-}

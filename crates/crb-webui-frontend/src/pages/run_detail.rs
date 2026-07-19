@@ -1,21 +1,47 @@
 use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
-use crb_types::benchmark::metrics::MetricsProvider;
-use crb_webui_shared::{
-    route,
-    runs::{PrResultRow, RunDetail, RunStatus},
-};
+use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
+use crb_types::cost::AnalyticsSnapshot;
+use crb_types::review::{Review, ReviewStatus};
+use crb_types::vcs::pr::PrMeta;
+use crb_webui_shared::{review::RunConfig, route};
 use leptos::prelude::*;
 use leptos_router::components::A;
 use leptos_router::hooks::use_params_map;
 use lucide_leptos::{ArrowLeft, Play, TriangleAlert};
+use serde::Deserialize;
+
+/// Local API response type — matches the old `RunDetail` JSON format.
+/// We keep `results` as a local compat type since the API still returns
+/// the old PrResultRow format, which has different fields than `PrResult`.
+#[derive(Debug, Clone, Deserialize)]
+#[deprecated]
+struct RunDetailResponse {
+    meta: Review,
+    results: Vec<PrResultRowEntry>,
+    aggregate: Metrics,
+    config: Option<RunConfig>,
+}
+
+/// Per-PR result entry in the old API format.
+/// Mirror of the deprecated `PrResultRow` — needed for JSON compat.
+#[derive(Debug, Clone, Deserialize)]
+struct PrResultRowEntry {
+    meta: PrMeta,
+    metrics: Metrics,
+    analytics: AnalyticsSnapshot,
+    #[serde(default)]
+    status: Option<ReviewStatus>,
+    #[serde(default)]
+    has_agents: bool,
+}
 
 #[component]
 pub fn RunDetailPage() -> impl IntoView {
     let params = use_params_map();
     let run_id = move || params.get().get("id").unwrap_or_default();
 
-    let (run, set_run) = signal::<Option<RunDetail>>(None);
+    let (run, set_run) = signal::<Option<RunDetailResponse>>(None);
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal::<Option<String>>(None);
 
@@ -82,20 +108,19 @@ pub fn RunDetailPage() -> impl IntoView {
                     let results_clone2 = detail.results.clone();
 
                     let badge_variant = match detail.meta.status {
-                        crb_webui_shared::runs::RunStatus::Completed => "badge--success",
-                        crb_webui_shared::runs::RunStatus::Failed => "badge--danger",
-                        crb_webui_shared::runs::RunStatus::Running => "badge--warning",
-                        crb_webui_shared::runs::RunStatus::Pending | crb_webui_shared::runs::RunStatus::Cancelled => "badge--neutral",
+                        ReviewStatus::Completed => "badge--success",
+                        ReviewStatus::Failed => "badge--danger",
+                        ReviewStatus::Running => "badge--warning",
+                        ReviewStatus::Pending | ReviewStatus::Cancelled => "badge--neutral",
                     };
 
-                    let is_running = detail.meta.status == crb_webui_shared::runs::RunStatus::Running || detail.meta.status == crb_webui_shared::runs::RunStatus::Pending;
+                    let is_running = detail.meta.status == ReviewStatus::Running || detail.meta.status == ReviewStatus::Pending;
                     let _has_results = !detail.results.is_empty();
 
                     let live_url = format!("/runs/{}/live", detail.meta.id);
 
-                    let name = detail.meta.name.clone();
+                    let name = detail.meta.id.to_string();
                     let status: String = detail.meta.status.to_string();
-                    let model = detail.meta.model.clone().unwrap_or_default();
 
                     view! {
                         <div class="page-header">
@@ -107,7 +132,7 @@ pub fn RunDetailPage() -> impl IntoView {
                                         <span class="badge__label">{status}</span>
                                     </span>
                                     <span style="font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
-                                        {"Model: ".to_string()}<span class="code">{model}</span>
+                                        {"Model: ".to_string()}<span class="code">{"placeholder"}</span>
                                     </span>
                                 </div>
                             </div>
@@ -129,7 +154,7 @@ pub fn RunDetailPage() -> impl IntoView {
 
                         {move || {
                             let total = results_clone.len() as u32;
-                            let done = results_clone.iter().filter(|r| r.status.as_deref() == Some("done")).count() as u32;
+                            let done = results_clone.iter().filter(|r| r.status == Some(ReviewStatus::Completed)).count() as u32;
                             if total > 0 && is_running {
                                 let pct = if total > 0 { (done as f64 / total as f64 * 100.0) as u32 } else { 0 };
                                 view! {
@@ -151,7 +176,7 @@ pub fn RunDetailPage() -> impl IntoView {
                                   <MetricsCard value={format!("{:.3}", detail_clone.aggregate.f1())} label="F1 Score" value_style="color: var(--accent-blue, #58a6ff);"/>
                                   <MetricsCard value={format!("{:.3}", detail_clone.aggregate.precision())} label="Precision" value_style="color: var(--accent-green, #3fb950);"/>
                                   <MetricsCard value={format!("{:.3}", detail_clone.aggregate.recall())} label="Recall" value_style="color: var(--accent-orange, #f0883e);"/>
-                                  <MetricsCard value={detail_clone.meta.total_cost.map(|c| format!("${:.4}", c)).unwrap_or_else(|| "-".into())} label="Total Cost" />
+                                  <MetricsCard value={detail_clone.meta.analytics.as_ref().map(|a| format!("${:.4}", a.total_cost())).unwrap_or_else(|| "-".into())} label="Total Cost" />
                                   <MetricsCard value={format!("{:.0}s", detail_clone.aggregate.duration_secs)} label="Duration" />
                               }.into_any()
                             }}
@@ -178,7 +203,7 @@ pub fn RunDetailPage() -> impl IntoView {
                                 <tbody>
                                     {move || {
                                         let results_clone2 = results_clone2.clone();
-                                        results_clone2.iter().map(|pr: &PrResultRow| {
+                                        results_clone2.iter().map(|pr: &PrResultRowEntry| {
                                         let pr_number = pr.meta.number;
                                         let pr_title = pr.meta.title.clone();
                                         let f1 = pr.metrics.f1();
@@ -188,12 +213,12 @@ pub fn RunDetailPage() -> impl IntoView {
                                         let status = pr.status.clone();
                                         let run_id = detail_id.clone();
                                         let has_agents = pr.has_agents;
-                                        let pr_key = pr.pr_key.clone();
+                                        let pr_key = pr.meta.number.to_string();
 
                                         let pr_badge = match status {
-                                            Some(RunStatus::Completed) => "badge--success",
-                                            Some(RunStatus::Failed) => "badge--danger",
-                                            Some(RunStatus::Running) => "badge--warning",
+                                            Some(ReviewStatus::Completed) => "badge--success",
+                                            Some(ReviewStatus::Failed) => "badge--danger",
+                                            Some(ReviewStatus::Running) => "badge--warning",
                                             _ => "badge--neutral",
                                         };
                                         let status_text = status.unwrap().to_string();

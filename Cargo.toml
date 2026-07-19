@@ -56,7 +56,7 @@ gloo-timers = "0.3"
 handlebars = "5"
 hmac = "0.12"
 include_dir = "0.7"
-insta = { version = "1", features = ["json", "yaml"] }
+insta = { version = "1", features = ["json", "ron"] }
 js-sys = "0.3"
 leptos = "0.8"
 leptos_meta = "0.8"

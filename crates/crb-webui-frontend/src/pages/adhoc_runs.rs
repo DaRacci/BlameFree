@@ -1,11 +1,11 @@
-use crb_webui_shared::adhoc::AdhocRunSummary;
+use crb_webui_shared::review::Review;
 use crb_webui_shared::routes::API_ADHOC_RUNS;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 #[component]
 pub fn AdhocRunsPage() -> impl IntoView {
-    let (runs, set_runs) = signal::<Vec<AdhocRunSummary>>(Vec::new());
+    let (runs, set_runs) = signal::<Vec<Review>>(Vec::new());
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal::<Option<String>>(None);
 
@@ -15,7 +15,7 @@ pub fn AdhocRunsPage() -> impl IntoView {
         match gloo_net::http::Request::get(API_ADHOC_RUNS).send().await {
             Ok(resp) => {
                 if resp.ok() {
-                    match resp.json::<Vec<AdhocRunSummary>>().await {
+                    match resp.json::<Vec<Review>>().await {
                         Ok(data) => {
                             set_runs.set(data);
                         }
@@ -65,31 +65,23 @@ pub fn AdhocRunsPage() -> impl IntoView {
                             <tr>
                                 <th>"PR Title"</th>
                                 <th>"Status"</th>
-                                <th>"Model"</th>
-                                <th>"Roles"</th>
-                                <th>"Findings"</th>
-                                <th>"Cost"</th>
-                                <th>"Created"</th>
                             </tr>
                         </thead>
                         <tbody>
                             {items.into_iter().map(|run| {
-                                let run_status = run.status.to_string();
+                                let id_str = run.id.to_string();
+                                let title = "placeholder"; // TODO
+                                let status = run.status.to_string();
                                 view! {
                                     <tr>
                                         <td>
-                                            <a href=format!("/adhoc/runs/{}", run.id)>{run.pr_title}</a>
+                                            <a href=format!("/adhoc/runs/{}", id_str)>{title}</a>
                                         </td>
                                         <td>
                                             <span class=format!("status-badge status-badge--{}", run.status)>
-                                                {run_status}
+                                                {status}
                                             </span>
                                         </td>
-                                        <td>{run.model}</td>
-                                        <td>{run.roles.join(", ")}</td>
-                                        <td>{run.findings_count}</td>
-                                        <td>{format!("${:.4}", run.total_cost)}</td>
-                                        <td>{run.created_at}</td>
                                     </tr>
                                 }
                             }).collect::<Vec<_>>()}

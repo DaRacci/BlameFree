@@ -1,44 +1,54 @@
+use crb_types::review::{Review, ReviewStatus};
 use crb_webui_shared::routes::{API_ADHOC_RUNS, API_RUNS};
-use crb_webui_shared::runs::RunStatus;
-use crb_webui_shared::{adhoc::AdhocRunSummary, runs::RunSummary};
 use gloo_timers::callback::Interval;
 use leptos::either::EitherOf3;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use serde::Deserialize;
 
 use crate::components::metrics_card::MetricsCard;
 use crate::fetch_json;
 use lucide_leptos::{ArrowRight, TriangleAlert};
 
+/// Response type matching the old `RunSummary` JSON format from the API.
+/// The API still nests a `Review` under a `meta` field alongside
+/// benchmark-only fields we no longer consume.
+#[derive(Debug, Clone, Deserialize)]
+#[deprecated]
+struct BenchmarkRunResponse {
+    meta: Review,
+}
+
 #[component]
 pub fn HomePage() -> impl IntoView {
-    let (bench_runs, set_bench_runs) = signal::<Vec<RunSummary>>(Vec::new());
-    let (adhoc_runs, set_adhoc_runs) = signal::<Vec<AdhocRunSummary>>(Vec::new());
+    let (bench_runs, set_bench_runs) = signal::<Vec<Review>>(Vec::new());
+    let (adhoc_runs, set_adhoc_runs) = signal::<Vec<Review>>(Vec::new());
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal::<Option<String>>(None);
     let (has_active, set_has_active) = signal(false);
 
-    let fetch = move |sb: WriteSignal<Vec<RunSummary>>,
-                      sa: WriteSignal<Vec<AdhocRunSummary>>,
+    let fetch = move |sb: WriteSignal<Vec<Review>>,
+                      sa: WriteSignal<Vec<Review>>,
                       sl: WriteSignal<bool>,
                       se: WriteSignal<Option<String>>,
                       sha: WriteSignal<bool>| {
         spawn_local(async move {
             let mut active = false;
 
-            match fetch_json::<Vec<RunSummary>>(API_RUNS).await {
+            match fetch_json::<Vec<BenchmarkRunResponse>>(API_RUNS).await {
                 Ok(data) => {
-                    if data.iter().any(|r| r.meta.status == RunStatus::Running) {
+                    let reviews: Vec<Review> = data.into_iter().map(|r| r.meta).collect();
+                    if reviews.iter().any(|r| r.status == ReviewStatus::Running) {
                         active = true;
                     }
-                    sb.set(data);
+                    sb.set(reviews);
                 }
                 Err(e) => se.set(Some(e)),
             }
 
-            match fetch_json::<Vec<AdhocRunSummary>>(API_ADHOC_RUNS).await {
+            match fetch_json::<Vec<Review>>(API_ADHOC_RUNS).await {
                 Ok(data) => {
-                    if data.iter().any(|r| r.status == RunStatus::Running) {
+                    if data.iter().any(|r| r.status == ReviewStatus::Running) {
                         active = true;
                     }
                     sa.set(data);
@@ -131,25 +141,22 @@ pub fn HomePage() -> impl IntoView {
                     let bench = bench_runs.get();
                     let adhoc = adhoc_runs.get();
 
-                    let completed_bench: Vec<&RunSummary> = bench.iter()
-                        .filter(|r| r.meta.status != RunStatus::Running && r.meta.status != RunStatus::Pending)
+                    let completed_bench: Vec<&Review> = bench.iter()
+                        .filter(|r| r.status != ReviewStatus::Running && r.status != ReviewStatus::Pending)
                         .collect();
-                    let completed_adhoc: Vec<&AdhocRunSummary> = adhoc.iter()
-                        .filter(|r| r.status != RunStatus::Running && r.status != RunStatus::Pending)
+                    let completed_adhoc: Vec<&Review> = adhoc.iter()
+                        .filter(|r| r.status != ReviewStatus::Running && r.status != ReviewStatus::Pending)
                         .collect();
 
                     let total_runs = completed_bench.len() + completed_adhoc.len();
-                    let total_prs: usize = completed_bench.iter().map(|r| r.meta.pr_count).sum();
-                    let avg_f1 = {
-                        let vals: Vec<f64> = completed_bench.iter().filter_map(|r| r.avg_f1).collect();
-                        if vals.is_empty() { 0.0 } else { vals.iter().sum::<f64>() / vals.len() as f64 }
-                    };
+                    let total_prs: usize = 0; // REMOVED: results_len was benchmark-specific
+                    let avg_f1 = 0.0; // REMOVED: metrics was benchmark-specific
 
-                    let active_bench: Vec<&RunSummary> = bench.iter()
-                        .filter(|r| r.meta.status == RunStatus::Running || r.meta.status == RunStatus::Pending)
+                    let active_bench: Vec<&Review> = bench.iter()
+                        .filter(|r| r.status == ReviewStatus::Running || r.status == ReviewStatus::Pending)
                         .collect();
-                    let active_adhoc: Vec<&AdhocRunSummary> = adhoc.iter()
-                        .filter(|r| r.status == RunStatus::Running || r.status == RunStatus::Pending)
+                    let active_adhoc: Vec<&Review> = adhoc.iter()
+                        .filter(|r| r.status == ReviewStatus::Running || r.status == ReviewStatus::Pending)
                         .collect();
                     let has_any_active = !active_bench.is_empty() || !active_adhoc.is_empty();
 
@@ -160,14 +167,14 @@ pub fn HomePage() -> impl IntoView {
                     for r in adhoc.iter() {
                         merged.push(RecentRunItem::Adhoc(r.clone()));
                     }
-                    merged.sort_by(|a, b| b.created_at().cmp(a.created_at()));
+                    merged.sort_by(|a, b| b.sort_key().cmp(&a.sort_key()));
                     merged.truncate(10);
 
                     EitherOf3::C(
                         view! {
                             <div class="content-grid content-grid--metrics">
                                 <MetricsCard value={total_runs.to_string()} label="Total Runs" />
-                                <MetricsCard value={format!("{:.2}", avg_f1)} label="Avg F1" />
+                                <MetricsCard value={if avg_f1 > 0.0 { format!("{:.2}", avg_f1) } else { "N/A".into() }} label="Avg F1" />
                                 <MetricsCard value={total_prs.to_string()} label="PRs Reviewed" />
                             </div>
 
@@ -191,22 +198,17 @@ pub fn HomePage() -> impl IntoView {
                                     </div>
                                     <div class="content-grid content-grid--cards">
                                         {active_bench.into_iter().map(|run| {
-                                            let live_path = format!("/runs/{}/live", run.meta.id);
-                                            let detail_path = format!("/runs/{}/", run.meta.id);
+                                            let live_path = format!("/runs/{}/live", run.id);
+                                            let detail_path = format!("/runs/{}/", run.id);
                                             let detail_path2 = detail_path.clone();
-                                            let elapsed = run.meta.duration_secs
-                                                .map(format_elapsed)
+                                            let elapsed = run.duration
+                                                .map(|d| format_elapsed(d.as_secs_f64()))
                                                 .unwrap_or_else(|| "Just started".into());
-                                            let pr_progress = if run.meta.pr_count > 0 {
-                                                format!("{} PRs", run.meta.pr_count)
-                                            } else {
-                                                String::new()
-                                            };
 
                                             view! {
                                                 <a href=live_path class="card card--interactive card--active-run" style="display: block; text-decoration: none;">
                                                     <div class="card__header">
-                                                        <h3 class="card__title">{run.meta.name.clone()}</h3>
+                                                        <h3 class="card__title">{run.id.to_string()}</h3>
                                                         <span class="badge badge--running">
                                                             <span class="badge__dot badge__dot--pulse"></span>
                                                             <span class="badge__label">"Running"</span>
@@ -214,16 +216,8 @@ pub fn HomePage() -> impl IntoView {
                                                     </div>
                                                     <div class="card__body">
                                                         <div class="home-page__meta-row" style="display: flex; gap: var(--spacing-lg, 16px); font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
-                                                            {if !pr_progress.is_empty() {
-                                                                view! { <span>{pr_progress}</span> }.into_any()
-                                                            } else {
-                                                                view! { <span></span> }.into_any()
-                                                            }}
                                                             <span>{elapsed}</span>
                                                         </div>
-                                                        {run.meta.model.as_ref().map(|m| {
-                                                            view! { <span class="card__meta" style="font-size: var(--text-sm); color: var(--text-secondary);">{format!("Model: {}", m)}</span> }
-                                                        })}
                                                     </div>
                                                     <div class="card__footer">
                                                         <a href=detail_path2 class="btn btn--ghost btn--sm"><ArrowRight size=16 /></a>
@@ -233,13 +227,15 @@ pub fn HomePage() -> impl IntoView {
                                         }).collect::<Vec<_>>()}
 
                                         {active_adhoc.into_iter().map(|run| {
-                                            let detail_path = format!("/adhoc/runs/{}", run.id);
+                                            let id_str = run.id.to_string();
+                                            let detail_path = format!("/adhoc/runs/{}", id_str);
                                             let detail_path2 = detail_path.clone();
+                                            let title = "placeholder"; // TODO
 
                                             view! {
                                                 <a href=detail_path class="card card--interactive card--active-run" style="display: block; text-decoration: none;">
                                                     <div class="card__header">
-                                                        <h3 class="card__title">{run.pr_title.clone()}</h3>
+                                                        <h3 class="card__title">{title}</h3>
                                                         <span class="badge badge--running">
                                                             <span class="badge__dot badge__dot--pulse"></span>
                                                             <span class="badge__label">"Running"</span>
@@ -247,14 +243,9 @@ pub fn HomePage() -> impl IntoView {
                                                     </div>
                                                     <div class="card__body">
                                                         <div class="home-page__meta-row" style="display: flex; gap: var(--spacing-lg, 16px); font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
-                                                            <span>{format!("Model: {}", run.model)}</span>
+                                                            <span>{format!("Model: placeholder")}</span>
                                                             <span>"Ad-hoc"</span>
                                                         </div>
-                                                        {if !run.roles.is_empty() {
-                                                            view! { <span class="card__meta" style="font-size: var(--text-sm); color: var(--text-secondary);">{format!("Roles: {}", run.roles.join(", "))}</span> }.into_any()
-                                                        } else {
-                                                            view! { <span></span> }.into_any()
-                                                        }}
                                                     </div>
                                                     <div class="card__footer">
                                                         <a href=detail_path2 class="btn btn--ghost btn--sm"><ArrowRight size=16 /></a>
@@ -290,7 +281,7 @@ pub fn HomePage() -> impl IntoView {
                                         {merged.into_iter().map(|item| {
                                             let display_name = item.display_name();
                                             let status = item.status().to_string();
-                                            let created = item.created_at().to_string();
+                                            let created = item.created_at();
                                             let detail_path = item.detail_path();
                                             let run_type = item.run_type_label();
                                             let type_badge_class = match run_type {
@@ -338,29 +329,36 @@ pub fn HomePage() -> impl IntoView {
 
 #[derive(Clone)]
 enum RecentRunItem {
-    Benchmark(RunSummary),
-    Adhoc(AdhocRunSummary),
+    Benchmark(Review),
+    Adhoc(Review),
 }
 
 impl RecentRunItem {
-    fn status(&self) -> &RunStatus {
+    fn status(&self) -> &ReviewStatus {
         match self {
-            RecentRunItem::Benchmark(r) => &r.meta.status,
+            RecentRunItem::Benchmark(r) => &r.status,
             RecentRunItem::Adhoc(r) => &r.status,
         }
     }
 
-    fn created_at(&self) -> &str {
+    fn sort_key(&self) -> String {
         match self {
-            RecentRunItem::Benchmark(r) => &r.created_at,
-            RecentRunItem::Adhoc(r) => &r.created_at,
+            RecentRunItem::Benchmark(r) => r.id.to_string(),
+            RecentRunItem::Adhoc(r) => r.id.to_string(),
+        }
+    }
+
+    fn created_at(&self) -> String {
+        match self {
+            RecentRunItem::Benchmark(r) => r.id.to_string(),
+            RecentRunItem::Adhoc(r) => r.id.to_string(),
         }
     }
 
     fn display_name(&self) -> String {
         match self {
-            RecentRunItem::Benchmark(r) => r.meta.name.clone(),
-            RecentRunItem::Adhoc(r) => r.pr_title.clone(),
+            RecentRunItem::Benchmark(r) => r.id.to_string(),
+            RecentRunItem::Adhoc(r) => "placeholder".to_string(), // TODO
         }
     }
 
@@ -373,7 +371,7 @@ impl RecentRunItem {
 
     fn detail_path(&self) -> String {
         match self {
-            RecentRunItem::Benchmark(r) => format!("/runs/{}/", r.meta.id),
+            RecentRunItem::Benchmark(r) => format!("/runs/{}/", r.id),
             RecentRunItem::Adhoc(r) => format!("/adhoc/runs/{}/", r.id),
         }
     }

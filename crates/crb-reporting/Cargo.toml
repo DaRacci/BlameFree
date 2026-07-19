@@ -8,7 +8,6 @@ repository.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 crb-types = { path = "../crb-types" }
-crb-webui-shared = { path = "../crb-webui-shared" }
 rig-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

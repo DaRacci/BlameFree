@@ -20,8 +20,8 @@ pub enum Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    crb_shared::init_dotload();
-    crb_shared::init_logging(None);
+    crb_shared::init_dotenv();
+    crb_shared::init_logging().try_init()?;
     let cli = Cli::parse();
 
     PromptLibrary::new().map_err(|e| anyhow!("Failed to initialize prompt library: {e}"))?;

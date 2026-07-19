@@ -337,6 +337,9 @@ name = "bitflags"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4388bee8683e3d04af747c73422af53102d2bd24d9eadb6cbc100baef4b43f8"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "block-buffer"
@@ -779,7 +782,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crb-types",
- "crb-webui-shared",
  "insta",
  "mti",
  "rig-core",
@@ -853,6 +855,7 @@ dependencies = [
  "mti",
  "schemars",
  "serde",
+ "serde_json",
  "strum",
 ]
 
@@ -869,12 +872,9 @@ dependencies = [
  "crb-cache",
  "crb-harness",
  "crb-reporting",
- "crb-rules",
  "crb-shared",
- "crb-tools",
  "crb-types",
  "crb-webui-shared",
- "dotenvy",
  "insta",
  "mti",
  "oauth2",
@@ -935,6 +935,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
+ "uuid",
 ]
 
 [[package]]
@@ -1928,6 +1929,7 @@ checksum = "86f0f8fee8c926415c58d6ae43a08523a26faccb2323f5e6b644fe7dd4ef6b82"
 dependencies = [
  "console",
  "once_cell",
+ "ron",
  "serde",
  "similar",
  "tempfile",
@@ -3382,6 +3384,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ron"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81116b9531d61eabc41aeb228e4b6b2435bcca3233b98cf3b3077d4e6e9debb3"
+dependencies = [
+ "bitflags 2.13.0",
+ "once_cell",
+ "serde",
+ "serde_derive",
+ "typeid",
+ "unicode-ident",
+]
+
+[[package]]
 name = "rstml"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4742,6 +4758,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "typeid"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c"
 
 [[package]]
 name = "typeid_prefix"

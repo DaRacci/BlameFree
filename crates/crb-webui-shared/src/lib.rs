@@ -4,8 +4,9 @@ pub mod adhoc;
 pub mod admin;
 pub mod auth;
 pub mod config;
+pub mod review;
+pub use review as runs;
 pub mod routes;
-pub mod runs;
 
 /// Deterministic HSL color from a role abbreviation — no hardcoded color map.
 /// Each role gets a unique hue via a simple hash of its abbreviation bytes.

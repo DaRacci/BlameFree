@@ -19,8 +19,3 @@ pub(crate) fn err_json(status: StatusCode, msg: impl std::fmt::Display) -> Respo
 pub(crate) fn not_found(msg: impl std::fmt::Display) -> Response {
     err_json(StatusCode::NOT_FOUND, msg)
 }
-
-/// Helper to return a `500` response.
-pub(crate) fn internal_err(msg: impl std::fmt::Display) -> Response {
-    err_json(StatusCode::INTERNAL_SERVER_ERROR, msg)
-}

@@ -1,9 +1,0 @@
----
-source: crates/crb-webui-shared/src/lib.rs
-expression: "(role, c1, c2)"
----
-(
-    "FE",
-    "#D37234",
-    "#D37234",
-)

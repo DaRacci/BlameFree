@@ -1,6 +1,14 @@
 use crb_types::capabilities::ReasoningEffort;
 pub use crb_webui_shared::config::AppConfig;
-pub use crb_webui_shared::runs::StartRunResponse as NewRunResponse;
+// Local response type — JSON-compatible with the old StartRunResponse format.
+// The API has not yet migrated to return Review directly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated]
+pub struct NewRunResponse {
+    pub run_id: String,
+    pub status: String,
+    pub total_prs: u32,
+}
 use gloo_net::http::Request;
 use serde::{Deserialize, Serialize};
 

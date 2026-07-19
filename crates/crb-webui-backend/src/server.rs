@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use axum::Json;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
@@ -27,23 +28,15 @@ use crate::auth::{self, SessionStore};
 use crate::config::WebUiConfig;
 use crate::static_assets::StaticAssets;
 
+async fn list_reasoning_efforts() -> Json<Vec<ReasoningEffort>> {
+    Json(ReasoningEffort::VARIANTS.to_vec())
+}
+
 /// Shared application state.
 #[derive(Clone)]
 pub struct AppState {
     /// Directory containing per-PR JSON result files.
     pub output_dir: PathBuf,
-
-    /// Directory containing datasets.
-    #[deprecated = "This should be managed by the benchmark config instead of being a global state."]
-    pub dataset_dir: PathBuf,
-
-    /// Comma-separated list of available models.
-    #[deprecated = "This is a dynamic list not a app state."]
-    pub models: String,
-
-    /// Path to the code-review-benchmark directory (must contain offline/).
-    #[deprecated = "This should be managed by the benchmark config instead of being a global state."]
-    pub benchmark_dir: Option<PathBuf>,
 
     /// Active review sessions.
     pub active_runs: Arc<RwLock<HashMap<MagicTypeId, ActiveRun>>>,
@@ -68,31 +61,15 @@ pub struct ActiveRun {
     pub created_at: UnixTime,
 
     /// The config used to start this run.
-    #[deprecated = "A run isnt always a benchmark."]
-    pub config: runs::BenchmarkConfig,
+    pub run_config: runs::BenchmarkConfig,
 
     /// Broadcast channel for SSE events.
     pub tx: broadcast::Sender<RunEvent>,
-
-    /// Number of completed PRs.
-    #[deprecated]
-    pub completed_prs: usize,
-
-    /// Total number of PRs.
-    #[deprecated]
-    pub total_prs: usize,
-
-    /// Whether the run has finished.
-    #[deprecated]
-    pub finished: bool,
 }
 
 impl AppState {
     pub fn new(
         output_dir: PathBuf,
-        dataset_dir: PathBuf,
-        models: String,
-        benchmark_dir: Option<PathBuf>,
         config: WebUiConfig,
         octocrab: octocrab::Octocrab,
         session_store: SessionStore,
@@ -100,9 +77,6 @@ impl AppState {
     ) -> Self {
         Self {
             output_dir,
-            dataset_dir,
-            models,
-            benchmark_dir,
             active_runs: Arc::new(RwLock::new(HashMap::new())),
             config,
             session_store,
@@ -123,7 +97,7 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
         .route(routes::API_RUNS_ID_DETAILS_KEY, get(runs::get_pr_detail))
         .route(routes::API_CONFIG, get(config::get_config))
         .route(routes::API_CONFIG_DATASETS, get(config::list_datasets))
-        .route(routes::API_CONFIG_REASONING, get(ReasoningEffort::VARIANTS))
+        .route(routes::API_CONFIG_REASONING, get(list_reasoning_efforts))
         .route(routes::API_DATASETS_ID_PRS, get(config::list_dataset_prs))
         .route(routes::API_ADHOC_REVIEW, post(adhoc::start_adhoc_review))
         .route(routes::API_ADHOC_RUNS, get(adhoc::list_adhoc_runs))

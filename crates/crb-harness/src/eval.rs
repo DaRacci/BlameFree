@@ -58,16 +58,8 @@ pub struct EvalConfig {
     /// The agents used will depend on the strategy and the roles defined.
     pub agents: &'static [&'static AgentEntry],
 
-    /// The repository root path for the evaluation.
-    #[deprecated = "Use `context.repo_root` instead."]
-    pub repo_root: PathBuf,
-
     /// Maximum number of findings per agent.
     pub max_findings: usize,
-
-    /// Ruleset for formatting additional context.
-    #[deprecated = "Use `context.ruleset` instead."]
-    pub ruleset: Option<Arc<RuleSet>>,
 
     /// Template variables for the agent prompts.
     pub template_vars: Option<HashMap<String, serde_json::Value>>,

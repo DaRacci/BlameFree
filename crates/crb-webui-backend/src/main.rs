@@ -7,8 +7,6 @@ use anyhow::{Result, anyhow};
 use clap::Parser;
 use octocrab::Octocrab;
 use tracing::{info, warn};
-use tracing_subscriber::EnvFilter;
-use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 mod api;
@@ -113,44 +111,27 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Failed to install rustls ring crypto provider");
 
-    crb_shared::dotenv_load();
-    crb_shared::init_logging(None);
-
+    crb_shared::init_dotenv();
+    crb_shared::init_logging().try_init()?;
     let args = CliArgs::parse();
 
-    let log_path = resolve_log_path(args.log_file.as_deref());
-    let log_path_for_tracing = log_path.clone();
-    let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(move || {
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&log_path_for_tracing)
-                .expect("failed to open log file")
-        })
-        .with_ansi(false);
-    let stderr_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stderr);
-
-    tracing_subscriber::registry()
-        .with(env_filter)
-        .with(stderr_layer)
-        .with(file_layer)
-        .init();
-
     info!(
-        "Starting crb-webui on port {} (output={}, datasets={})",
+        "Starting crb-webui on port {} (output={})",
         args.port,
         args.output_dir.display(),
-        args.dataset_dir.display()
     );
 
-    let webui_config = config::load_config(args.config.as_deref());
+    let mut webui_config = config::load_config(args.config.as_deref());
     if webui_config.oauth.is_some() {
         info!(
             "OAuth is configured (provider={})",
             webui_config.oauth.as_ref().unwrap().provider
         );
     }
+
+    webui_config.server.models = args.models;
+    webui_config.server.dataset_dir = args.dataset_dir;
+    webui_config.server.benchmark_dir = args.benchmark_dir;
 
     let octocrab = match env::var("GITHUB_TOKEN") {
         Ok(token) => {
@@ -168,13 +149,10 @@ async fn main() -> Result<()> {
 
     let app_state = server::AppState::new(
         args.output_dir,
-        args.dataset_dir,
-        args.models,
-        args.benchmark_dir,
         webui_config,
         octocrab,
         crate::auth::new_session_store(),
-        log_path,
+        resolve_log_path(args.log_file.as_deref()),
     );
 
     crb_harness::model_capabilities::warm_model_cache().await;

@@ -20,7 +20,7 @@ pub fn LogViewer(logs: LogsListResponse, run_id: String) -> impl IntoView {
         <div style=style_container>
             {
               {logs.prs.iter().map(|pr| {
-                  let pr_key = pr.pr_key.clone();
+                  let pr_key = pr.meta.number.to_string();
                   let pr_title = pr.meta.title.clone();
                   let agents = pr.agents.clone();
                   let run_id_clone = run_id.clone();
