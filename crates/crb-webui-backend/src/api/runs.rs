@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{fs, time};
 
@@ -19,7 +20,7 @@ use crb_types::benchmark::metrics::Metrics;
 use crb_types::benchmark::result::PrResult;
 use crb_types::capabilities::ReasoningEffort;
 use crb_types::cost::AnalyticsSnapshot;
-use crb_types::review::{Review, ReviewStatus as RunStatus};
+use crb_types::review::{Review, ReviewMetadata, ReviewStatus as RunStatus};
 use crb_types::vcs::pr::PrMeta;
 use crb_types::wrappers::Model;
 use crb_webui_shared::config::AgentInfo;
@@ -31,6 +32,7 @@ use crb_webui_shared::review::PrLogsEntry;
 use crb_webui_shared::review::RunConfig;
 use crb_webui_shared::routes::{API_RUNS_ID_DETAILS_KEY, API_RUNS_ID_LOGS_KEY_ROLE};
 use mti::prelude::{MagicTypeIdExt, V7};
+use riv_stor::traits::Store;
 use rustls::pki_types::UnixTime;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument};
@@ -121,33 +123,13 @@ impl From<&BenchmarkConfig> for RunConfig {
 /// List all benchmark runs, including active and completed runs.
 #[instrument(skip(state), name = API_RUNS_ID_DETAILS_KEY)]
 pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
-    let output_dir = state.output_dir.clone();
-    let mut runs: Vec<Review> = Vec::new();
+    let store = &state.store;
+    let mut runs: Vec<Review> = match store.list::<Review>(&()).await {
+        Ok(r) => r,
+        Err(_) => Vec::new(),
+    };
 
-    if output_dir.exists() {
-        let entries = match fs::read_dir(&output_dir) {
-            Ok(entries) => entries,
-            Err(_) => return Json(Vec::<Review>::new()).into_response(),
-        };
-
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-
-            let name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
-            if let Ok(summary) = scan_run_dir(&path, &name) {
-                runs.push(summary);
-            }
-        }
-    }
-
+    // Add active runs that aren't yet persisted to the store
     {
         let active = state.active_runs.read().await;
         for (id, _ar) in active.iter() {
@@ -155,7 +137,6 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
                 continue;
             }
 
-            // Active runs without disk output are still Running
             runs.push(Review {
                 id: id.as_str().create_type_id::<V7>(),
                 agent_sessions: HashMap::new(),
@@ -359,59 +340,49 @@ fn compute_aggregate_metrics(
 pub async fn get_run(State(state): State<AppState>, AxumPath(id): AxumPath<String>) -> Response {
     tracing::info!("GET /api/runs/{}", id);
 
-    // Check if run is still in progress (in active_runs before output dir exists)
+    // Check if run is still in progress (in active_runs before store has it)
     let active_run_config = {
         let runs = state.active_runs.read().await;
         runs.get(&id.as_str().create_type_id::<V7>()).cloned()
     };
 
     if active_run_config.is_some() {
-        // Still in active runs = running or just finished but not written to disk yet
         if let Some(ref active_run) = active_run_config {
             return format_running_response(&id, active_run).into_response();
         }
-        // Fall through to disk reading
     }
 
-    let run_path = state.output_dir.join(&id);
-    if !run_path.exists() || !run_path.is_dir() {
-        tracing::error!("Run directory not found: {}", run_path.display());
-        return not_found(format!("Run not found: {}", id)).into_response();
-    }
+    let store = &state.store;
+    let run_id_mtid = id.as_str().create_type_id::<V7>();
 
-    // Read summary metadata
-    let (model, mut duration_secs, total_cost, _) =
-        read_summary_from_dir(&run_path).unwrap_or(("unknown".to_string(), 0.0, 0.0, 0));
+    // Load Review from store
+    let review = match store.load::<Review>(&run_id_mtid.to_string()).await {
+        Ok(r) => r,
+        Err(_) => {
+            tracing::error!("Run not found: {}", id);
+            return not_found(format!("Run not found: {}", id)).into_response();
+        }
+    };
 
-    // Resolve cache dir once for agent checking
-    let cache_dir = resolve_cache_dir(&state.output_dir, &id);
+    // Load PR results from store (all results; filtering by run is a future refinement)
+    let results: Vec<PrResult> = store.list::<PrResult>(&()).await.unwrap_or_default();
 
-    // Read PR result files
-    let results = read_pr_results_from_dir(&run_path, &cache_dir);
-
-    // Fallback: compute duration from file timestamps if not found in summary
-    if duration_secs == 0.0 {
-        duration_secs = compute_duration_from_dir(&run_path);
-    }
+    let duration_secs = review
+        .duration
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
 
     // Merge config from active run state if available (it isn't stored on disk)
     let config = active_run_config
         .as_ref()
         .map(|ar| RunConfig::from(&ar.run_config));
 
-    let aggregate = compute_aggregate_metrics(&results, total_cost, duration_secs);
+    let aggregate = compute_aggregate_metrics(&results, 0.0, duration_secs);
 
     let detail = RunDetailResponse {
-        meta: Review {
-            id: id.as_str().create_type_id::<V7>(),
-            agent_sessions: HashMap::new(),
-            analytics: None,
-            duration: Some(Duration::from_secs_f64(duration_secs)),
-            status: RunStatus::Completed,
-            metadata: ReviewMetadata::Plain,
-        },
+        meta: review,
         results,
-        aggregate: aggregate,
+        aggregate,
         config,
     };
 
@@ -462,6 +433,7 @@ pub async fn start_run(
     let config_clone = config.clone();
     let benchmark_dir = state.config.server.benchmark_dir.clone();
     let dataset_dir_clone = dataset_dir.clone();
+    let store = state.store.clone();
 
     tokio::spawn(async move {
         if let Err(e) = harness::run_harness(
@@ -472,6 +444,7 @@ pub async fn start_run(
             tx,
             active_runs,
             &dataset_dir_clone,
+            store,
         )
         .await
         {

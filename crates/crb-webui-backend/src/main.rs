@@ -1,11 +1,14 @@
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::LazyLock;
 use std::{env, fs};
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use octocrab::Octocrab;
+use riv_stor::store::SqliteStore;
+use riv_stor::traits::Store;
 use tracing::{info, warn};
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -147,12 +150,28 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Initialize the store
+    let default_store_path = args.output_dir.join("riv-stor.db");
+    let store_path = webui_config
+        .server
+        .store_dir
+        .clone()
+        .unwrap_or(default_store_path)
+        .to_string_lossy()
+        .to_string();
+    let store: Arc<dyn Store + Send + Sync> = Arc::new(
+        SqliteStore::new(&store_path)
+            .await
+            .map_err(|e| anyhow!("DB init: {e}"))?,
+    );
+
     let app_state = server::AppState::new(
         args.output_dir,
         webui_config,
         octocrab,
         crate::auth::new_session_store(),
         resolve_log_path(args.log_file.as_deref()),
+        store,
     );
 
     crb_harness::model_capabilities::warm_model_cache().await;

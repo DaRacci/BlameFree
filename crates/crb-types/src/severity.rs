@@ -1,11 +1,21 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumIter};
+use strum::{Display, EnumIter, IntoStaticStr};
 
 /// Severity levels for findings, ordered from most to least severe.
 ///
 /// We support an array of aliases for each level so to give the LLM output
 /// a better chance of matching the expected severity level.
+///
+/// When the `seaorm-storage` feature is enabled, this derives
+/// `DeriveActiveEnum` so the generated `Model` can use it directly
+/// as a column type instead of converting to `String`.
+#[cfg_attr(
+    feature = "seaorm-storage",
+    derive(sea_orm::EnumIter, sea_orm::DeriveActiveEnum),
+    sea_orm(rs_type = "String", db_type = "Text")
+)]
+#[cfg_attr(not(feature = "seaorm-storage"), derive(EnumIter))]
 #[derive(
     Default,
     Debug,
@@ -17,29 +27,35 @@ use strum::{Display, EnumIter};
     Ord,
     Serialize,
     Deserialize,
-    EnumIter,
     Display,
+    IntoStaticStr,
     JsonSchema,
+    Hash,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     /// Security vulnerabilities or correctness bugs.
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(string_value = "Critical"))]
     #[serde(alias = "crit", alias = "error")]
     Critical = 0,
 
     /// Significant issues that should be addressed soon.
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(string_value = "High"))]
     High = 1,
 
     /// Moderate issues that should be reviewed.
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(string_value = "Medium"))]
     #[default]
     #[serde(alias = "med")]
     Medium = 2,
 
     /// Minor issues or style concerns.
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(string_value = "Low"))]
     #[serde(alias = "minor")]
     Low = 3,
 
     /// Observations without actionable impact.
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(string_value = "Info"))]
     #[serde(alias = "information", alias = "informational", alias = "trivial")]
     Info = 4,
 }

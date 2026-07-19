@@ -77,7 +77,6 @@ impl HttpTransport {
     }
 }
 
-#[async_trait::async_trait]
 impl rig_mcp::transport::McpTransport for HttpTransport {
     fn endpoint(&self) -> &str {
         &self.endpoint

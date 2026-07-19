@@ -5,7 +5,8 @@ use crb_reporting::write_report;
 use crb_types::benchmark::golden::GoldenComment;
 use crb_types::benchmark::judge::JudgeVerdict;
 use crb_types::benchmark::metrics::Metrics;
-use crb_types::benchmark::result::{JudgedFinding, PrResult};
+use crb_types::benchmark::result::PrResult;
+use crb_types::finding::Finding;
 use crb_types::vcs::pr::PrMeta;
 use mti::prelude::{MagicTypeIdExt, V7};
 
@@ -55,22 +56,22 @@ fn make_pr(pr_title: &str, url: &str, has_cost: bool) -> PrResult {
             duration_secs: 12.5,
         },
         findings_with_verdicts: vec![
-            JudgedFinding {
-                finding: todo!(),
-                verdict: JudgeVerdict {
+            (
+                todo!(),
+                JudgeVerdict {
                     reasoning: "Match found".into(),
                     match_: true,
                     confidence: 0.95,
                 },
-            },
-            JudgedFinding {
-                finding: todo!(),
-                verdict: JudgeVerdict {
+            ),
+            (
+                todo!(),
+                JudgeVerdict {
                     reasoning: "No match".into(),
                     match_: false,
                     confidence: 0.1,
                 },
-            },
+            ),
         ],
         golden_comments: vec![
             GoldenComment {

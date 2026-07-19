@@ -22,8 +22,10 @@ use crb_shared::DEFAULT_MODEL;
 use crb_shared::diff::Diff;
 use crb_shared::sanitize_filename;
 use crb_shared::url::parse_github_url;
+use crb_types::benchmark::judge::JudgeVerdict;
 use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
 use crb_types::benchmark::result::PrResult;
+use crb_types::cost::AnalyticsSnapshot;
 use crb_types::review::{PullRequestReviewMetadata, Review, ReviewMetadata, ReviewStatus};
 use crb_types::vcs::pr::PrMeta;
 use crb_types::vcs::repository::{RemoteRepositoryMeta, VCSPlatform};
@@ -31,6 +33,7 @@ use crb_types::wrappers::Model;
 use crb_webui_shared::config::AgentInfo;
 use mti::prelude::{MagicTypeIdExt, V7};
 use rig_core::client::ProviderClient;
+use riv_stor::traits::Store;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{error, info, warn};
@@ -143,31 +146,11 @@ pub async fn start_adhoc_review(
 
 /// List all previous ad-hoc review runs.
 pub async fn list_adhoc_runs(State(state): State<AppState>) -> impl IntoResponse {
-    let adhoc_dir = state.output_dir.join("adhoc");
-    let mut runs: Vec<Review> = Vec::new();
-
-    if adhoc_dir.exists() {
-        let entries = match fs::read_dir(&adhoc_dir) {
-            Ok(entries) => entries,
-            Err(_) => return Json(Vec::<Review>::new()).into_response(),
-        };
-
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            let run_id = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
-            if let Some(review) = scan_adhoc_run_dir(&path, &run_id) {
-                runs.push(review);
-            }
-        }
-    }
+    let store = &state.store;
+    let mut runs: Vec<Review> = match store.list::<Review>(&()).await {
+        Ok(r) => r,
+        Err(_) => Vec::new(),
+    };
 
     // Sort by id (adhoc IDs embed a Unix timestamp)
     runs.sort_by(|a, b| b.id.to_string().cmp(&a.id.to_string()));
@@ -179,6 +162,44 @@ pub async fn get_adhoc_run(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> impl IntoResponse {
+    let store = &state.store;
+    let run_id_mtid = id.as_str().create_type_id::<V7>();
+
+    // Try loading from store first
+    if let Ok(Some(review)) = store.load::<Review>(&run_id_mtid).await {
+        // Load PR results from store (lightweight — no children loaded)
+        let results: Vec<PrResult> = store.list::<PrResult>(&()).await.unwrap_or_default();
+
+        // Filter results matching this run (run_id is a prefix of pr_result.id)
+        let run_results: Vec<PrResult> = results
+            .into_iter()
+            .filter(|pr| pr.id.to_string().starts_with(&id))
+            .collect();
+
+        let duration_secs = review.duration.map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        let mut aggregate_metrics = Metrics {
+            true_positives: 0,
+            false_positives: 0,
+            false_negatives: 0,
+            duration_secs,
+        };
+        for r in &run_results {
+            aggregate_metrics.true_positives += r.metrics.true_positives;
+            aggregate_metrics.false_positives += r.metrics.false_positives;
+            aggregate_metrics.false_negatives += r.metrics.false_negatives;
+        }
+
+        let detail = RunDetailResponse {
+            meta: review,
+            results: run_results,
+            aggregate: aggregate_metrics,
+            config: None, // Config stored separately in summary; fine for now
+        };
+
+        return Json(detail).into_response();
+    }
+
+    // Fallback: read from filesystem (legacy runs not yet in store)
     let run_dir = state.output_dir.join("adhoc").join(&id);
 
     if !run_dir.exists() {
@@ -189,21 +210,9 @@ pub async fn get_adhoc_run(
             .into_response();
     }
 
-    let summary_path = run_dir.join(crb_harness::paths::SUMMARY_FILE);
-    let summary_data: Option<serde_json::Value> = fs::read_to_string(&summary_path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok());
+    let (summary_data, _has_summary) = load_adhoc_summary(&run_dir);
 
-    let summary_str = |key: &str, default: &str| -> String {
-        summary_data
-            .as_ref()
-            .and_then(|s| s.get(key))
-            .and_then(|v| v.as_str())
-            .unwrap_or(default)
-            .to_string()
-    };
-
-    let model = summary_str("model", "unknown");
+    let model = summary_str(&summary_data, "model", "unknown");
     let roles: Vec<String> = summary_data
         .as_ref()
         .and_then(|s| s.get("roles"))
@@ -222,14 +231,10 @@ pub async fn get_adhoc_run(
             }
         })
         .unwrap_or_default();
-    let duration_secs = match summary_data
+    let duration_secs = summary_data
         .as_ref()
         .and_then(|s| s.get("duration_secs"))
-        .and_then(|v| v.as_f64())
-    {
-        Some(v) => Some(v),
-        None => None,
-    };
+        .and_then(|v| v.as_f64());
 
     let mut results: Vec<PrResult> = Vec::new();
     let mut aggregate_metrics = Metrics {
@@ -504,6 +509,39 @@ async fn run_adhoc_review_inner(
         output_subdir.join(crb_harness::paths::SUMMARY_FILE),
         &summary_str,
     )?;
+
+    // Save results to store
+    let review_id = format!("adhoc-{}", run_id).create_type_id::<V7>();
+    let pr_result = PrResult {
+        id: review_id.clone(),
+        golden_comments: Vec::new(),
+        metrics: metrics_for_summary,
+        findings_with_verdicts: findings
+            .into_iter()
+            .map(|f| {
+                (
+                    f,
+                    crb_types::benchmark::judge::JudgeVerdict {
+                        reasoning: "Pending judge evaluation".to_string(),
+                        match_: false,
+                        confidence: 0.0,
+                    },
+                )
+            })
+            .collect(),
+        cost: AnalyticsSnapshot::default(),
+    };
+    let _ = state.store.save::<PrResult>(&pr_result).await;
+
+    let review = Review {
+        id: run_id.to_string().create_type_id::<V7>(),
+        agent_sessions: HashMap::new(),
+        analytics: None,
+        duration: Some(elapsed),
+        status: ReviewStatus::Completed,
+        metadata: ReviewMetadata::Plain,
+    };
+    let _ = state.store.save::<Review>(&review).await;
 
     info!(
         run_id = %run_id,

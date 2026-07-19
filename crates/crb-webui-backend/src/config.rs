@@ -49,6 +49,12 @@ pub struct ServerConfig {
     /// Path to the code-review-benchmark directory.
     #[serde(default)]
     pub benchmark_dir: Option<PathBuf>,
+
+    /// Path for the riv-stor database file.
+    ///
+    /// Defaults to `riv-stor.db` in the output directory.
+    #[serde(default)]
+    pub store_dir: Option<PathBuf>,
 }
 
 /// OAuth authentication configuration.

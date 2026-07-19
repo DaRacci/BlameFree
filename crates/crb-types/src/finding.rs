@@ -1,6 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "seaorm-storage")]
+use crate::benchmark::result::PrResultEntity;
 use crate::severity::Severity;
 
 /// A finding that has been reported by an agent.
@@ -9,8 +11,34 @@ use crate::severity::Severity;
 ///
 /// We support an array of aliases for each field so to give the LLM output
 /// a better chance of matching the expected severity level.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default)]
+#[cfg_attr(
+    feature = "seaorm-storage",
+    derive(crb_macros::EntityModel),
+    sea_orm(table_name = "findings")
+)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
 pub struct Finding {
+    /// Surrogate primary key, auto-incremented by the DB.
+    #[cfg_attr(
+        feature = "seaorm-storage",
+        sea_orm(primary_key, auto_increment = true)
+    )]
+    pub id: Option<i32>,
+
+    /// FK back to the parent [`PrResult`].
+    #[cfg_attr(
+        feature = "seaorm-storage",
+        sea_orm(
+            belongs_to,
+            entity = "PrResultEntity",
+            from = "pr_result_id",
+            to = "id",
+            on_delete = "Cascade"
+        )
+    )]
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(nullable))]
+    pub pr_result_id: Option<String>,
+
     /// Source file path where the issue was found, if available.
     #[serde(
         default,
@@ -103,14 +131,22 @@ pub struct Finding {
 }
 
 /// A confidence level for a finding.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[cfg_attr(
+    feature = "seaorm-storage",
+    derive(sea_orm::EnumIter, sea_orm::DeriveActiveEnum),
+    sea_orm(rs_type = "String", db_type = "Text")
+)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Hash, PartialEq, Eq)]
 pub enum ConfidenceLevel {
     /// The finding is confirmed with high certainty.
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(string_value = "Confirmed"))]
     Confirmed,
 
     /// The finding is likely but not certain.
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(string_value = "Likely"))]
     Likely,
 
     /// The finding is uncertain or speculative.
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(string_value = "Uncertain"))]
     Uncertain,
 }

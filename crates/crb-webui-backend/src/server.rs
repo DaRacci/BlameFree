@@ -16,6 +16,8 @@ use crb_types::capabilities::ReasoningEffort;
 use crb_webui_shared::routes;
 use mti::prelude::MagicTypeId;
 use reqwest::header;
+use riv_stor::traits::Store;
+use riv_stor::store::SqliteStore;
 use rustls::pki_types::UnixTime;
 use strum::VariantArray;
 use tokio::sync::{RwLock, broadcast};
@@ -52,6 +54,9 @@ pub struct AppState {
 
     /// Path to the server log file.
     pub log_file: PathBuf,
+
+    /// Store for persistence of reviews, pr-results, and benchmarks.
+    pub store: Arc<dyn Store + Send + Sync>,
 }
 
 /// State for an actively running benchmark.
@@ -74,6 +79,7 @@ impl AppState {
         octocrab: octocrab::Octocrab,
         session_store: SessionStore,
         log_file: PathBuf,
+        store: Arc<dyn Store + Send + Sync>,
     ) -> Self {
         Self {
             output_dir,
@@ -82,6 +88,7 @@ impl AppState {
             session_store,
             octocrab,
             log_file,
+            store,
         }
     }
 }

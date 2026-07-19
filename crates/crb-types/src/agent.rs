@@ -3,18 +3,26 @@ use serde::{Deserialize, Serialize};
 
 use crate::wrappers::Model;
 
+/// A single agent session, containing turns and messages.
+#[cfg_attr(
+    feature = "seaorm-storage",
+    derive(crb_macros::EntityModel),
+    sea_orm(table_name = "agent_sessions")
+)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSession {
     /// The unique ID of the agent session.
     pub id: MagicTypeId,
 
     /// The model used for this agent session.
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(ignore))]
     pub model: Model,
 
     /// A list of turns the agent has taken in this session.
     ///
     /// Each turn is an ordered list of [`RoleMessage`]'s,
     /// which can be either user messages, tool messages, or assistant messages.
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(ignore))]
     pub turns: Vec<Vec<RoleMessage>>,
 }
 

@@ -78,6 +78,8 @@ pub async fn judge_comment(
                     match judge.prompt(&prompt).extended_details().await {
                         Ok(resp) => serde_json::from_str::<JudgeVerdict>(&resp.output).unwrap_or(
                             JudgeVerdict {
+                                id: None,
+                                finding_id: 0,
                                 match_: false,
                                 reasoning: String::new(),
                                 confidence: 0.0,
@@ -86,6 +88,8 @@ pub async fn judge_comment(
                         Err(e) => {
                             warn!("Judge call failed: {e}");
                             JudgeVerdict {
+                                id: None,
+                                finding_id: 0,
                                 match_: false,
                                 reasoning: String::new(),
                                 confidence: 0.0,

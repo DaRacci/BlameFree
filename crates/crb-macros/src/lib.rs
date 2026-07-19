@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use proc_macro2::{Punct, Spacing};
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
-use syn::{Data, DeriveInput, Fields, Ident, LitStr, Token, parse_macro_input};
+use syn::{Attribute, Data, DeriveInput, Fields, Ident, LitStr, Token, Type, parse_macro_input};
 
 #[proc_macro_derive(Cacheable, attributes(cache_key, cache_ref))]
 pub fn derive_cacheable(input: TokenStream) -> TokenStream {
@@ -40,8 +40,6 @@ pub fn derive_cacheable(input: TokenStream) -> TokenStream {
         }
     }
 
-    // RefForm struct fields: cache_key and plain fields pass through,
-    // cache_ref fields become String
     let ref_fields: Vec<_> = cache_key_fields
         .iter()
         .map(|(ident, ty)| quote! { #ident: #ty })
@@ -57,7 +55,6 @@ pub fn derive_cacheable(input: TokenStream) -> TokenStream {
         )
         .collect();
 
-    // CacheKey impl for RefForm: hash contributions from all key fields
     let ref_key_contributions: Vec<_> = cache_key_fields
         .iter()
         .map(|(ident, _)| {
@@ -68,7 +65,6 @@ pub fn derive_cacheable(input: TokenStream) -> TokenStream {
         }))
         .collect();
 
-    // into_ref: serialize cache_ref fields to JSON, store in backend, replace with key
     let into_ref_fields: Vec<_> = cache_key_fields
         .iter()
         .map(|(ident, _)| quote! { #ident: self.#ident })
@@ -90,7 +86,6 @@ pub fn derive_cacheable(input: TokenStream) -> TokenStream {
         )
         .collect();
 
-    // from_ref: load serialized JSON from backend, deserialize
     let from_ref_fields: Vec<_> = cache_key_fields
         .iter()
         .map(|(ident, _)| quote! { #ident: form.#ident })
@@ -106,7 +101,6 @@ pub fn derive_cacheable(input: TokenStream) -> TokenStream {
         .chain(plain_fields.iter().map(|(ident, _)| quote! { #ident: form.#ident }))
         .collect();
 
-    // Standalone cache_key() associated function
     let cache_key_params: Vec<_> = cache_key_fields
         .iter()
         .map(|(ident, ty)| quote! { #ident: &#ty })
@@ -206,8 +200,6 @@ impl Parse for RouteInput {
     }
 }
 
-/// Replace `:<word>` placeholders in a template string value with `{}` and
-/// collect the placeholder names in order.
 fn metavar_ref(name: &str, span: proc_macro2::Span) -> proc_macro2::TokenStream {
     let dollar = Punct::new('$', Spacing::Alone);
     let ident = Ident::new(name, span);
@@ -229,7 +221,6 @@ fn parse_placeholders(template: &str) -> (String, Vec<String>) {
 
     while let Some(ch) = chars.next() {
         if ch == ':' {
-            // Look ahead for a word character
             let mut name = String::new();
             while let Some(&next) = chars.peek() {
                 if next.is_ascii_alphanumeric() || next == '_' {
@@ -309,6 +300,457 @@ pub fn define_routes(input: TokenStream) -> TokenStream {
                 compile_error!("`route!` only accepts identifier arguments")
             };
         }
+    };
+
+    TokenStream::from(expanded)
+}
+
+/// Check if a type's last path segment matches a given name.
+fn type_ends_with(ty: &Type, name: &str) -> bool {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            return segment.ident == name;
+        }
+    }
+    false
+}
+
+fn extract_key_value(
+    attrs: &[Attribute],
+    attribute_scope: &str,
+    target_key: &str,
+) -> Option<String> {
+    for attr in attrs {
+        if !attr.path().is_ident(attribute_scope) {
+            continue;
+        }
+
+        let mut result: Option<String> = None;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident(target_key) {
+                let value: LitStr = meta.value()?.parse()?;
+                result = Some(value.value());
+            }
+            Ok(())
+        });
+
+        if let Some(name) = result {
+            return Some(name);
+        }
+    }
+
+    None
+}
+
+/// Parsed relation directive for a field's `#[sea_orm(...)]` attributes.
+#[derive(Debug, Clone)]
+enum RelationKind {
+    /// Field becomes `HasMany<ChildEntity>`.
+    HasMany { entity_alias: String },
+
+    /// Field becomes `HasOne<ChildEntity>`.
+    HasOne { entity_alias: String },
+
+    /// Field stays as a scalar column but also generates a belongs_to
+    /// Relation variant and `Related<ParentEntity>` impl.
+    BelongsTo {
+        entity_alias: String,
+        from: String,
+        to: String,
+    },
+}
+
+/// Parsed & classified struct field.
+struct ProcessedField {
+    ident: Ident,
+
+    ty: Type,
+
+    /// True if the field has #[sea_orm(ignore)].
+    is_ignored: bool,
+
+    /// `#[sea_orm(...)]` tokens to pass through verbatim.
+    passthrough: Vec<proc_macro2::TokenStream>,
+
+    /// If non-None, this field is a relation.
+    /// For HasMany/HasOne: the field becomes a pure relation (no DB column).
+    /// For BelongsTo: the field stays as a scalar column + additional relation metadata is generated.
+    relation: Option<RelationKind>,
+}
+
+/// Extract `key = "value"` from a raw token string for a specific key.
+fn extract_value(tokens: &str, key: &str) -> String {
+    for part in tokens.split(',') {
+        let trimmed = part.trim();
+        if let Some(eq_pos) = trimmed.find('=') {
+            let k = trimmed[..eq_pos].trim();
+            if k == key {
+                return trimmed[eq_pos + 1..].trim().trim_matches('"').to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+/// Scan a field's attrs and classify it as scalar / relation / ignored.
+fn process_field(field: &syn::Field) -> ProcessedField {
+    let ident = field.ident.clone().expect("named field");
+    let ty = field.ty.clone();
+    let mut is_ignored = false;
+    let mut relation: Option<RelationKind> = None;
+    let mut passthrough = Vec::new();
+
+    for attr in &field.attrs {
+        if !attr.path().is_ident("sea_orm") {
+            continue;
+        }
+
+        let inner_ts = match attr.parse_args::<proc_macro2::TokenStream>() {
+            Ok(ts) => ts,
+            Err(_) => continue,
+        };
+        let inner_str = inner_ts.to_string();
+        let inner_lower = inner_str.to_lowercase();
+
+        if inner_lower.contains("ignore") {
+            is_ignored = true;
+            continue;
+        }
+
+        if inner_lower.contains("has_many") {
+            relation = Some(RelationKind::HasMany {
+                entity_alias: extract_value(&inner_str, "entity"),
+            });
+            continue;
+        }
+
+        if inner_lower.contains("has_one") {
+            relation = Some(RelationKind::HasOne {
+                entity_alias: extract_value(&inner_str, "entity"),
+            });
+            continue;
+        }
+
+        if inner_lower.contains("belongs_to") {
+            relation = Some(RelationKind::BelongsTo {
+                entity_alias: extract_value(&inner_str, "entity"),
+                from: extract_value(&inner_str, "from"),
+                to: extract_value(&inner_str, "to"),
+            });
+            continue;
+        }
+
+        // Pass through the original attribute verbatim
+        passthrough.push(quote! { #[sea_orm(#inner_ts)] });
+    }
+
+    ProcessedField {
+        ident,
+        ty,
+        is_ignored,
+        passthrough,
+        relation,
+    }
+}
+
+/// Convert an entity alias like `"GoldenCommentEntity"` to a reference
+/// to the re-exported Entity type via `super::`.
+/// The user must ensure the entity type is in scope (re-exported at the
+/// module level by the child type's own EntityModel derive).
+fn entity_path_from_alias(alias: &str) -> proc_macro2::TokenStream {
+    let alias_ident = Ident::new(alias, proc_macro2::Span::call_site());
+    quote! { super::#alias_ident }
+}
+
+/// Convert snake_case to PascalCase (e.g. `"pr_result_id"` → `"PrResultId"`).
+fn snake_to_pascal(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut capitalize_next = true;
+    for ch in s.chars() {
+        if ch == '_' {
+            capitalize_next = true;
+        } else if capitalize_next {
+            result.extend(ch.to_uppercase());
+            capitalize_next = false;
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+/// Derive the SeaORM column type for a scalar domain field.
+fn scalar_column_type(ty: &Type) -> proc_macro2::TokenStream {
+    if type_ends_with(ty, "MagicTypeId") {
+        return quote! { String };
+    }
+    // Check for Option<MagicTypeId>
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            if segment.ident == "Option" {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                        if type_ends_with(inner, "MagicTypeId") {
+                            return quote! { Option<String> };
+                        }
+                    }
+                }
+            }
+        }
+    }
+    quote! { #ty }
+}
+
+/// Derive a SeaORM `Model` struct from a domain struct.
+///
+/// Generates a hidden entity module with `DeriveEntityModel`, `Relation` enum,
+/// `RelationTrait`, and `Related<T>` impls. Supports `#[sea_orm(has_many)],
+/// `#[sea_orm(has_one)]`, and `#[sea_orm(belongs_to)]` for relation fields,
+/// plus pass-through of unknown `#[sea_orm(...)]` attributes.
+///
+/// # Usage
+///
+/// ```ignore
+/// #[cfg_attr(feature = "seaorm-storage", derive(crb_macros::EntityModel))]
+/// #[cfg_attr(feature = "seaorm-storage", sea_orm(table_name = "pr_results"))]
+/// pub struct PrResult {
+///     pub id: MagicTypeId,
+///     #[cfg_attr(feature = "seaorm-storage",
+///         sea_orm(has_many, entity = "GoldenCommentEntity")
+///     )]
+///     pub golden_comments: Vec<GoldenComment>,
+/// }
+/// ```
+#[proc_macro_derive(EntityModel, attributes(sea_orm))]
+pub fn derive_entity_model(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+
+    let data = match &input.data {
+        Data::Struct(s) => s,
+        _ => panic!("EntityModel derive macro only supports structs"),
+    };
+
+    let fields = match &data.fields {
+        Fields::Named(f) => &f.named,
+        _ => panic!("EntityModel derive macro requires named fields"),
+    };
+
+    let Some(table_name) = extract_key_value(&input.attrs, "sea_orm", "table_name") else {
+        panic!("EntityModel: #[sea_orm(table_name = \"...\")] is required on the struct",);
+    };
+
+    let processed: Vec<ProcessedField> = fields.iter().map(process_field).collect();
+
+    // Partition into scalar columns and relation fields
+    let mut scalar_fields: Vec<proc_macro2::TokenStream> = Vec::new();
+    let mut rel_entries: Vec<(Ident, RelationKind)> = Vec::new(); // for enum + impls
+    let mut has_explicit_id = false;
+
+    for pf in &processed {
+        if pf.is_ignored {
+            continue;
+        }
+
+        let field_ident = &pf.ident;
+
+        if let Some(ref kind) = pf.relation {
+            match kind {
+                RelationKind::HasMany { .. } | RelationKind::HasOne { .. } => {
+                    // Pure relation field — no DB column
+                    rel_entries.push((pf.ident.clone(), kind.clone()));
+                }
+                RelationKind::BelongsTo { .. } => {
+                    // Field is a scalar column (the FK) AND generates a relation entry
+                    let sea_attrs = if pf.passthrough.is_empty() {
+                        quote! {}
+                    } else {
+                        let attrs = &pf.passthrough;
+                        quote! { #(#attrs)* }
+                    };
+                    let out_ty = scalar_column_type(&pf.ty);
+                    scalar_fields.push(quote! {
+                        #sea_attrs
+                        pub #field_ident: #out_ty
+                    });
+                    rel_entries.push((pf.ident.clone(), kind.clone()));
+                }
+            }
+        } else {
+            // Pure scalar (column) field
+            if field_ident == "id" {
+                has_explicit_id = true;
+            }
+
+            let sea_attrs: proc_macro2::TokenStream = if pf.passthrough.is_empty() {
+                if field_ident == "id" {
+                    quote! { #[sea_orm(primary_key, column_type = "Text")] }
+                } else {
+                    quote! {}
+                }
+            } else {
+                let attrs = &pf.passthrough;
+                quote! { #(#attrs)* }
+            };
+
+            // Check if this field has auto_increment — requires integer type
+            let has_auto_increment = pf
+                .passthrough
+                .iter()
+                .any(|ts| ts.to_string().to_lowercase().contains("auto_increment"));
+
+            let out_ty = if has_auto_increment {
+                quote! { i32 }
+            } else {
+                scalar_column_type(&pf.ty)
+            };
+
+            scalar_fields.push(quote! {
+                #sea_attrs
+                pub #field_ident: #out_ty
+            });
+        }
+    }
+
+    // Surrogate auto-increment PK when no explicit `id` field
+    if !has_explicit_id {
+        scalar_fields.insert(
+            0,
+            quote! {
+                #[sea_orm(primary_key, auto_increment = true)]
+                pub id: i32
+            },
+        );
+    }
+
+    let struct_name = &input.ident;
+    let raw_name = struct_name.to_string();
+    let model_mod = format_ident!("__{}_entity", raw_name.to_lowercase());
+    let entity_name = format_ident!("{}Entity", raw_name);
+    let active_name = format_ident!("{}ActiveModel", raw_name);
+    let model_alias = format_ident!("{}Model", raw_name);
+    let column_name = format_ident!("{}Column", raw_name);
+    let pk_name = format_ident!("{}PrimaryKey", raw_name);
+
+    // Build Relation enum variants
+    let relation_variants: Vec<proc_macro2::TokenStream> = rel_entries
+        .iter()
+        .map(|(ident, _)| {
+            let v = format_ident!("{}", Ident::new(&ident.to_string(), ident.span()));
+            quote! { #v }
+        })
+        .collect();
+
+    // Build RelationTrait::def() — handle empty relations gracefully
+    let relation_trait_impl: proc_macro2::TokenStream =
+        if rel_entries.is_empty() {
+            quote! {
+                impl RelationTrait for Relation {
+                    fn def(&self) -> sea_orm::RelationDef {
+                        match *self {}
+                    }
+                }
+            }
+        } else {
+            let relation_def_arms: Vec<proc_macro2::TokenStream> = rel_entries
+            .iter()
+            .map(|(ident, kind)| {
+                let v = Ident::new(&ident.to_string(), ident.span());
+                match kind {
+                    RelationKind::HasMany { entity_alias } => {
+                        let child_path = entity_path_from_alias(entity_alias);
+                        quote! {
+                            Relation::#v => Entity::has_many(#child_path).into()
+                        }
+                    }
+                    RelationKind::HasOne { entity_alias } => {
+                        let child_path = entity_path_from_alias(entity_alias);
+                        quote! {
+                            Relation::#v => Entity::has_one(#child_path).into()
+                        }
+                    }
+                    RelationKind::BelongsTo { entity_alias, from, to } => {
+                        let parent_path = entity_path_from_alias(entity_alias);
+                        let from_col_pascal_str = snake_to_pascal(from);
+                        let from_col_pascal =
+                            Ident::new(&from_col_pascal_str, proc_macro2::Span::call_site());
+                        let to_col_pascal_str = snake_to_pascal(to);
+                        let to_col_pascal =
+                            Ident::new(&to_col_pascal_str, proc_macro2::Span::call_site());
+                        quote! {
+                            Relation::#v => Entity::belongs_to(#parent_path)
+                                .from(Column::#from_col_pascal)
+                                .to(<#parent_path as sea_orm::EntityTrait>::Column::#to_col_pascal)
+                                .into()
+                        }
+                    }
+                }
+            })
+            .collect();
+
+            quote! {
+                impl RelationTrait for Relation {
+                    fn def(&self) -> sea_orm::RelationDef {
+                        match self {
+                            #(#relation_def_arms,)*
+                        }
+                    }
+                }
+            }
+        };
+
+    // Build impl Related<T> for Entity for BelongsTo relations
+    let related_impls: Vec<proc_macro2::TokenStream> = rel_entries
+        .iter()
+        .filter_map(|(ident, kind)| {
+            if let RelationKind::BelongsTo { entity_alias, .. } = kind {
+                let parent_path = entity_path_from_alias(entity_alias);
+                let rel_variant = ident; // field name IS the Relation variant name
+                Some(quote! {
+                    impl Related<#parent_path> for Entity {
+                        fn to() -> sea_orm::RelationDef {
+                            Relation::#rel_variant.def()
+                        }
+                        fn via() -> Option<sea_orm::RelationDef> {
+                            None
+                        }
+                    }
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let expanded = quote! {
+        /// SeaORM entity model auto-generated by `EntityModel` derive.
+        #[doc(hidden)]
+        mod #model_mod {
+            use sea_orm::entity::prelude::*;
+            use super::*;
+
+            #[derive(Debug, Clone, PartialEq, DeriveEntityModel)]
+            #[sea_orm(table_name = #table_name)]
+            pub struct Model {
+                #(#scalar_fields,)*
+            }
+
+            #[derive(Debug, EnumIter)]
+            pub enum Relation {
+                #(#relation_variants,)*
+            }
+
+            #relation_trait_impl
+
+            #(#related_impls)*
+
+            impl ActiveModelBehavior for ActiveModel {}
+        }
+
+        pub use #model_mod::Model as #model_alias;
+        pub use #model_mod::Entity as #entity_name;
+        pub use #model_mod::Column as #column_name;
+        pub use #model_mod::PrimaryKey as #pk_name;
+        pub use #model_mod::ActiveModel as #active_name;
     };
 
     TokenStream::from(expanded)

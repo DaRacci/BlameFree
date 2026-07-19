@@ -14,6 +14,9 @@ pub mod wrappers;
 use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "seaorm-storage")]
+use sea_orm as _;
+
 use crate::{
     agent::AgentChunk,
     cost::{AnalyticsSnapshot, SessionUsage},

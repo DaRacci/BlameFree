@@ -22,7 +22,6 @@ use crb_harness::{model_capabilities, pipeline};
 use crb_reporting::cost::AnalyticsTracker;
 use crb_reporting::golden::load_golden_datasets;
 use crb_reporting::history::append_run_history;
-use crb_reporting::write_report;
 use crb_rules::RULES_DIR;
 use crb_rules::RuleSet;
 use crb_shared::diff::Diff;
@@ -31,10 +30,15 @@ use crb_shared::{DEFAULT_MODEL, OUTPUT_CACHE_DIR, sanitize_filename};
 use crb_tools::linters::LINTER_CONFIG_FILE;
 use crb_types::RunEvent;
 use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
+use crb_types::benchmark::result::PrResult;
+use crb_types::benchmark::standalone::Benchmark;
 use crb_types::capabilities::ReasoningEffort;
 use crb_types::wrappers::Model;
 use rig_core::client::ProviderClient;
 use rig_core::tool::server::ToolServer;
+use mti::prelude::{MagicTypeIdExt, V7};
+use riv_stor::store::SqliteStore;
+use riv_stor::traits::{Storable, Store};
 use tracing::{error, info, info_span, warn};
 
 mod diffs;
@@ -406,15 +410,37 @@ async fn run_benchmark(
         return Ok(());
     }
 
+    // Initialize riv-stor Store for persisting results
+    let store_path = output_dir.join("riv-stor.db");
+    let store: Arc<dyn Store + Send + Sync> = Arc::new(
+        SqliteStore::new(&store_path.to_string_lossy())
+            .await
+            .context("failed to init store")?,
+    );
+    info!("Store initialized at: {}", store_path.display());
+
     let prs_to_evaluate = if resume {
-        let existing: HashSet<_> = if output_dir.exists() {
-            fs::read_dir(&output_dir)?
-                .filter_map(|e| e.ok())
-                .filter(|e| e.path().extension().map_or(false, |ext| ext == "json"))
-                .filter_map(|e| e.file_name().into_string().ok())
-                .collect()
-        } else {
-            HashSet::new()
+        let existing: HashSet<String> = {
+            // Try store first (async-capable path)
+            match store.list::<PrResult>(&()).await {
+                Ok(stored_results) => stored_results
+                    .iter()
+                    .map(|r| format!("{}.json", r.storable_id()))
+                    .collect(),
+                Err(e) => {
+                    warn!("Store list failed, falling back to filesystem scan: {e}");
+                    // Fallback: scan output dir for existing json files
+                    if output_dir.exists() {
+                        fs::read_dir(&output_dir)?
+                            .filter_map(|e| e.ok())
+                            .filter(|e| e.path().extension().map_or(false, |ext| ext == "json"))
+                            .filter_map(|e| e.file_name().into_string().ok())
+                            .collect()
+                    } else {
+                        HashSet::new()
+                    }
+                }
+            }
         };
 
         all_prs
@@ -583,7 +609,30 @@ async fn run_benchmark(
         });
     }
 
-    write_report(&results, &output_dir)?;
+    // Save each PrResult to the Store
+    for result in &results {
+        if let Err(e) = store.save::<PrResult>(result).await {
+            warn!("Failed to save PrResult {}: {e}", result.storable_id());
+        }
+    }
+
+    // Create and save the Benchmark entry for this run
+    let run_id = format!(
+        "run-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    );
+    let benchmark = Benchmark::new(
+        run_id.as_str().create_type_id::<V7>(),
+        dataset_dir.to_string_lossy().to_string(),
+        Some("1.0".to_string()),
+    );
+    if let Err(e) = store.save::<Benchmark>(&benchmark).await {
+        warn!("Failed to save Benchmark: {e}");
+    }
+
     info!(
         "Done. {} PR(s) evaluated, results in {}",
         results.len(),

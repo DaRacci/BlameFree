@@ -40,7 +40,6 @@ wildcard_imports = "deny"
 
 [workspace.dependencies]
 anyhow = "1"
-async-trait = "0.1"
 axum = "0.7"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive", "env"] }
@@ -78,6 +77,7 @@ rig-mcp = "0.2.5"
 rust-embed = "8"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 schemars = "1.2"
+sea-orm = "2.0"
 serde = { version = "1", features = ["derive"] }
 serde_fields = "0.1"
 serde_json = "1"

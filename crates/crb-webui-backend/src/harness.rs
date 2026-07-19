@@ -19,8 +19,9 @@ use crb_shared::sanitize_filename;
 use crb_shared::url::parse_github_url;
 use crb_types::RunEvent;
 use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
-use crb_types::benchmark::result::{JudgedFinding, PrResult};
+use crb_types::benchmark::result::PrResult;
 use crb_types::cost::AnalyticsSnapshot;
+use crb_types::review::{Review, ReviewMetadata, ReviewStatus};
 use crb_types::vcs::pr::PrMeta;
 use crb_types::vcs::repository::{RemoteRepositoryMeta, VCSPlatform};
 use crb_types::wrappers::Model;
@@ -28,6 +29,7 @@ use mti::prelude::MagicTypeId;
 use mti::prelude::{MagicTypeIdExt, V7};
 use rig_core::client::ProviderClient;
 use rig_core::providers::openrouter;
+use riv_stor::traits::Store;
 use tokio::sync::{RwLock, broadcast};
 use tracing::{error, info, warn};
 
@@ -43,6 +45,7 @@ pub async fn run_harness(
     webui_tx: broadcast::Sender<RunEvent>,
     active_runs: Arc<RwLock<HashMap<MagicTypeId, ActiveRun>>>,
     dataset_dir: &Path,
+    store: Arc<dyn Store + Send + Sync>,
 ) -> anyhow::Result<()> {
     let output_subdir = output_dir.join(run_id);
     fs::create_dir_all(&output_subdir)?;
@@ -146,20 +149,26 @@ pub async fn run_harness(
                     metrics: Metrics::default(), // FIXME: compute from judge verdicts
                     findings_with_verdicts: findings
                         .into_iter()
-                        .map(|f| JudgedFinding {
-                            finding: f,
-                            // FIXME: run the judge pipeline for golden-comparison
-                            verdict: crb_types::benchmark::judge::JudgeVerdict {
-                                reasoning: "Pending judge evaluation".to_string(),
-                                match_: false,
-                                confidence: 0.0,
-                            },
+                        .map(|f| {
+                            (
+                                f,
+                                crb_types::benchmark::judge::JudgeVerdict {
+                                    reasoning: "Pending judge evaluation".to_string(),
+                                    match_: false,
+                                    confidence: 0.0,
+                                },
+                            )
                         })
                         .collect(),
                     cost: cost_tracker.to_snapshot().await,
                 };
                 let _ = write_report(&[result.clone()], &output_subdir);
                 results.push(result);
+
+                // Save per-PR result to store
+                if let Some(last) = results.last() {
+                    let _ = store.save::<PrResult>(last).await;
+                }
 
                 let n = results.len();
                 {
@@ -211,10 +220,17 @@ pub async fn run_harness(
         "total_tokens": total_tokens,
         "total_cost_usd": total_cost,
     });
-    let summary_path = output_subdir.join(crb_harness::paths::SUMMARY_FILE);
-    if let Ok(json) = serde_json::to_string_pretty(&summary) {
-        let _ = fs::write(&summary_path, &json);
-    }
+
+    // Save overall Review to store instead of writing _summary.json
+    let overall_review = Review {
+        id: run_id.to_string().create_type_id::<V7>(),
+        agent_sessions: HashMap::new(),
+        analytics: Some(AnalyticsSnapshot::default()),
+        duration: Some(std::time::Duration::from_secs_f64(start.elapsed().as_secs_f64())),
+        status: ReviewStatus::Completed,
+        metadata: ReviewMetadata::Plain,
+    };
+    let _ = store.save::<Review>(&overall_review).await;
 
     let _ = webui_tx.send(RunEvent::ReviewCompleted {
         review_id: run_id.to_string().create_type_id::<V7>(),

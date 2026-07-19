@@ -2,6 +2,9 @@ use std::ops::AddAssign;
 
 use serde::{Deserialize, Serialize};
 
+use crate::benchmark::judge::JudgeVerdict;
+use crate::finding::Finding;
+
 /// Metrics for evaluation of a PR.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Metrics {
@@ -72,15 +75,16 @@ impl MetricsProvider for Metrics {
     }
 }
 
-impl MetricsProvider for Vec<Metrics> {
+impl<M> MetricsProvider for Vec<M>
+where
+    M: MetricsProvider + Sized,
+{
     fn true_positives(&self) -> usize {
         self.iter().map(|m| m.true_positives()).sum()
     }
-
     fn false_positives(&self) -> usize {
         self.iter().map(|m| m.false_positives()).sum()
     }
-
     fn false_negatives(&self) -> usize {
         self.iter().map(|m| m.false_negatives()).sum()
     }
@@ -92,6 +96,18 @@ impl AddAssign for Metrics {
         self.false_positives += other.false_positives;
         self.false_negatives += other.false_negatives;
         self.duration_secs += other.duration_secs;
+    }
+}
+
+impl MetricsProvider for (Finding, JudgeVerdict) {
+    fn true_positives(&self) -> usize {
+        self.1.match_ as usize
+    }
+    fn false_positives(&self) -> usize {
+        1 - (self.1.match_ as usize)
+    }
+    fn false_negatives(&self) -> usize {
+        0
     }
 }
 

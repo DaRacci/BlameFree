@@ -16,7 +16,7 @@ path = "src/lib.rs"
 
 [features]
 deafult = ["crb-shared/backend"]
-binary = ["dep:clap", "dep:crb-agents", "dep:crb-harness", "dep:crb-rules", "dep:crb-tools", "dep:dotenvy","dep:serde", "dep:strum", "dep:tokio", "dep:tracing-subscriber"]
+binary = ["dep:clap", "dep:crb-agents", "dep:crb-harness", "dep:crb-rules", "dep:crb-tools", "dep:dotenvy","dep:serde", "dep:strum", "dep:tracing-subscriber"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -24,7 +24,9 @@ crb-types = { path = "../crb-types" }
 crb-reporting = { path = "../crb-reporting" }
 crb-shared = { path = "../crb-shared" }
 rig-core = { workspace = true }
+riv-stor = { path = "../riv-stor" }
 serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
 tracing = { workspace = true }
 
 # Binary Dependencies
@@ -36,7 +38,6 @@ crb-tools = { path = "../crb-tools", optional = true }
 dotenvy = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"], optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 
 [dev-dependencies]
