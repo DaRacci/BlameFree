@@ -12,7 +12,7 @@ use crb_types::{
     },
     cost::AnalyticsSnapshot,
     finding::{Finding, FindingColumn, FindingEntity, FindingModel},
-    review::{Review, ReviewEntity, ReviewMetadata, ReviewModel},
+    review::{Review, ReviewActiveModel, ReviewEntity, ReviewMetadata, ReviewModel},
 };
 use mti::prelude::MagicTypeId;
 use sea_orm::{
@@ -295,12 +295,18 @@ impl Store for SqliteStore {
 
 /// Save a `Review` to the `reviews` table.
 async fn save_review(db: &DatabaseConnection, review: &Review) -> Result<(), Error> {
-    let entity = ReviewModel {
-        id: review.id.to_string(),
-        status: review.status.clone(),
-    };
-    upsert!(db, entity)?;
-    Ok(())
+    let active = ReviewActiveModel::from(review.clone());
+    match active.clone().insert(db).await {
+        Ok(_) => Ok(()),
+        Err(e) if is_duplicate_key(&e) => {
+            active
+                .update(db)
+                .await
+                .map_err(|e2| Error::Query(format!("failed to update review: {e2}")))?;
+            Ok(())
+        }
+        Err(e) => Err(Error::Query(format!("failed to insert review: {e}"))),
+    }
 }
 
 /// Save a `PrResult` with its children (golden_comments).
@@ -840,12 +846,5 @@ async fn load_agent_session(
 // ---------------------------------------------------------------------------
 
 fn map_model_to_review(model: ReviewModel) -> Review {
-    Review {
-        id: model.id.parse::<MagicTypeId>().unwrap_or_default(),
-        agent_sessions: Default::default(),
-        analytics: None,
-        duration: None,
-        status: model.status,
-        metadata: ReviewMetadata::Plain,
-    }
+    model.into()
 }

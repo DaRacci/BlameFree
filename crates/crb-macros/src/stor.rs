@@ -1,6 +1,100 @@
 use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
-use syn::{Attribute, Data, DeriveInput, Fields, Ident, LitStr, Type};
+use syn::{
+    parse::{Parse, ParseStream},
+    Attribute, Data, DeriveInput, Fields, Ident, LitStr, Token, Type,
+};
+
+// ---------------------------------------------------------------------------
+// Data structures for flatten field annotation
+// ---------------------------------------------------------------------------
+
+/// Parsed `#[flatten(tag = "...", variants = { ... })]` attribute.
+#[derive(Debug, Clone)]
+pub struct FlattenSpec {
+    /// Discriminator column name (e.g., "review_type").
+    pub tag: String,
+    /// Each variant's flat column definitions.
+    pub variants: Vec<FlattenVariantDef>,
+}
+
+/// A single variant's column definitions within a flatten annotation.
+#[derive(Debug, Clone)]
+pub struct FlattenVariantDef {
+    /// The tag VALUE for this variant (e.g., "pull_request").
+    pub name: String,
+    /// Column definitions: (column_name, type_string).
+    /// Type string is the DB column type (e.g., "String", "i32").
+    pub columns: Vec<(String, String)>,
+}
+
+/// Parse `flatten(tag = "...", variants = { name => { col: Ty, ... }, ... })`.
+impl Parse for FlattenSpec {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let mut tag = String::new();
+        let mut variants: Vec<FlattenVariantDef> = Vec::new();
+
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+
+            if key == "tag" {
+                let _: Token![=] = input.parse()?;
+                let lit: LitStr = input.parse()?;
+                tag = lit.value();
+            } else if key == "variants" {
+                let _: Token![=] = input.parse()?;
+                let variant_braces;
+                syn::braced!(variant_braces in input);
+                while !variant_braces.is_empty() {
+                    let variant_name: Ident = variant_braces.parse()?;
+                    let _: Token![=>] = variant_braces.parse()?;
+                    let col_braces;
+                    syn::braced!(col_braces in variant_braces);
+                    let mut columns: Vec<(String, String)> = Vec::new();
+                    while !col_braces.is_empty() {
+                        let col_name: Ident = col_braces.parse()?;
+                        let _: Token![:] = col_braces.parse()?;
+                        let col_type: Type = col_braces.parse()?;
+                        columns.push((col_name.to_string(), quote!(#col_type).to_string()));
+                        let _ = col_braces.parse::<Token![,]>();
+                    }
+                    variants.push(FlattenVariantDef {
+                        name: variant_name.to_string(),
+                        columns,
+                    });
+                    let _ = variant_braces.parse::<Token![,]>();
+                }
+            } else {
+                return Err(syn::Error::new(
+                    key.span(),
+                    format!("expected `tag` or `variants`, got `{key}`"),
+                ));
+            }
+
+            let _ = input.parse::<Token![,]>();
+        }
+
+        if tag.is_empty() {
+            return Err(syn::Error::new(
+                input.span(),
+                "missing required `tag = \"...\"` in #[flatten(...)]",
+            ));
+        }
+        if variants.is_empty() {
+            return Err(syn::Error::new(
+                input.span(),
+                "missing required `variants = { ... }` in #[flatten(...)]",
+            ));
+        }
+
+        Ok(FlattenSpec { tag, variants })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// EntityModel derive implementation
+// ---------------------------------------------------------------------------
 
 pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
     let data = match &input.data {
@@ -14,18 +108,50 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
     };
 
     let Some(table_name) = extract_key_value(&input.attrs, "sea_orm", "table_name") else {
-        panic!("EntityModel: #[sea_orm(table_name = \"...\")] is required on the struct",);
+        panic!("EntityModel: #[sea_orm(table_name = \"...\")] is required on the struct");
     };
 
     let processed: Vec<ProcessedField> = fields.iter().map(process_field).collect();
 
-    // Partition into scalar columns and relation fields
-    let mut scalar_fields: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut rel_entries: Vec<(Ident, RelationKind)> = Vec::new(); // for enum + impls
+    // Partition into scalar columns, relation fields, and flatten fields
+    let mut scalar_fields: Vec<TokenStream2> = Vec::new();
+    let mut rel_entries: Vec<(Ident, RelationKind)> = Vec::new();
     let mut has_explicit_id = false;
+
+    // Collect: (field_ident, flattened_field_combined_tokens)
+    let mut flatten_entries: Vec<(Ident, FlattenSpec)> = Vec::new();
 
     for pf in &processed {
         if pf.is_ignored {
+            continue;
+        }
+
+        if let Some(ref spec) = pf.flatten {
+            // Flatten field: generate columns from the annotation
+            flatten_entries.push((pf.ident.clone(), spec.clone()));
+
+            // All flatten columns are Option<String> for universal compatibility.
+            // Emit the discriminator column first.
+            let tag_col = &spec.tag;
+            let tag_col_ident = Ident::new(tag_col, proc_macro2::Span::call_site());
+            scalar_fields.push(quote! {
+                pub #tag_col_ident: Option<String>
+            });
+
+            // Emit all variant columns as Option<String>
+            let mut seen_cols: Vec<String> = Vec::new();
+            for vd in &spec.variants {
+                for (col_name, _) in &vd.columns {
+                    if seen_cols.contains(col_name) {
+                        continue;
+                    }
+                    seen_cols.push(col_name.clone());
+                    let col_ident = Ident::new(col_name, proc_macro2::Span::call_site());
+                    scalar_fields.push(quote! {
+                        pub #col_ident: Option<String>
+                    });
+                }
+            }
             continue;
         }
 
@@ -58,7 +184,7 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
                 has_explicit_id = true;
             }
 
-            let sea_attrs: proc_macro2::TokenStream = if pf.passthrough.is_empty() {
+            let sea_attrs: TokenStream2 = if pf.passthrough.is_empty() {
                 if field_ident == "id" {
                     quote! { #[sea_orm(primary_key, column_type = "Text")] }
                 } else {
@@ -109,7 +235,7 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
     let pk_name = format_ident!("{}PrimaryKey", raw_name);
 
     // Build Relation enum variants
-    let relation_variants: Vec<proc_macro2::TokenStream> = rel_entries
+    let relation_variants: Vec<TokenStream2> = rel_entries
         .iter()
         .map(|(ident, _)| {
             let v = format_ident!("{}", snake_to_pascal(&ident.to_string()));
@@ -118,66 +244,69 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
         .collect();
 
     // Build RelationTrait::def() — handle empty relations gracefully
-    let relation_trait_impl: proc_macro2::TokenStream =
-        if rel_entries.is_empty() {
-            quote! {
-                impl RelationTrait for Relation {
-                    fn def(&self) -> sea_orm::RelationDef {
-                        match *self {}
-                    }
+    let relation_trait_impl: TokenStream2 = if rel_entries.is_empty() {
+        quote! {
+            impl RelationTrait for Relation {
+                fn def(&self) -> sea_orm::RelationDef {
+                    match *self {}
                 }
             }
-        } else {
-            let relation_def_arms: Vec<proc_macro2::TokenStream> = rel_entries
-          .iter()
-          .map(|(ident, kind)| {
-              let v_str = snake_to_pascal(&ident.to_string());
-              let v = Ident::new(&v_str, proc_macro2::Span::call_site());
-              match kind {
-                  RelationKind::HasMany { entity_alias } => {
-                      let child_path = entity_path_from_alias(entity_alias);
-                      quote! {
-                          Relation::#v => Entity::has_many(#child_path).into()
-                      }
-                  }
-                  RelationKind::HasOne { entity_alias } => {
-                      let child_path = entity_path_from_alias(entity_alias);
-                      quote! {
-                          Relation::#v => Entity::has_one(#child_path).into()
-                      }
-                  }
-                  RelationKind::BelongsTo { entity_alias, from, to } => {
-                      let parent_path = entity_path_from_alias(entity_alias);
-                      let from_col_pascal_str = snake_to_pascal(from);
-                      let from_col_pascal =
-                          Ident::new(&from_col_pascal_str, proc_macro2::Span::call_site());
-                      let to_col_pascal_str = snake_to_pascal(to);
-                      let to_col_pascal =
-                          Ident::new(&to_col_pascal_str, proc_macro2::Span::call_site());
-                      quote! {
-                          Relation::#v => Entity::belongs_to(#parent_path)
-                              .from(Column::#from_col_pascal)
-                              .to(<#parent_path as sea_orm::EntityTrait>::Column::#to_col_pascal)
-                              .into()
-                      }
-                  }
-              }
-          })
-          .collect();
-
-            quote! {
-                impl RelationTrait for Relation {
-                    fn def(&self) -> sea_orm::RelationDef {
-                        match self {
-                            #(#relation_def_arms,)*
+        }
+    } else {
+        let relation_def_arms: Vec<TokenStream2> = rel_entries
+            .iter()
+            .map(|(ident, kind)| {
+                let v_str = snake_to_pascal(&ident.to_string());
+                let v = Ident::new(&v_str, proc_macro2::Span::call_site());
+                match kind {
+                    RelationKind::HasMany { entity_alias } => {
+                        let child_path = entity_path_from_alias(entity_alias);
+                        quote! {
+                            Relation::#v => Entity::has_many(#child_path).into()
+                        }
+                    }
+                    RelationKind::HasOne { entity_alias } => {
+                        let child_path = entity_path_from_alias(entity_alias);
+                        quote! {
+                            Relation::#v => Entity::has_one(#child_path).into()
+                        }
+                    }
+                    RelationKind::BelongsTo {
+                        entity_alias,
+                        from,
+                        to,
+                    } => {
+                        let parent_path = entity_path_from_alias(entity_alias);
+                        let from_col_pascal_str = snake_to_pascal(from);
+                        let from_col_pascal =
+                            Ident::new(&from_col_pascal_str, proc_macro2::Span::call_site());
+                        let to_col_pascal_str = snake_to_pascal(to);
+                        let to_col_pascal =
+                            Ident::new(&to_col_pascal_str, proc_macro2::Span::call_site());
+                        quote! {
+                            Relation::#v => Entity::belongs_to(#parent_path)
+                                .from(Column::#from_col_pascal)
+                                .to(<#parent_path as sea_orm::EntityTrait>::Column::#to_col_pascal)
+                                .into()
                         }
                     }
                 }
+            })
+            .collect();
+
+        quote! {
+            impl RelationTrait for Relation {
+                fn def(&self) -> sea_orm::RelationDef {
+                    match self {
+                        #(#relation_def_arms,)*
+                    }
+                }
             }
-        };
+        }
+    };
 
     // Build impl Related<T> for Entity for BelongsTo relations
-    let related_impls: Vec<proc_macro2::TokenStream> = rel_entries
+    let related_impls: Vec<TokenStream2> = rel_entries
         .iter()
         .filter_map(|(ident, kind)| {
             if let RelationKind::BelongsTo { entity_alias, .. } = kind {
@@ -201,20 +330,21 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
         .collect();
 
     // Build From<Model> for DomainType and From<DomainType> for ActiveModel
-    //
-    // For From<Model> → DomainType, we ONLY map fields that have a DB column
-    // (non-ignored, non-pure-relation scalar fields). Fields that are ignored or
-    // purely relational (HasMany/HasOne) cannot be populated from the Model, so
-    // they are passed through with the struct-literal spread `..Default::default()`.
-    // This means the DomainType struct must implement `Default`. If it doesn't,
-    // the From impl simply is not emitted for that entity.
-    //
-    // For From<DomainType> → ActiveModel, we only Set the scalar fields.
-    // Ignored/pure-relation fields remain NotSet (default).
+    let mut from_model_fields: Vec<TokenStream2> = Vec::new();
+    let mut from_domain_fields: Vec<TokenStream2> = Vec::new();
 
-    let mut all_scalar = true;
-    let mut from_model_fields: Vec<proc_macro2::TokenStream> = Vec::new();
-    let mut from_domain_fields: Vec<proc_macro2::TokenStream> = Vec::new();
+    // Track which columns are set by flatten fields so scalar fields don't conflict
+    let mut flatten_col_names: Vec<String> = Vec::new();
+    for (_, spec) in &flatten_entries {
+        flatten_col_names.push(spec.tag.clone());
+        for vd in &spec.variants {
+            for (col_name, _) in &vd.columns {
+                if !flatten_col_names.contains(col_name) {
+                    flatten_col_names.push(col_name.clone());
+                }
+            }
+        }
+    }
 
     for pf in &processed {
         let ident = &pf.ident;
@@ -224,11 +354,7 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
         );
 
         // Determine if this field is "scalar" — has a DB column
-        let is_scalar = !pf.is_ignored && !is_pure_rel;
-
-        if !is_scalar {
-            all_scalar = false;
-        }
+        let is_scalar = !pf.is_ignored && !is_pure_rel && pf.flatten.is_none();
 
         // Check auto-increment
         let has_auto_increment = pf
@@ -238,32 +364,11 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
 
         // Check if the field's domain type is MagicTypeId or Option<MagicTypeId>
         let is_mtid = type_ends_with(&pf.ty, "MagicTypeId");
-        let is_opt_mtid = if let Type::Path(type_path) = &pf.ty {
-            if let Some(segment) = type_path.path.segments.last() {
-                if segment.ident == "Option" {
-                    if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                        if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                            type_ends_with(inner, "MagicTypeId")
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        } else {
-            false
-        };
+        let is_opt_mtid = is_optional_magic_type_id(&pf.ty);
 
         // --- From<Model> for DomainType (only scalar fields) ---
         if is_scalar {
             let model_expr = if has_auto_increment {
-                // Auto-increment PK: model type is i32, domain type may differ
                 quote! { Default::default() }
             } else if is_mtid {
                 quote! { m.#ident.parse::<mti::prelude::MagicTypeId>().unwrap_or_default() }
@@ -290,31 +395,114 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
         }
     }
 
-    let from_model_impl = if from_model_fields.is_empty() || !all_scalar {
-        // When there are non-scalar fields that can't be filled from the Model,
-        // skip emitting From<Model> — it would require DomainType: Default which
-        // we can't guarantee at macro time. The user can write their own conversion.
+    // Generate flatten field conversions for From<DomainType> only (not From<Model>)
+    let mut flatten_let_bindings: Vec<TokenStream2> = Vec::new();
+    let mut flatten_set_fields: Vec<TokenStream2> = Vec::new();
+
+    for (idx, (field_ident, spec)) in flatten_entries.iter().enumerate() {
+        // Get the type name for the bridge struct naming convention
+        let pf = processed
+            .iter()
+            .find(|pf| pf.ident == *field_ident)
+            .unwrap();
+        let field_ty_name = type_last_segment(&pf.ty);
+
+        // Bridge struct name: __<FieldType>Columns (e.g., __ReviewMetadataColumns)
+        let bridge_ident = format_ident!("__{}Columns", field_ty_name);
+        let cols_ident = format_ident!("__cols_{}", idx);
+
+        // Collect all column names for this flatten
+        let mut all_flatten_cols: Vec<(String, String)> = Vec::new();
+        all_flatten_cols.push((spec.tag.clone(), "Option<String>".to_string()));
+        for vd in &spec.variants {
+            for (col_name, col_type) in &vd.columns {
+                if !all_flatten_cols.iter().any(|(c, _)| c == col_name) {
+                    all_flatten_cols.push((col_name.clone(), format!("Option<{col_type}")));
+                }
+            }
+        }
+
+        // --- From<DomainType> -> convert domain enum to bridge, then Set each column ---
+        let set_fields: Vec<TokenStream2> = all_flatten_cols
+            .iter()
+            .map(|(col_name, _)| {
+                let col_ident = Ident::new(col_name, proc_macro2::Span::call_site());
+                quote! { #col_ident: sea_orm::Set(#cols_ident.#col_ident) }
+            })
+            .collect();
+
+        flatten_let_bindings.push(quote! {
+            let #cols_ident: #bridge_ident = d.#field_ident.into();
+        });
+        flatten_set_fields.extend(set_fields);
+    }
+
+    // Combine all from-model fields: just scalar fields (flatten fields use ..Default::default())
+    let final_from_model_fields: Vec<TokenStream2> = from_model_fields;
+
+    // Determine if there are flatten fields (triggers From<Model> generation)
+    let has_flatten = !flatten_entries.is_empty();
+
+    // Determine if there are ignored/pure-relation fields that need Default::default()
+    let has_ignored_fields = processed.iter().any(|pf| {
+        let is_pure_rel = matches!(
+            pf.relation,
+            Some(RelationKind::HasMany { .. }) | Some(RelationKind::HasOne { .. })
+        );
+        (pf.is_ignored || is_pure_rel) && pf.flatten.is_none()
+    });
+
+    let from_model_impl = if final_from_model_fields.is_empty() {
+        quote! {}
+    } else if has_ignored_fields && !has_flatten {
+        // Only ignored fields, no flatten — preserve old behavior, skip From<Model>.
+        // The user writes their own conversion for this case.
         quote! {}
     } else {
-        quote! {
-            impl From<Model> for super::#struct_name {
-                fn from(m: Model) -> Self {
-                    Self {
-                        #(#from_model_fields,)*
+        // Either all fields are populated from Model, or there are flatten fields
+        // that we populate via the bridge struct.
+        // If there are also ignored fields, use ..Default::default().
+        let scalar_fields = &final_from_model_fields;
+        if has_ignored_fields {
+            quote! {
+                impl From<Model> for super::#struct_name {
+                    fn from(m: Model) -> Self {
+                        Self {
+                            #(#scalar_fields,)*
+                            ..Default::default()
+                        }
+                    }
+                }
+            }
+        } else {
+            quote! {
+                impl From<Model> for super::#struct_name {
+                    fn from(m: Model) -> Self {
+                        Self {
+                            #(#scalar_fields,)*
+                        }
                     }
                 }
             }
         }
     };
 
-    let from_domain_impl = if from_domain_fields.is_empty() {
+    let final_from_domain_fields: Vec<TokenStream2> = from_domain_fields
+        .into_iter()
+        .chain(flatten_set_fields)
+        .collect();
+
+    let from_domain_impl = if final_from_domain_fields.is_empty() && flatten_let_bindings.is_empty() {
         quote! {}
     } else {
+        let set_fields = &final_from_domain_fields;
+        let let_bindings = &flatten_let_bindings;
         quote! {
             impl From<super::#struct_name> for ActiveModel {
                 fn from(d: super::#struct_name) -> Self {
+                    #(#let_bindings)*
                     Self {
-                        #(#from_domain_fields,)*
+                        #(#set_fields,)*
                     }
                 }
             }
@@ -360,6 +548,10 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
     TokenStream::from(expanded)
 }
 
+// ---------------------------------------------------------------------------
+// Data structures
+// ---------------------------------------------------------------------------
+
 /// Parsed relation directive for a field's `#[sea_orm(...)]` attributes.
 #[derive(Debug, Clone)]
 pub enum RelationKind {
@@ -381,26 +573,56 @@ pub enum RelationKind {
 /// Parsed & classified struct field.
 pub struct ProcessedField {
     pub ident: Ident,
-
     pub ty: Type,
 
     /// True if the field has #[sea_orm(ignore)].
     pub is_ignored: bool,
 
     /// `#[sea_orm(...)]` tokens to pass through verbatim.
-    pub passthrough: Vec<proc_macro2::TokenStream>,
+    pub passthrough: Vec<TokenStream2>,
 
     /// If non-None, this field is a relation.
-    /// For HasMany/HasOne: the field becomes a pure relation (no DB column).
-    /// For BelongsTo: the field stays as a scalar column + additional relation metadata is generated.
     pub relation: Option<RelationKind>,
+
+    /// If non-None, this field uses #[flatten(...)].
+    pub flatten: Option<FlattenSpec>,
 }
+
+// ---------------------------------------------------------------------------
+// Helper functions
+// ---------------------------------------------------------------------------
 
 /// Check if a type's last path segment matches a given name.
 pub fn type_ends_with(ty: &Type, name: &str) -> bool {
     if let Type::Path(type_path) = ty {
         if let Some(segment) = type_path.path.segments.last() {
             return segment.ident == name;
+        }
+    }
+    false
+}
+
+/// Get the last type name segment (e.g., ReviewMetadata from `crate::review::ReviewMetadata`).
+pub fn type_last_segment(ty: &Type) -> String {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            return segment.ident.to_string();
+        }
+    }
+    String::new()
+}
+
+/// Check if type is `Option<MagicTypeId>`.
+pub fn is_optional_magic_type_id(ty: &Type) -> bool {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            if segment.ident == "Option" {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                        return type_ends_with(inner, "MagicTypeId");
+                    }
+                }
+            }
         }
     }
     false
@@ -447,20 +669,33 @@ pub fn extract_value(tokens: &str, key: &str) -> String {
     String::new()
 }
 
-/// Scan a field's attrs and classify it as scalar / relation / ignored.
+/// Scan a field's attrs and classify it as scalar / relation / ignored / flattened.
 pub fn process_field(field: &syn::Field) -> ProcessedField {
     let ident = field.ident.clone().expect("named field");
     let ty = field.ty.clone();
     let mut is_ignored = false;
     let mut relation: Option<RelationKind> = None;
     let mut passthrough = Vec::new();
+    let mut flatten: Option<FlattenSpec> = None;
 
+    // First, check for #[flatten(...)] attribute (used independently of sea_orm)
+    for attr in &field.attrs {
+        if attr.path().is_ident("flatten") {
+            let flatten_spec: FlattenSpec = attr.parse_args().unwrap_or_else(|e| {
+                panic!("Failed to parse #[flatten(...)] attribute: {e}");
+            });
+            flatten = Some(flatten_spec);
+            break; // Only one flatten per field
+        }
+    }
+
+    // Then process #[sea_orm(...)] attributes
     for attr in &field.attrs {
         if !attr.path().is_ident("sea_orm") {
             continue;
         }
 
-        let inner_ts = match attr.parse_args::<proc_macro2::TokenStream>() {
+        let inner_ts = match attr.parse_args::<TokenStream2>() {
             Ok(ts) => ts,
             Err(_) => continue,
         };
@@ -505,14 +740,13 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
         is_ignored,
         passthrough,
         relation,
+        flatten,
     }
 }
 
 /// Convert an entity alias like `"GoldenCommentEntity"` to a reference
 /// to the re-exported Entity type via `super::`.
-/// The user must ensure the entity type is in scope (re-exported at the
-/// module level by the child type's own EntityModel derive).
-pub fn entity_path_from_alias(alias: &str) -> proc_macro2::TokenStream {
+pub fn entity_path_from_alias(alias: &str) -> TokenStream2 {
     let alias_ident = Ident::new(alias, proc_macro2::Span::call_site());
     quote! { super::#alias_ident }
 }
@@ -535,7 +769,7 @@ pub fn snake_to_pascal(s: &str) -> String {
 }
 
 /// Derive the SeaORM column type for a scalar domain field.
-pub fn scalar_column_type(ty: &Type) -> proc_macro2::TokenStream {
+pub fn scalar_column_type(ty: &Type) -> TokenStream2 {
     if type_ends_with(ty, "MagicTypeId") {
         return quote! { String };
     }

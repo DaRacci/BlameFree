@@ -6,10 +6,16 @@ pub mod capabilities;
 pub mod cost;
 pub mod errors;
 pub mod finding;
+pub mod flatten;
 pub mod review;
 pub mod severity;
 pub mod vcs;
 pub mod wrappers;
+
+/// Allow `::crb_types::*` absolute paths to resolve to the current crate,
+/// matching what the `crb_macros::FlattenedStruct` derive macro generates.
+#[cfg(feature = "seaorm-storage")]
+extern crate self as crb_types;
 
 use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};

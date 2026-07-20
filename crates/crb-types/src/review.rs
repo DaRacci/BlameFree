@@ -7,6 +7,7 @@ use strum::{Display, IntoStaticStr};
 
 use crate::agent::AgentSession;
 use crate::cost::AnalyticsSnapshot;
+use crate::flatten::FlattenedStruct;
 use crate::vcs::pr::PrMeta;
 use crate::vcs::repository::{GitRepositoryMeta, RemoteRepositoryMeta};
 
@@ -16,7 +17,7 @@ use crate::vcs::repository::{GitRepositoryMeta, RemoteRepositoryMeta};
     derive(crb_macros::EntityModel),
     sea_orm(table_name = "reviews")
 )]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Review {
     /// The global unique identifier for the review.
     pub id: MagicTypeId,
@@ -47,19 +48,68 @@ pub struct Review {
     /// Additional metadata about the review.
     ///
     /// A domain object — flattened to nullable columns in the DB by the
-    /// SqliteStore (Phase 2).
-    #[cfg_attr(feature = "seaorm-storage", sea_orm(ignore))]
+    /// EntityModel `#[flatten]` attribute.
+    #[cfg_attr(
+        feature = "seaorm-storage",
+        flatten(
+            tag = "review_type",
+            variants = {
+                pull_request => {
+                    repository_owner: String,
+                    repository_name: String,
+                    repository_platform: String,
+                    pr_title: String,
+                    pr_url: String,
+                    pr_number: i32,
+                },
+                commit => { commit_hash: String },
+                plain => {}
+            }
+        )
+    )]
     pub metadata: ReviewMetadata,
 }
 
 /// Discriminated union of review context types.
+#[cfg_attr(feature = "seaorm-storage", derive(crb_macros::FlattenedEnum))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ReviewMetadata {
+    #[cfg_attr(
+        feature = "seaorm-storage",
+        variant(
+            tag = "pull_request",
+            fields(
+                repository_owner: String,
+                repository_name: String,
+                repository_platform: String,
+                pr_title: String,
+                pr_url: String,
+                pr_number: i32,
+            )
+        )
+    )]
     PullRequest(PullRequestReviewMetadata),
+
+    #[cfg_attr(
+        feature = "seaorm-storage",
+        variant(
+            tag = "commit",
+            fields(
+                commit_hash: String,
+            )
+        )
+    )]
     Commit(CommitReviewMetadata),
 
     /// No metadata is available for this review.
+    #[cfg_attr(feature = "seaorm-storage", variant(tag = "plain"))]
     Plain,
+}
+
+impl Default for ReviewMetadata {
+    fn default() -> Self {
+        ReviewMetadata::Plain
+    }
 }
 
 /// The lifecycle status of a review.
@@ -73,10 +123,21 @@ pub enum ReviewMetadata {
     sea_orm(rs_type = "String", db_type = "Text")
 )]
 #[derive(
-    Display, IntoStaticStr, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord,
+    Default,
+    Display,
+    IntoStaticStr,
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
 )]
 pub enum ReviewStatus {
     #[cfg_attr(feature = "seaorm-storage", sea_orm(string_value = "Pending"))]
+    #[default]
     Pending,
     #[cfg_attr(feature = "seaorm-storage", sea_orm(string_value = "Running"))]
     Running,
@@ -90,16 +151,19 @@ pub enum ReviewStatus {
 
 /// Metadata for a pull request review.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "seaorm-storage", derive(crb_macros::FlattenedStruct))]
 pub struct PullRequestReviewMetadata {
     /// The repository of the PR.
     pub repository: RemoteRepositoryMeta,
 
     /// Metadata about the PR.
+    #[cfg_attr(feature = "seaorm-storage", flattened(prefix = "pr"))]
     pub meta: PrMeta,
 }
 
 /// Metadata for a commit review.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "seaorm-storage", derive(crb_macros::FlattenedStruct))]
 pub struct CommitReviewMetadata {
     /// The repository of the commit.
     pub repository: GitRepositoryMeta,
