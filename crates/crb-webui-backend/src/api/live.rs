@@ -11,6 +11,7 @@ use axum::response::sse::KeepAlive;
 use axum::response::sse::{Event, Sse};
 use crb_webui_shared::routes::API_RUNS_ID_LIVE;
 use mti::prelude::MagicTypeId;
+use riv_stor::traits::Store;
 use std::convert::Infallible;
 use std::time::Duration;
 use tokio_stream::StreamExt;
@@ -24,7 +25,7 @@ const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(15);
 /// Get an SSE stream of live agent outputs.
 #[instrument(skip(state), fields(run_id = %id), name = API_RUNS_ID_LIVE)]
 pub async fn live_stream(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     AxumPath(id): AxumPath<MagicTypeId>,
 ) -> impl IntoResponse {
     let tx = {

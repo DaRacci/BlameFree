@@ -1,7 +1,7 @@
 use rig_core::agent::{Agent, PromptResponse};
 use rig_core::client::CompletionClient;
 use rig_core::completion::{Prompt, Usage};
-use rig_core::providers::openai::{Client, responses_api::ResponsesCompletionModel};
+use rig_core::providers::openrouter::{Client, CompletionModel};
 
 use crb_types::benchmark::judge::JudgeVerdict;
 use crb_types::benchmark::metrics::Metrics;
@@ -10,7 +10,7 @@ use crb_types::benchmark::metrics::Metrics;
 ///
 /// This prompt instructs the judge to compare a golden (expected) comment
 /// against a candidate finding from an agent and return a structured verdict.
-pub const JUDGE_PROMPT: &str = "\
+const JUDGE_PROMPT: &str = "\
 You are evaluating AI code review tools.
 Determine if the candidate issue matches the golden (expected) comment.
 
@@ -29,7 +29,8 @@ Respond with ONLY a JSON object:
 {\"reasoning\": \"brief explanation\", \"match\": true/false, \"confidence\": 0.0-1.0}";
 
 /// Build a judge agent with the Martian JUDGE_PROMPT as its preamble.
-pub fn build_judge(client: &Client, model: &str) -> Agent<ResponsesCompletionModel> {
+#[deprecated]
+pub fn build_judge(client: &Client, model: &str) -> Agent<CompletionModel> {
     client
         .agent(model)
         .preamble(JUDGE_PROMPT)
@@ -38,6 +39,7 @@ pub fn build_judge(client: &Client, model: &str) -> Agent<ResponsesCompletionMod
 }
 
 /// Format the judge prompt by substituting the golden comment and candidate finding.
+#[deprecated]
 pub fn format_judge_prompt(golden_comment: &str, candidate: &str) -> String {
     JUDGE_PROMPT
         .replace("{golden_comment}", golden_comment)
@@ -51,8 +53,9 @@ pub fn format_judge_prompt(golden_comment: &str, candidate: &str) -> String {
 ///
 /// Returns an error if the judge agent call fails or the response cannot
 /// be parsed as a [`JudgeVerdict`].
+#[deprecated]
 pub async fn run_judge(
-    judge: &Agent<ResponsesCompletionModel>,
+    judge: &Agent<CompletionModel>,
     golden_comment: &str,
     candidate: &str,
 ) -> Result<(JudgeVerdict, Usage), anyhow::Error> {
@@ -169,23 +172,15 @@ mod tests {
     use crate::judge::JUDGE_PROMPT;
     use crate::judge::{compute_metrics, format_judge_prompt, jaccard_match};
     use crb_types::benchmark::judge::JudgeVerdict;
-    use crb_types::benchmark::metrics::Metrics;
+    use crb_types::benchmark::metrics::MetricsProvider;
 
     const THRESHOLD: f64 = 0.12;
 
     #[test]
     fn test_perfect_match() {
         let verdicts = vec![
-            JudgeVerdict {
-                reasoning: "a".into(),
-                match_: true,
-                confidence: 1.0,
-            },
-            JudgeVerdict {
-                reasoning: "b".into(),
-                match_: true,
-                confidence: 1.0,
-            },
+            JudgeVerdict::new(1, "a".into(), true, 1.0),
+            JudgeVerdict::new(2, "b".into(), true, 1.0),
         ];
         let m = compute_metrics(&verdicts, 2);
         assert_eq!(m.true_positives, 2);
@@ -198,11 +193,7 @@ mod tests {
 
     #[test]
     fn test_no_match() {
-        let verdicts = vec![JudgeVerdict {
-            reasoning: "a".into(),
-            match_: false,
-            confidence: 0.0,
-        }];
+        let verdicts = vec![JudgeVerdict::new(1, "a".into(), false, 0.0)];
         let m = compute_metrics(&verdicts, 1);
         assert_eq!(m.true_positives, 0);
         assert_eq!(m.false_positives, 1);
@@ -215,16 +206,8 @@ mod tests {
     #[test]
     fn test_partial_match() {
         let verdicts = vec![
-            JudgeVerdict {
-                reasoning: "a".into(),
-                match_: true,
-                confidence: 1.0,
-            },
-            JudgeVerdict {
-                reasoning: "b".into(),
-                match_: false,
-                confidence: 0.0,
-            },
+            JudgeVerdict::new(1, "a".into(), true, 1.0),
+            JudgeVerdict::new(2, "b".into(), false, 0.0),
         ];
         let m = compute_metrics(&verdicts, 2);
         assert_eq!(m.true_positives, 1);

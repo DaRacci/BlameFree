@@ -670,7 +670,7 @@ mod tests {
             if std::fs::create_dir_all(&worktrees_path).is_ok()
                 && std::fs::write(worktrees_path.join(".git"), "gitdir: /dummy").is_ok()
             {
-                let result = run_clean(&dir.path().to_path_buf(), false, false, true);
+                let result = run_clean(&dir.path().to_path_buf(), false, true);
                 assert!(result.is_ok());
                 assert!(dir.path().join("worktrees").exists());
             }
@@ -681,7 +681,7 @@ mod tests {
     fn test_run_clean_non_existent_dir() {
         if let Ok(dir) = tempfile::TempDir::new() {
             let nonexistent = dir.path().join("nonexistent");
-            let result = run_clean(&nonexistent, false, false, false);
+            let result = run_clean(&nonexistent, false, false);
             assert!(result.is_ok());
         }
     }

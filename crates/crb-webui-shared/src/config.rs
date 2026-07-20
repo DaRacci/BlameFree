@@ -26,14 +26,17 @@ impl AgentInfo {
 pub struct AppConfig {
     /// Available model identifiers.
     #[serde(default)]
+    #[deprecated]
     pub models: Vec<String>,
 
     /// Available dataset identifiers.
     #[serde(default)]
+    #[deprecated]
     pub datasets: Vec<String>,
 
     /// Available reviewer roles/agents.
     #[serde(default)]
+    #[deprecated]
     pub agents: Vec<AgentInfo>,
 
     /// Whether OAuth authentication is configured server-side.

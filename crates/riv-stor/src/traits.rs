@@ -21,7 +21,7 @@ pub trait Storable: Sized + Serialize + DeserializeOwned + Send + Sync + 'static
 
 /// Generic storage interface
 #[allow(async_fn_in_trait)]
-pub trait Store: Send + Sync {
+pub trait Store: Send + Sync + Clone {
     /// Persist an item.
     ///
     /// Inserts if new, updates if existing (upsert).

@@ -22,7 +22,6 @@ use crb_types::capabilities::ReasoningEffort;
 use crb_types::cost::AnalyticsSnapshot;
 use crb_types::review::{Review, ReviewMetadata, ReviewStatus};
 use crb_types::vcs::pr::PrMeta;
-use crb_types::wrappers::Model;
 use crb_webui_shared::config::AgentInfo;
 use crb_webui_shared::review::AgentLogResponse;
 use crb_webui_shared::review::LogsListResponse;
@@ -44,34 +43,8 @@ pub struct RunDetailResponse {
     pub results: Vec<PrResult>,
     pub aggregate: Metrics,
     #[serde(default)]
+    #[deprecated = "Call get config on its own"]
     pub config: Option<RunConfig>,
-}
-
-/// Iterate over `.json` files in a directory, yielding (file_path, file_name) pairs.
-/// Skips files whose name starts with `_` and the summary file.
-#[deprecated = "This should be migrated to harness crate"]
-pub fn iter_json_files(dir: &Path) -> impl Iterator<Item = (PathBuf, String)> {
-    let iter: Box<dyn Iterator<Item = _>> = if let Ok(entries) = fs::read_dir(dir) {
-        Box::new(entries.flatten().filter_map(|entry| {
-            let path = entry.path();
-            if path.extension().map_or(true, |e| e != "json") {
-                return None;
-            }
-            let fname = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            if fname.starts_with('_') || fname == paths::SUMMARY_FILE {
-                return None;
-            }
-            Some((path, fname))
-        }))
-    } else {
-        Box::new(std::iter::empty())
-    };
-
-    iter
 }
 
 /// Configuration for starting a new benchmark run.
@@ -122,7 +95,7 @@ impl From<&BenchmarkConfig> for RunConfig {
 
 /// List all benchmark runs, including active and completed runs.
 #[instrument(skip(state), name = API_RUNS_ID_DETAILS_KEY)]
-pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn list_runs(State(state): State<AppState<impl Store>>) -> impl IntoResponse {
     let store = &state.store;
     let mut runs: Vec<Review> = match store.list::<Review>(&()).await {
         Ok(r) => r,
@@ -158,186 +131,12 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
     Json(runs).into_response()
 }
 
-/// Scan a run directory and compute summary metrics.
-fn scan_run_dir(path: &Path, name: &str) -> Result<Review, String> {
-    let entries = fs::read_dir(path).map_err(|e| e.to_string())?;
-    let mut results = Vec::new();
-    let mut duration_secs = 0.0f64;
-    let mut has_summary = false;
-
-    for entry in entries.flatten() {
-        let file_path = entry.path();
-        if file_path.extension().map_or(true, |e| e != "json") {
-            continue;
-        }
-        let file_name = file_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-
-        // TODO: HOLY FUCK CLEAN THIS SHIT UP
-        if file_name == paths::SUMMARY_FILE {
-            if let Ok(content) = fs::read_to_string(&file_path) {
-                if let Ok(summary) =
-                    serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
-                {
-                    has_summary = true;
-                    if let Some(metrics) = summary.get("aggregate_metrics") {
-                        if let Some(_) = metrics.as_object() {
-                            duration_secs = summary
-                                .get("duration_secs")
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(0.0);
-
-                            return Ok(Review {
-                                id: name.to_string().create_type_id::<V7>(),
-                                agent_sessions: HashMap::new(),
-                                analytics: None,
-                                duration: Some(Duration::from_secs_f64(duration_secs)),
-                                status: ReviewStatus::Completed,
-                                metadata: ReviewMetadata::Plain,
-                            });
-                        }
-                    }
-                }
-            }
-            continue;
-        }
-
-        if let Ok(content) = fs::read_to_string(&file_path) {
-            if let Ok(pr_result) = serde_json::from_str::<PrResult>(&content) {
-                results.push(pr_result);
-            }
-        }
-    }
-
-    if results.is_empty() {
-        return Err("no results found".to_string());
-    }
-
-    // Fallback: compute duration from file timestamps if not found in summary
-    if duration_secs == 0.0 && !has_summary {
-        duration_secs = compute_duration_from_dir(path);
-    }
-
-    Ok(Review {
-        id: name.to_string().create_type_id::<V7>(),
-        agent_sessions: HashMap::new(),
-        analytics: None,
-        duration: Some(Duration::from_secs_f64(duration_secs)),
-        status: ReviewStatus::Completed,
-        metadata: ReviewMetadata::Plain,
-    })
-}
-
-fn get_file_modified(path: &Path) -> String {
-    if let Ok(metadata) = fs::metadata(path) {
-        if let Ok(modified) = metadata.modified() {
-            if let Ok(duration) = modified.duration_since(time::UNIX_EPOCH) {
-                let secs = duration.as_secs();
-                let naive = chrono::DateTime::from_timestamp(secs as i64, 0)
-                    .map(|dt| dt.to_rfc3339())
-                    .unwrap_or_else(|| "unknown".to_string());
-                return naive;
-            }
-        }
-    }
-    "unknown".to_string()
-}
-
-/// Build a Review for a run still in memory (not yet written to disk).
-fn format_running_response(id: &str, active_run: &ActiveRun) -> impl IntoResponse {
-    let review = Review {
-        id: id.to_string().create_type_id::<V7>(),
-        agent_sessions: HashMap::new(),
-        analytics: None,
-        duration: None,
-        status: ReviewStatus::Running,
-        metadata: ReviewMetadata::Plain,
-    };
-    Json(review).into_response()
-}
-
-/// Read `_summary.json` from a run directory, if it exists.
-fn read_summary_from_dir(run_path: &Path) -> Option<(String, f64, f64, usize)> {
-    let summary_path = run_path.join(paths::SUMMARY_FILE);
-    let content = fs::read_to_string(&summary_path).ok()?;
-    let summary: HashMap<String, serde_json::Value> = serde_json::from_str(&content).ok()?;
-    Some((
-        summary
-            .get("model")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string(),
-        summary
-            .get("duration_secs")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0),
-        summary
-            .get("total_cost_usd")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0),
-        summary
-            .get("total_tokens")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize,
-    ))
-}
-
-/// Read all PR result files from a run directory.
-fn read_pr_results_from_dir(run_path: &Path, cache_dir: &Option<PathBuf>) -> Vec<PrResult> {
-    let mut results = Vec::new();
-    let entries = match fs::read_dir(run_path) {
-        Ok(e) => e,
-        Err(_) => return results,
-    };
-
-    for entry in entries.flatten() {
-        let file_path = entry.path();
-        if file_path.extension().map_or(true, |e| e != "json") {
-            continue;
-        }
-        let file_name = file_path
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-
-        // Skip metadata files (anything starting with _)
-        if file_name.starts_with('_') {
-            continue;
-        }
-
-        let content = match fs::read_to_string(&file_path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        if let Ok(pr_result) = serde_json::from_str::<PrResult>(&content) {
-            results.push(pr_result);
-        }
-    }
-
-    results
-}
-
-/// Compute aggregate metrics from PR results.
-fn compute_aggregate_metrics(
-    _results: &[PrResult],
-    _total_cost: f64,
-    duration_secs: f64,
-) -> Metrics {
-    Metrics {
-        true_positives: 0,
-        false_positives: 0,
-        false_negatives: 0,
-        duration_secs,
-    }
-}
-
 /// Get detailed run results.
-pub async fn get_run(State(state): State<AppState>, AxumPath(id): AxumPath<String>) -> Response {
+#[deprecated = "This will become part of the review endpoints."]
+pub async fn get_run(
+    State(state): State<AppState<impl Store>>,
+    AxumPath(id): AxumPath<String>,
+) -> Response {
     tracing::info!("GET /api/runs/{}", id);
 
     // Check if run is still in progress (in active_runs before store has it)
@@ -388,7 +187,7 @@ pub async fn get_run(State(state): State<AppState>, AxumPath(id): AxumPath<Strin
 
 /// Start a new benchmark run.
 pub async fn start_run(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     Json(config): Json<BenchmarkConfig>,
 ) -> impl IntoResponse {
     tracing::info!(
@@ -461,146 +260,12 @@ pub async fn start_run(
     (StatusCode::CREATED, Json(response))
 }
 
-/// Count PR entries in a dataset directory.
-fn count_prs_in_dataset(dataset_dir: &Path) -> usize {
-    if !dataset_dir.exists() {
-        return 0;
-    }
-    let mut count = 0;
-    if let Ok(entries) = fs::read_dir(dataset_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().map_or(false, |e| e == "json") {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    // Try parsing as an object with "entries" key first
-                    if let Ok(val) =
-                        serde_json::from_str::<HashMap<String, serde_json::Value>>(&content)
-                    {
-                        if let Some(entries) = val.get("entries").and_then(|v| v.as_array()) {
-                            count += entries.len();
-                            continue;
-                        }
-                    }
-                    // Try parsing as a raw array
-                    if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&content) {
-                        count += arr.len();
-                    }
-                }
-            }
-        }
-    }
-    count
-}
-
-/// Scan a PR cache directory for agent log files and return deduplicated agents.
-fn scan_agent_roles(pr_cache_dir: &Path) -> Vec<AgentInfo> {
-    use std::collections::BTreeSet;
-    let mut roles = BTreeSet::new();
-
-    // Try content-addressed layout first: agents/*.agent_{role}_prompt.txt
-    let agents_dir = pr_cache_dir.join("agents");
-    if agents_dir.is_dir() {
-        if let Ok(entries) = fs::read_dir(&agents_dir) {
-            for entry in entries.flatten() {
-                let fname = entry.file_name().to_string_lossy().to_string();
-                // Match: <hash>.agent_{role}_prompt.txt or <hash>.agent_{role}_response.txt
-                if let Some(rest) = fname.strip_suffix("_prompt.txt") {
-                    if let Some(role) = rest.rsplit(".agent_").next() {
-                        roles.insert(role.to_string());
-                    }
-                } else if let Some(rest) = fname.strip_suffix("_response.txt") {
-                    if let Some(role) = rest.rsplit(".agent_").next() {
-                        roles.insert(role.to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    // Also check simple layout: agent_{role}_prompt.txt / agent_{role}_response.txt
-    if let Ok(entries) = fs::read_dir(pr_cache_dir) {
-        for entry in entries.flatten() {
-            let fname = entry.file_name().to_string_lossy().to_string();
-            if let Some(rest) = fname.strip_prefix("agent_") {
-                if let Some(role) = rest
-                    .strip_suffix("_prompt.txt")
-                    .or_else(|| rest.strip_suffix("_response.txt"))
-                {
-                    roles.insert(role.to_string());
-                }
-            }
-        }
-    }
-
-    roles
-        .into_iter()
-        .map(|abbr| AgentInfo {
-            abbreviation: abbr.clone(),
-            name: abbr,
-            incompatible_with_roles: vec![],
-        })
-        .collect()
-}
-
-/// Try to read an agent log file, returning the contents lossy-decoded.
-fn read_agent_log_file(cache_dir: &Path, pr_key: &str, role: &str, suffix: &str) -> Option<String> {
-    let pr_dir = cache_dir.join(pr_key);
-
-    // Content-addressed layout: agents/*.agent_{role}_{suffix}.txt
-    let agents_dir = pr_dir.join("agents");
-    if agents_dir.is_dir() {
-        let pattern = format!(".agent_{}_{}.txt", role, suffix);
-        if let Ok(entries) = fs::read_dir(&agents_dir) {
-            for entry in entries.flatten() {
-                let fname = entry.file_name().to_string_lossy().to_string();
-                if fname.ends_with(&pattern) {
-                    if let Ok(content) = fs::read(entry.path()) {
-                        return Some(String::from_utf8_lossy(&content).to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    // Simple layout: agent_{role}_{suffix}.txt
-    let simple_path = pr_dir.join(format!("agent_{}_{}.txt", role, suffix));
-    if simple_path.is_file() {
-        if let Ok(content) = fs::read(&simple_path) {
-            return Some(String::from_utf8_lossy(&content).to_string());
-        }
-    }
-
-    None
-}
-
-/// Resolve the actual cache directory for a given run, trying multiple layouts:
-/// 1. `output_dir/<run_id>/cache/` (harness writes agents here)
-/// 2. `output_dir.parent()/cache/<run_id>/` (nested by run_id)
-/// 3. `output_dir.parent()/cache/` (flat, no run_id subdirectory)
-fn resolve_cache_dir(output_dir: &Path, _run_id: &str) -> Option<PathBuf> {
-    let base_dir = output_dir.parent().unwrap_or(Path::new("."));
-    let candidates = [
-        // New layout: output/_cache/ (flat, shared across runs)
-        output_dir.join(crb_cache::paths::CACHE_DIR_NAME),
-        // Legacy layouts (backward compat):
-        output_dir.join(_run_id).join("cache"),
-        base_dir.join("cache").join(_run_id),
-        base_dir.join("cache"),
-    ];
-    for path in &candidates {
-        if path.is_dir() {
-            return Some(path.clone());
-        }
-    }
-    None
-}
-
 /// List available log files for a run
 ///
 /// Merges PRs from the output directory (canonical source) with cache entries.
 /// All PRs with output files are shown; cache entries add agent roles where available.
 pub async fn list_logs(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     AxumPath(id): AxumPath<String>,
 ) -> impl IntoResponse {
     tracing::info!("GET /api/runs/{}/logs", id);
@@ -793,7 +458,7 @@ fn resolve_pr_title(output_dir: &Path, run_id: &str, pr_key: &str) -> String {
 /// Get specific agent log
 #[instrument(skip(state), name = API_RUNS_ID_LOGS_KEY_ROLE)]
 pub async fn get_agent_log(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     AxumPath((id, pr_key, role)): AxumPath<(String, String, String)>,
 ) -> impl IntoResponse {
     let cache_dir = match resolve_cache_dir(&state.output_dir, &id) {
@@ -847,7 +512,7 @@ pub async fn get_agent_log(
 ///
 /// Returns the PR title and which agents have cached log files.
 pub async fn get_pr_agents(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     AxumPath((id, pr_key)): AxumPath<(String, String)>,
 ) -> impl IntoResponse {
     tracing::info!("GET /api/runs/{}/prs/{}", id, pr_key);
@@ -943,7 +608,7 @@ pub async fn get_pr_agents(
 /// Get full details for a specific PR from its result file
 #[instrument(skip(state), name = API_RUNS_ID_DETAILS_KEY)]
 pub async fn get_pr_detail(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     AxumPath((id, pr_key)): AxumPath<(String, String)>,
 ) -> impl IntoResponse {
     let run_path = state.output_dir.join(&id);

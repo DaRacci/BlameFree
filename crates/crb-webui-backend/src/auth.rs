@@ -20,6 +20,7 @@ use oauth2::{
 use rand::Rng;
 use rand::distributions::Alphanumeric;
 use reqwest::Client as HttpClient;
+use riv_stor::traits::Store;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumDiscriminants, IntoStaticStr, VariantArray};
 use tokio::sync::RwLock;
@@ -199,7 +200,7 @@ fn err_tuple(msg: impl Into<String>) -> (StatusCode, String) {
 
 /// Redirect the user to the OAuth provider.
 pub async fn login(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     Query(query): Query<LoginQuery>,
 ) -> Result<Redirect, (StatusCode, String)> {
     let oauth = state
@@ -220,7 +221,7 @@ pub async fn login(
 
 /// Exchange authorization code for user info and create session.
 pub async fn callback(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     Query(query): Query<CallbackQuery>,
 ) -> Result<(HeaderMap, StatusCode), (StatusCode, String)> {
     let oauth = state
@@ -267,7 +268,10 @@ pub async fn callback(
 }
 
 /// Clear the session.
-pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+pub async fn logout(
+    State(state): State<AppState<impl Store>>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if let Some(token) = extract_session_cookie(&headers) {
         state.session_store.write().await.remove(&token);
     }
@@ -283,7 +287,7 @@ pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> impl I
 
 /// Return authenticated user info, or 401 if not logged in.
 pub async fn me(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     headers: HeaderMap,
 ) -> Result<Json<AuthUser>, StatusCode> {
     let session_token = extract_session_cookie(&headers).ok_or(StatusCode::UNAUTHORIZED)?;

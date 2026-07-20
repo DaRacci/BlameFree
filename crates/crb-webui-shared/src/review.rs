@@ -10,6 +10,7 @@ pub use crb_types::review::ReviewStatus;
 
 /// Run config returned in the run detail response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated]
 pub struct RunConfig {
     /// Model used for the run.
     pub model: String,
@@ -23,6 +24,7 @@ pub struct RunConfig {
 
 /// Response from GET /api/runs/:id/logs
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated]
 pub struct LogsListResponse {
     /// Run ID for this log response.
     pub run_id: String,
@@ -33,6 +35,7 @@ pub struct LogsListResponse {
 
 /// A single PR's available log entries
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated]
 pub struct PrLogsEntry {
     /// PR Details.
     pub meta: PrMeta,
@@ -251,5 +254,3 @@ impl
         }
     }
 }
-
-

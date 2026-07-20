@@ -17,7 +17,6 @@ use crb_webui_shared::routes;
 use mti::prelude::MagicTypeId;
 use reqwest::header;
 use riv_stor::traits::Store;
-use riv_stor::store::SqliteStore;
 use rustls::pki_types::UnixTime;
 use strum::VariantArray;
 use tokio::sync::{RwLock, broadcast};
@@ -36,7 +35,7 @@ async fn list_reasoning_efforts() -> Json<Vec<ReasoningEffort>> {
 
 /// Shared application state.
 #[derive(Clone)]
-pub struct AppState {
+pub struct AppState<S: Store + Send + Sync + Clone> {
     /// Directory containing per-PR JSON result files.
     pub output_dir: PathBuf,
 
@@ -55,8 +54,8 @@ pub struct AppState {
     /// Path to the server log file.
     pub log_file: PathBuf,
 
-    /// Store for persistence of reviews, pr-results, and benchmarks.
-    pub store: Arc<dyn Store + Send + Sync>,
+    /// Store for data persistence.
+    pub store: Arc<S>,
 }
 
 /// State for an actively running benchmark.
@@ -72,14 +71,14 @@ pub struct ActiveRun {
     pub tx: broadcast::Sender<RunEvent>,
 }
 
-impl AppState {
+impl<S: Store + Send + Sync + Clone> AppState<S> {
     pub fn new(
         output_dir: PathBuf,
         config: WebUiConfig,
         octocrab: octocrab::Octocrab,
         session_store: SessionStore,
         log_file: PathBuf,
-        store: Arc<dyn Store + Send + Sync>,
+        store: Arc<S>,
     ) -> Self {
         Self {
             output_dir,
@@ -93,7 +92,7 @@ impl AppState {
     }
 }
 
-pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
+pub async fn start(state: AppState<impl Store>, port: u16) -> anyhow::Result<()> {
     let app = Router::new()
         .route(routes::API_RUNS, get(runs::list_runs).post(runs::start_run))
         .route(routes::API_RUNS_ID, get(runs::get_run))
@@ -133,7 +132,7 @@ pub async fn start(state: AppState, port: u16) -> anyhow::Result<()> {
 }
 
 /// Serve static files or fall back to index.html for SPA routing.
-async fn static_or_index(State(_): State<AppState>, uri: Uri) -> Response {
+async fn static_or_index(State(_): State<AppState<impl Store>>, uri: Uri) -> Response {
     const INDEX_HTML: &str = "index.html";
 
     let path = uri.path().trim_start_matches('/');

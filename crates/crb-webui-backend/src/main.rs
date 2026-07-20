@@ -35,13 +35,6 @@ pub struct CliArgs {
     #[arg(long, env = "DATASET_DIR", default_value = "datasets")]
     pub dataset_dir: PathBuf,
 
-    /// Comma-separated list of available models.
-    #[arg(
-        long,
-        default_value = "deepseek/deepseek-v4-flash,deepseek/deepseek-v4-pro"
-    )]
-    pub models: String,
-
     /// Path to the code-review-benchmark directory (must contain offline/).
     #[arg(long, env = "BENCHMARK_DIR")]
     pub benchmark_dir: Option<PathBuf>,
@@ -132,7 +125,6 @@ async fn main() -> Result<()> {
         );
     }
 
-    webui_config.server.models = args.models;
     webui_config.server.dataset_dir = args.dataset_dir;
     webui_config.server.benchmark_dir = args.benchmark_dir;
 
@@ -159,13 +151,13 @@ async fn main() -> Result<()> {
         .unwrap_or(default_store_path)
         .to_string_lossy()
         .to_string();
-    let store: Arc<dyn Store + Send + Sync> = Arc::new(
+    let store = Arc::new(
         SqliteStore::new(&store_path)
             .await
             .map_err(|e| anyhow!("DB init: {e}"))?,
     );
 
-    let app_state = server::AppState::new(
+    let app_state = server::AppState::<SqliteStore>::new(
         args.output_dir,
         webui_config,
         octocrab,

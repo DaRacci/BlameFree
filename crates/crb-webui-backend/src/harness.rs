@@ -45,7 +45,7 @@ pub async fn run_harness(
     webui_tx: broadcast::Sender<RunEvent>,
     active_runs: Arc<RwLock<HashMap<MagicTypeId, ActiveRun>>>,
     dataset_dir: &Path,
-    store: Arc<dyn Store + Send + Sync>,
+    store: Arc<impl Store>,
 ) -> anyhow::Result<()> {
     let output_subdir = output_dir.join(run_id);
     fs::create_dir_all(&output_subdir)?;
@@ -191,36 +191,6 @@ pub async fn run_harness(
 
     let _ = write_report(&results, &output_subdir);
 
-    // let mut agg = Metrics::default();
-    // let mut total_cost = 0.0f64;
-    // let mut total_tokens: u64 = 0;
-    // for r in &results {
-    //     agg += r.metrics.clone();
-    //     #[allow(deprecated)]
-    //     let cost_snapshot = &r.cost;
-    //     total_cost += cost_snapshot.total_cost();
-    //     let (tin, tout) = cost_snapshot.total_tokens();
-    //     total_tokens += tin + tout;
-    // }
-
-    let summary = serde_json::json!({
-        "run_id": run_id,
-        "model": config.model,
-        "total_prs": results.len(),
-        "duration_secs": start.elapsed().as_secs_f64(),
-        "aggregate_metrics": {
-            "avg_precision": agg.precision(),
-            "avg_recall": agg.recall(),
-            "avg_f1": agg.f1(),
-            "total_true_positives": agg.true_positives,
-            "total_false_positives": agg.false_positives,
-            "total_false_negatives": agg.false_negatives,
-        },
-        "total_tokens": total_tokens,
-        "total_cost_usd": total_cost,
-    });
-
-    // Save overall Review to store instead of writing _summary.json
     let overall_review = Review {
         id: run_id.to_string().create_type_id::<V7>(),
         agent_sessions: HashMap::new(),

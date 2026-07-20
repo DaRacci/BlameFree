@@ -6,6 +6,7 @@ use std::path::Path;
 use axum::Json;
 use axum::extract::{Path as AxumPath, State};
 use crb_webui_shared::routes::{API_CONFIG, API_CONFIG_DATASETS, API_DATASETS_ID_PRS};
+use riv_stor::traits::Store;
 use tracing::{error, instrument, warn};
 
 use crate::server::AppState;
@@ -16,44 +17,18 @@ use crb_webui_shared::config::PrEntry;
 
 /// List available models, datasets, and roles.
 #[instrument(skip_all, name = API_CONFIG)]
-pub async fn get_config(State(state): State<AppState>) -> Json<AppConfig> {
-    let models: Vec<String> = state
-        .config
-        .server
-        .models
-        .split(',')
-        .map(|m| m.trim().to_string())
-        .filter(|m| !m.is_empty())
-        .collect();
-
-    let datasets: Vec<String> = scan_datasets(&state.config.server.dataset_dir)
-        .into_iter()
-        .map(|d| d.id)
-        .collect();
-
-    let lib = crb_agents::prompts::PromptLibrary::get_instance();
-    let mut agents: Vec<AgentInfo> = lib
-        .agents()
-        .iter()
-        .map(|agent| AgentInfo {
-            abbreviation: agent.role_abbreviation.clone(),
-            name: agent.role_abbreviation.clone(),
-            incompatible_with_roles: agent.incompatible_with_roles.clone(),
-        })
-        .collect();
-    agents.sort_by(|a, b| a.abbreviation.cmp(&b.abbreviation));
-
+pub async fn get_config(State(state): State<AppState<impl Store>>) -> Json<AppConfig> {
     Json(AppConfig {
-        models,
-        datasets,
-        agents,
+        models: vec![],
+        datasets: vec![],
+        agents: vec![],
         auth_enabled: state.config.oauth.is_some(),
     })
 }
 
 /// List available datasets with PR counts.
 #[instrument(skip_all, name = API_CONFIG_DATASETS)]
-pub async fn list_datasets(State(state): State<AppState>) -> Json<Vec<DatasetInfo>> {
+pub async fn list_datasets(State(state): State<AppState<impl Store>>) -> Json<Vec<DatasetInfo>> {
     Json(scan_datasets(&state.config.server.dataset_dir))
 }
 
@@ -135,7 +110,7 @@ fn count_prs_in_dir(dir: &Path) -> usize {
 /// List all PRs in a dataset.
 #[instrument(skip_all, name = API_DATASETS_ID_PRS, fields(dataset_id = %id))]
 pub async fn list_dataset_prs(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     AxumPath(id): AxumPath<String>,
 ) -> Json<Vec<PrEntry>> {
     const EMPTY_VEC: Vec<PrEntry> = Vec::new();

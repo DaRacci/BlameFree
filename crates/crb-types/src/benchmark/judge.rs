@@ -1,3 +1,4 @@
+use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "seaorm-storage")]
@@ -43,6 +44,18 @@ pub struct JudgeVerdict {
     /// Confidence level for this judgment
     #[serde(default)]
     pub confidence: f64,
+}
+
+impl JudgeVerdict {
+    pub fn new(finding_id: i32, reasoning: String, match_: bool, confidence: f64) -> Self {
+        Self {
+            id: None,
+            finding_id,
+            reasoning,
+            match_,
+            confidence,
+        }
+    }
 }
 
 /// Contains a list of the findings and verdicts

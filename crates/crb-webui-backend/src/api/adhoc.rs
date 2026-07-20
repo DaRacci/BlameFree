@@ -17,13 +17,14 @@ use crb_agents::AgentEntry;
 use crb_agents::prompts;
 use crb_cache::filesystem::FilesystemBackend;
 use crb_cache::traits::CacheBackend;
+use crb_harness::eval::EvalConfig;
 use crb_reporting::cost::AnalyticsTracker;
 use crb_shared::DEFAULT_MODEL;
 use crb_shared::diff::Diff;
 use crb_shared::sanitize_filename;
 use crb_shared::url::parse_github_url;
 use crb_types::benchmark::judge::JudgeVerdict;
-use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
+use crb_types::benchmark::metrics::Metrics;
 use crb_types::benchmark::result::PrResult;
 use crb_types::cost::AnalyticsSnapshot;
 use crb_types::review::{PullRequestReviewMetadata, Review, ReviewMetadata, ReviewStatus};
@@ -69,7 +70,7 @@ fn default_adhoc_roles() -> Vec<String> {
 /// Submit a GitHub PR URL for ad-hoc review. Fetches the PR diff + metadata
 /// from the GitHub API, runs the harness agents, and stores results.
 pub async fn start_adhoc_review(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     Json(req): Json<AdhocReviewRequest>,
 ) -> impl IntoResponse {
     info!(
@@ -145,7 +146,7 @@ pub async fn start_adhoc_review(
 }
 
 /// List all previous ad-hoc review runs.
-pub async fn list_adhoc_runs(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn list_adhoc_runs(State(state): State<AppState<impl Store>>) -> impl IntoResponse {
     let store = &state.store;
     let mut runs: Vec<Review> = match store.list::<Review>(&()).await {
         Ok(r) => r,
@@ -159,7 +160,7 @@ pub async fn list_adhoc_runs(State(state): State<AppState>) -> impl IntoResponse
 
 /// Get details for a specific ad-hoc review run.
 pub async fn get_adhoc_run(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     AxumPath(id): AxumPath<String>,
 ) -> impl IntoResponse {
     let store = &state.store;
@@ -248,7 +249,6 @@ pub async fn get_adhoc_run(
             metadata: ReviewMetadata::Plain,
         },
         results,
-        aggregate: aggregate_metrics,
         config: Some(RunConfig {
             model,
             dataset: String::new(),
@@ -268,7 +268,7 @@ pub async fn get_adhoc_run(
 
 /// List open PRs from a GitHub repo
 pub async fn list_repo_prs(
-    State(state): State<AppState>,
+    State(state): State<AppState<impl Store>>,
     AxumPath((owner, repo)): AxumPath<(String, String)>,
 ) -> impl IntoResponse {
     info!("GET /api/adhoc/prs/{}/{}", owner, repo);
@@ -348,7 +348,7 @@ async fn fetch_pr_diff(
 
 /// Run the actual review pipeline for an ad-hoc PR.
 async fn run_adhoc_review_inner(
-    state: &AppState,
+    state: &AppState<impl Store>,
     run_id: &str,
     pr_url: &str,
     pr_title: &str,
@@ -415,7 +415,7 @@ async fn run_adhoc_review_inner(
         }),
     };
 
-    let cfg = crb_harness::eval::EvalConfig {
+    let cfg = EvalConfig {
         review_id: format!("adhoc-{}", run_id).create_type_id::<V7>(),
         context,
         strategy: crb_harness::eval::EvalStrategy::Panel,
@@ -431,60 +431,8 @@ async fn run_adhoc_review_inner(
     };
 
     let findings = crb_harness::pipeline::evaluate(Diff::new(diff.raw.clone()), &cfg).await?;
-
-    let metrics_for_summary = Metrics::default();
-
-    let total_cost = 0.0;
-
-    fs::create_dir_all(&output_subdir)?;
-
-    let pr_result_path = output_subdir.join(format!("{}.json", pr_key));
-
-    let pr_json = serde_json::json!({
-        "id": format!("adhoc-{}", run_id),
-        "pr_title": pr_title,
-        "url": pr_url,
-        "findings_count": findings.len(),
-        "golden_count": 0,
-        "metrics": metrics_for_summary,
-        "verdicts": [],
-        "cost": null,
-        "findings": findings.iter().map(|f| serde_json::to_value(f)).collect::<Result<Vec<_>, _>>()?,
-        "agent_responses": [],
-    });
-
-    let pr_json_str = serde_json::to_string_pretty(&pr_json)?;
-    fs::write(&pr_result_path, &pr_json_str)?;
-
     let elapsed = Instant::now().elapsed();
-    //TOOD: DISGUSTING!
-    let summary = json!({
-        "model": model,
-        "judge_model": model,
-        "roles": roles,
-        "status": "completed",
-        "pr_url": pr_url,
-        "pr_title": pr_title,
-        "total_prs": 1,
-        "total_cost_usd": total_cost,
-        "duration_secs": elapsed.as_secs_f64(),
-        "aggregate_metrics": {
-            "avg_f1": metrics_for_summary.f1(),
-            "avg_precision": metrics_for_summary.precision(),
-            "avg_recall": metrics_for_summary.recall(),
-            "total_true_positives": metrics_for_summary.true_positives,
-            "total_false_positives": metrics_for_summary.false_positives,
-            "total_false_negatives": metrics_for_summary.false_negatives,
-        },
-    });
 
-    let summary_str = serde_json::to_string_pretty(&summary)?;
-    fs::write(
-        output_subdir.join(crb_harness::paths::SUMMARY_FILE),
-        &summary_str,
-    )?;
-
-    // Save results to store
     let review_id = format!("adhoc-{}", run_id).create_type_id::<V7>();
     let pr_result = PrResult {
         id: review_id.clone(),
@@ -495,11 +443,7 @@ async fn run_adhoc_review_inner(
             .map(|f| {
                 (
                     f,
-                    crb_types::benchmark::judge::JudgeVerdict {
-                        reasoning: "Pending judge evaluation".to_string(),
-                        match_: false,
-                        confidence: 0.0,
-                    },
+                    JudgeVerdict::new(0, "Pending judge evaluation".to_string(), false, 0.0),
                 )
             })
             .collect(),
@@ -520,7 +464,6 @@ async fn run_adhoc_review_inner(
         run_id = %run_id,
         pr_title = %pr_title,
         findings = findings.len(),
-        cost = total_cost,
         elapsed_secs = elapsed.as_secs_f64(),
         "Ad-hoc review completed"
     );

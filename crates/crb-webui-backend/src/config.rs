@@ -11,9 +11,12 @@
 use std::{env, fs, path::Path, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::auth::OAuthProvider;
+
+const FOLDER: &str = "riv";
+const FILENAME: &str = "config.toml";
 
 /// Top-level web UI configuration.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -36,11 +39,6 @@ pub struct ServerConfig {
 
     #[serde(default = "default_port")]
     pub port: u16,
-
-    /// Comma-separated list of available models.
-    #[serde(default)]
-    #[deprecated]
-    pub models: String,
 
     /// Directory containing datasets.
     #[serde(default)]
@@ -98,7 +96,7 @@ pub fn load_config(cli_config_path: Option<&Path>) -> WebUiConfig {
             info!("Loading config from --config flag: {}", path.display());
             return load_from_file(path).unwrap_or_default();
         }
-        warn!(
+        error!(
             "Config file specified via --config not found: {}",
             path.display()
         );
@@ -112,23 +110,22 @@ pub fn load_config(cli_config_path: Option<&Path>) -> WebUiConfig {
         }
     }
 
-    let cwd_path = Path::new("webui.toml");
+    let cwd_path = Path::new(FILENAME);
     if cwd_path.exists() {
-        info!("Loading config from ./webui.toml");
+        info!("Loading config from ./{FILENAME}");
         return load_from_file(cwd_path).unwrap_or_default();
     }
 
-    if let Ok(xdg_home) = env::var("XDG_CONFIG_HOME") {
-        let xdg_path = Path::new(&xdg_home).join("crb-webui/config.toml");
-        if xdg_path.exists() {
-            info!("Loading config from XDG config: {}", xdg_path.display());
-            return load_from_file(&xdg_path).unwrap_or_default();
-        }
-    } else if let Ok(home) = env::var("HOME") {
-        let fallback_path = Path::new(&home).join(".config/crb-webui/config.toml");
-        if fallback_path.exists() {
-            info!("Loading config from ~/.config: {}", fallback_path.display());
-            return load_from_file(&fallback_path).unwrap_or_default();
+    const ENV_OPTIONS: &[&str] = &["XDG_CONFIG_HOME", "HOME"];
+    for option in ENV_OPTIONS {
+        let Ok(env_value) = env::var(option) else {
+            continue;
+        };
+
+        let config_path = Path::new(&env_value).join(format!("{FOLDER}/{FILENAME}"));
+        if config_path.exists() {
+            info!("Loading config from {option}: {}", config_path.display());
+            return load_from_file(&config_path).unwrap_or_default();
         }
     }
 
@@ -173,7 +170,10 @@ mod tests {
             client_secret = "google-secret"
             redirect_url = "http://localhost:3000/callback"
         "#;
-        assert!(toml::from_str(toml_str).is_ok(), "valid TOML should parse");
+        assert!(
+            toml::from_str::<WebUiConfig>(toml_str).is_ok(),
+            "valid TOML should parse"
+        );
     }
 
     #[test]

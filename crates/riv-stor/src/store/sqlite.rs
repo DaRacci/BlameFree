@@ -1,6 +1,9 @@
 //! SQLite-backed storage implementation using SeaORM.
 
-use std::any::{Any, TypeId};
+use std::{
+    any::{Any, TypeId},
+    sync::Arc,
+};
 
 use crb_types::{
     agent::{AgentResponse, AgentSession, AgentSessionEntity, RoleMessage, ToolInvocation},
@@ -57,8 +60,9 @@ fn box_any<T: 'static>(value: T) -> Box<dyn Any> {
 ///
 /// Opens a SQLite database connection, enables WAL journal mode,
 /// and runs schema migrations at construction time.
+#[derive(Clone)]
 pub struct SqliteStore {
-    db: DatabaseConnection,
+    db: Arc<DatabaseConnection>,
 }
 
 impl SqliteStore {
@@ -85,7 +89,7 @@ impl SqliteStore {
             .sync(&db)
             .await
             .map_err(|e| Error::Connection(format!("failed to sync schema: {e}")))?;
-        let store = Self { db };
+        let store = Self { db: Arc::new(db) };
 
         crate::migration::run_migrations(&store.db).await?;
 
@@ -200,7 +204,7 @@ impl Store for SqliteStore {
 
         if TypeId::of::<T>() == TypeId::of::<Review>() {
             let result: DeleteResult = ReviewEntity::delete_by_id(id_str.clone())
-                .exec(&self.db)
+                .exec(&*self.db)
                 .await
                 .map_err(|e| Error::Query(format!("failed to delete review: {e}")))?;
             return Ok(result.rows_affected > 0);
@@ -214,7 +218,7 @@ impl Store for SqliteStore {
             // First delete judge_verdicts for findings of this pr_result
             let finding_ids: Vec<i32> = FindingEntity::find()
                 .filter(FindingColumn::PrResultId.eq(&id_str))
-                .all(&self.db)
+                .all(&*self.db)
                 .await
                 .map_err(|e| Error::Query(format!("failed to load findings for delete: {e}")))?
                 .into_iter()
@@ -249,7 +253,7 @@ impl Store for SqliteStore {
 
             // Then delete the pr_result
             let result: DeleteResult = PrResultEntity::delete_by_id(id_str.clone())
-                .exec(&self.db)
+                .exec(&*self.db)
                 .await
                 .map_err(|e| Error::Query(format!("failed to delete pr_result: {e}")))?;
             return Ok(result.rows_affected > 0);
@@ -258,7 +262,7 @@ impl Store for SqliteStore {
         // --- Benchmark ---
         if TypeId::of::<T>() == TypeId::of::<Benchmark>() {
             let result: DeleteResult = BenchmarkEntity::delete_by_id(id_str.clone())
-                .exec(&self.db)
+                .exec(&*self.db)
                 .await
                 .map_err(|e| Error::Query(format!("failed to delete benchmark: {e}")))?;
             return Ok(result.rows_affected > 0);
@@ -273,7 +277,7 @@ impl Store for SqliteStore {
                 .await
                 .map_err(|e| Error::Query(format!("failed to disable FKs: {e}")))?;
             let result: DeleteResult = AgentSessionEntity::delete_by_id(id_str.clone())
-                .exec(&self.db)
+                .exec(&*self.db)
                 .await
                 .map_err(|e| Error::Query(format!("failed to delete agent_session: {e}")))?;
             return Ok(result.rows_affected > 0);
@@ -288,10 +292,6 @@ impl Store for SqliteStore {
         crate::migration::run_migrations(&self.db).await
     }
 }
-
-// ---------------------------------------------------------------------------
-// Type-specific save helpers
-// ---------------------------------------------------------------------------
 
 /// Save a `Review` to the `reviews` table.
 async fn save_review(db: &DatabaseConnection, review: &Review) -> Result<(), Error> {

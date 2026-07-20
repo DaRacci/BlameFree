@@ -1,6 +1,5 @@
 //! Shared types used by both `crb-webui-backend` (server) and `crb-webui-frontend` (WASM).
 
-pub mod adhoc;
 pub mod admin;
 pub mod auth;
 pub mod config;
