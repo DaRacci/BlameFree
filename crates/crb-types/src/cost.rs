@@ -1,6 +1,9 @@
 //! Cost and analytics types for PR evaluation.
 //!
 //! Tracks token counts, cache hit rates, and computes USD cost estimates.
+//!
+//! This module also contains the SeaORM entity definitions for the
+//! `agent_session_usages` and `cache_usage_entries` tables.
 
 use std::collections::HashMap;
 
@@ -127,4 +130,76 @@ impl AnalyticsSnapshot {
                 (acc_in + usage.input_tokens, acc_out + usage.output_tokens)
             })
     }
+}
+
+// ---------------------------------------------------------------------------
+// SeaORM entity definitions for usage tracking tables
+// ---------------------------------------------------------------------------
+
+/// Token usage and call counts for a single agent session, stored in the
+/// `agent_session_usages` table.
+#[cfg_attr(
+    feature = "seaorm-storage",
+    derive(crb_macros::EntityModel),
+    sea_orm(table_name = "agent_session_usages")
+)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentSessionUsage {
+    /// FK to the [`AgentSession`] this usage belongs to.
+    ///
+    /// Maps to the `agent_session_id` column in the database.
+    #[cfg_attr(
+        feature = "seaorm-storage",
+        sea_orm(primary_key, column_name = "agent_session_id", column_type = "Text")
+    )]
+    pub id: String,
+
+    /// The total number of input tokens.
+    pub input_tokens: i32,
+
+    /// The total number of output tokens.
+    pub output_tokens: i32,
+
+    /// The total number of tokens served from cache.
+    pub cached_input_tokens: i32,
+
+    /// The total number of tokens used to create a cache entry.
+    pub cache_creation_input_tokens: i32,
+
+    /// The total number of tokens used for reasoning.
+    pub reasoning_tokens: i32,
+
+    /// The total number of tokens used for tool use prompts.
+    pub tool_use_prompt_tokens: i32,
+
+    /// The total number of calls made.
+    pub call_count: i32,
+
+    /// The total number of tool calls made.
+    pub tool_use_count: i32,
+}
+
+/// Cache usage statistics for a single agent session, stored in the
+/// `cache_usage_entries` table.
+#[cfg_attr(
+    feature = "seaorm-storage",
+    derive(crb_macros::EntityModel),
+    sea_orm(table_name = "cache_usage_entries")
+)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheUsageEntry {
+    /// FK to the [`AgentSession`] this cache entry belongs to.
+    ///
+    /// Maps to the `agent_session_id` column in the database.
+    #[cfg_attr(
+        feature = "seaorm-storage",
+        sea_orm(primary_key, column_name = "agent_session_id", column_type = "Text")
+    )]
+    pub id: String,
+
+    /// The total number of cache hits.
+    pub cache_hits: i32,
+
+    /// The total number of cache misses.
+    pub cache_misses: i32,
 }

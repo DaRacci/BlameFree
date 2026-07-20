@@ -10,7 +10,6 @@ use crb_types::{
     agent::{AgentResponse, AgentSession, RoleMessage, ToolInvocation},
     benchmark::{golden::GoldenComment, result::PrResult, standalone::Benchmark},
     review::{Review, ReviewStatus},
-    wrappers::Model,
 };
 use mti::prelude::MagicTypeId;
 use riv_stor::store::SqliteStore;
@@ -125,6 +124,7 @@ async fn test_pr_result_with_golden_comments() {
     let pr = PrResult {
         id: id.clone(),
         golden_comments: vec![gc1, gc2],
+        benchmark_id: None,
         metrics: Default::default(),
         findings_with_verdicts: Vec::new(),
         cost: Default::default(),
@@ -175,7 +175,8 @@ async fn test_agent_session_round_trip() {
     // Build a session with 2 turns, each with multiple messages
     let session = AgentSession {
         id: id.clone(),
-        model: Model("spongebob".to_string()),
+        model_name: "spongebob".to_string(),
+        review_id: None,
         turns: vec![
             vec![
                 RoleMessage::User("Hello, review this PR".to_string()),
@@ -208,7 +209,7 @@ async fn test_agent_session_round_trip() {
         .expect("session should exist");
 
     assert_eq!(loaded.id, id);
-    assert_eq!(loaded.model.0, "spongebob");
+    assert_eq!(loaded.model_name, "spongebob");
     assert_eq!(loaded.turns.len(), 2, "should have 2 turns");
 
     assert_eq!(loaded.turns[0].len(), 3, "turn 0 should have 3 messages");
@@ -263,6 +264,7 @@ async fn test_pr_result_cascade_delete() {
     let pr = PrResult {
         id: id.clone(),
         golden_comments: vec![gc],
+        benchmark_id: None,
         metrics: Default::default(),
         findings_with_verdicts: Vec::new(),
         cost: Default::default(),
@@ -287,7 +289,8 @@ async fn test_agent_session_delete() {
     let id = make_id(50);
     let session = AgentSession {
         id: id.clone(),
-        model: Model("patrick".to_string()),
+        model_name: "patrick".to_string(),
+        review_id: None,
         turns: vec![vec![RoleMessage::User("test".to_string())]],
     };
 

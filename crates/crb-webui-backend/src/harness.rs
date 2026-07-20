@@ -146,6 +146,7 @@ pub async fn run_harness(
                 let result = PrResult {
                     id: review_id,
                     golden_comments: pr_entry.comments.clone(),
+                    benchmark_id: None,
                     metrics: Metrics::default(), // FIXME: compute from judge verdicts
                     findings_with_verdicts: findings
                         .into_iter()

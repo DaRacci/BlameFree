@@ -49,6 +49,7 @@ fn make_pr(pr_title: &str, url: &str, has_cost: bool) -> PrResult {
         },
         // findings_count: 3,
         // golden_count: 2,
+        benchmark_id: None,
         metrics: Metrics {
             true_positives: 2,
             false_positives: 1,

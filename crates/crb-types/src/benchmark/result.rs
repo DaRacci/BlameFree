@@ -22,6 +22,10 @@ pub struct PrResult {
     /// The [`crate::review::Review::id`] of this PR result.
     pub id: MagicTypeId,
 
+    /// Optional FK back to the [`Benchmark`] that produced this result.
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(nullable))]
+    pub benchmark_id: Option<MagicTypeId>,
+
     /// Golden comments for this PR.
     #[cfg_attr(
         feature = "seaorm-storage",

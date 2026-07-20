@@ -252,6 +252,7 @@ pub async fn get_adhoc_run(
                 results.push(PrResult {
                     id: pr_json.id,
                     golden_comments: vec![],
+                    benchmark_id: None,
                     metrics: pr_json.metrics.clone(),
                     findings_with_verdicts: vec![],
                     cost: pr_json.cost.clone(),
@@ -515,6 +516,7 @@ async fn run_adhoc_review_inner(
     let pr_result = PrResult {
         id: review_id.clone(),
         golden_comments: Vec::new(),
+        benchmark_id: None,
         metrics: metrics_for_summary,
         findings_with_verdicts: findings
             .into_iter()

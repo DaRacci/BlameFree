@@ -1011,6 +1011,7 @@ pub async fn get_pr_detail(
             return Json(PrResult {
                 id: pr_key.as_str().create_type_id::<V7>(),
                 golden_comments: vec![],
+                benchmark_id: None,
                 metrics,
                 findings_with_verdicts: vec![],
                 cost: cost.unwrap_or_default(),

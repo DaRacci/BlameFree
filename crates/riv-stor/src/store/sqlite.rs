@@ -178,6 +178,15 @@ impl Store for SqliteStore {
                 .collect());
         }
 
+        if TypeId::of::<T>() == TypeId::of::<Benchmark>() {
+            let result = list_benchmarks(&self.db).await?;
+            let result: Vec<Box<dyn Any>> = result.into_iter().map(box_any).collect();
+            return Ok(result
+                .into_iter()
+                .filter_map(|b| b.downcast::<T>().ok().map(|b| *b))
+                .collect());
+        }
+
         Err(Error::Internal(
             format!(
                 "list not implemented for type: {}",
@@ -258,6 +267,11 @@ impl Store for SqliteStore {
 
         // --- AgentSession ---
         if TypeId::of::<T>() == TypeId::of::<AgentSession>() {
+            // TODO: Remove this PRAGMA OFF once SchemaBuilder::sync() generates
+            //       ON DELETE CASCADE on SQLite FK constraints for agent_turns.
+            self.db.execute_unprepared("PRAGMA foreign_keys = OFF;")
+                .await
+                .map_err(|e| Error::Query(format!("failed to disable FKs: {e}")))?;
             let result: DeleteResult = AgentSessionEntity::delete_by_id(id_str.clone())
                 .exec(&self.db)
                 .await
@@ -294,6 +308,7 @@ async fn save_pr_result(db: &DatabaseConnection, pr: &PrResult) -> Result<(), Er
     // Insert the pr_result row
     let pr_model = PrResultModel {
         id: pr.id.to_string(),
+        benchmark_id: pr.benchmark_id.as_ref().map(|m| m.to_string()),
     };
     upsert!(db, pr_model)?;
 
@@ -399,28 +414,24 @@ async fn save_golden_comment(db: &DatabaseConnection, gc: &GoldenComment) -> Res
 /// Save an `AgentSession` with its turns and messages.
 async fn save_agent_session(db: &DatabaseConnection, session: &AgentSession) -> Result<(), Error> {
     // 1. Insert the agent_sessions row
-    //    Temporarily disable FK constraints since AgentSession's domain type doesn't carry a review_id.
-    //    sqlx-sqlite enables FK enforcement by default (unlike raw SQLite), so we disable it for this insert.
-    db.execute_unprepared("PRAGMA foreign_keys = OFF;")
-        .await
-        .map_err(|e| Error::Query(format!("failed to disable FKs: {e}")))?;
-
     let session_id = session.id.to_string();
-    let model_name = session.model.0.clone();
+    let model_name = session.model_name.clone();
+    let review_id = session
+        .review_id
+        .as_ref()
+        .map(|r| format!("'{}'", r.to_string().replace('\'', "''")))
+        .unwrap_or_else(|| "NULL".to_string());
 
     db.execute_unprepared(&format!(
         "INSERT INTO agent_sessions (id, review_id, model_name) \
-         VALUES ('{id}', '{id}', '{model}') \
+         VALUES ('{id}', {review_id}, '{model}') \
          ON CONFLICT(id) DO UPDATE SET model_name = excluded.model_name",
         id = session_id.replace('\'', "''"),
+        review_id = review_id,
         model = model_name.replace('\'', "''"),
     ))
     .await
     .map_err(|e| Error::Query(format!("failed to save agent_session: {e}")))?;
-
-    db.execute_unprepared("PRAGMA foreign_keys = ON;")
-        .await
-        .map_err(|e| Error::Query(format!("failed to re-enable FKs: {e}")))?;
 
     // 2. Remove existing turns for this session (for re-save / upsert)
     db.execute_unprepared(&format!(
@@ -559,7 +570,7 @@ async fn load_pr_result(
         .map_err(|e| Error::Query(format!("failed to load pr_result: {e}")))?;
 
     match model {
-        Some(_row) => {
+        Some(row) => {
             // Load golden comments
             let golden_models = GoldenCommentEntity::find()
                 .filter(GoldenCommentColumn::PrResultId.eq(id.to_string()))
@@ -577,8 +588,14 @@ async fn load_pr_result(
                 })
                 .collect();
 
+            let benchmark_id = row
+                .benchmark_id
+                .as_ref()
+                .and_then(|s| s.parse::<MagicTypeId>().ok());
+
             Ok(Some(PrResult {
                 id: id.clone(),
+                benchmark_id,
                 golden_comments: gcs,
                 metrics: Default::default(),
                 findings_with_verdicts: load_findings_and_verdicts(db, id).await?,
@@ -599,6 +616,10 @@ async fn list_pr_results(db: &DatabaseConnection) -> Result<Vec<PrResult>, Error
         .into_iter()
         .map(|m| PrResult {
             id: m.id.parse::<MagicTypeId>().unwrap_or_default(),
+            benchmark_id: m
+                .benchmark_id
+                .as_ref()
+                .and_then(|s| s.parse::<MagicTypeId>().ok()),
             golden_comments: Vec::new(),
             metrics: Default::default(),
             findings_with_verdicts: Vec::new(),
@@ -686,6 +707,24 @@ async fn load_benchmark(
     }
 }
 
+/// List all `Benchmark` entries.
+async fn list_benchmarks(db: &DatabaseConnection) -> Result<Vec<Benchmark>, Error> {
+    let models = BenchmarkEntity::find()
+        .all(db)
+        .await
+        .map_err(|e| Error::Query(format!("failed to list benchmarks: {e}")))?;
+    Ok(models
+        .into_iter()
+        .map(|m| Benchmark {
+            id: m.id.parse::<MagicTypeId>().unwrap_or_default(),
+            dataset_name: m.dataset_name,
+            dataset_version: m.dataset_version,
+            created_at: m.created_at,
+            updated_at: m.updated_at,
+        })
+        .collect())
+}
+
 /// Load an `AgentSession` with its turns and messages (3-level cascade).
 async fn load_agent_session(
     db: &DatabaseConnection,
@@ -698,7 +737,7 @@ async fn load_agent_session(
         .query_one_raw(sea_orm::Statement::from_string(
             db.get_database_backend(),
             format!(
-                "SELECT id, model_name FROM agent_sessions WHERE id = '{id}'",
+                "SELECT id, review_id, model_name FROM agent_sessions WHERE id = '{id}'",
                 id = session_id_str.replace('\'', "''"),
             ),
         ))
@@ -710,8 +749,9 @@ async fn load_agent_session(
         None => return Ok(None),
     };
 
+    let review_id: Option<String> = session_row.try_get_by_index::<String>(1).ok();
     let model_name: String = session_row
-        .try_get_by_index::<String>(1)
+        .try_get_by_index::<String>(2)
         .unwrap_or_default();
 
     // 2. Load turns (ordered by turn_index)
@@ -789,7 +829,8 @@ async fn load_agent_session(
 
     Ok(Some(AgentSession {
         id: id.clone(),
-        model: crb_types::wrappers::Model(model_name),
+        review_id: review_id.and_then(|r| r.parse::<MagicTypeId>().ok()),
+        model_name,
         turns,
     }))
 }
