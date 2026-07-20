@@ -3,8 +3,6 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::flatten::FlattenedStruct;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "seaorm-storage", derive(crb_macros::FlattenedStruct))]
 pub struct RemoteRepositoryMeta {
@@ -25,7 +23,7 @@ pub struct GitRepositoryMeta {
     pub repo_root: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum VCSPlatform {
     GitHub,
     Codeberg,
@@ -84,9 +82,18 @@ mod tests {
 
     #[test]
     fn test_vcs_platform_from_str() {
-        assert_eq!("GitHub".parse::<VCSPlatform>().unwrap(), VCSPlatform::GitHub);
-        assert_eq!("github".parse::<VCSPlatform>().unwrap(), VCSPlatform::GitHub);
-        assert_eq!("Codeberg".parse::<VCSPlatform>().unwrap(), VCSPlatform::Codeberg);
+        assert_eq!(
+            "GitHub".parse::<VCSPlatform>().unwrap(),
+            VCSPlatform::GitHub
+        );
+        assert_eq!(
+            "github".parse::<VCSPlatform>().unwrap(),
+            VCSPlatform::GitHub
+        );
+        assert_eq!(
+            "Codeberg".parse::<VCSPlatform>().unwrap(),
+            VCSPlatform::Codeberg
+        );
         assert!("unknown".parse::<VCSPlatform>().is_err());
     }
 
@@ -94,10 +101,5 @@ mod tests {
     fn test_vcs_platform_display() {
         assert_eq!(VCSPlatform::GitHub.to_string(), "GitHub");
         assert_eq!(VCSPlatform::Codeberg.to_string(), "Codeberg");
-    }
-
-    #[test]
-    fn test_vcs_platform_default() {
-        assert_eq!(VCSPlatform::default(), VCSPlatform::GitHub);
     }
 }

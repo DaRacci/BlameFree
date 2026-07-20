@@ -65,6 +65,7 @@ log = "0.4"
 lucide-leptos = "3.24.0"
 mti = "1.1"
 oauth2 = { version = "4", features = ["reqwest"] }
+paste = "1"
 octocrab = "0.41"
 proc-macro2 = "1"
 quote = "1"

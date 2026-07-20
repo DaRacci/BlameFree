@@ -4,6 +4,7 @@ use strum::{Display, EnumString, IntoStaticStr, VariantArray};
 /// The reasoning effort level for OpenAI style reasoning.
 #[derive(
     Debug,
+    Default,
     Clone,
     Copy,
     PartialEq,
@@ -21,6 +22,7 @@ pub enum ReasoningEffort {
     Low = 2048,
 
     /// Balanced depth and speed.
+    #[default]
     Medium = 6144,
 
     /// More thorough reasoning.

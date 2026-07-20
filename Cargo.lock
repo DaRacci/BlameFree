@@ -1260,6 +1260,7 @@ dependencies = [
  "leptos_router",
  "log",
  "lucide-leptos",
+ "paste",
  "serde",
  "serde_json",
  "strum",
