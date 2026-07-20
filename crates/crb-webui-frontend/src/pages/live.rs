@@ -6,7 +6,7 @@ use crate::sse;
 use crb_types::RunEvent;
 use crb_types::agent::AgentChunk;
 use crb_webui_shared::config::AgentInfo;
-use crb_webui_shared::review::RunStatus;
+use crb_webui_shared::review::ReviewStatus;
 use crb_webui_shared::route;
 use crb_webui_shared::routes::API_CONFIG;
 use gloo_net::http::Request;
@@ -21,7 +21,7 @@ use std::collections::HashMap;
 /// State for a single agent within a single PR.
 #[derive(Debug, Clone)]
 struct PerAgentState {
-    status: RunStatus,
+    status: ReviewStatus,
 
     /// Acumulated response chunks from the provider.
     response: String,
@@ -32,7 +32,7 @@ struct PerAgentState {
 impl PerAgentState {
     fn new() -> Self {
         Self {
-            status: RunStatus::Pending,
+            status: ReviewStatus::Pending,
             response: String::new(),
             findings: None,
         }
@@ -57,7 +57,7 @@ impl PrState {
     fn all_completed(&self) -> bool {
         self.agents
             .values()
-            .all(|a| a.status == RunStatus::Completed || a.status == RunStatus::Failed)
+            .all(|a| a.status == ReviewStatus::Completed || a.status == ReviewStatus::Failed)
     }
 }
 
@@ -75,7 +75,7 @@ pub fn LivePage() -> impl IntoView {
 
     let (progress_done, _set_progress_done) = signal(0usize);
     let (progress_total, _set_progress_total) = signal(0usize);
-    let (status, set_status) = signal::<RunStatus>(RunStatus::Pending);
+    let (status, set_status) = signal::<ReviewStatus>(ReviewStatus::Pending);
     let (_connected, set_connected) = signal(false);
 
     // Fetch available roles on mount
@@ -102,7 +102,7 @@ pub fn LivePage() -> impl IntoView {
 
         spawn_local(async move {
             if id.is_empty() {
-                set_stat.update(|s| *s = RunStatus::Pending);
+                set_stat.update(|s| *s = ReviewStatus::Pending);
                 return;
             }
 
@@ -111,7 +111,7 @@ pub fn LivePage() -> impl IntoView {
             match sse::connect_sse(&url).await {
                 Ok(mut rx) => {
                     set_conn.set(true);
-                    set_stat.update(|s| *s = RunStatus::Running);
+                    set_stat.update(|s| *s = ReviewStatus::Running);
                     while let Ok(event) = rx.recv().await {
                         match serde_json::from_str::<RunEvent>(&event) {
                             Ok(ev) => {
@@ -133,11 +133,11 @@ pub fn LivePage() -> impl IntoView {
                             }
                         }
                     }
-                    set_stat.update(|s| *s = RunStatus::Completed);
+                    set_stat.update(|s| *s = ReviewStatus::Completed);
                 }
                 Err(e) => {
                     error!("Failed to connect to SSE: {}", e);
-                    set_stat.update(|s| *s = RunStatus::Failed);
+                    set_stat.update(|s| *s = ReviewStatus::Failed);
                 }
             }
         });
@@ -189,9 +189,9 @@ pub fn LivePage() -> impl IntoView {
                         {move || {
                             let s = status.get();
                             match s {
-                                RunStatus::Pending => format!("Live: {}", run_id()),
-                                RunStatus::Running => format!("Live: {}", run_id()),
-                                RunStatus::Completed => format!("{} (completed)", run_id()),
+                                ReviewStatus::Pending => format!("Live: {}", run_id()),
+                                ReviewStatus::Running => format!("Live: {}", run_id()),
+                                ReviewStatus::Completed => format!("{} (completed)", run_id()),
                                 s => format!("{}: {}", s, run_id()),
                             }
                         }}
@@ -207,7 +207,7 @@ pub fn LivePage() -> impl IntoView {
 
             {move || {
                 let s = status.get();
-                if s == RunStatus::Pending {
+                if s == ReviewStatus::Pending {
                     EitherOf3::A(view! {
                         <div class="content-grid content-grid--metrics">
                             <div class="skeleton skeleton--metric"></div>
@@ -222,7 +222,7 @@ pub fn LivePage() -> impl IntoView {
                             <div class="skeleton skeleton--card" style="height: 200px;"></div>
                         </div>
                     })
-                } else if s == RunStatus::Failed {
+                } else if s == ReviewStatus::Failed {
                     EitherOf3::B(view! {
                         <div class="error-state" role="alert">
                             <div class="error-state__icon">
@@ -297,7 +297,7 @@ pub fn LivePage() -> impl IntoView {
                                 if let Some(state) = pr_state {
                                     roles.iter().map(|ri| {
                                         let agent_ref = state.agents.get(&ri.abbreviation);
-                                        let status_val = agent_ref.map(|a| a.status.clone()).unwrap_or_else(|| RunStatus::Pending);
+                                        let status_val = agent_ref.map(|a| a.status.clone()).unwrap_or_else(|| ReviewStatus::Pending);
                                         let resp_val = agent_ref.and_then(|a| {
                                             if a.response.is_empty() { None } else { Some(a.response.clone()) }
                                         });
@@ -373,7 +373,7 @@ fn handle_event(
     set_selected: &WriteSignal<Option<String>>,
     set_role_pr: &WriteSignal<HashMap<String, String>>,
     role_current_pr: &ReadSignal<HashMap<String, String>>,
-    set_stat: &WriteSignal<RunStatus>,
+    set_stat: &WriteSignal<ReviewStatus>,
     roles: &[AgentInfo],
 ) {
     match ev {
@@ -395,7 +395,7 @@ fn handle_event(
                         pr.agents.insert(agent_id.to_string(), PerAgentState::new());
                     }
                     if let Some(agent) = pr.agents.get_mut(&agent_id.to_string()) {
-                        agent.status = RunStatus::Running;
+                        agent.status = ReviewStatus::Running;
                     }
                 }
             });
@@ -442,7 +442,7 @@ fn handle_event(
         RunEvent::AgentFinished { agent_id, .. } => {
             let role_str = agent_id.to_string();
             with_role_pr(role_current_pr, set_states, &role_str, |agent| {
-                agent.status = RunStatus::Completed;
+                agent.status = ReviewStatus::Completed;
                 agent.findings = None;
             });
         }
@@ -450,7 +450,7 @@ fn handle_event(
         RunEvent::ReviewStarted { .. } => {}
 
         RunEvent::ReviewCompleted { .. } => {
-            set_stat.update(|s| *s = RunStatus::Completed);
+            set_stat.update(|s| *s = ReviewStatus::Completed);
         }
     }
 }

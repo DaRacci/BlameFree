@@ -20,7 +20,7 @@ use crb_types::benchmark::metrics::Metrics;
 use crb_types::benchmark::result::PrResult;
 use crb_types::capabilities::ReasoningEffort;
 use crb_types::cost::AnalyticsSnapshot;
-use crb_types::review::{Review, ReviewMetadata, ReviewStatus as RunStatus};
+use crb_types::review::{Review, ReviewMetadata, ReviewStatus};
 use crb_types::vcs::pr::PrMeta;
 use crb_types::wrappers::Model;
 use crb_webui_shared::config::AgentInfo;
@@ -142,15 +142,15 @@ pub async fn list_runs(State(state): State<AppState>) -> impl IntoResponse {
                 agent_sessions: HashMap::new(),
                 analytics: None,
                 duration: Some(Duration::from_secs_f64(0.0)),
-                status: RunStatus::Running,
+                status: ReviewStatus::Running,
                 metadata: ReviewMetadata::Plain,
             });
         }
     }
 
     runs.sort_by(|a, b| {
-        let a_running = a.status == RunStatus::Running;
-        let b_running = b.status == RunStatus::Running;
+        let a_running = a.status == ReviewStatus::Running;
+        let b_running = b.status == ReviewStatus::Running;
         // Active runs come first
         a_running.cmp(&b_running).reverse()
     });
@@ -195,7 +195,7 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<Review, String> {
                                 agent_sessions: HashMap::new(),
                                 analytics: None,
                                 duration: Some(Duration::from_secs_f64(duration_secs)),
-                                status: RunStatus::Completed,
+                                status: ReviewStatus::Completed,
                                 metadata: ReviewMetadata::Plain,
                             });
                         }
@@ -226,7 +226,7 @@ fn scan_run_dir(path: &Path, name: &str) -> Result<Review, String> {
         agent_sessions: HashMap::new(),
         analytics: None,
         duration: Some(Duration::from_secs_f64(duration_secs)),
-        status: RunStatus::Completed,
+        status: ReviewStatus::Completed,
         metadata: ReviewMetadata::Plain,
     })
 }
@@ -253,7 +253,7 @@ fn format_running_response(id: &str, active_run: &ActiveRun) -> impl IntoRespons
         agent_sessions: HashMap::new(),
         analytics: None,
         duration: None,
-        status: RunStatus::Running,
+        status: ReviewStatus::Running,
         metadata: ReviewMetadata::Plain,
     };
     Json(review).into_response()
@@ -457,7 +457,7 @@ pub async fn start_run(
         agent_sessions: HashMap::new(),
         analytics: None,
         duration: None,
-        status: RunStatus::Running,
+        status: ReviewStatus::Running,
         metadata: ReviewMetadata::Plain,
     };
 

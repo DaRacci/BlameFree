@@ -5,7 +5,6 @@ pub mod admin;
 pub mod auth;
 pub mod config;
 pub mod review;
-pub use review as runs;
 pub mod routes;
 
 /// Deterministic HSL color from a role abbreviation — no hardcoded color map.

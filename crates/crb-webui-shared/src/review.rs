@@ -1,86 +1,12 @@
 use crb_types::agent::{AgentSession, RoleMessage};
-use crb_types::benchmark::metrics::Metrics;
-use crb_types::benchmark::result::PrResult;
-use crb_types::cost::AnalyticsSnapshot;
 use crb_types::vcs::pr::PrMeta;
 use serde::{Deserialize, Serialize};
 
 use crate::config::AgentInfo;
 
-/// Summary of a past benchmark run.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[deprecated = "This struct will be removed in favour of [`crb_types::review::Review`]."]
-pub struct RunSummary {
-    /// Shared run metadata
-    pub meta: Review,
-
-    /// Aggregate metrics across all PRs.
-    #[deprecated = "This is a benchmark field and will be removed."]
-    pub metrics: Metrics,
-
-    // TODO: Convert to time type
-    /// ISO-8601 timestamp of creation.
-    #[serde(default)]
-    #[deprecated = "This is now a field on the `meta` object and will be removed."]
-    pub created_at: String,
-
-    /// Number of PR results in this run.
-    #[serde(default)]
-    #[deprecated = "This is a benchmark field and will be removed."]
-    pub results_len: usize,
-}
-
 pub use crb_types::review::PullRequestReviewMetadata;
 pub use crb_types::review::Review;
-pub use crb_types::review::ReviewStatus as RunStatus;
-
-/// Detailed run result with per-PR data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[deprecated = "This struct will be removed in favour of [`crb_types::benchmark::PrResult`]."]
-pub struct RunDetail {
-    /// Shared run metadata
-    pub meta: Review,
-
-    /// Per-PR results.
-    #[serde(default)]
-    pub results: Vec<PrResultRow>,
-
-    /// Aggregate metrics across all PRs.
-    #[serde(default)]
-    pub aggregate: Metrics,
-
-    /// Run configuration.
-    #[serde(default)]
-    pub config: Option<RunConfig>,
-}
-
-/// A single PR result in the API response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[deprecated = "This struct will be removed in favour of [`crb_types::benchmark::PrResult`]."]
-pub struct PrResultRow {
-    pub meta: PrMeta,
-
-    pub metrics: Metrics,
-
-    pub analytics: AnalyticsSnapshot,
-
-    /// Status.
-    #[serde(default)]
-    pub status: Option<RunStatus>,
-
-    /// Whether this PR has agent data available.
-    #[serde(default)]
-    pub has_agents: bool,
-}
-
-/// Response returned when a benchmark run is started.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[deprecated = "This struct will be removed in favour of [`crb_types::review::Review`]."]
-pub struct StartRunResponse {
-    pub run_id: String,
-    pub status: String,
-    pub total_prs: u32,
-}
+pub use crb_types::review::ReviewStatus;
 
 /// Run config returned in the run detail response.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -326,14 +252,4 @@ impl
     }
 }
 
-/// Detailed per-PR response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[deprecated = "This struct will be removed in favour of [`crb_types::benchmark::PrResult`]."]
-pub struct PrDetailResponse {
-    /// Shared payload fields.
-    pub payload: PrResult,
 
-    /// Raw agent response texts.
-    #[serde(default)]
-    pub agent_responses: Vec<String>,
-}

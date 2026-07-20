@@ -675,7 +675,7 @@ async fn run_benchmark(
     //     total_tokens: total_tokens as usize,
     //     duration_secs: Some(eval_elapsed.as_secs_f64()),
     //     model: Some(model.clone()),
-    //     status: crb_webui_shared::runs::RunStatus::Completed,
+    //     status: crb_webui_shared::review::ReviewStatus::Completed,
     // };
     // append_run_history(&cache_dir, &run_entry)?;
 

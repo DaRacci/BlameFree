@@ -1,4 +1,4 @@
-use crb_webui_shared::runs::RunStatus;
+use crb_webui_shared::review::ReviewStatus;
 use leptos::either::{Either, EitherOf4};
 use leptos::prelude::*;
 use lucide_leptos::{Check, Circle, CirclePlay, X};
@@ -6,7 +6,7 @@ use lucide_leptos::{Check, Circle, CirclePlay, X};
 #[component]
 pub fn AgentPane(
     name: String,
-    status: impl Fn() -> RunStatus + Send + Sync + 'static,
+    status: impl Fn() -> ReviewStatus + Send + Sync + 'static,
     response: impl Fn() -> Option<String> + Send + Sync + 'static,
     current_pr: impl Fn() -> Option<String> + Send + Sync + 'static,
 ) -> impl IntoView {
@@ -16,21 +16,21 @@ pub fn AgentPane(
 
     let pane_class = move || -> &'static str {
         match status.get() {
-            RunStatus::Running => "agent-pane--running",
-            RunStatus::Completed => "agent-pane--completed",
-            RunStatus::Failed => "agent-pane--failed",
-            RunStatus::Pending => "agent-pane--pending",
-            RunStatus::Cancelled => "agent-pane--cancelled",
+            ReviewStatus::Running => "agent-pane--running",
+            ReviewStatus::Completed => "agent-pane--completed",
+            ReviewStatus::Failed => "agent-pane--failed",
+            ReviewStatus::Pending => "agent-pane--pending",
+            ReviewStatus::Cancelled => "agent-pane--cancelled",
         }
     };
 
     let status_icon = move || -> EitherOf4<_, _, _, _> {
         match status.get() {
-            RunStatus::Running => EitherOf4::A(view! { <CirclePlay size=16 /> }),
-            RunStatus::Completed => EitherOf4::B(view! { <Check size=16 /> }),
-            RunStatus::Failed => EitherOf4::C(view! { <X size=16 /> }),
-            RunStatus::Pending => EitherOf4::D(view! { <Circle size=16 /> }),
-            RunStatus::Cancelled => EitherOf4::D(view! { <Circle size=16 /> }),
+            ReviewStatus::Running => EitherOf4::A(view! { <CirclePlay size=16 /> }),
+            ReviewStatus::Completed => EitherOf4::B(view! { <Check size=16 /> }),
+            ReviewStatus::Failed => EitherOf4::C(view! { <X size=16 /> }),
+            ReviewStatus::Pending => EitherOf4::D(view! { <Circle size=16 /> }),
+            ReviewStatus::Cancelled => EitherOf4::D(view! { <Circle size=16 /> }),
         }
     };
 
@@ -60,14 +60,14 @@ pub fn AgentPane(
                                 }
                             )))
                         }
-                        (s, _) if s == RunStatus::Pending => {
+                        (s, _) if s == ReviewStatus::Pending => {
                             Either::Left(Either::Left(Either::Right(
                                 view! {
                                     <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"Waiting for task..."</span>
                                 }
                             )))
                         }
-                        (s, _) if s == RunStatus::Running => {
+                        (s, _) if s == ReviewStatus::Running => {
                             Either::Left(Either::Right(
                                 view! {
                                     <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"Processing..."</span>

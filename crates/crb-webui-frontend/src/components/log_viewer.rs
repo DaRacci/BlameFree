@@ -1,5 +1,5 @@
 use crb_webui_shared::route;
-use crb_webui_shared::runs::{AgentLogResponse, LogsListResponse};
+use crb_webui_shared::review::{AgentLogResponse, LogsListResponse};
 use leptos::either::Either;
 use leptos::prelude::*;
 use log::error;

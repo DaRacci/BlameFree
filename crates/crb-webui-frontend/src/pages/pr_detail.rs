@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crb_webui_shared::config::AgentInfo;
 use crb_webui_shared::routes::API_CONFIG;
-use crb_webui_shared::runs::{AgentLogResponse, PrAgentEntry, PrAgentsResponse};
+use crb_webui_shared::review::{AgentLogResponse, PrAgentEntry, PrAgentsResponse};
 use crb_webui_shared::{role_color, route};
 use gloo_net::http::Request;
 use leptos::prelude::*;
