@@ -38,22 +38,15 @@ pub struct AgentConfig<'l> {
 
 pub trait AgentConfigProvider {
     fn get_agent_config(&self) -> AgentConfig<'_>;
+
+    fn get_mcp_clients(&self) -> Vec<()> {
+        let config = self.get_agent_config();
+
+        vec![]
+    }
 }
 
 /// Build a rig agent for the given agent using the embedded prompt library.
-///
-/// The agents preamble is resolved through the [`PromptLibrary`], which loads
-/// prompts from the embedded `include_dir!` prompts directory at compile time.
-///
-/// If `rules_preamble` is `Some` and non-empty, it is prepended before the agent-specific preamble, separated by a blank line.
-/// This allows project-level rules to be injected into the agent's system prompt before its agent-specific instructions.
-///
-/// If `extra_preamble` is `Some`, it is appended after the agent preamble.
-/// This is used for tool-calling instructions and other supplementary content.
-///
-/// `template_vars` provides variable substitutions for the prompt template
-/// (e.g. `{diff}`, `{agent}`, `{file_list}`, `{language}`).
-#[allow(clippy::too_many_arguments)]
 pub fn build_agent<P>(
     config: Arc<P>,
     agent: &AgentEntry,

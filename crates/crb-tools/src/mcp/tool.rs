@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use rig_compose::{registry::KernelError, tool::ToolSchema};
+use rig_compose::tool::ToolSchema;
 use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;
@@ -42,152 +42,152 @@ pub struct McpResponse {
 ///
 /// Implements [`rig_mcp::transport::McpTransport`] so it can be used with
 /// the rig-mcp tool discovery and invocation machinery.
-pub struct HttpTransport {
-    endpoint: String,
-    client: reqwest::Client,
-    timeout: Duration,
-}
+// pub struct HttpTransport {
+//     endpoint: String,
+//     client: reqwest::Client,
+//     timeout: Duration,
+// }
 
-impl HttpTransport {
-    /// Create a new HTTP transport for the given MCP server URL.
-    pub fn new(url: &str, timeout: Duration) -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(timeout)
-            .build()
-            .unwrap_or_default();
+// impl HttpTransport {
+//     /// Create a new HTTP transport for the given MCP server URL.
+//     pub fn new(url: &str, timeout: Duration) -> Self {
+//         let client = reqwest::Client::builder()
+//             .timeout(timeout)
+//             .build()
+//             .unwrap_or_default();
 
-        Self {
-            endpoint: url.to_string(),
-            client,
-            timeout,
-        }
-    }
+//         Self {
+//             endpoint: url.to_string(),
+//             client,
+//             timeout,
+//         }
+//     }
 
-    /// Check a JSON-RPC response body for an error field,
-    /// returning [`KernelError::ToolFailed`] if one is present.
-    fn check_json_rpc_error(body: &Value) -> Result<(), KernelError> {
-        if let Some(error) = body.get("error") {
-            let msg = error
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("unknown MCP error");
-            return Err(KernelError::ToolFailed(msg.to_string()));
-        }
-        Ok(())
-    }
-}
+//     /// Check a JSON-RPC response body for an error field,
+//     /// returning [`KernelError::ToolFailed`] if one is present.
+//     fn check_json_rpc_error(body: &Value) -> Result<(), KernelError> {
+//         if let Some(error) = body.get("error") {
+//             let msg = error
+//                 .get("message")
+//                 .and_then(|m| m.as_str())
+//                 .unwrap_or("unknown MCP error");
+//             return Err(KernelError::ToolFailed(msg.to_string()));
+//         }
+//         Ok(())
+//     }
+// }
 
-impl rig_mcp::transport::McpTransport for HttpTransport {
-    fn endpoint(&self) -> &str {
-        &self.endpoint
-    }
+// impl rig_mcp::transport::McpTransport for HttpTransport {
+//     fn endpoint(&self) -> &str {
+//         &self.endpoint
+//     }
 
-    /// Discover tools from the MCP server via `list_tools`.
-    async fn list_tools(&self) -> Result<Vec<ToolSchema>, KernelError> {
-        let url = format!("{}/list_tools", self.endpoint);
+//     /// Discover tools from the MCP server via `list_tools`.
+//     async fn list_tools(&self) -> Result<Vec<ToolSchema>, KernelError> {
+//         let url = format!("{}/list_tools", self.endpoint);
 
-        let payload = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "list_tools",
-            "id": 1,
-        });
+//         let payload = serde_json::json!({
+//             "jsonrpc": "2.0",
+//             "method": "list_tools",
+//             "id": 1,
+//         });
 
-        let response = tokio::time::timeout(self.timeout, async {
-            self.client.post(&url).json(&payload).send().await
-        })
-        .await
-        .map_err(|_| KernelError::ToolFailed("MCP list_tools timed out".into()))?
-        .map_err(|e| KernelError::ToolFailed(format!("MCP list_tools request failed: {e}")))?;
+//         let response = tokio::time::timeout(self.timeout, async {
+//             self.client.post(&url).json(&payload).send().await
+//         })
+//         .await
+//         .map_err(|_| KernelError::ToolFailed("MCP list_tools timed out".into()))?
+//         .map_err(|e| KernelError::ToolFailed(format!("MCP list_tools request failed: {e}")))?;
 
-        let body: Value = response.json().await.map_err(|e| {
-            KernelError::ToolFailed(format!("MCP list_tools response parse failed: {e}"))
-        })?;
+//         let body: Value = response.json().await.map_err(|e| {
+//             KernelError::ToolFailed(format!("MCP list_tools response parse failed: {e}"))
+//         })?;
 
-        Self::check_json_rpc_error(&body)?;
+//         Self::check_json_rpc_error(&body)?;
 
-        // Extract tool schemas from result.tools
-        let tools = body
-            .get("result")
-            .and_then(|r| r.get("tools"))
-            .and_then(|t| t.as_array())
-            .ok_or_else(|| {
-                KernelError::ToolFailed("MCP list_tools: no 'result.tools' in response".into())
-            })?;
+//         // Extract tool schemas from result.tools
+//         let tools = body
+//             .get("result")
+//             .and_then(|r| r.get("tools"))
+//             .and_then(|t| t.as_array())
+//             .ok_or_else(|| {
+//                 KernelError::ToolFailed("MCP list_tools: no 'result.tools' in response".into())
+//             })?;
 
-        let schemas: Result<Vec<_>, _> = tools
-            .iter()
-            .map(|t| {
-                let name = t
-                    .get("name")
-                    .and_then(|n| n.as_str())
-                    .ok_or_else(|| KernelError::ToolFailed("MCP tool missing 'name'".into()))?;
-                let description = t
-                    .get("description")
-                    .and_then(|d| d.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let input_schema = t
-                    .get("input_schema")
-                    .cloned()
-                    .unwrap_or(serde_json::json!({}));
+//         let schemas: Result<Vec<_>, _> = tools
+//             .iter()
+//             .map(|t| {
+//                 let name = t
+//                     .get("name")
+//                     .and_then(|n| n.as_str())
+//                     .ok_or_else(|| KernelError::ToolFailed("MCP tool missing 'name'".into()))?;
+//                 let description = t
+//                     .get("description")
+//                     .and_then(|d| d.as_str())
+//                     .unwrap_or("")
+//                     .to_string();
+//                 let input_schema = t
+//                     .get("input_schema")
+//                     .cloned()
+//                     .unwrap_or(serde_json::json!({}));
 
-                Ok::<_, KernelError>(ToolSchema {
-                    name: name.to_string(),
-                    description,
-                    args_schema: input_schema,
-                    result_schema: serde_json::json!({}),
-                })
-            })
-            .collect();
+//                 Ok::<_, KernelError>(ToolSchema {
+//                     name: name.to_string(),
+//                     description,
+//                     args_schema: input_schema,
+//                     result_schema: serde_json::json!({}),
+//                 })
+//             })
+//             .collect();
 
-        Ok(schemas?)
-    }
+//         Ok(schemas?)
+//     }
 
-    /// Call a tool on the MCP server via `call_tool`.
-    async fn call_tool(&self, name: &str, args: Value) -> Result<Value, KernelError> {
-        let url = format!("{}/call_tool", self.endpoint);
+//     /// Call a tool on the MCP server via `call_tool`.
+//     async fn call_tool(&self, name: &str, args: Value) -> Result<Value, KernelError> {
+//         let url = format!("{}/call_tool", self.endpoint);
 
-        let payload = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "call_tool",
-            "params": {
-                "name": name,
-                "arguments": args,
-            },
-            "id": 2,
-        });
+//         let payload = serde_json::json!({
+//             "jsonrpc": "2.0",
+//             "method": "call_tool",
+//             "params": {
+//                 "name": name,
+//                 "arguments": args,
+//             },
+//             "id": 2,
+//         });
 
-        let response = tokio::time::timeout(self.timeout, async {
-            self.client
-                .post(&url)
-                .headers({
-                    let mut h = reqwest::header::HeaderMap::new();
-                    h.insert(
-                        reqwest::header::CONTENT_TYPE,
-                        reqwest::header::HeaderValue::from_static("application/json"),
-                    );
-                    h
-                })
-                .json(&payload)
-                .send()
-                .await
-        })
-        .await
-        .map_err(|_| KernelError::ToolFailed("MCP call_tool timed out".into()))?
-        .map_err(|e| KernelError::ToolFailed(format!("MCP call_tool request failed: {e}")))?;
+//         let response = tokio::time::timeout(self.timeout, async {
+//             self.client
+//                 .post(&url)
+//                 .headers({
+//                     let mut h = reqwest::header::HeaderMap::new();
+//                     h.insert(
+//                         reqwest::header::CONTENT_TYPE,
+//                         reqwest::header::HeaderValue::from_static("application/json"),
+//                     );
+//                     h
+//                 })
+//                 .json(&payload)
+//                 .send()
+//                 .await
+//         })
+//         .await
+//         .map_err(|_| KernelError::ToolFailed("MCP call_tool timed out".into()))?
+//         .map_err(|e| KernelError::ToolFailed(format!("MCP call_tool request failed: {e}")))?;
 
-        let body: Value = response.json().await.map_err(|e| {
-            KernelError::ToolFailed(format!("MCP call_tool response parse failed: {e}"))
-        })?;
+//         let body: Value = response.json().await.map_err(|e| {
+//             KernelError::ToolFailed(format!("MCP call_tool response parse failed: {e}"))
+//         })?;
 
-        Self::check_json_rpc_error(&body)?;
+//         Self::check_json_rpc_error(&body)?;
 
-        // Extract result
-        let result = body.get("result").cloned().unwrap_or(Value::Null);
+//         // Extract result
+//         let result = body.get("result").cloned().unwrap_or(Value::Null);
 
-        Ok(result)
-    }
-}
+//         Ok(result)
+//     }
+// }
 
 /// A [`rig_core::tool::Tool`] wrapper around an MCP transport + tool schema.
 ///

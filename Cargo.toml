@@ -75,6 +75,7 @@ rig-compose = "0.5.0"
 rig-core = "0.39"
 rig-mcp = "0.2.5"
 rust-embed = "8"
+rmcp = "2.2"
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 schemars = "1.2"
 sea-orm = "2.0"
