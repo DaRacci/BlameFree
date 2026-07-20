@@ -1,22 +1,17 @@
 //! SQLite-backed storage implementation using SeaORM.
-//!
-//! Provides [`SqliteStore`], a concrete implementation of the [`Store`] trait
-//! backed by SQLite via SeaORM 2.0. Uses TypeId dispatch to route generic
-//! `save<T>` / `load<T>` calls to the correct SeaORM entity.
 
 use std::any::{Any, TypeId};
 
 use crb_types::{
     agent::{AgentResponse, AgentSession, AgentSessionEntity, RoleMessage, ToolInvocation},
     benchmark::{
-        golden::GoldenComment, golden::GoldenCommentColumn, golden::GoldenCommentEntity,
-        golden::GoldenCommentModel, judge::JudgeVerdict, judge::JudgeVerdictEntity,
-        judge::JudgeVerdictModel, judge::JudgeVerdictColumn, result::PrResult, result::PrResultEntity,
-        result::PrResultModel, standalone::Benchmark, standalone::BenchmarkEntity,
-        standalone::BenchmarkModel,
+        golden::{GoldenComment, GoldenCommentColumn, GoldenCommentEntity, GoldenCommentModel},
+        judge::{JudgeVerdict, JudgeVerdictColumn, JudgeVerdictEntity, JudgeVerdictModel},
+        result::{PrResult, PrResultEntity, PrResultModel},
+        standalone::{Benchmark, BenchmarkEntity, BenchmarkModel},
     },
     cost::AnalyticsSnapshot,
-    finding::{Finding, FindingEntity, FindingModel, FindingColumn},
+    finding::{Finding, FindingColumn, FindingEntity, FindingModel},
     review::{Review, ReviewEntity, ReviewMetadata, ReviewModel},
 };
 use mti::prelude::MagicTypeId;
@@ -59,10 +54,10 @@ fn box_any<T: 'static>(value: T) -> Box<dyn Any> {
     Box::new(value)
 }
 
-/// A SQLite-backed storage backend using SeaORM 2.0.
+/// A SQLite-backed storage backend
 ///
-/// Opens a SQLite database connection, enables WAL journal mode, and runs
-/// schema migrations at construction time.
+/// Opens a SQLite database connection, enables WAL journal mode,
+/// and runs schema migrations at construction time.
 pub struct SqliteStore {
     db: DatabaseConnection,
 }
@@ -87,6 +82,10 @@ impl SqliteStore {
             .await
             .map_err(|e| Error::Connection(format!("failed to enable WAL mode: {e}")))?;
 
+        db.get_schema_registry("my_crate::entity::*")
+            .sync(&db)
+            .await
+            .map_err(|e| Error::Connection(format!("failed to sync schema: {e}")))?;
         let store = Self { db };
 
         crate::migration::run_migrations(&store.db).await?;
@@ -180,7 +179,11 @@ impl Store for SqliteStore {
         }
 
         Err(Error::Internal(
-            format!("list not implemented for type: {}", std::any::type_name::<T>()).into(),
+            format!(
+                "list not implemented for type: {}",
+                std::any::type_name::<T>()
+            )
+            .into(),
         ))
     }
 
@@ -223,9 +226,7 @@ impl Store for SqliteStore {
                     .map_err(|e| Error::Query(format!("failed to delete judge_verdicts: {e}")))?;
 
                 self.db
-                    .execute_unprepared(&format!(
-                        "DELETE FROM findings WHERE id IN ({in_clause});"
-                    ))
+                    .execute_unprepared(&format!("DELETE FROM findings WHERE id IN ({in_clause});"))
                     .await
                     .map_err(|e| Error::Query(format!("failed to delete findings: {e}")))?;
             }
