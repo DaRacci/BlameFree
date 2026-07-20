@@ -1,5 +1,0 @@
----
-source: crates/crb-tools/src/mcp/tool.rs
-expression: key.chars().all(|c| c.is_ascii_hexdigit())
----
-true

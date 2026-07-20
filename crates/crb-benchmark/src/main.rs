@@ -34,9 +34,9 @@ use crb_types::benchmark::result::PrResult;
 use crb_types::benchmark::standalone::Benchmark;
 use crb_types::capabilities::ReasoningEffort;
 use crb_types::wrappers::Model;
+use mti::prelude::{MagicTypeIdExt, V7};
 use rig_core::client::ProviderClient;
 use rig_core::tool::server::ToolServer;
-use mti::prelude::{MagicTypeIdExt, V7};
 use riv_stor::store::SqliteStore;
 use riv_stor::traits::{Storable, Store};
 use tracing::{error, info, info_span, warn};
@@ -609,14 +609,12 @@ async fn run_benchmark(
         });
     }
 
-    // Save each PrResult to the Store
     for result in &results {
         if let Err(e) = store.save::<PrResult>(result).await {
             warn!("Failed to save PrResult {}: {e}", result.storable_id());
         }
     }
 
-    // Create and save the Benchmark entry for this run
     let run_id = format!(
         "run-{}",
         SystemTime::now()
@@ -638,46 +636,6 @@ async fn run_benchmark(
         results.len(),
         output_dir.display()
     );
-
-    let total_llm_calls: usize = results.iter().map(|r| r.findings_count).sum();
-    let total_judge_calls: usize = results.iter().map(|r| r.verdicts.len()).sum();
-    let total_tokens: u64 = results
-        .iter()
-        .map(|res| {
-            res.sessions
-                .values()
-                .map(|s| res.input_tokens + res.output_tokens)
-                .sum::<u64>()
-        })
-        .sum();
-    let total_cost_usd: f64 = results.iter().map(|res| res.total_cost()).sum();
-    let avg_agent_cache_hit_rate = if results.is_empty() {
-        0.0
-    } else {
-        results
-            .iter()
-            .filter_map(|r| r.cost.as_ref())
-            .map(|c| c.hit_rate())
-            .sum::<f64>()
-            / results.len() as f64
-    };
-    let avg_judge_cache_hit_rate = avg_agent_cache_hit_rate;
-
-    //TODO
-    // let summary_path = cache_dir.join(crb_harness::paths::SUMMARY_FILE);
-    // fs::write(&summary_path, serde_json::to_string_pretty(&summary)?)?;
-    // info!("Cache summary written to: {}", summary_path.display());
-    // let run_entry = crb_webui_shared::runs::RunMeta {
-    //     id: summary["run_id"].as_str().unwrap_or("").to_string(),
-    //     name: summary["run_id"].as_str().unwrap_or("").to_string(),
-    //     pr_count: results.len(),
-    //     total_cost: Some(total_cost_usd),
-    //     total_tokens: total_tokens as usize,
-    //     duration_secs: Some(eval_elapsed.as_secs_f64()),
-    //     model: Some(model.clone()),
-    //     status: crb_webui_shared::review::ReviewStatus::Completed,
-    // };
-    // append_run_history(&cache_dir, &run_entry)?;
 
     Ok(())
 }

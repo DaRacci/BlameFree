@@ -183,11 +183,11 @@ pub async fn get_adhoc_run(
             false_negatives: 0,
             duration_secs,
         };
-        for r in &run_results {
-            aggregate_metrics.true_positives += r.metrics.true_positives;
-            aggregate_metrics.false_positives += r.metrics.false_positives;
-            aggregate_metrics.false_negatives += r.metrics.false_negatives;
-        }
+        // for r in &run_results {
+        //     aggregate_metrics.true_positives += r.metrics.true_positives;
+        //     aggregate_metrics.false_positives += r.metrics.false_positives;
+        //     aggregate_metrics.false_negatives += r.metrics.false_negatives;
+        // }
 
         let detail = RunDetailResponse {
             meta: review,
@@ -237,33 +237,6 @@ pub async fn get_adhoc_run(
         .and_then(|v| v.as_f64());
 
     let mut results: Vec<PrResult> = Vec::new();
-    let mut aggregate_metrics = Metrics {
-        true_positives: 0,
-        false_positives: 0,
-        false_negatives: 0,
-        duration_secs: duration_secs.unwrap_or(0.0),
-    };
-    #[allow(deprecated)]
-    for (file_path, _) in runs::iter_json_files(&run_dir) {
-        if let Ok(content) = fs::read_to_string(&file_path) {
-            if let Ok(pr_json) = serde_json::from_str::<PrResult>(&content) {
-                let metrics = &pr_json.metrics;
-                #[allow(deprecated)]
-                results.push(PrResult {
-                    id: pr_json.id,
-                    golden_comments: vec![],
-                    benchmark_id: None,
-                    metrics: pr_json.metrics.clone(),
-                    findings_with_verdicts: vec![],
-                    cost: pr_json.cost.clone(),
-                });
-
-                aggregate_metrics.true_positives += metrics.true_positives;
-                aggregate_metrics.false_positives += metrics.false_positives;
-                aggregate_metrics.false_negatives += metrics.false_negatives;
-            }
-        }
-    }
 
     let detail = RunDetailResponse {
         meta: Review {
@@ -517,7 +490,6 @@ async fn run_adhoc_review_inner(
         id: review_id.clone(),
         golden_comments: Vec::new(),
         benchmark_id: None,
-        metrics: metrics_for_summary,
         findings_with_verdicts: findings
             .into_iter()
             .map(|f| {
@@ -531,7 +503,6 @@ async fn run_adhoc_review_inner(
                 )
             })
             .collect(),
-        cost: AnalyticsSnapshot::default(),
     };
     let _ = state.store.save::<PrResult>(&pr_result).await;
 

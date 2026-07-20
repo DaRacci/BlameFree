@@ -2,33 +2,27 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
+    Data, DeriveInput, Field, Fields, GenericArgument, Ident, LitStr, PathArguments, Token, Type,
     parse::{Parse, ParseStream},
-    Data, DeriveInput, Field, Fields, Ident, LitStr, Token, Type,
 };
 
-// ---------------------------------------------------------------------------
-// FlattenedStruct derive
-// ---------------------------------------------------------------------------
-
-/// Unwrap `Option<T>` to get the inner type `T`. Returns `None` if the type
-/// is not `Option`.
+/// Unwrap `Option<T>` to get the inner type `T`.
+///
+/// Returns `None` if the type is not `Option`.
 fn unwrap_option_type(ty: &Type) -> Option<Type> {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            if segment.ident == "Option" {
-                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                    if let Some(syn::GenericArgument::Type(inner_ty)) = args.args.first() {
-                        return Some(inner_ty.clone());
-                    }
-                }
-            }
-        }
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+        && segment.ident == "Option"
+        && let PathArguments::AngleBracketed(args) = &segment.arguments
+        && let Some(GenericArgument::Type(inner_ty)) = args.args.first()
+    {
+        return Some(inner_ty.clone());
     }
+
     None
 }
 
-/// A set of well-known primitive/std types that should always be treated
-/// as leaf fields (simple string/number/enum values, not nested structs).
+/// A set of well-known primitive/std types that should always be treated as leaf fields.
 ///
 /// Handles both direct types and `Option<T>` wrappers.
 fn is_known_leaf_type(ty: &Type) -> bool {
@@ -47,73 +41,75 @@ fn is_known_leaf_type(ty: &Type) -> bool {
         "char",
         "VCSPlatform",
     ];
-    // Unwrap Option<T> → check against T
+
     if let Some(inner) = unwrap_option_type(ty) {
         return is_known_leaf_type(&inner);
     }
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            return KNOWN_LEAVES.contains(&segment.ident.to_string().as_str());
-        }
+
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        return KNOWN_LEAVES.contains(&segment.ident.to_string().as_str());
     }
+
     false
 }
 
-/// Extract the last path segment name from a type (e.g. `RemoteRepositoryMeta`
-/// from `crate::vcs::RemoteRepositoryMeta`, or `String` from `String`).
+/// Extract the last path segment name from a type
 fn type_last_segment_name(ty: &Type) -> String {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            return segment.ident.to_string();
-        }
+    if let Type::Path(type_path) = ty
+        && let Some(segment) = type_path.path.segments.last()
+    {
+        return segment.ident.to_string();
     }
+
     String::new()
 }
 
 /// Check if a field has `#[flattened(prefix = "...")]` and return the override prefix.
 fn get_flattened_prefix(field: &Field) -> Option<String> {
     for attr in &field.attrs {
-        if attr.path().is_ident("flattened") {
-            let mut prefix = None;
-            let _ = attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("prefix") {
-                    let value: LitStr = meta.value()?.parse()?;
-                    prefix = Some(value.value());
-                }
-                Ok(())
-            });
-            return prefix;
+        if !attr.path().is_ident("flattened") {
+            continue;
         }
+
+        let mut prefix = None;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("prefix") {
+                let value: LitStr = meta.value()?.parse()?;
+                prefix = Some(value.value());
+            }
+
+            Ok(())
+        });
+
+        return prefix;
     }
     None
 }
 
-/// Check if a field has `#[flattened(...)]` attribute (any variant).
+/// Check if a field has `#[flattened(...)]` attribute.
 fn has_flattened_attr(field: &Field) -> bool {
     field.attrs.iter().any(|a| a.path().is_ident("flattened"))
 }
 
 /// For a field, generate the `leaf_fields` entry for a LEAF type.
-fn gen_leaf_field_leaf_fields(field_ident: &Ident, ty_name: &str, _is_option: bool) -> TokenStream2 {
+fn gen_leaf_field_leaf_fields(field_ident: &Ident, ty_name: &str) -> TokenStream2 {
     let field_name = field_ident.to_string();
-    let type_str = if ty_name == "PathBuf" {
-        "String"
-    } else if ty_name == "bool" {
-        "String"
-    } else {
-        ty_name
+    let type_str = match ty_name {
+        "PathBuf" | "bool" => "String",
+        _ => ty_name,
     };
+
     quote! {
         (Box::leak(format!("{}{}", prefix, #field_name).into_boxed_str()), #type_str)
     }
 }
 
 /// For a field, generate the `leaf_fields` entry for a NESTED struct.
-fn gen_nested_field_leaf_fields(
-    nested_prefix: &str,
-    field_ty: &Type,
-) -> TokenStream2 {
+fn gen_nested_field_leaf_fields(nested_prefix: &str, field_ty: &Type) -> TokenStream2 {
     let nested_prefix_val = nested_prefix;
+
     quote! {
         v.extend(<#field_ty as ::crb_types::flatten::FlattenedStruct>::leaf_fields(
             &format!("{}{}", prefix, #nested_prefix_val)
@@ -122,46 +118,36 @@ fn gen_nested_field_leaf_fields(
 }
 
 /// For a leaf field, generate the `flatten` entry.
-/// NOTE: no trailing comma — the caller adds `,` (vec![]) or `;` (mixed).
 fn gen_leaf_field_flatten(field_ident: &Ident, ty_name: &str, is_option: bool) -> TokenStream2 {
     let field_name = field_ident.to_string();
-    if is_option && ty_name == "String" {
-        // Option<String>: self.field.clone() returns Option<String>
-        quote! {
-            (format!("{}{}", prefix, #field_name), self.#field_ident.clone())
-        }
-    } else if ty_name == "String" {
-        quote! {
-            (format!("{}{}", prefix, #field_name), Some(self.#field_ident.clone()))
-        }
-    } else if is_option && ty_name == "PathBuf" {
-        // Option<PathBuf>: map to Option<String>
-        quote! {
-            (format!("{}{}", prefix, #field_name), self.#field_ident.as_ref().map(|v| v.to_string_lossy().to_string()))
-        }
-    } else if ty_name == "PathBuf" {
-        quote! {
-            (format!("{}{}", prefix, #field_name), Some(self.#field_ident.to_string_lossy().to_string()))
-        }
-    } else if is_option {
-        // Option<T> for numeric/bool/types with Display
-        quote! {
-            (format!("{}{}", prefix, #field_name), self.#field_ident.as_ref().map(|v| v.to_string()))
-        }
-    } else {
-        // Numeric, bool, enum types that implement Display
-        quote! {
-            (format!("{}{}", prefix, #field_name), Some(self.#field_ident.to_string()))
-        }
+    let value = match ty_name {
+        "String" if is_option => quote! {
+            self.#field_ident.clone()
+        },
+        "String" => quote! {
+            Some(self.#field_ident.clone())
+        },
+        "PathBuf" if is_option => quote! {
+            self.#field_ident.as_ref().map(|v| v.to_string_lossy().to_string())
+        },
+        "PathBuf" => quote! {
+            Some(self.#field_ident.to_string_lossy().to_string())
+        },
+        _ if is_option => quote! {
+            self.#field_ident.as_ref().map(|v| v.to_string())
+        },
+        _ => quote! {
+            Some(self.#field_ident.to_string())
+        },
+    };
+
+    quote! {
+      (format!("{}{}", prefix, #field_name), #value)
     }
 }
 
 /// For a nested struct field, generate the `flatten` code.
-fn gen_nested_field_flatten(
-    field_ident: &Ident,
-    nested_prefix: &str,
-    field_ty: &Type,
-) -> TokenStream2 {
+fn gen_nested_field_flatten(field_ident: &Ident, nested_prefix: &str) -> TokenStream2 {
     let nested_prefix_val = nested_prefix;
     quote! {
         v.extend(self.#field_ident.flatten(
@@ -173,60 +159,31 @@ fn gen_nested_field_flatten(
 /// For a leaf field, generate the `unflatten` entry.
 fn gen_leaf_field_unflatten(field_ident: &Ident, ty_name: &str, is_option: bool) -> TokenStream2 {
     let field_name = field_ident.to_string();
-    if is_option && ty_name == "String" {
-        // Option<String>: cols value is already Option<String>
-        quote! {
-            #field_ident: cols.get(&format!("{}{}", prefix, #field_name))
-                .and_then(|v| v.clone()),
+    let ext_chain = match ty_name {
+        "String" if is_option => quote! { and_then(|v| v.clone()) },
+        "String" => quote! { and_then(|v| v.clone()).unwrap_or_default() },
+        "PathBuf" if is_option => {
+            quote! { and_then(|v| v.clone()).map(::std::path::PathBuf::from) }
         }
-    } else if ty_name == "String" {
-        quote! {
-            #field_ident: cols.get(&format!("{}{}", prefix, #field_name))
-                .and_then(|v| v.clone())
-                .unwrap_or_default(),
+        "PathBuf" => {
+            quote! { and_then(|v| v.clone()).map(::std::path::PathBuf::from).unwrap_or_default() }
         }
-    } else if is_option && ty_name == "PathBuf" {
-        // Option<PathBuf>: from Option<String> → map to PathBuf
-        quote! {
-            #field_ident: cols.get(&format!("{}{}", prefix, #field_name))
-                .and_then(|v| v.clone())
-                .map(::std::path::PathBuf::from),
-        }
-    } else if ty_name == "PathBuf" {
-        quote! {
-            #field_ident: cols.get(&format!("{}{}", prefix, #field_name))
-                .and_then(|v| v.clone())
-                .map(::std::path::PathBuf::from)
-                .unwrap_or_default(),
-        }
-    } else if is_option && ty_name == "bool" {
-        quote! {
-            #field_ident: cols.get(&format!("{}{}", prefix, #field_name))
-                .and_then(|v| v.clone())
-                .and_then(|v| v.parse().ok()),
-        }
-    } else if ty_name == "bool" {
-        quote! {
-            #field_ident: cols.get(&format!("{}{}", prefix, #field_name))
-                .and_then(|v| v.clone())
-                .and_then(|v| v.parse().ok())
-                .unwrap_or_default(),
-        }
-    } else if is_option {
-        // Option<T> for numeric types and enums with Display + FromStr
-        quote! {
-            #field_ident: cols.get(&format!("{}{}", prefix, #field_name))
-                .and_then(|v| v.clone())
-                .and_then(|v| v.parse().ok()),
-        }
-    } else {
-        // Numeric types and enum types with Display + FromStr
-        quote! {
-            #field_ident: cols.get(&format!("{}{}", prefix, #field_name))
-                .and_then(|v| v.clone())
-                .and_then(|v| v.parse().ok())
-                .unwrap_or_default(),
-        }
+        "bool" if is_option => quote! {
+            and_then(|v| v.clone()).and_then(|v| v.parse().ok())
+        },
+        "bool" => quote! {
+            and_then(|v| v.clone()).and_then(|v| v.parse().ok()).unwrap_or_default()
+        },
+        _ if is_option => quote! {
+            and_then(|v| v.clone()).and_then(|v| v.parse().ok())
+        },
+        _ => quote! {
+            and_then(|v| v.clone()).and_then(|v| v.parse().ok()).unwrap_or_default()
+        },
+    };
+
+    quote! {
+      #field_ident: cols.get(&format!("{}{}", prefix, #field_name)).#ext_chain,
     }
 }
 
@@ -262,8 +219,7 @@ pub fn derive_flattened_struct_impl(input: &DeriveInput) -> TokenStream {
         ty_name: String,
         is_leaf: bool,
         is_option: bool,
-        /// The prefix to use when this field is nested — either from
-        /// `#[flattened(prefix = "...")]` or the default `fieldname_`.
+        /// The prefix to use when this field is nested
         nested_prefix: String,
     }
 
@@ -274,18 +230,15 @@ pub fn derive_flattened_struct_impl(input: &DeriveInput) -> TokenStream {
             let ty = f.ty.clone();
             let is_option = unwrap_option_type(&ty).is_some();
 
-            // For Option<T>, get ty_name from the inner type T
             let ty_name = if is_option {
-                if let Some(inner) = unwrap_option_type(&ty) {
-                    type_last_segment_name(&inner)
-                } else {
-                    type_last_segment_name(&ty)
+                match unwrap_option_type(&ty) {
+                    Some(inner) => type_last_segment_name(&inner),
+                    None => type_last_segment_name(&ty),
                 }
             } else {
                 type_last_segment_name(&ty)
             };
 
-            // is_known_leaf_type already handles Option<T> unwrapping
             let is_leaf = if has_flattened_attr(f) {
                 false
             } else {
@@ -306,12 +259,11 @@ pub fn derive_flattened_struct_impl(input: &DeriveInput) -> TokenStream {
         })
         .collect();
 
-    // --- leaf_fields ---
     let leaf_fields_code: Vec<TokenStream2> = classified
         .iter()
         .map(|cf| {
             if cf.is_leaf {
-                gen_leaf_field_leaf_fields(&cf.ident, &cf.ty_name, cf.is_option)
+                gen_leaf_field_leaf_fields(&cf.ident, &cf.ty_name)
             } else {
                 gen_nested_field_leaf_fields(&cf.nested_prefix, &cf.ty)
             }
@@ -319,10 +271,6 @@ pub fn derive_flattened_struct_impl(input: &DeriveInput) -> TokenStream {
         .collect();
 
     let leaf_fields_fn = if classified.iter().any(|cf| !cf.is_leaf) {
-        // Mixed or fully nested — use Vec + extend.
-        // Add ; after every entry so leaf entries (which are bare tuple expressions)
-        // become proper expression statements, while nested entries (which end with
-        // their own ;) just get an empty-statement ; that's harmless.
         let leaf_entries: Vec<TokenStream2> = leaf_fields_code;
         quote! {
             fn leaf_fields(prefix: &str) -> Vec<(&'static str, &'static str)> {
@@ -332,7 +280,6 @@ pub fn derive_flattened_struct_impl(input: &DeriveInput) -> TokenStream {
             }
         }
     } else {
-        // All leaf — can use vec![...] directly
         quote! {
             fn leaf_fields(prefix: &str) -> Vec<(&'static str, &'static str)> {
                 vec![
@@ -342,14 +289,13 @@ pub fn derive_flattened_struct_impl(input: &DeriveInput) -> TokenStream {
         }
     };
 
-    // --- flatten ---
     let flatten_code: Vec<TokenStream2> = classified
         .iter()
         .map(|cf| {
             if cf.is_leaf {
                 gen_leaf_field_flatten(&cf.ident, &cf.ty_name, cf.is_option)
             } else {
-                gen_nested_field_flatten(&cf.ident, &cf.nested_prefix, &cf.ty)
+                gen_nested_field_flatten(&cf.ident, &cf.nested_prefix)
             }
         })
         .collect();
@@ -372,7 +318,6 @@ pub fn derive_flattened_struct_impl(input: &DeriveInput) -> TokenStream {
         }
     };
 
-    // --- unflatten ---
     let unflatten_code: Vec<TokenStream2> = classified
         .iter()
         .map(|cf| {
@@ -403,39 +348,9 @@ pub fn derive_flattened_struct_impl(input: &DeriveInput) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-// ---------------------------------------------------------------------------
-// Dotted field path (e.g. `repository.owner`) — no longer used by FlattenedEnum
-// after the migration to FlattenedStruct trait, but kept for reference.
-// ---------------------------------------------------------------------------
-
-/// A dotted path like `repository.owner` for accessing nested struct fields.
-struct DottedPath {
-    segments: Vec<Ident>,
-}
-
-impl Parse for DottedPath {
-    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        let mut segments = vec![input.parse::<Ident>()?];
-        while input.peek(Token![.]) {
-            let _: Token![.] = input.parse()?;
-            segments.push(input.parse::<Ident>()?);
-        }
-        Ok(DottedPath { segments })
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Parsing: #[variant(tag = "...", fields(
-//     col_name: Type,
-// ))]
-//
-// NOTE: Field-path syntax (e.g. `repository.owner => repository_owner: Type`)
-// has been REMOVED. The new syntax is just `col_name: Type`.
-// ---------------------------------------------------------------------------
-
 /// Parsed `#[variant(...)]` attribute on a single enum variant.
 struct VariantAttr {
-    /// The tag value for this variant (e.g., "pull_request").
+    /// The tag value for this variant.
     tag: String,
     /// Field mappings — just column names and types (no field paths).
     field_defs: Vec<FieldDef>,
@@ -454,34 +369,33 @@ impl Parse for VariantAttr {
         while !input.is_empty() {
             let key: Ident = input.parse()?;
 
-            if key == "tag" {
-                let _: Token![=] = input.parse()?;
-                let lit: LitStr = input.parse()?;
-                tag = lit.value();
-            } else if key == "fields" {
-                let content;
-                syn::parenthesized!(content in input);
-                while !content.is_empty() {
-                    // Parse: col_name: Type  (no field path, no `=>`)
-                    let col_name: Ident = content.parse()?;
-                    let _: Token![:] = content.parse()?;
-                    // Discard the type — it's documentation only now;
-                    // the actual types come from FlattenedStruct.
-                    let _: Type = content.parse()?;
-                    field_defs.push(FieldDef {
-                        col_name: col_name.to_string(),
-                    });
-                    // optional trailing comma
-                    let _ = content.parse::<Token![,]>();
+            match key.to_string().as_str() {
+                "tag" => {
+                    let _: Token![=] = input.parse()?;
+                    let lit: LitStr = input.parse()?;
+                    tag = lit.value();
                 }
-            } else {
-                return Err(syn::Error::new(
-                    key.span(),
-                    format!("expected `tag` or `fields`, got `{key}`"),
-                ));
-            }
+                "fields" => {
+                    let content;
+                    syn::parenthesized!(content in input);
+                    while !content.is_empty() {
+                        let col_name: Ident = content.parse()?;
+                        let _: Token![:] = content.parse()?;
+                        let _: Type = content.parse()?;
+                        field_defs.push(FieldDef {
+                            col_name: col_name.to_string(),
+                        });
+                        let _ = content.parse::<Token![,]>();
+                    }
+                }
+                _ => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("expected `tag` or `fields`, got `{key}`"),
+                    ));
+                }
+            };
 
-            // optional trailing comma between items
             let _ = input.parse::<Token![,]>();
         }
 
@@ -504,10 +418,6 @@ struct EnumVariant {
     /// if it has an unnamed field. `None` for unit variants.
     inner_type: Option<Type>,
 }
-
-// ---------------------------------------------------------------------------
-// FlattenedEnum derive entry point
-// ---------------------------------------------------------------------------
 
 pub fn derive_flattened_enum_impl(input: &DeriveInput) -> TokenStream {
     let enum_name = &input.ident;
@@ -536,10 +446,9 @@ pub fn derive_flattened_enum_impl(input: &DeriveInput) -> TokenStream {
                 )
             });
 
-        let variant_attr: VariantAttr =
-            attr.parse_args().expect("Failed to parse #[variant(...)]");
+        let variant_attr: VariantAttr = attr.parse_args().expect("Failed to parse #[variant(...)]");
 
-        // Extract the inner type from the variant's data (unnamed field)
+        // Extract the inner type from the variant's data
         let inner_type = match &variant.fields {
             Fields::Unnamed(u) => {
                 if u.unnamed.len() == 1 {
@@ -570,7 +479,6 @@ pub fn derive_flattened_enum_impl(input: &DeriveInput) -> TokenStream {
         }
     }
 
-    // Bridge fields (all Option<String>)
     let bridge_fields: Vec<TokenStream2> = all_col_names
         .iter()
         .map(|col_name| {
@@ -579,7 +487,6 @@ pub fn derive_flattened_enum_impl(input: &DeriveInput) -> TokenStream {
         })
         .collect();
 
-    // Default fields
     let bridge_default_fields: Vec<TokenStream2> = all_col_names
         .iter()
         .map(|col_name| {
@@ -588,9 +495,6 @@ pub fn derive_flattened_enum_impl(input: &DeriveInput) -> TokenStream {
         })
         .collect();
 
-    // -----------------------------------------------------------------------
-    // From<Enum> for Bridge — use FlattenedStruct::flatten()
-    // -----------------------------------------------------------------------
     let from_enum_arms: Vec<TokenStream2> = variants
         .iter()
         .map(|v| {
@@ -668,9 +572,6 @@ pub fn derive_flattened_enum_impl(input: &DeriveInput) -> TokenStream {
         })
         .collect();
 
-    // -----------------------------------------------------------------------
-    // From<Bridge> for Enum — use FlattenedStruct::unflatten()
-    // -----------------------------------------------------------------------
     let from_bridge_arms: Vec<TokenStream2> = variants
         .iter()
         .map(|v| {
@@ -712,7 +613,6 @@ pub fn derive_flattened_enum_impl(input: &DeriveInput) -> TokenStream {
         })
         .collect();
 
-    // FLAT_COLUMNS constant
     let field_list: Vec<TokenStream2> = all_col_names
         .iter()
         .map(|col_name| {

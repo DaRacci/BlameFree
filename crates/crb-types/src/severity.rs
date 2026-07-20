@@ -1,21 +1,17 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumIter, IntoStaticStr};
+use strum::{Display, IntoStaticStr};
 
 /// Severity levels for findings, ordered from most to least severe.
 ///
 /// We support an array of aliases for each level so to give the LLM output
 /// a better chance of matching the expected severity level.
-///
-/// When the `seaorm-storage` feature is enabled, this derives
-/// `DeriveActiveEnum` so the generated `Model` can use it directly
-/// as a column type instead of converting to `String`.
 #[cfg_attr(
     feature = "seaorm-storage",
     derive(sea_orm::EnumIter, sea_orm::DeriveActiveEnum),
     sea_orm(rs_type = "String", db_type = "Text")
 )]
-#[cfg_attr(not(feature = "seaorm-storage"), derive(EnumIter))]
+#[cfg_attr(not(feature = "seaorm-storage"), derive(strum::EnumIter))]
 #[derive(
     Default,
     Debug,

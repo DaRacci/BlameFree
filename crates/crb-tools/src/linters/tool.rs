@@ -1,3 +1,4 @@
+use std::process::Command;
 use std::{io, time::Duration};
 
 use crb_types::finding::Finding;
@@ -5,7 +6,6 @@ use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use tokio::process::Command;
 
 use crate::error::LinterError;
 
@@ -70,7 +70,6 @@ impl Tool for LinterTool {
             })
             .await
             .map_err(|join_err| LinterError::SubprocessFailed(Self::join_error_to_io(join_err)))?
-            .await
             .map_err(LinterError::SubprocessFailed)
         })
         .await

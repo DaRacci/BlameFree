@@ -2,13 +2,9 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{
-    parse::{Parse, ParseStream},
     Attribute, Data, DeriveInput, Fields, Ident, LitStr, Token, Type,
+    parse::{Parse, ParseStream},
 };
-
-// ---------------------------------------------------------------------------
-// Data structures for flatten field annotation
-// ---------------------------------------------------------------------------
 
 /// Parsed `#[flatten(tag = "...", variants = { ... })]` attribute.
 #[derive(Debug, Clone)]
@@ -23,6 +19,7 @@ pub struct FlattenSpec {
 #[derive(Debug, Clone)]
 pub struct FlattenVariantDef {
     /// The tag VALUE for this variant (e.g., "pull_request").
+    #[allow(unused)]
     pub name: String,
     /// Column definitions: (column_name, type_string).
     /// Type string is the DB column type (e.g., "String", "i32").
@@ -91,10 +88,6 @@ impl Parse for FlattenSpec {
         Ok(FlattenSpec { tag, variants })
     }
 }
-
-// ---------------------------------------------------------------------------
-// EntityModel derive implementation
-// ---------------------------------------------------------------------------
 
 pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
     let data = match &input.data {
@@ -492,7 +485,8 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
         .chain(flatten_set_fields)
         .collect();
 
-    let from_domain_impl = if final_from_domain_fields.is_empty() && flatten_let_bindings.is_empty() {
+    let from_domain_impl = if final_from_domain_fields.is_empty() && flatten_let_bindings.is_empty()
+    {
         quote! {}
     } else {
         let set_fields = &final_from_domain_fields;

@@ -7,7 +7,6 @@ use strum::{Display, IntoStaticStr};
 
 use crate::agent::AgentSession;
 use crate::cost::AnalyticsSnapshot;
-use crate::flatten::FlattenedStruct;
 use crate::vcs::pr::PrMeta;
 use crate::vcs::repository::{GitRepositoryMeta, RemoteRepositoryMeta};
 

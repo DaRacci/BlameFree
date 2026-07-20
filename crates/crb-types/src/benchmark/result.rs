@@ -2,12 +2,9 @@ use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "seaorm-storage")]
-use crate::benchmark::golden::GoldenCommentEntity;
-#[cfg(feature = "seaorm-storage")]
-use crate::finding::FindingEntity;
+use crate::{benchmark::golden::GoldenCommentEntity, finding::FindingEntity};
 use crate::{
-    benchmark::{golden::GoldenComment, judge::JudgeVerdict, metrics::Metrics},
-    cost::AnalyticsSnapshot,
+    benchmark::{golden::GoldenComment, judge::JudgeVerdict},
     finding::Finding,
 };
 
@@ -33,20 +30,10 @@ pub struct PrResult {
     )]
     pub golden_comments: Vec<GoldenComment>,
 
-    /// Evaluation metrics.
-    #[cfg_attr(feature = "seaorm-storage", sea_orm(ignore))]
-    #[deprecated = "Use MetricsProvider from Vec<(Finding, JudgeVerdict)> instead"]
-    pub metrics: Metrics,
-
     /// Findings and their corresponding verdicts.
     #[cfg_attr(
         feature = "seaorm-storage",
         sea_orm(has_many, entity = "FindingEntity")
     )]
     pub findings_with_verdicts: Vec<(Finding, JudgeVerdict)>,
-
-    /// Cost tracking data for this PR evaluation.
-    #[deprecated = "Use review.analytics instead"]
-    #[cfg_attr(feature = "seaorm-storage", sea_orm(ignore))]
-    pub cost: AnalyticsSnapshot,
 }

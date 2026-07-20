@@ -367,10 +367,7 @@ pub async fn get_run(State(state): State<AppState>, AxumPath(id): AxumPath<Strin
     // Load PR results from store (all results; filtering by run is a future refinement)
     let results: Vec<PrResult> = store.list::<PrResult>(&()).await.unwrap_or_default();
 
-    let duration_secs = review
-        .duration
-        .map(|d| d.as_secs_f64())
-        .unwrap_or(0.0);
+    let duration_secs = review.duration.map(|d| d.as_secs_f64()).unwrap_or(0.0);
 
     // Merge config from active run state if available (it isn't stored on disk)
     let config = active_run_config
@@ -1012,9 +1009,7 @@ pub async fn get_pr_detail(
                 id: pr_key.as_str().create_type_id::<V7>(),
                 golden_comments: vec![],
                 benchmark_id: None,
-                metrics,
                 findings_with_verdicts: vec![],
-                cost: cost.unwrap_or_default(),
             })
             .into_response();
         }

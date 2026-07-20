@@ -7,7 +7,6 @@ pub mod filesystem;
 pub mod git;
 pub mod linters;
 pub mod macros;
-pub mod mcp;
 pub mod shell;
 
 use crate::filesystem::{grep::GrepTool, list_dir::ListDirTool, read_file::ReadFileTool};

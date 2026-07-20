@@ -10,9 +10,8 @@ use crb_types::{
         result::{PrResult, PrResultEntity, PrResultModel},
         standalone::{Benchmark, BenchmarkEntity, BenchmarkModel},
     },
-    cost::AnalyticsSnapshot,
     finding::{Finding, FindingColumn, FindingEntity, FindingModel},
-    review::{Review, ReviewActiveModel, ReviewEntity, ReviewMetadata, ReviewModel},
+    review::{Review, ReviewActiveModel, ReviewEntity, ReviewModel},
 };
 use mti::prelude::MagicTypeId;
 use sea_orm::{
@@ -269,7 +268,8 @@ impl Store for SqliteStore {
         if TypeId::of::<T>() == TypeId::of::<AgentSession>() {
             // TODO: Remove this PRAGMA OFF once SchemaBuilder::sync() generates
             //       ON DELETE CASCADE on SQLite FK constraints for agent_turns.
-            self.db.execute_unprepared("PRAGMA foreign_keys = OFF;")
+            self.db
+                .execute_unprepared("PRAGMA foreign_keys = OFF;")
                 .await
                 .map_err(|e| Error::Query(format!("failed to disable FKs: {e}")))?;
             let result: DeleteResult = AgentSessionEntity::delete_by_id(id_str.clone())
@@ -603,9 +603,7 @@ async fn load_pr_result(
                 id: id.clone(),
                 benchmark_id,
                 golden_comments: gcs,
-                metrics: Default::default(),
                 findings_with_verdicts: load_findings_and_verdicts(db, id).await?,
-                cost: AnalyticsSnapshot::default(),
             }))
         }
         None => Ok(None),
@@ -627,9 +625,7 @@ async fn list_pr_results(db: &DatabaseConnection) -> Result<Vec<PrResult>, Error
                 .as_ref()
                 .and_then(|s| s.parse::<MagicTypeId>().ok()),
             golden_comments: Vec::new(),
-            metrics: Default::default(),
             findings_with_verdicts: Vec::new(),
-            cost: AnalyticsSnapshot::default(),
         })
         .collect())
 }
@@ -840,10 +836,6 @@ async fn load_agent_session(
         turns,
     }))
 }
-
-// ---------------------------------------------------------------------------
-// Conversion helpers: Review ↔ Model
-// ---------------------------------------------------------------------------
 
 fn map_model_to_review(model: ReviewModel) -> Review {
     model.into()

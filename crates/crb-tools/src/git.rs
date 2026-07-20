@@ -1,11 +1,11 @@
 //! Git tool for agent-accessible git operations.
 
 use std::io;
+use std::process::Command;
 use std::time::Duration;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
-use tokio::process::Command;
 
 use crate::error::GitError;
 use crate::impl_tool;
@@ -89,7 +89,6 @@ pub async fn run_git_command(repo_path: &str, args: &[&str]) -> Result<String, G
         })
         .await
         .map_err(|join_err| GitError::CommandFailed(io::Error::other(join_err.to_string())))?
-        .await
         .map_err(GitError::CommandFailed)
     })
     .await
@@ -153,7 +152,10 @@ mod tests {
     #[test]
     fn test_git_error_display() {
         let err = GitError::TimeoutElapsed;
-        assert_eq!(err.to_string(), "git operation did not complete within the configured timeout");
+        assert_eq!(
+            err.to_string(),
+            "git operation did not complete within the configured timeout"
+        );
 
         let err = GitError::NonZeroExit(128, "not a repo".into());
         assert_eq!(err.to_string(), "git exited with code 128: not a repo");

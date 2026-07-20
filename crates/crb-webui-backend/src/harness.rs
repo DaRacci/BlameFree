@@ -147,7 +147,6 @@ pub async fn run_harness(
                     id: review_id,
                     golden_comments: pr_entry.comments.clone(),
                     benchmark_id: None,
-                    metrics: Metrics::default(), // FIXME: compute from judge verdicts
                     findings_with_verdicts: findings
                         .into_iter()
                         .map(|f| {
@@ -161,7 +160,6 @@ pub async fn run_harness(
                             )
                         })
                         .collect(),
-                    cost: cost_tracker.to_snapshot().await,
                 };
                 let _ = write_report(&[result.clone()], &output_subdir);
                 results.push(result);
@@ -193,17 +191,17 @@ pub async fn run_harness(
 
     let _ = write_report(&results, &output_subdir);
 
-    let mut agg = Metrics::default();
-    let mut total_cost = 0.0f64;
-    let mut total_tokens: u64 = 0;
-    for r in &results {
-        agg += r.metrics.clone();
-        #[allow(deprecated)]
-        let cost_snapshot = &r.cost;
-        total_cost += cost_snapshot.total_cost();
-        let (tin, tout) = cost_snapshot.total_tokens();
-        total_tokens += tin + tout;
-    }
+    // let mut agg = Metrics::default();
+    // let mut total_cost = 0.0f64;
+    // let mut total_tokens: u64 = 0;
+    // for r in &results {
+    //     agg += r.metrics.clone();
+    //     #[allow(deprecated)]
+    //     let cost_snapshot = &r.cost;
+    //     total_cost += cost_snapshot.total_cost();
+    //     let (tin, tout) = cost_snapshot.total_tokens();
+    //     total_tokens += tin + tout;
+    // }
 
     let summary = serde_json::json!({
         "run_id": run_id,
@@ -227,7 +225,9 @@ pub async fn run_harness(
         id: run_id.to_string().create_type_id::<V7>(),
         agent_sessions: HashMap::new(),
         analytics: Some(AnalyticsSnapshot::default()),
-        duration: Some(std::time::Duration::from_secs_f64(start.elapsed().as_secs_f64())),
+        duration: Some(std::time::Duration::from_secs_f64(
+            start.elapsed().as_secs_f64(),
+        )),
         status: ReviewStatus::Completed,
         metadata: ReviewMetadata::Plain,
     };

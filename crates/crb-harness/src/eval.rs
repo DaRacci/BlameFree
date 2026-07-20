@@ -74,8 +74,6 @@ impl AgentConfigProvider for EvalConfig {
             template_vars: self.template_vars.as_ref(),
         }
     }
-
-    fn get_mcp_clients(&self) -> Vec<()> {}
 }
 
 #[derive(Clone)]

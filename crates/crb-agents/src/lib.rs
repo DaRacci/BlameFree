@@ -38,12 +38,6 @@ pub struct AgentConfig<'l> {
 
 pub trait AgentConfigProvider {
     fn get_agent_config(&self) -> AgentConfig<'_>;
-
-    fn get_mcp_clients(&self) -> Vec<()> {
-        let config = self.get_agent_config();
-
-        vec![]
-    }
 }
 
 /// Build a rig agent for the given agent using the embedded prompt library.

@@ -6,7 +6,6 @@ use crb_types::benchmark::golden::GoldenComment;
 use crb_types::benchmark::judge::JudgeVerdict;
 use crb_types::benchmark::metrics::Metrics;
 use crb_types::benchmark::result::PrResult;
-use crb_types::finding::Finding;
 use crb_types::vcs::pr::PrMeta;
 use mti::prelude::{MagicTypeIdExt, V7};
 
@@ -47,15 +46,7 @@ fn make_pr(pr_title: &str, url: &str, has_cost: bool) -> PrResult {
             url: url.to_string(),
             number: todo!(),
         },
-        // findings_count: 3,
-        // golden_count: 2,
         benchmark_id: None,
-        metrics: Metrics {
-            true_positives: 2,
-            false_positives: 1,
-            false_negatives: 0,
-            duration_secs: 12.5,
-        },
         findings_with_verdicts: vec![
             (
                 todo!(),
