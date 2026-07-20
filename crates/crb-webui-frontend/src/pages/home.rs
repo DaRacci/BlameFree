@@ -6,8 +6,8 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use serde::Deserialize;
 
-use crate::components::metrics_card::MetricsCard;
 use crate::fetch_json;
+use crate::{components::metrics_card::MetricsCard, signal_struct};
 use lucide_leptos::{ArrowRight, TriangleAlert};
 
 /// Response type matching the old `RunSummary` JSON format from the API.
@@ -19,13 +19,17 @@ struct BenchmarkRunResponse {
     meta: Review,
 }
 
+signal_struct! {
+  struct HomeSignals {
+    loading: bool = true,
+    error: Option<String> = None,
+    reviews: Vec<Review> = Vec::new(),
+  }
+}
+
 #[component]
 pub fn HomePage() -> impl IntoView {
-    let (bench_runs, set_bench_runs) = signal::<Vec<Review>>(Vec::new());
-    let (adhoc_runs, set_adhoc_runs) = signal::<Vec<Review>>(Vec::new());
-    let (loading, set_loading) = signal(true);
-    let (error, set_error) = signal::<Option<String>>(None);
-    let (has_active, set_has_active) = signal(false);
+    let signals = HomeSignals::new();
 
     let fetch = move |sb: WriteSignal<Vec<Review>>,
                       sa: WriteSignal<Vec<Review>>,
@@ -35,7 +39,7 @@ pub fn HomePage() -> impl IntoView {
         spawn_local(async move {
             let mut active = false;
 
-            match fetch_json::<Vec<BenchmarkRunResponse>>(API_RUNS).await {
+            match fetch_json::<Vec<Review>>(API_RUNS).await {
                 Ok(data) => {
                     let reviews: Vec<Review> = data.into_iter().map(|r| r.meta).collect();
                     if reviews.iter().any(|r| r.status == ReviewStatus::Running) {
@@ -108,8 +112,8 @@ pub fn HomePage() -> impl IntoView {
                                 <div class="skeleton skeleton--metric"></div>
                                 <div class="skeleton skeleton--metric"></div>
                             </div>
-                            <div style="margin-top: var(--spacing-xl);">
-                                <div class="skeleton skeleton--card" style="height: 180px; margin-bottom: var(--spacing-lg);"></div>
+                            <div class="mt-xl">
+                                <div class="skeleton skeleton--card mb-lg" style="height: 180px;"></div>
                                 <div class="skeleton skeleton--card" style="height: 300px;"></div>
                             </div>
                         }
@@ -206,7 +210,7 @@ pub fn HomePage() -> impl IntoView {
                                                 .unwrap_or_else(|| "Just started".into());
 
                                             view! {
-                                                <a href=live_path class="card card--interactive card--active-run" style="display: block; text-decoration: none;">
+                                                <a href=live_path class="card card--interactive card--active-run card--block-link">
                                                     <div class="card__header">
                                                         <h3 class="card__title">{run.id.to_string()}</h3>
                                                         <span class="badge badge--running">
@@ -215,7 +219,7 @@ pub fn HomePage() -> impl IntoView {
                                                         </span>
                                                     </div>
                                                     <div class="card__body">
-                                                        <div class="home-page__meta-row" style="display: flex; gap: var(--spacing-lg, 16px); font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
+                                                        <div class="home-page__meta-row flex-row gap-lg text-sm text-secondary">
                                                             <span>{elapsed}</span>
                                                         </div>
                                                     </div>
@@ -233,7 +237,7 @@ pub fn HomePage() -> impl IntoView {
                                             let title = "placeholder"; // TODO
 
                                             view! {
-                                                <a href=detail_path class="card card--interactive card--active-run" style="display: block; text-decoration: none;">
+                                                <a href=detail_path class="card card--interactive card--active-run card--block-link">
                                                     <div class="card__header">
                                                         <h3 class="card__title">{title}</h3>
                                                         <span class="badge badge--running">
@@ -242,7 +246,7 @@ pub fn HomePage() -> impl IntoView {
                                                         </span>
                                                     </div>
                                                     <div class="card__body">
-                                                        <div class="home-page__meta-row" style="display: flex; gap: var(--spacing-lg, 16px); font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
+                                                        <div class="home-page__meta-row flex-row gap-lg text-sm text-secondary">
                                                             <span>{format!("Model: placeholder")}</span>
                                                             <span>"Ad-hoc"</span>
                                                         </div>
@@ -260,7 +264,7 @@ pub fn HomePage() -> impl IntoView {
                                     <div class="section-header">
                                         <h2 class="section-header__title">"Running Reviews"</h2>
                                     </div>
-                                    <div class="empty-state" style="padding: var(--spacing-xl);">
+                                    <div class="empty-state py-xl">
                                         <p class="empty-state__message" style="margin: 0;">"No active reviews"</p>
                                     </div>
                                 }.into_any()
@@ -271,7 +275,7 @@ pub fn HomePage() -> impl IntoView {
                             </div>
                             {if merged.is_empty() {
                                 view! {
-                                    <div class="empty-state" style="padding: var(--spacing-xl);">
+                                    <div class="empty-state py-xl">
                                         <p class="empty-state__message" style="margin: 0;">"No runs yet"</p>
                                     </div>
                                 }.into_any()
@@ -296,10 +300,10 @@ pub fn HomePage() -> impl IntoView {
                                             };
 
                                             view! {
-                                                <a href=detail_path class="card card--interactive home-page__recent-row" style="display: block; text-decoration: none;">
+                                                <a href=detail_path class="card card--interactive home-page__recent-row card--block-link">
                                                     <div class="card__header">
                                                         <h3 class="card__title">{display_name}</h3>
-                                                        <div style="display: flex; gap: var(--spacing-sm); align-items: center;">
+                                                        <div class="flex-row gap-sm items-center">
                                                             <span class=format!("badge {}", type_badge_class)>
                                                                 <span class="badge__dot"></span>
                                                                 <span class="badge__label">{run_type}</span>

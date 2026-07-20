@@ -286,8 +286,8 @@ fn render_repo_section(
         <section class="form-section">
             <h2 class="form-section__title">"Repository"</h2>
             <div class="form-section__fields">
-                <div style="display: flex; gap: var(--spacing-md, 12px); align-items: flex-start;">
-                    <div class="form-field" style="flex: 1;">
+                <div class="flex-row gap-md" style="align-items: flex-start;">
+                    <div class="form-field flex-1">
                         <label class="form-field__label" for="owner">"Owner"</label>
                         <input
                             id="owner"
@@ -298,7 +298,7 @@ fn render_repo_section(
                             on:input=move |ev| set_owner.set(event_target_value(&ev))
                         />
                     </div>
-                    <div class="form-field" style="flex: 1;">
+                    <div class="form-field flex-1">
                         <label class="form-field__label" for="repo">"Repo"</label>
                         <input
                             id="repo"
@@ -341,8 +341,8 @@ fn render_pr_selection_section(
             <div class="form-section__fields">
                 <div class="form-field">
                     <label class="form-field__label">"PR Source"</label>
-                    <div style="display: flex; gap: var(--spacing-lg, 16px); margin-top: var(--spacing-xs, 4px);">
-                        <label class="checkbox-label" style="cursor: pointer;">
+                    <div class="flex-row gap-lg" style="margin-top: var(--spacing-xs);">
+                        <label class="checkbox-label">
                             <input
                                 type="radio"
                                 name="pr-mode"
@@ -351,7 +351,7 @@ fn render_pr_selection_section(
                             />
                             <span>"Open PRs"</span>
                         </label>
-                        <label class="checkbox-label" style="cursor: pointer;">
+                        <label class="checkbox-label">
                             <input
                                 type="radio"
                                 name="pr-mode"
@@ -387,21 +387,21 @@ fn render_pr_selection_section(
                     if loading_prs {
                         return view! {
                             <div class="form-field">
-                                <p style="color: var(--text-secondary, #8b949e);">"Loading PRs..."</p>
+                                <p class="text-secondary">"Loading PRs..."</p>
                             </div>
                         }.into_view().into_any();
                     }
                     if let Some(err) = prs_err {
                         return view! {
                             <div class="form-field">
-                                <p style="color: var(--accent-red, #f85149); font-size: var(--text-sm, 14px);">{err}</p>
+                                <p class="text-error text-sm">{err}</p>
                             </div>
                         }.into_view().into_any();
                     }
                     if prs.is_empty() {
                         return view! {
                             <div class="form-field">
-                                <p style="color: var(--text-secondary, #8b949e); font-size: var(--text-sm, 14px);">
+                                <p class="text-secondary text-sm">
                                     "Enter owner/repo and click \"Load PRs\" to see open pull requests."
                                 </p>
                             </div>
@@ -484,7 +484,7 @@ fn render_config_section(
 fn render_error_view(error: ReadSignal<Option<String>>) -> impl IntoView {
     move || {
         error.get().map(|e| {
-        view! { <div class="error-message" style="color: var(--accent-red, #f85149); margin-bottom: var(--spacing-lg, 16px);">{e}</div> }
+        view! { <div class="error-message text-error mb-lg">{e}</div> }
     })
     }
 }
@@ -544,7 +544,7 @@ pub fn AdhocReviewPage() -> impl IntoView {
                 </div>
             </div>
 
-            <p style="color: var(--text-secondary, #8b949e); margin-bottom: var(--spacing-xl, 24px);">
+            <p class="text-secondary mb-xl">
                 "Submit a GitHub PR for a one-off review by the agent team."
             </p>
 

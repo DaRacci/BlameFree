@@ -101,3 +101,8 @@
   padding: var(--spacing-3xl);
   color: var(--text-secondary);
 }
+
+/* Mono numeric cell */
+.table__td--mono {
+  font-family: var(--font-mono);
+}

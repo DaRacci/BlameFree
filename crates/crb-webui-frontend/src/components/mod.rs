@@ -1,6 +1,11 @@
 pub mod agent_pane;
+pub mod agent_selector;
+pub mod dataset_selector;
+pub mod form_page;
 pub mod log_viewer;
 pub mod metrics_card;
+pub mod model_selector;
+pub mod pr_selection;
 pub mod progress_bar;
-pub mod agent_selector;
+pub mod reasoning_effort_selector;
 pub mod run_table;

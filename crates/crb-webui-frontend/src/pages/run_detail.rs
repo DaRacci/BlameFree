@@ -85,7 +85,7 @@ pub fn RunDetailPage() -> impl IntoView {
                     }.into_any()
                 } else if loading.get() {
                             view! {
-                                <><div style="text-align: center; padding: 2rem; color: var(--text-secondary, #64748b); font-style: italic;">
+                                <><div class="text-secondary text-italic" style="text-align: center; padding: 2rem;">
                                     "Loading run details..."
                                 </div></>
                             }.into_any()
@@ -126,12 +126,12 @@ pub fn RunDetailPage() -> impl IntoView {
                         <div class="page-header">
                             <div>
                                 <h1 class="page-header__title">{name}</h1>
-                                <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                                <div class="flex-row items-center" style="gap: 8px; margin-top: 4px;">
                                     <span class=format!("badge {}", badge_variant)>
                                         <span class="badge__dot"></span>
                                         <span class="badge__label">{status}</span>
                                     </span>
-                                    <span style="font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
+                                    <span class="text-sm text-secondary">
                                         {"Model: ".to_string()}<span class="code">{"placeholder"}</span>
                                     </span>
                                 </div>
@@ -158,7 +158,7 @@ pub fn RunDetailPage() -> impl IntoView {
                             if total > 0 && is_running {
                                 let pct = if total > 0 { (done as f64 / total as f64 * 100.0) as u32 } else { 0 };
                                 view! {
-                                    <div class="card" style="margin-bottom: var(--spacing-lg, 16px);">
+                                    <div class="card mb-lg">
                                         <div class="card__body">
                                             <h3 class="card__title">"Progress"</h3>
                                             <ProgressBar value=done max=total label=format!("{} / {} PRs ({}%)", done, total, pct) />
@@ -224,12 +224,12 @@ pub fn RunDetailPage() -> impl IntoView {
                                         let status_text = status.unwrap().to_string();
                                         view! {
                                             <tr class="table__row">
-                                                <td class="table__td" style="font-weight: var(--weight-semibold, 600);">{format!("#{}", pr_number)}</td>
+                                                <td class="table__td font-semibold">{format!("#{}", pr_number)}</td>
                                                 <td class="table__td">{pr_title}</td>
-                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{format!("{f1:.3}")}</td>
-                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{format!("{precision:.3}")}</td>
-                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{format!("{recall:.3}")}</td>
-                                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{format!("${cost:.4}")}</td>
+                                                <td class="table__td table__td--mono">{format!("{f1:.3}")}</td>
+                                                <td class="table__td table__td--mono">{format!("{precision:.3}")}</td>
+                                                <td class="table__td table__td--mono">{format!("{recall:.3}")}</td>
+                                                <td class="table__td table__td--mono">{format!("${cost:.4}")}</td>
                                                 <td class="table__td">
                                                     <span class=format!("badge {}", pr_badge)>
                                                         <span class="badge__dot"></span>

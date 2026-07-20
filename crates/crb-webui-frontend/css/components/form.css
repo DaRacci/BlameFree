@@ -222,3 +222,41 @@
   gap: var(--spacing-sm);
   flex-wrap: wrap;
 }
+
+/* Loading skeleton for form pages */
+.form-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  color: var(--text-secondary);
+  padding: var(--spacing-xl) 0;
+}
+
+.form-loading .skeleton--text {
+  width: 200px;
+}
+
+/* Submit button area */
+.form-actions {
+  margin-top: var(--spacing-2xl);
+  padding-top: var(--spacing-xl);
+  border-top: 1px solid var(--border-muted);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+/* Config error banner inside forms */
+.form-error-banner {
+  margin-bottom: var(--spacing-lg);
+}
+
+/* Submit error inside form */
+.form-submit-error {
+  padding: var(--spacing-lg);
+}
+
+.form-submit-error p {
+  color: var(--accent-red);
+  font-size: var(--text-sm);
+}

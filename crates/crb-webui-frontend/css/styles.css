@@ -17,6 +17,10 @@
 @import url("css/components/skeleton.css");
 @import url("css/components/progress.css");
 @import url("css/components/nav.css");
+@import url("css/components/pr-list.css");
+
+/* Utilities */
+@import url("css/utilities.css");
 
 /* Pages */
 @import url("css/pages/home.css");

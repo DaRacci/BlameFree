@@ -56,28 +56,28 @@ pub fn AgentPane(
                         (_s, Some(resp)) if !resp.is_empty() => {
                             Either::Left(Either::Left(Either::Left(
                                 view! {
-                                    <pre style="white-space: pre-wrap; word-break: break-word; margin: 0; font-size: var(--text-sm, 13px); line-height: 1.4;">{resp}</pre>
+                                    <pre style="margin: 0; line-height: 1.4;">{resp}</pre>
                                 }
                             )))
                         }
                         (s, _) if s == ReviewStatus::Pending => {
                             Either::Left(Either::Left(Either::Right(
                                 view! {
-                                    <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"Waiting for task..."</span>
+                                    <span class="text-tertiary text-italic">"Waiting for task..."</span>
                                 }
                             )))
                         }
                         (s, _) if s == ReviewStatus::Running => {
                             Either::Left(Either::Right(
                                 view! {
-                                    <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"Processing..."</span>
+                                    <span class="text-tertiary text-italic">"Processing..."</span>
                                 }
                             ))
                         }
                         (_, _) => {
                             Either::Right(
                                 view! {
-                                    <span style="color: var(--text-tertiary, #6e7681); font-style: italic;">"No response yet"</span>
+                                    <span class="text-tertiary text-italic">"No response yet"</span>
                                 }
                             )
                         }

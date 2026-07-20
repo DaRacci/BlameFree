@@ -93,7 +93,7 @@ pub fn RunTable(runs: Vec<Review>) -> impl IntoView {
                         let live_path = live_path;
                         view! {
                             <tr class="table__row table__row--clickable" data-href=detail_path.clone()>
-                                <td class="table__td" style="font-weight: var(--weight-medium, 500);"><a href=detail_path.clone() style="color: var(--text-link, #58a6ff);">{run.id.to_string()}</a></td>
+                                <td class="table__td font-medium"><a href=detail_path.clone() style="color: var(--text-link, #58a6ff);">{run.id.to_string()}</a></td>
                                 <td class="table__td">
                                     <span class=format!("badge {}", badge_variant)>
                                         <span class="badge__dot"></span>
@@ -101,10 +101,10 @@ pub fn RunTable(runs: Vec<Review>) -> impl IntoView {
                                     </span>
                                 </td>
                                 <td class="table__td">{0}</td>
-                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{f1_str}</td>
-                                <td class="table__td" style="font-family: var(--font-mono, monospace);">{cost_str}</td>
+                                <td class="table__td table__td--mono">{f1_str}</td>
+                                <td class="table__td table__td--mono">{cost_str}</td>
                                 <td class="table__td">
-                                    <div style="display: flex; gap: 0.5rem;">
+                                    <div class="flex-row gap-sm">
                                         <a href=detail_path.clone() class="btn btn--sm btn--secondary">"View"</a>
                                         {if run.status == ReviewStatus::Running || run.status == ReviewStatus::Pending {
                                             Either::Left(

@@ -1,0 +1,31 @@
+/* PR selection checkbox list */
+.pr-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm);
+}
+
+.pr-list__checkbox {
+  padding: var(--spacing-xs) 0;
+}
+
+/* Select-all bar above PR list */
+.pr-select-bar {
+  margin-bottom: var(--spacing-sm);
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.pr-select-bar__count {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* Empty/loading message inside pr-list area */
+.pr-status-msg {
+  color: var(--text-secondary);
+  padding: var(--spacing-sm) 0;
+}

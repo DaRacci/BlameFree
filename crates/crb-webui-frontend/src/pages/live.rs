@@ -215,7 +215,7 @@ pub fn LivePage() -> impl IntoView {
                             <div class="skeleton skeleton--metric"></div>
                             <div class="skeleton skeleton--metric"></div>
                         </div>
-                        <div class="content-grid content-grid--agent-panes" style="margin-top: var(--spacing-lg, 16px);">
+                        <div class="content-grid content-grid--agent-panes">
                             <div class="skeleton skeleton--card" style="height: 200px;"></div>
                             <div class="skeleton skeleton--card" style="height: 200px;"></div>
                             <div class="skeleton skeleton--card" style="height: 200px;"></div>
@@ -285,7 +285,7 @@ pub fn LivePage() -> impl IntoView {
                             </div>
                         </div>
 
-                        <div class="content-grid content-grid--agent-panes" style="margin-top: var(--spacing-lg, 16px);">
+                        <div class="content-grid content-grid--agent-panes">
                             {move || {
                                 let pr_state = active_pr_state();
                                 let sel_key = selected_pr.get().unwrap_or_default();
@@ -322,12 +322,12 @@ pub fn LivePage() -> impl IntoView {
                             }}
                         </div>
 
-                        <div class="bottom-bar" style="margin-top: var(--spacing-xl, 24px); padding: var(--spacing-md, 12px); background: var(--bg-surface, #161b22); border: 1px solid var(--border-default, #30363d); border-radius: var(--radius-lg, 8px);">
+                        <div class="bottom-bar mt-xl" style="padding: var(--spacing-md); background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--radius-lg);">
                             {move || {
                                 if total() > 0 {
                                     Either::Left(view! {
                                         <ProgressBar value=done() as u32 max=total() as u32 label=format!("{} / {} PRs ({}%)", done(), total(), pct()) />
-                                        <div class="bottom-bar__info" style="display: flex; justify-content: space-between; align-items: center; margin-top: var(--spacing-sm, 8px); font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
+                                        <div class="bottom-bar__info flex-row items-center text-sm text-secondary" style="justify-content: space-between; margin-top: var(--spacing-sm);">
                                             <span>{format!("PRs loaded: {}", pr_order.get().len())}</span>
                                         </div>
                                     })

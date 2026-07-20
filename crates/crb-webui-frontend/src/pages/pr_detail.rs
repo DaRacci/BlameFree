@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crb_webui_shared::config::AgentInfo;
-use crb_webui_shared::routes::API_CONFIG;
 use crb_webui_shared::review::{AgentLogResponse, PrAgentEntry, PrAgentsResponse};
+use crb_webui_shared::routes::API_CONFIG;
 use crb_webui_shared::{role_color, route};
 use gloo_net::http::Request;
 use leptos::prelude::*;
@@ -119,7 +119,7 @@ pub fn PrDetailPage() -> impl IntoView {
 
     view! {
         <div class="pr-detail-page">
-            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 14px; color: var(--text-secondary, #8b949e);">
+            <div class="flex-row items-center text-sm text-secondary" style="gap: 8px; margin-bottom: 16px;">
                 <A href=move || "/".to_string()>"Home"</A>
                 <span>"/"</span>
                 <A href=move || format!("/runs/{}", run_id())>
@@ -132,11 +132,11 @@ pub fn PrDetailPage() -> impl IntoView {
             <div class="page-header">
                 <div>
                     <h1 class="page-header__title">{move || pr_title.get()}</h1>
-                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                    <div class="flex-row items-center" style="gap: 8px; margin-top: 4px;">
                         <span class="badge badge--neutral">
                             <span class="badge__label">{move || format!("PR #{}", pr_key())}</span>
                         </span>
-                        <span style="font-size: var(--text-sm, 14px); color: var(--text-secondary, #8b949e);">
+                        <span class="text-sm text-secondary">
                             {move || format!("Run: {}", run_id())}
                         </span>
                     </div>
@@ -154,7 +154,7 @@ pub fn PrDetailPage() -> impl IntoView {
             {move || {
                 if loading.get() {
                     view! {
-                        <div style="text-align: center; padding: 2rem; color: var(--text-secondary, #64748b); font-style: italic;">
+                        <div class="text-secondary text-italic" style="text-align: center; padding: 2rem;">
                             "Loading PR details..."
                         </div>
                     }.into_any()
@@ -175,8 +175,8 @@ pub fn PrDetailPage() -> impl IntoView {
                     let agents_list = agents.get();
                     if agents_list.is_empty() {
                         view! {
-                            <div style="text-align: center; padding: 3rem; color: var(--text-secondary, #64748b);">
-                                <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">"No cached agent logs available for this PR."</p>
+                            <div class="text-secondary" style="text-align: center; padding: 3rem;">
+                                <p class="mb-sm" style="font-size: 1.1rem;">"No cached agent logs available for this PR."</p>
                                 <p style="font-size: 0.9rem;">"Agent logs are only available when the run was executed with caching enabled and the cache is still present."</p>
                                 <A href=move || format!("/runs/{}", run_id())
                                     attr:class="btn btn--primary"
@@ -191,12 +191,12 @@ pub fn PrDetailPage() -> impl IntoView {
                         let logs_loading_val = logs_loading.get();
 
                         view! {
-                            <div style="margin-bottom: 1rem;">
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div class="mb-lg">
+                                <div class="flex-row items-center" style="justify-content: space-between;">
                                     <h2 style="color: #e2e8f0; margin: 0;">"Agent Logs"</h2>
                                     {if logs_loading_val {
                                         view! {
-                                            <span style="color: #64748b; font-style: italic; font-size: 0.85rem;">
+                                            <span class="text-secondary text-italic text-sm">
                                                 "Loading agent logs..."
                                             </span>
                                         }.into_any()
@@ -229,21 +229,21 @@ pub fn PrDetailPage() -> impl IntoView {
                                         <div style=format!("background: #1e2938; border-radius: 8px; border-left: 2px solid {color}; overflow: hidden;")>
                                             // Agent header
                                             <div style="padding: 12px 16px; background: #0f172a; border-bottom: 1px solid #334155;">
-                                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                                    <h3 style="margin: 0; color: #e2e8f0; font-size: 0.95rem; display: flex; align-items: center; gap: 8px;">
+                                                <div class="flex-row items-center" style="justify-content: space-between;">
+                                                    <h3 class="flex-row items-center" style="margin: 0; color: #e2e8f0; font-size: 0.95rem; gap: 8px;">
                                                         <span style="width: 10px; height: 10px; border-radius: 50%; background: {color}; display: inline-block;"></span>
                                                         {role_display_name}
                                                     </h3>
-                                                    <div style="display: flex; gap: 6px; font-size: 0.75rem;">
+                                                    <div class="flex-row text-xs" style="gap: 6px;">
                                                         {if has_prompt {
                                                             view! { <span style="color: #22c55e;"><Check size=14 /> Prompt</span> }.into_any()
                                                         } else {
-                                                            view! { <span style="color: #64748b;"><X size=14 /> Prompt</span> }.into_any()
+                                                            view! { <span class="text-secondary"><X size=14 /> Prompt</span> }.into_any()
                                                         }}
                                                         {if has_response {
                                                             view! { <span style="color: #22c55e;"><Check size=14 /> Response</span> }.into_any()
                                                         } else {
-                                                            view! { <span style="color: #64748b;"><X size=14 /> Response</span> }.into_any()
+                                                            view! { <span class="text-secondary"><X size=14 /> Response</span> }.into_any()
                                                         }}
                                                         {if has_reasoning {
                                                             view! { <span style="color: #22c55e;"><Check size=14 /> Reasoning</span> }.into_any()
@@ -258,7 +258,7 @@ pub fn PrDetailPage() -> impl IntoView {
                                             <div style="padding: 12px;">
                                                 {if logs_loading_val {
                                                     view! {
-                                                        <p style="color: #64748b; font-style: italic; font-size: 0.85rem; text-align: center; padding: 1rem;">
+                                                        <p class="text-secondary text-italic text-sm" style="text-align: center; padding: 1rem;">
                                                             "Loading..."
                                                         </p>
                                                     }.into_any()
@@ -269,7 +269,7 @@ pub fn PrDetailPage() -> impl IntoView {
                                                             {if has_prompt {
                                                                 view! {
                                                                     <details style="margin-bottom: 8px;" open=true>
-                                                                        <summary style="cursor: pointer; color: #94a3b8; font-size: 0.8rem; font-weight: 600; padding: 4px 0;">
+                                                                        <summary class="text-tertiary text-xs font-semibold" style="cursor: pointer; padding: 4px 0;">
                                                                             "Prompt"
                                                                         </summary>
                                                                         <pre style="background: #0f172a; padding: 0.75rem; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.4; color: #cbd5e1; margin: 4px 0 0 0;">
@@ -283,7 +283,7 @@ pub fn PrDetailPage() -> impl IntoView {
                                                             {if has_response {
                                                                 view! {
                                                                     <details style="margin-bottom: 8px;" open=true>
-                                                                        <summary style="cursor: pointer; color: #94a3b8; font-size: 0.8rem; font-weight: 600; padding: 4px 0;">
+                                                                        <summary class="text-tertiary text-xs font-semibold" style="cursor: pointer; padding: 4px 0;">
                                                                             "Response"
                                                                         </summary>
                                                                         <pre style="background: #0f172a; padding: 0.75rem; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.4; color: #cbd5e1; margin: 4px 0 0 0;">
@@ -297,7 +297,7 @@ pub fn PrDetailPage() -> impl IntoView {
                                                             {if has_reasoning {
                                                                 view! {
                                                                     <details style="margin-bottom: 0px;">
-                                                                        <summary style="cursor: pointer; color: #94a3b8; font-size: 0.8rem; font-weight: 600; padding: 4px 0;">
+                                                                        <summary class="text-tertiary text-xs font-semibold" style="cursor: pointer; padding: 4px 0;">
                                                                             "Reasoning"
                                                                         </summary>
                                                                         <pre style="background: #0f172a; padding: 0.75rem; border-radius: 4px; font-size: 0.75rem; overflow-x: auto; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.4; color: #cbd5e1; margin: 4px 0 0 0;">
@@ -312,7 +312,7 @@ pub fn PrDetailPage() -> impl IntoView {
                                                     }.into_any()
                                                 } else {
                                                     view! {
-                                                        <p style="color: #64748b; font-style: italic; font-size: 0.85rem; text-align: center; padding: 1rem;">
+                                                        <p class="text-secondary text-italic text-sm" style="text-align: center; padding: 1rem;">
                                                             "No log data available."
                                                         </p>
                                                     }.into_any()

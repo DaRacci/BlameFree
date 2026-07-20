@@ -47,3 +47,9 @@
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
+
+/* Block link variant — card renders as a block-level link */
+.card--block-link {
+  display: block;
+  text-decoration: none;
+}
