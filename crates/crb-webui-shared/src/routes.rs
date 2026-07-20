@@ -19,8 +19,12 @@ define_routes! {
     API_ADMIN_LOGS,           "/api/admin/logs";
     API_ADMIN_LOGS_STREAM,    "/api/admin/logs/stream";
 
-    API_REVIEWS,             "/api/reviews";
-    API_REVIEWS_ID,          "/api/reviews/:id";
+    API_REVIEWS_LIST,     "/api/reviews";
+    API_REVIEWS_DETAILS,  "/api/reviews/:id/details";
+    API_REVIEWS_SUBMIT,   "/api/reviews/:id/submit";
+    API_REVIEWS_AGENTS,   "/api/reviews/:id/agents";
+    API_REVIEWS_LOGS,     "/api/reviews/:id/logs/:agent";
+    API_REVIEWS_STREAM,   "/api/reviews/:id/stream";
 
     AUTH_LOGIN,     "/auth/login";
     AUTH_CALLBACK,  "/auth/callback";

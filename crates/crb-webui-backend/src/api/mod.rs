@@ -8,6 +8,7 @@ pub mod adhoc;
 pub mod admin;
 pub mod config;
 pub mod live;
+pub mod reviews;
 pub mod runs;
 
 /// Helper to build a JSON error response with a given status code and message.

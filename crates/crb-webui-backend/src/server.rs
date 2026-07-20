@@ -24,7 +24,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use crate::api::{adhoc, admin, config, runs};
+use crate::api::{self, adhoc, admin, config, runs};
 use crate::auth::{self, SessionStore};
 use crate::config::WebUiConfig;
 use crate::static_assets::StaticAssets;
@@ -35,7 +35,10 @@ async fn list_reasoning_efforts() -> Json<Vec<ReasoningEffort>> {
 
 /// Shared application state.
 #[derive(Clone)]
-pub struct AppState<S: Store + Send + Sync + Clone> {
+pub struct AppState<S: Store + Send + Sync + Clone>
+where
+    Self: Send + Sync,
+{
     /// Directory containing per-PR JSON result files.
     pub output_dir: PathBuf,
 
@@ -93,7 +96,10 @@ impl<S: Store + Send + Sync + Clone> AppState<S> {
 }
 
 pub async fn start(state: AppState<impl Store>, port: u16) -> anyhow::Result<()> {
+    let reviews_router = api::reviews::register_routes(&state);
+
     let app = Router::new()
+        .merge(reviews_router)
         .route(routes::API_RUNS, get(runs::list_runs).post(runs::start_run))
         .route(routes::API_RUNS_ID, get(runs::get_run))
         .route(routes::API_RUNS_ID_LIVE, get(crate::api::live::live_stream))

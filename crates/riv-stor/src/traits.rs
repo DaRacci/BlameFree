@@ -13,38 +13,46 @@ pub trait Storable: Sized + Serialize + DeserializeOwned + Send + Sync + 'static
     /// Per-type filter and list options (e.g. pagination, status filter).
     ///
     /// Use [`Default`] when no options are needed.
-    type Options: Default;
+    type Options: Default + Sync;
 
     /// Returns a reference to this item's unique identifier.
     fn item_id(&self) -> &MagicTypeId;
 }
 
 /// Generic storage interface
-#[allow(async_fn_in_trait)]
 pub trait Store: Send + Sync + Clone {
     /// Persist an item.
     ///
     /// Inserts if new, updates if existing (upsert).
-    async fn save<T: Storable>(&self, item: &T) -> Result<(), Error>;
+    fn save<T: Storable>(&self, item: &T) -> impl Future<Output = Result<(), Error>> + Send;
 
     /// Load a single item by its `MagicTypeId`.
     ///
     /// Returns `None` if not found.
-    async fn load<T: Storable>(&self, id: &MagicTypeId) -> Result<Option<T>, Error>;
+    fn load<T: Storable>(
+        &self,
+        id: &MagicTypeId,
+    ) -> impl Future<Output = Result<Option<T>, Error>> + Send;
 
     /// List items matching the type-specific options.
-    async fn list<T: Storable>(&self, options: &T::Options) -> Result<Vec<T>, Error>;
+    fn list<T: Storable>(
+        &self,
+        options: &T::Options,
+    ) -> impl Future<Output = Result<Vec<T>, Error>> + Send;
 
     /// Delete an item by its `MagicTypeId`.
     ///
     /// Returns `true` if something was deleted.
-    async fn delete<T: Storable>(&self, id: &MagicTypeId) -> Result<bool, Error>;
+    fn delete<T: Storable>(
+        &self,
+        id: &MagicTypeId,
+    ) -> impl Future<Output = Result<bool, Error>> + Send;
 
     /// Run schema migrations.
     /// Called once at startup.
     ///
     /// This function is idempotent and safe to call multiple times.
-    async fn migrate(&self) -> Result<(), Error>;
+    fn migrate(&self) -> impl Future<Output = Result<(), Error>> + Send;
 }
 
 #[cfg(test)]
@@ -65,6 +73,7 @@ mod tests {
     }
 
     /// Compile-time check: a minimal Store implementor.
+    #[derive(Clone)]
     struct DummyStore;
 
     impl Store for DummyStore {
