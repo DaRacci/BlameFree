@@ -208,7 +208,7 @@ pub fn run(dataset_dir: &Path, benchmark_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crb_harness::test_utils::setup_temp_repo;
+    use crb_shared::test_utils::setup_temp_repo;
     use std::fs;
 
     #[test]
