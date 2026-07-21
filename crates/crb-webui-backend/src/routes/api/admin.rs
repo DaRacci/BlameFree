@@ -10,23 +10,32 @@ use axum::Json;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
-use crb_webui_shared::routes::API_ADMIN_LOGS_STREAM;
+use crb_webui_shared::routes::{API_ADMIN_LOGS, API_ADMIN_LOGS_STREAM};
 use riv_stor::traits::Store;
 use tokio::sync::mpsc;
 use tokio::time::interval;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{instrument, warn};
 
+use crate::routes_register;
 use crate::server::AppState;
 use crb_webui_shared::admin::LogsResponse;
 
 const READBACK_LINES: usize = 500;
 
+routes_register! {
+  get API_ADMIN_LOGS => get_logs,
+  get API_ADMIN_LOGS_STREAM => get_logs_stream,
+}
+
 /// Get return recent server console logs.
 ///
 /// Reads the last [`READBACK_LINES`] lines from the server's log file.
 #[instrument(skip(state), name = API_ADMIN_LOGS_STREAM)]
-pub async fn get_logs(State(state): State<AppState<impl Store>>) -> Json<LogsResponse> {
+pub async fn get_logs<S>(State(state): State<AppState<S>>) -> Json<LogsResponse>
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
     let log_path = &state.log_file;
 
     match read_last_n_lines(log_path, READBACK_LINES) {
@@ -49,75 +58,16 @@ pub async fn get_logs(State(state): State<AppState<impl Store>>) -> Json<LogsRes
     }
 }
 
-/// Read the last `n` lines from a text file efficiently.
-///
-/// Works by seeking near the end of the file and reading backwards,
-/// which is O(1) in file length regardless of file size.
-fn read_last_n_lines(path: &std::path::Path, n: usize) -> std::io::Result<Vec<String>> {
-    const CHUNK_SIZE: u64 = 4096;
-
-    let file = File::open(path)?;
-    let metadata = file.metadata()?;
-
-    let file_len = metadata.len();
-    if file_len == 0 {
-        return Ok(Vec::new());
-    }
-
-    let mut reader = BufReader::new(file);
-    let mut lines = Vec::new();
-    let mut buffer = Vec::new();
-    let mut pos = file_len;
-
-    while lines.len() < n && pos > 0 {
-        let read_size = min(CHUNK_SIZE, pos);
-        let new_pos = pos - read_size;
-
-        reader.seek(SeekFrom::Start(new_pos))?;
-
-        let mut chunk = vec![0u8; read_size as usize];
-        reader.read_exact(&mut chunk)?;
-
-        let mut new_buffer = chunk;
-        new_buffer.append(&mut buffer);
-        buffer = new_buffer;
-
-        let content = String::from_utf8_lossy(&buffer);
-        let content = if new_pos == 0 {
-            // We're at the start of the file; use the whole buffer
-            content.to_string()
-        } else {
-            // There may be a partial first line; split at the first newline
-            let s = content.to_string();
-            if let Some(nl_pos) = s.find('\n') {
-                if let Some(rest) = s.get(nl_pos + 1..) {
-                    rest.to_string()
-                } else {
-                    s
-                }
-            } else {
-                s
-            }
-        };
-
-        lines = content.lines().rev().map(String::from).collect();
-
-        pos = new_pos;
-    }
-
-    lines.truncate(n);
-    lines.reverse();
-
-    Ok(lines)
-}
-
 /// Get SSE stream of server console logs.
 ///
 /// On first connection, sends the last [`READBACK_LINES`] lines as a batch.
 /// Then polls the log file every second for new lines and streams them.
 /// Uses Server-Sent Events (SSE) for real-time log delivery.
 #[instrument(skip(state), name = API_ADMIN_LOGS_STREAM)]
-pub async fn get_logs_stream(State(state): State<AppState<impl Store>>) -> impl IntoResponse {
+pub async fn get_logs_stream<S>(State(state): State<AppState<S>>) -> impl IntoResponse
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
     let log_path = state.log_file.clone();
     let (tx, rx) = mpsc::unbounded_channel::<Result<Event, Infallible>>();
 
@@ -193,4 +143,66 @@ pub async fn get_logs_stream(State(state): State<AppState<impl Store>>) -> impl 
                 .text("keep-alive"),
         )
         .into_response()
+}
+
+/// Read the last `n` lines from a text file efficiently.
+///
+/// Works by seeking near the end of the file and reading backwards,
+/// which is O(1) in file length regardless of file size.
+fn read_last_n_lines(path: &std::path::Path, n: usize) -> std::io::Result<Vec<String>> {
+    const CHUNK_SIZE: u64 = 4096;
+
+    let file = File::open(path)?;
+    let metadata = file.metadata()?;
+
+    let file_len = metadata.len();
+    if file_len == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut reader = BufReader::new(file);
+    let mut lines = Vec::new();
+    let mut buffer = Vec::new();
+    let mut pos = file_len;
+
+    while lines.len() < n && pos > 0 {
+        let read_size = min(CHUNK_SIZE, pos);
+        let new_pos = pos - read_size;
+
+        reader.seek(SeekFrom::Start(new_pos))?;
+
+        let mut chunk = vec![0u8; read_size as usize];
+        reader.read_exact(&mut chunk)?;
+
+        let mut new_buffer = chunk;
+        new_buffer.append(&mut buffer);
+        buffer = new_buffer;
+
+        let content = String::from_utf8_lossy(&buffer);
+        let content = if new_pos == 0 {
+            // We're at the start of the file; use the whole buffer
+            content.to_string()
+        } else {
+            // There may be a partial first line; split at the first newline
+            let s = content.to_string();
+            if let Some(nl_pos) = s.find('\n') {
+                if let Some(rest) = s.get(nl_pos + 1..) {
+                    rest.to_string()
+                } else {
+                    s
+                }
+            } else {
+                s
+            }
+        };
+
+        lines = content.lines().rev().map(String::from).collect();
+
+        pos = new_pos;
+    }
+
+    lines.truncate(n);
+    lines.reverse();
+
+    Ok(lines)
 }

@@ -142,7 +142,7 @@ enum Commands {
 
 fn main() -> Result<()> {
     crb_shared::init_dotenv();
-    crb_shared::init_logging().try_init()?;
+    crb_shared::init_logging(None).try_init()?;
 
     PromptLibrary::new().map_err(|e| anyhow!("Failed to initialize prompt library: {e}"))?;
     let cli = Cli::parse();

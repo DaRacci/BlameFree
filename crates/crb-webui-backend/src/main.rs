@@ -1,4 +1,3 @@
-use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -8,14 +7,14 @@ use anyhow::{Result, anyhow};
 use clap::Parser;
 use octocrab::Octocrab;
 use riv_stor::store::SqliteStore;
-use riv_stor::traits::Store;
 use tracing::{info, warn};
 use tracing_subscriber::util::SubscriberInitExt;
 
-mod api;
+// mod api;
 mod auth;
 mod config;
 mod harness;
+mod routes;
 mod server;
 mod static_assets;
 
@@ -48,18 +47,18 @@ pub struct CliArgs {
     pub config: Option<PathBuf>,
 }
 
-static CANDIDATES: LazyLock<Vec<&'static Path>> = LazyLock::new(|| {
-    vec![
-        Path::new("/var/log/crb/webui.log"),
-        Path::new("/tmp/crb-webui.log"),
-        Path::new("./output/server.log"),
-    ]
-});
-
 /// Auto-detect a writable log file path when `--log-file` is not provided.
 ///
 /// Tries candidates in order, silently skipping paths that can't be created.
 fn resolve_log_path(custom: Option<&Path>) -> PathBuf {
+    static CANDIDATES: LazyLock<Vec<&'static Path>> = LazyLock::new(|| {
+        vec![
+            Path::new("/var/log/crb/webui.log"),
+            Path::new("/tmp/crb-webui.log"),
+            Path::new("./output/server.log"),
+        ]
+    });
+
     if let Some(path) = custom {
         return path.to_path_buf();
     }
@@ -69,7 +68,7 @@ fn resolve_log_path(custom: Option<&Path>) -> PathBuf {
             let _ = fs::create_dir_all(parent); // Ignore — best-effort log directory setup
         }
 
-        if OpenOptions::new()
+        if std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(candidate)
@@ -82,24 +81,6 @@ fn resolve_log_path(custom: Option<&Path>) -> PathBuf {
     Path::new("./output/server.log").to_path_buf()
 }
 
-fn log_layers(
-    path: Option<&Path>,
-) -> Vec<Box<dyn tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync>> {
-    let log_path = resolve_log_path(path);
-    let file_layer = tracing_subscriber::fmt::layer()
-        .with_writer(move || {
-            OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&log_path)
-                .expect("failed to open log file")
-        })
-        .with_ansi(false);
-    let stderr_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stderr);
-
-    vec![Box::new(stderr_layer), Box::new(file_layer)]
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     // Required by octocrab (hyper-rustls) and reqwest (rustls-tls).
@@ -107,9 +88,9 @@ async fn main() -> Result<()> {
         .install_default()
         .expect("Failed to install rustls ring crypto provider");
 
-    crb_shared::init_dotenv();
-    crb_shared::init_logging().try_init()?;
     let args = CliArgs::parse();
+    crb_shared::init_dotenv();
+    crb_shared::init_logging(Some(resolve_log_path(args.log_file.as_deref()))).try_init()?;
 
     info!(
         "Starting crb-webui on port {} (output={})",
@@ -158,7 +139,6 @@ async fn main() -> Result<()> {
     );
 
     let app_state = server::AppState::<SqliteStore>::new(
-        args.output_dir,
         webui_config,
         octocrab,
         crate::auth::new_session_store(),
@@ -168,5 +148,5 @@ async fn main() -> Result<()> {
 
     crb_harness::model_capabilities::warm_model_cache().await;
 
-    server::start(app_state, args.port).await
+    server::start(app_state).await
 }

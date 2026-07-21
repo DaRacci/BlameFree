@@ -1,9 +1,8 @@
 use axum::{
-    Json, Router,
+    Json,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
 };
 use crb_types::review::Review;
 use crb_webui_shared::routes::{
@@ -14,19 +13,15 @@ use mti::prelude::MagicTypeId;
 use riv_stor::traits::Store;
 use tracing::{error, instrument};
 
-use crate::server::AppState;
+use crate::{routes_register, server::AppState};
 
-pub(crate) fn register_routes<S>(_state: &AppState<S>) -> Router<AppState<S>>
-where
-    S: Store + Send + Sync + Clone + 'static,
-{
-    Router::new()
-        .route(API_REVIEWS_LIST, get(list_reviews::<S>))
-        .route(API_REVIEWS_DETAILS, get(get_review::<S>))
-        .route(API_REVIEWS_SUBMIT, post(submit_review::<S>))
-        .route(API_REVIEWS_LOGS, get(get_review_logs::<S>))
-        .route(API_REVIEWS_AGENTS, get(get_review_agents::<S>))
-        .route(API_REVIEWS_STREAM, get(stream_review::<S>))
+routes_register! {
+  get API_REVIEWS_LIST => list_reviews,
+  get API_REVIEWS_DETAILS => get_review,
+  post API_REVIEWS_SUBMIT => submit_review,
+  get API_REVIEWS_LOGS => get_review_logs,
+  get API_REVIEWS_AGENTS => get_review_agents,
+  get API_REVIEWS_STREAM => stream_review,
 }
 
 #[instrument(skip(state), name = API_REVIEWS_LIST)]

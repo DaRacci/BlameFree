@@ -10,10 +10,8 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
 use crb_types::RunEvent;
 use crb_types::capabilities::ReasoningEffort;
-use crb_webui_shared::routes;
 use mti::prelude::MagicTypeId;
 use reqwest::header;
 use riv_stor::traits::Store;
@@ -24,8 +22,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
-use crate::api::{self, adhoc, admin, config, runs};
-use crate::auth::{self, SessionStore};
+use crate::auth::SessionStore;
 use crate::config::WebUiConfig;
 use crate::static_assets::StaticAssets;
 
@@ -39,9 +36,6 @@ pub struct AppState<S: Store + Send + Sync + Clone>
 where
     Self: Send + Sync,
 {
-    /// Directory containing per-PR JSON result files.
-    pub output_dir: PathBuf,
-
     /// Active review sessions.
     pub active_runs: Arc<RwLock<HashMap<MagicTypeId, ActiveRun>>>,
 
@@ -67,16 +61,12 @@ pub struct ActiveRun {
     /// When the run was started.
     pub created_at: UnixTime,
 
-    /// The config used to start this run.
-    pub run_config: runs::BenchmarkConfig,
-
     /// Broadcast channel for SSE events.
     pub tx: broadcast::Sender<RunEvent>,
 }
 
 impl<S: Store + Send + Sync + Clone> AppState<S> {
     pub fn new(
-        output_dir: PathBuf,
         config: WebUiConfig,
         octocrab: octocrab::Octocrab,
         session_store: SessionStore,
@@ -84,7 +74,6 @@ impl<S: Store + Send + Sync + Clone> AppState<S> {
         store: Arc<S>,
     ) -> Self {
         Self {
-            output_dir,
             active_runs: Arc::new(RwLock::new(HashMap::new())),
             config,
             session_store,
@@ -95,32 +84,17 @@ impl<S: Store + Send + Sync + Clone> AppState<S> {
     }
 }
 
-pub async fn start(state: AppState<impl Store>, port: u16) -> anyhow::Result<()> {
-    let reviews_router = api::reviews::register_routes(&state);
-
+pub async fn start(state: AppState<impl Store + 'static>) -> anyhow::Result<()> {
     let app = Router::new()
-        .merge(reviews_router)
-        .route(routes::API_RUNS, get(runs::list_runs).post(runs::start_run))
-        .route(routes::API_RUNS_ID, get(runs::get_run))
-        .route(routes::API_RUNS_ID_LIVE, get(crate::api::live::live_stream))
-        .route(routes::API_RUNS_ID_LOGS, get(runs::list_logs))
-        .route(routes::API_RUNS_ID_PRS_KEY, get(runs::get_pr_agents))
-        .route(routes::API_RUNS_ID_LOGS_KEY_ROLE, get(runs::get_agent_log))
-        .route(routes::API_RUNS_ID_DETAILS_KEY, get(runs::get_pr_detail))
-        .route(routes::API_CONFIG, get(config::get_config))
-        .route(routes::API_CONFIG_DATASETS, get(config::list_datasets))
-        .route(routes::API_CONFIG_REASONING, get(list_reasoning_efforts))
-        .route(routes::API_DATASETS_ID_PRS, get(config::list_dataset_prs))
-        .route(routes::API_ADHOC_REVIEW, post(adhoc::start_adhoc_review))
-        .route(routes::API_ADHOC_RUNS, get(adhoc::list_adhoc_runs))
-        .route(routes::API_ADHOC_RUNS_ID, get(adhoc::get_adhoc_run))
-        .route(routes::API_ADHOC_PRS_OWNER_REPO, get(adhoc::list_repo_prs))
-        .route(routes::API_ADMIN_LOGS, get(admin::get_logs))
-        .route(routes::API_ADMIN_LOGS_STREAM, get(admin::get_logs_stream))
-        .route(routes::AUTH_LOGIN, get(auth::login))
-        .route(routes::AUTH_LOGOUT, get(auth::logout))
-        .route(routes::AUTH_CALLBACK, get(auth::callback))
-        .route(routes::AUTH_ME, get(auth::me));
+        .merge(crate::routes::auth::register_routes(&state))
+        .merge(crate::routes::api::reviews::register_routes(&state))
+        .merge(crate::routes::api::config::register_routes(&state))
+        .merge(crate::routes::api::admin::register_routes(&state))
+        .merge(crate::routes::api::benchmark::register_routes(&state))
+        .merge(crate::routes::api::discovery::register_routes(&state));
+
+    let host = state.config.server.host.clone();
+    let port = state.config.server.port.clone();
 
     let app = app
         .fallback(static_or_index)
@@ -128,7 +102,7 @@ pub async fn start(state: AppState<impl Store>, port: u16) -> anyhow::Result<()>
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    let addr = format!("0.0.0.0:{}", port);
+    let addr = format!("{host}:{port}");
     info!("Listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;

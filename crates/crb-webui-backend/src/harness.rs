@@ -18,7 +18,6 @@ use crb_shared::diff::Diff;
 use crb_shared::sanitize_filename;
 use crb_shared::url::parse_github_url;
 use crb_types::RunEvent;
-use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
 use crb_types::benchmark::result::PrResult;
 use crb_types::cost::AnalyticsSnapshot;
 use crb_types::review::{Review, ReviewMetadata, ReviewStatus};

@@ -9,6 +9,7 @@ pub mod jaccard;
 pub mod pattern;
 pub mod url;
 
+pub mod string;
 #[cfg(test)]
 pub mod test_utils;
 
@@ -81,21 +82,41 @@ pub fn init_dotenv() {
     }
 }
 
-/// Initialize tracing with an EnvFilter and return the subscriber builder.
-/// Callers chain `.with(layer).init()` to add their own layers.
+/// Initialize tracing with stderr output and an optional log file.
 ///
-/// ```ignore
-/// crb_shared::init_logging()
-///     .with(stderr_layer)
-///     .init();
-/// ```
+/// Returns a subscriber ready for `.try_init()?`.
 #[cfg(feature = "backend")]
-pub fn init_logging() -> impl tracing::Subscriber + Send + Sync {
+pub fn init_logging(
+    log_file: Option<std::path::PathBuf>,
+) -> Box<dyn tracing::Subscriber + Send + Sync> {
+    use std::fs::OpenOptions;
     use tracing_subscriber::filter::EnvFilter;
     use tracing_subscriber::layer::SubscriberExt;
 
     let env_layer = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::registry().with(env_layer)
+    let stderr_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stderr);
+
+    let subscriber = tracing_subscriber::registry()
+        .with(env_layer)
+        .with(stderr_layer);
+
+    if let Some(path) = log_file {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_writer(move || {
+                OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&path)
+                    .expect("failed to open log file")
+            })
+            .with_ansi(false);
+        Box::new(subscriber.with(file_layer))
+    } else {
+        Box::new(subscriber)
+    }
 }
 
 #[cfg(test)]
