@@ -5,7 +5,6 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::api::runs::BenchmarkConfig;
 use crate::server::ActiveRun;
 use crb_agents::AgentEntry;
 use crb_agents::prompts::PromptLibrary;
@@ -15,9 +14,10 @@ use crb_reporting::cost::AnalyticsTracker;
 use crb_reporting::golden::load_golden_datasets;
 use crb_reporting::write_report;
 use crb_shared::diff::Diff;
-use crb_shared::sanitize_filename;
+use crb_shared::string::sanitize_filename;
 use crb_shared::url::parse_github_url;
 use crb_types::RunEvent;
+use crb_types::benchmark::judge::JudgeVerdict;
 use crb_types::benchmark::result::PrResult;
 use crb_types::cost::AnalyticsSnapshot;
 use crb_types::review::{Review, ReviewMetadata, ReviewStatus};
@@ -151,7 +151,9 @@ pub async fn run_harness(
                         .map(|f| {
                             (
                                 f,
-                                crb_types::benchmark::judge::JudgeVerdict {
+                                JudgeVerdict {
+                                    id: None,
+                                    finding_id: None, // TODO
                                     reasoning: "Pending judge evaluation".to_string(),
                                     match_: false,
                                     confidence: 0.0,

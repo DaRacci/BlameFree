@@ -994,7 +994,9 @@ name = "crb-agents"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "crb-reporting",
  "crb-types",
+ "futures",
  "handlebars",
  "include_dir",
  "mti",
@@ -1003,6 +1005,7 @@ dependencies = [
  "serde_fields",
  "serde_json",
  "serde_yaml",
+ "tokio",
  "tracing",
 ]
 
@@ -1022,6 +1025,7 @@ dependencies = [
  "anyhow",
  "clap",
  "crb-agents",
+ "crb-cache",
  "crb-harness",
  "crb-reporting",
  "crb-rules",
@@ -1029,6 +1033,7 @@ dependencies = [
  "crb-tools",
  "crb-types",
  "dotenvy",
+ "mti",
  "rig-core",
  "serde",
  "serde_json",

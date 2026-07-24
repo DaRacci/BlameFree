@@ -28,12 +28,7 @@ macro_rules! register_simple_helper {
 /// Create a shared Handlebars registry with common settings and helpers.
 ///
 /// All call sites that need a Handlebars instance should use this factory
-/// to ensure consistent configuration (strict mode off, HTML escaping off)
-/// and a shared set of helpers (`lowercase`, `uppercase`, `join`).
-///
-/// Template registration is left to the caller — each use case registers
-/// its own templates (e.g. filesystem-based for [`TemplateEngine`],
-/// embedded for [`PromptLibrary`](crate::prompts::PromptLibrary)).
+/// to ensure consistent configuration.
 pub(crate) fn new_handlebars_registry() -> Handlebars<'static> {
     let mut registry = Handlebars::new();
     registry.set_strict_mode(false);
@@ -119,40 +114,9 @@ impl TemplateEngine {
     }
 }
 
-/// Build a rich context object for template rendering.
-///
-/// Merges common variables (language, repo, role, max_findings, feature flags)
-/// with any custom variables provided by the caller.
-pub fn build_template_context(
-    language: &str,
-    repo_name: &str,
-    role: &str,
-    max_findings: usize,
-    extra_vars: Option<HashMap<String, Value>>,
-) -> Value {
-    let mut ctx = serde_json::json!({
-        "language": language,
-        "repo": repo_name,
-        "role": role,
-        "max_findings": max_findings,
-        "exp14_submit_finding": cfg!(feature = "exp14_submit_finding"),
-    });
-
-    if let Some(extra) = extra_vars {
-        if let Some(obj) = ctx.as_object_mut() {
-            for (k, v) in extra {
-                obj.insert(k, v);
-            }
-        }
-    }
-
-    ctx
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::prompts::PromptLibrary;
 
     #[test]
     fn test_template_engine_new() {
@@ -228,31 +192,6 @@ mod tests {
             .unwrap();
         let ctx = serde_json::json!({"items": ["a", "b", "c"]});
         assert_eq!(engine.render("test", &ctx).unwrap(), "a, b, c");
-    }
-
-    #[test]
-    fn test_build_template_context() {
-        PromptLibrary::new().unwrap();
-        let roles = PromptLibrary::get_instance().abbreviations();
-        let role = roles.first().expect("at least one agent loaded");
-        let ctx = build_template_context("rust", "my-repo", role, 20, None);
-        assert_eq!(ctx["language"], "rust");
-        assert_eq!(ctx["repo"], "my-repo");
-        assert_eq!(ctx["role"], *role);
-        assert_eq!(ctx["max_findings"], 20);
-    }
-
-    #[test]
-    fn test_build_template_context_with_extra() {
-        PromptLibrary::new().unwrap();
-        let roles = PromptLibrary::get_instance().abbreviations();
-        let role = roles.first().expect("at least one agent loaded");
-        let mut extra = HashMap::new();
-        extra.insert("diff".to_string(), serde_json::json!("some diff"));
-        extra.insert("file_list".to_string(), serde_json::json!(["a.rs", "b.rs"]));
-        let ctx = build_template_context("python", "my-repo", role, 15, Some(extra));
-        assert_eq!(ctx["diff"], "some diff");
-        assert_eq!(ctx["file_list"][0], "a.rs");
     }
 
     #[test]

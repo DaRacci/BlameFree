@@ -10,9 +10,12 @@ exp14_submit_finding = []
 
 [dependencies]
 anyhow = { workspace = true }
+crb-reporting = { path = "../crb-reporting" }
 crb-types = { path = "../crb-types" }
+futures = { workspace = true }
 handlebars = { workspace = true }
 include_dir = { workspace = true }
+mti = { workspace = true, features = ["serde"] }
 rig-core = { workspace = true }
 # rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
 serde = { workspace = true }
@@ -20,7 +23,7 @@ serde_fields = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tracing = { workspace = true }
-mti = { workspace = true, features = ["serde"] }
+tokio = { workspace = true }
 
 [lints]
 workspace = true

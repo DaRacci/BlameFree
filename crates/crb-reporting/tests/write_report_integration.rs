@@ -4,7 +4,6 @@ use crb_reporting::cost::{AnalyticsSnapshot, CacheUsage, SessionUsage};
 use crb_reporting::write_report;
 use crb_types::benchmark::golden::GoldenComment;
 use crb_types::benchmark::judge::JudgeVerdict;
-use crb_types::benchmark::metrics::Metrics;
 use crb_types::benchmark::result::PrResult;
 use crb_types::vcs::pr::PrMeta;
 use mti::prelude::{MagicTypeIdExt, V7};

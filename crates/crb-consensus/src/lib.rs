@@ -5,7 +5,6 @@
 //! judge fallback against golden comments.
 
 pub mod adaptive;
-pub mod judge;
 pub mod pipeline;
 
 use crb_reporting::cost::AnalyticsSnapshot;
@@ -134,6 +133,7 @@ mod tests {
             agents: vec![],
             true_positives: vec![(
                 GoldenComment {
+                    id: None,
                     comment: "foo".into(),
                     severity: Severity::Critical,
                 },

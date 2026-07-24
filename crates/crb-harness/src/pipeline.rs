@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use crb_agents::build_agent;
+use crb_agents::{build_agent, stream_agent};
 use crb_consensus::adaptive::get_agents_for_diff;
 use crb_shared::diff::{self, Diff};
 use crb_tools::build_tool_server;
@@ -12,19 +12,8 @@ use crb_types::{RunEvent, finding::Finding};
 use tokio::task;
 use tracing::{error, info, warn};
 
+use crate::eval::EvalConfig;
 use crate::finding::post_process_findings;
-use crate::{eval::EvalConfig, review::stream_agent};
-
-// Helper macro to send events to the dashboard if the channel is available.
-// `$config` must be an expression that yields an `&EvalConfig`.
-#[macro_export]
-macro_rules! send_event {
-    ($config:expr, $event:expr) => {
-        if let Some(tx) = &$config.dashboard_tx {
-            let _ = tx.send($event);
-        }
-    };
-}
 
 /// Send AgentStarted events for each configured agent.
 // pub async fn send_agent_started_events(config: &EvalConfig, identifier: &str) {

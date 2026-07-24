@@ -1,4 +1,4 @@
-use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "seaorm-storage")]
@@ -11,7 +11,7 @@ use crate::{benchmark::golden::GoldenComment, finding::Finding};
     derive(crb_macros::EntityModel),
     sea_orm(table_name = "judge_verdicts")
 )]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct JudgeVerdict {
     /// Surrogate primary key
     #[cfg_attr(
@@ -31,7 +31,7 @@ pub struct JudgeVerdict {
             on_delete = "Cascade"
         )
     )]
-    pub finding_id: i32,
+    pub finding_id: Option<i32>,
 
     /// Brief explanation of why the judge determined a match or no match.
     #[serde(default)]
@@ -47,10 +47,10 @@ pub struct JudgeVerdict {
 }
 
 impl JudgeVerdict {
-    pub fn new(finding_id: i32, reasoning: String, match_: bool, confidence: f64) -> Self {
+    pub fn new(reasoning: String, match_: bool, confidence: f64) -> Self {
         Self {
             id: None,
-            finding_id,
+            finding_id: None,
             reasoning,
             match_,
             confidence,
@@ -59,7 +59,7 @@ impl JudgeVerdict {
 }
 
 /// Contains a list of the findings and verdicts
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct JudgedFindings {
     pub findings: Vec<(Finding, JudgeVerdict)>,
     pub missed_comments: Vec<GoldenComment>,

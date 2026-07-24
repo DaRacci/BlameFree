@@ -24,7 +24,7 @@ pub struct GoldenCommentEntry {
     derive(crb_macros::EntityModel),
     sea_orm(table_name = "golden_comments")
 )]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct GoldenComment {
     /// Surrogate primary key, auto-incremented by the DB.
     ///

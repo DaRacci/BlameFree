@@ -1,26 +1,25 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use handlebars::Handlebars;
 use include_dir::{Dir, include_dir};
+use serde_json::Map;
 use std::collections::HashMap;
 use std::sync::OnceLock;
-use tracing::warn;
+use tracing::{instrument, warn};
 
 use crate::{agent::AgentEntry, templates};
 
 static PROMPT_LIBRARY: OnceLock<PromptLibrary> = OnceLock::new();
 static PROMPTS_DIR: Dir = include_dir!("$CARGO_MANIFEST_DIR/../../prompts");
 
-const AGENT_TEMPLATE_PATH: &str = "agent.hbs";
 const AGENTS_DIR: &str = "agents";
 const SECTIONS_DIR: &str = "sections";
 
 /// A library of role prompts loaded from embedded templates and markdown files.
 ///
-/// The [`PromptLibrary`] is initialised at compile time via `include_dir!` and
-/// provides:
+/// The [`PromptLibrary`] is initialised at compile time via `include_dir!` and provides:
 /// - Role-specific agent prompt rendering through a Handlebars template.
-/// - Section content injection (output_format, max_findings, etc.).
-/// - Agent metadata lookups (config, raw body).
+/// - Section content injection
+/// - Agent metadata lookup
 #[derive(Clone)]
 pub struct PromptLibrary {
     /// Map of uppercase abbreviation -> agent entry.
@@ -41,19 +40,12 @@ impl PromptLibrary {
 
     /// Initialise from embedded data.
     ///
-    /// This function will initialise the static `PROMPT_LIBRARY` if it hasn't been initialised yet, and return a reference to it.
+    /// This function will initialise the static [`PROMPT_LIBRARY`] if it hasn't been initialised yet, and return a reference to it.
     /// Returns error if agent.hbs is missing or no agents are found.
     pub fn new() -> Result<&'static Self, String> {
         if PROMPT_LIBRARY.get().is_some() {
             return Ok(Self::get_instance());
         }
-
-        let agent_template = PROMPTS_DIR
-            .get_file(AGENT_TEMPLATE_PATH)
-            .ok_or("agent.hbs not found in embedded prompts")?
-            .contents_utf8()
-            .ok_or("agent.hbs is not valid UTF-8")?
-            .to_string();
 
         let mut sections: HashMap<String, String> = HashMap::new();
         if let Some(sections_dir) = PROMPTS_DIR.get_dir(SECTIONS_DIR) {
@@ -90,8 +82,22 @@ impl PromptLibrary {
         }
 
         let mut hb = templates::new_handlebars_registry();
-        hb.register_template_string("agent", &agent_template)
-            .map_err(|e| format!("Failed to register agent template: {e}"))?;
+        let templates_dir = PROMPTS_DIR
+            .get_dir("templates")
+            .ok_or("templates directory not found in embedded prompts")?;
+
+        for file in templates_dir.files() {
+            let name = file
+                .path()
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .ok_or("Failed to get template file name")?;
+            let content = file
+                .contents_utf8()
+                .ok_or("Template file is not valid UTF-8")?;
+            hb.register_template_string(name, content)
+                .map_err(|e| format!("Failed to register template '{}': {e}", name))?;
+        }
 
         let library = PromptLibrary {
             agents,
@@ -99,7 +105,7 @@ impl PromptLibrary {
             handlebars: hb,
         };
 
-        // If set() fails, another test already initialised the singleton — that's fine.
+        // If set() fails, another test already initialised the singleton.
         let _ = PROMPT_LIBRARY.set(library);
 
         Ok(Self::get_instance())
@@ -122,10 +128,6 @@ impl PromptLibrary {
     /// `vars` provides runtime variables like `diff`, `file_list`, `language`
     ///
     /// Agent context comes from the embedded YAML frontmatter.
-    ///
-    /// Section content (output_format, max_findings, submit_finding) is
-    /// rendered with the current context and injected as variables so that
-    /// `agent.hbs` can reference them with `{{output_format}}` etc.
     pub fn render(&self, agent: &AgentEntry, vars: HashMap<String, serde_json::Value>) -> String {
         let mut ctx = serde_json::Map::new();
         vars.into_iter().for_each(|(k, v)| {
@@ -167,16 +169,22 @@ impl PromptLibrary {
             }
         }
 
-        let ctx_value = serde_json::Value::Object(ctx);
+        const AGENT_TEMPLATE_NAME: &str = "agent";
+        self.render_template(AGENT_TEMPLATE_NAME, ctx)
+            .inspect_err(|e| warn!("Failed to render agent template: {e}"))
+            .unwrap_or_else(|_| "Unable to render agent prompt".to_string())
+    }
+
+    #[instrument(skip(self, vars), fields(template_name = template_name))]
+    pub fn render_template(
+        &self,
+        template_name: &str,
+        vars: Map<String, serde_json::Value>,
+    ) -> Result<String> {
+        let ctx = serde_json::Value::Object(vars.into_iter().collect()); // This is pretty dirty making a new map just to convert to Value, but it works for now.
         self.handlebars
-            .render("agent", &ctx_value)
-            .unwrap_or_else(|e| {
-                warn!(
-                    "Failed to render agent template for '{}': {e}",
-                    agent.role_name
-                );
-                format!("Error rendering prompt for {}: {e}", agent.role_name)
-            })
+            .render(template_name, &ctx)
+            .context(format!("Failed to render template '{}'", template_name))
     }
 
     /// List all known agent entries.
@@ -192,6 +200,16 @@ impl PromptLibrary {
     /// Get the generalist agent entry, if available.
     pub fn generalist(&self) -> Option<&AgentEntry> {
         self.agents.values().find(|e| e.generalist_agent)
+    }
+}
+
+pub trait PromptProvider {
+    fn get(&self) -> Option<&str>;
+}
+
+impl PromptProvider for AgentEntry {
+    fn get(&self) -> Option<&str> {
+        Some(self.role_prompt.as_str())
     }
 }
 

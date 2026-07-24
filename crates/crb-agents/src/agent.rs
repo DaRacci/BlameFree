@@ -1,7 +1,11 @@
+use std::collections::HashMap;
+
 use anyhow::{Result, anyhow, bail};
 use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
 use serde::Deserialize;
 use serde_fields::SerdeField;
+
+use crate::{AgentDetailsProvider, prompts::PromptLibrary};
 
 /// A single agent entry parsed from a markdown manifest file.
 #[derive(Debug, Clone, Deserialize, SerdeField, Default)]
@@ -68,6 +72,20 @@ impl AgentEntry {
         }
 
         Ok(entry)
+    }
+}
+
+impl AgentDetailsProvider for AgentEntry {
+    fn get_name(&self) -> &str {
+        &self.role_name
+    }
+
+    fn get_prompt(&self, vars: HashMap<String, serde_json::Value>) -> String {
+        PromptLibrary::get_instance().render(self, vars)
+    }
+
+    fn get_description(&self) -> &str {
+        &self.role_domain
     }
 }
 

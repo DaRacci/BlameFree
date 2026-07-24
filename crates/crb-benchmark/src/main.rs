@@ -25,8 +25,9 @@ use crb_reporting::history::append_run_history;
 use crb_rules::RULES_DIR;
 use crb_rules::RuleSet;
 use crb_shared::diff::Diff;
+use crb_shared::string::sanitize_filename;
 use crb_shared::url::parse_github_url;
-use crb_shared::{DEFAULT_MODEL, OUTPUT_CACHE_DIR, sanitize_filename};
+use crb_shared::{DEFAULT_MODEL, OUTPUT_CACHE_DIR};
 use crb_tools::linters::LINTER_CONFIG_FILE;
 use crb_types::RunEvent;
 use crb_types::benchmark::metrics::{Metrics, MetricsProvider};
@@ -43,7 +44,6 @@ use tracing::{error, info, info_span, warn};
 
 mod diffs;
 mod scaffold;
-mod validate;
 
 #[derive(Debug, Parser)]
 #[command(name = "crb-benchmark", about = "Benchmark preparation CLI")]
@@ -70,13 +70,6 @@ enum Commands {
         /// Benchmark directory (contains base-repos/, diffs/, worktrees/).
         #[arg(long, default_value = BENCHMARK_DIR)]
         benchmark_dir: PathBuf,
-    },
-
-    /// Validate golden datasets for integrity.
-    Validate {
-        /// Directory containing golden comment datasets.
-        #[arg(long, default_value = DATASETS_DIR)]
-        dataset_dir: PathBuf,
     },
 
     /// Show all PRs in a dataset with URLs.
@@ -157,9 +150,6 @@ fn main() -> Result<()> {
         Commands::FetchDiffs { benchmark_dir } => {
             diffs::run(&benchmark_dir)?;
         }
-        Commands::Validate { dataset_dir } => {
-            validate::run_validate(&dataset_dir)?;
-        }
         Commands::List { dataset_dir } => {
             run_list(&dataset_dir)?;
         }
@@ -182,7 +172,7 @@ fn main() -> Result<()> {
         } => {
             let rt = tokio::runtime::Runtime::new()?;
 
-            // Pre-warm model capabilities cache (uses blocking HTTP, must be called outside the async runtime)
+            // Pre-warm model capabilities cache
             model_capabilities::warm_model_cache_blocking();
 
             let roles = roles.unwrap_or_else(|| {
