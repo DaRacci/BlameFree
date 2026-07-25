@@ -27,18 +27,6 @@ pub struct Benchmark {
 }
 
 impl Benchmark {
-    /// Create a new Benchmark with the current time.
-    pub fn new(id: MagicTypeId, dataset_name: String, dataset_version: Option<String>) -> Self {
-        let now = Utc::now().naive_utc();
-        Self {
-            id,
-            dataset_name,
-            dataset_version,
-            created_at: now,
-            updated_at: now,
-        }
-    }
-
     /// Get `created_at` as a `DateTime<Utc>`.
     pub fn created_at_utc(&self) -> DateTime<Utc> {
         DateTime::from_naive_utc_and_offset(self.created_at, Utc)

@@ -59,18 +59,6 @@ pub struct JudgeVerdict {
     pub confidence: f64,
 }
 
-impl JudgeVerdict {
-    pub fn new(reasoning: String, match_: bool, confidence: f64) -> Self {
-        Self {
-            id: None,
-            finding_id: None,
-            reasoning,
-            match_,
-            confidence,
-        }
-    }
-}
-
 /// Contains a list of the findings and verdicts
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct JudgedFindings {

@@ -17,6 +17,16 @@ pub mod wrappers;
 #[cfg(feature = "seaorm-storage")]
 extern crate self as crb_types;
 
+/// Trait for domain structs that have a surrogate primary key.
+///
+/// Auto-implemented by `#[derive(EntityModel)]`. The `Id` associated type
+/// is the unwrapped PK type (e.g. `i32` for `Option<i32>`, `MagicTypeId`
+/// for non-Option PKs).
+pub trait EntityId {
+    type Id: Clone;
+    fn get_id(&self) -> Option<Self::Id>;
+}
+
 use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};
 

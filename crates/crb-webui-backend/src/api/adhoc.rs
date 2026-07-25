@@ -443,7 +443,7 @@ async fn run_adhoc_review_inner(
             .map(|f| {
                 (
                     f,
-                    JudgeVerdict::new(0, "Pending judge evaluation".to_string(), false, 0.0),
+                    JudgeVerdict::new("Pending judge evaluation".to_string(), false, 0.0),
                 )
             })
             .collect(),

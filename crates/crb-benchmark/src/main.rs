@@ -8,6 +8,7 @@ use std::{env, fs, io};
 use std::{process, time};
 
 use anyhow::{Context, Result, anyhow};
+use chrono::Utc;
 use clap::{Parser, Subcommand};
 use crb_agents::agent::AgentEntry;
 use crb_agents::prompts::PromptLibrary;
@@ -612,10 +613,13 @@ async fn run_benchmark(
             .unwrap()
             .as_secs()
     );
+    let now = Utc::now().naive_utc();
     let benchmark = Benchmark::new(
         run_id.as_str().create_type_id::<V7>(),
         dataset_dir.to_string_lossy().to_string(),
         Some("1.0".to_string()),
+        now,
+        now,
     );
     if let Err(e) = store.save::<Benchmark>(&benchmark).await {
         warn!("Failed to save Benchmark: {e}");

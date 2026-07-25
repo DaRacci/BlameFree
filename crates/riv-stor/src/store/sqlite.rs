@@ -369,7 +369,8 @@ async fn save_pr_result(db: &DatabaseConnection, pr: &PrResult) -> Result<(), Er
 
         let verdict_model = JudgeVerdictModel {
             id: 0,
-            finding_id: found_finding_id,
+            finding_id: Some(found_finding_id),
+            linked_comment_id: None,
             reasoning: verdict.reasoning.clone(),
             match_: verdict.match_,
             confidence: verdict.confidence,
@@ -674,6 +675,7 @@ async fn load_findings_and_verdicts(
             Some(vm) => JudgeVerdict {
                 id: Some(vm.id),
                 finding_id: vm.finding_id,
+                linked_comment_id: vm.linked_comment_id,
                 reasoning: vm.reasoning,
                 match_: vm.match_,
                 confidence: vm.confidence,

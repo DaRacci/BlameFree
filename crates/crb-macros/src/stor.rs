@@ -104,7 +104,16 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
         panic!("EntityModel: #[sea_orm(table_name = \"...\")] is required on the struct");
     };
 
-    let processed: Vec<ProcessedField> = fields.iter().map(process_field).collect();
+    let mut processed: Vec<ProcessedField> = fields.iter().map(process_field).collect();
+
+    // Post-fixup: mark implicit `id` fields as primary keys.
+    // These are fields named `id` that have no `#[sea_orm(...)]` attribute —
+    // the macro synthesizes `#[sea_orm(primary_key, column_type = "Text")]` for them.
+    for pf in &mut processed {
+        if !pf.is_primary_key && pf.ident == "id" && pf.relation.is_none() && pf.flatten.is_none() {
+            pf.is_primary_key = true;
+        }
+    }
 
     // Partition into scalar columns, relation fields, and flatten fields
     let mut scalar_fields: Vec<TokenStream2> = Vec::new();
@@ -503,6 +512,205 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
         }
     };
 
+    // ── EntityId impl ──────────────────────────────────────
+    // Find the PK field and derive its Id type.
+    let (pk_ident, pk_is_option, entity_id_ty) = if has_explicit_id {
+        let pk = processed
+            .iter()
+            .find(|pf| pf.is_primary_key)
+            .expect("EntityModel: no primary key found");
+        let is_opt = type_ends_with(&pk.ty, "Option");
+        // Unwrap Option<T> → T
+        let inner_ty = if is_opt {
+            // Parse unwrapped type from Option<T>
+            if let Type::Path(tp) = &pk.ty {
+                if let Some(seg) = tp.path.segments.last() {
+                    if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+                        if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                            Some(quote!(#inner))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let id_ty = if let Some(ref inner) = inner_ty {
+            quote!(#inner)
+        } else {
+            let pk_ty = &pk.ty;
+            quote!(#pk_ty)
+        };
+        (pk.ident.clone(), is_opt, id_ty)
+    } else {
+        // Implicit auto-increment PK
+        let pk = Ident::new("id", proc_macro2::Span::call_site());
+        (pk, false, quote!(i32))
+    };
+
+    let entity_id_impl = {
+        let get_id_expr = if pk_is_option {
+            quote! { self.#pk_ident.clone() }
+        } else {
+            quote! { Some(self.#pk_ident.clone()) }
+        };
+        quote! {
+            impl crate::EntityId for #struct_name {
+                type Id = #entity_id_ty;
+                fn get_id(&self) -> Option<Self::Id> {
+                    #get_id_expr
+                }
+            }
+        }
+    };
+
+    // ── new() ──────────────────────────────────────────────
+    //
+    // Skip generation if any field has #[sea_orm(ignore)] — we can't guess
+    // a reasonable default for arbitrary types.
+    let has_ignored = processed.iter().any(|pf| pf.is_ignored);
+
+    let new_impl = if has_ignored {
+        quote! {}
+    } else {
+        // Build complete field list for the struct literal.
+        // Each entry: (field_name, expression_token_stream)
+        let mut all_fields: Vec<(Ident, TokenStream2)> = Vec::new();
+        let mut new_param_decls: Vec<TokenStream2> = Vec::new();
+
+        for pf in &processed {
+            if pf.flatten.is_some() {
+                continue; // flatten fields handled via ..Default::default() fallback below
+            }
+
+            let name = &pf.ident;
+
+            // HasMany / HasOne — pure relation, always Vec::new()
+            if matches!(
+                pf.relation,
+                Some(RelationKind::HasMany { .. }) | Some(RelationKind::HasOne { .. })
+            ) {
+                all_fields.push((name.clone(), quote! { Vec::new() }));
+                continue;
+            }
+
+            // Auto-increment PK → None
+            if pf.is_primary_key && pf.auto_increment {
+                all_fields.push((name.clone(), quote! { None }));
+                continue;
+            }
+
+            // Optional FK (BelongsTo on Option<T>) → None
+            if matches!(pf.relation, Some(RelationKind::BelongsTo { .. }))
+                && type_ends_with(&pf.ty, "Option")
+            {
+                all_fields.push((name.clone(), quote! { None }));
+                continue;
+            }
+
+            // All other fields become required params
+            let ty = pf.ty.clone();
+            all_fields.push((name.clone(), quote! { #name }));
+            new_param_decls.push(quote! { #name: #ty });
+        }
+
+        // Determine fallback: if there are flatten fields, use ..Default::default().
+        // Otherwise emit a complete literal.
+        let has_flatten = processed.iter().any(|pf| pf.flatten.is_some());
+        let defaults_fallback = if has_flatten {
+            quote! { ..Default::default() }
+        } else {
+            quote! {}
+        };
+
+        if new_param_decls.is_empty() && !has_flatten {
+            quote! {}
+        } else {
+            let set_fields = all_fields
+                .iter()
+                .map(|(name, expr)| quote! { #name: #expr });
+            quote! {
+                impl #struct_name {
+                    pub fn new(#(#new_param_decls),*) -> Self {
+                        Self {
+                            #(#set_fields,)*
+                            #defaults_fallback
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    // ── link() ─────────────────────────────────────────────
+    // Collect FK field info: (fk_field_ident, entity_name, to_column, inner_type)
+    // inner_type is the unwrapped type of the FK field (e.g. i32 from Option<i32>).
+    let fk_entries: Vec<(Ident, String, String, TokenStream2)> = processed
+        .iter()
+        .filter_map(|pf| {
+            if let Some(RelationKind::BelongsTo {
+                entity_alias, to, ..
+            }) = &pf.relation
+            {
+                // Unwrap Option<T> → T for the FK type
+                let inner_ty = unwrap_option_type(&pf.ty);
+                Some((pf.ident.clone(), entity_alias.clone(), to.clone(), inner_ty))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let link_impl = if fk_entries.is_empty() {
+        quote! {}
+    } else {
+        let link_params: Vec<TokenStream2> = fk_entries
+            .iter()
+            .map(|(_, entity_alias, _, inner_ty)| {
+                // Strip "Entity" suffix, snake_case the entity name
+                let entity_type = entity_alias.strip_suffix("Entity").unwrap_or(entity_alias);
+                let param_name =
+                    Ident::new(&to_snake_case(entity_type), proc_macro2::Span::call_site());
+                quote! { #param_name: &dyn crate::EntityId<Id = #inner_ty> }
+            })
+            .collect();
+
+        let link_sets: Vec<TokenStream2> = fk_entries
+            .iter()
+            .map(|(fk_ident, entity_alias, _, _inner_ty)| {
+                let entity_type = entity_alias.strip_suffix("Entity").unwrap_or(entity_alias);
+                let param_name =
+                    Ident::new(&to_snake_case(entity_type), proc_macro2::Span::call_site());
+                // Find the FK field to check if it's Option<T>
+                let fk_pf = processed.iter().find(|pf| pf.ident == *fk_ident).unwrap();
+                let is_opt_fk = type_ends_with(&fk_pf.ty, "Option");
+                let get_id_expr = if is_opt_fk {
+                    quote! { #param_name.get_id() }
+                } else {
+                    quote! { #param_name.get_id().expect("link: entity missing id") }
+                };
+                quote! { self.#fk_ident = #get_id_expr; }
+            })
+            .collect();
+
+        quote! {
+            impl #struct_name {
+                pub fn link(mut self, #(#link_params),*) -> Self {
+                    #(#link_sets)*
+                    self
+                }
+            }
+        }
+    };
+
     let expanded = quote! {
         /// SeaORM entity model auto-generated by `EntityModel` derive.
         #[doc(hidden)]
@@ -537,6 +745,10 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
         pub use #model_mod::Column as #column_name;
         pub use #model_mod::PrimaryKey as #pk_name;
         pub use #model_mod::ActiveModel as #active_name;
+
+        #entity_id_impl
+        #new_impl
+        #link_impl
     };
 
     TokenStream::from(expanded)
@@ -571,6 +783,12 @@ pub struct ProcessedField {
 
     /// True if the field has #[sea_orm(ignore)].
     pub is_ignored: bool,
+
+    /// True if the field is the primary key.
+    pub is_primary_key: bool,
+
+    /// True if the PK is auto-incremented by the DB.
+    pub auto_increment: bool,
 
     /// `#[sea_orm(...)]` tokens to pass through verbatim.
     pub passthrough: Vec<TokenStream2>,
@@ -622,6 +840,22 @@ pub fn is_optional_magic_type_id(ty: &Type) -> bool {
     false
 }
 
+/// If the type is `Option<T>`, return `T` token stream. Otherwise return the type itself.
+pub fn unwrap_option_type(ty: &Type) -> TokenStream2 {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            if segment.ident == "Option" {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                        return quote! { #inner };
+                    }
+                }
+            }
+        }
+    }
+    quote! { #ty }
+}
+
 pub fn extract_key_value(
     attrs: &[Attribute],
     attribute_scope: &str,
@@ -668,6 +902,8 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
     let ident = field.ident.clone().expect("named field");
     let ty = field.ty.clone();
     let mut is_ignored = false;
+    let mut is_primary_key = false;
+    let mut auto_increment = false;
     let mut relation: Option<RelationKind> = None;
     let mut passthrough = Vec::new();
     let mut flatten: Option<FlattenSpec> = None;
@@ -724,6 +960,14 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
             continue;
         }
 
+        // Detect primary key & auto_increment
+        if inner_lower.contains("primary_key") {
+            is_primary_key = true;
+        }
+        if inner_lower.contains("auto_increment") {
+            auto_increment = true;
+        }
+
         // Pass through the original attribute verbatim
         passthrough.push(quote! { #[sea_orm(#inner_ts)] });
     }
@@ -732,6 +976,8 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
         ident,
         ty,
         is_ignored,
+        is_primary_key,
+        auto_increment,
         passthrough,
         relation,
         flatten,
@@ -743,6 +989,31 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
 pub fn entity_path_from_alias(alias: &str) -> TokenStream2 {
     let alias_ident = Ident::new(alias, proc_macro2::Span::call_site());
     quote! { super::#alias_ident }
+}
+
+/// Convert PascalCase or camelCase to snake_case.
+pub fn to_snake_case(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() + 4);
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch.is_uppercase() {
+            if !result.is_empty() && !result.ends_with('_') {
+                // Insert underscore before uppercase, but not if it's first or
+                // the previous char is already uppercase (handles acronyms).
+                if let Some(&next) = chars.peek() {
+                    if next.is_lowercase() {
+                        result.push('_');
+                    }
+                }
+            }
+            for lc in ch.to_lowercase() {
+                result.push(lc);
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    result
 }
 
 /// Convert snake_case to PascalCase
