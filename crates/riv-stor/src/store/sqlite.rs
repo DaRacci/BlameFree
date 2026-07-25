@@ -6,7 +6,7 @@ use std::{
 };
 
 use crb_types::{
-    agent::{AgentResponse, AgentSession, AgentSessionEntity, RoleMessage, ToolInvocation},
+    agent::{AgentSession, AgentSessionEntity, AgentTurn, AgentTurnMessage},
     benchmark::{
         golden::{GoldenComment, GoldenCommentColumn, GoldenCommentEntity, GoldenCommentModel},
         judge::{JudgeVerdict, JudgeVerdictColumn, JudgeVerdictEntity, JudgeVerdictModel},
@@ -470,46 +470,16 @@ async fn save_agent_session(db: &DatabaseConnection, session: &AgentSession) -> 
             .unwrap_or(0);
 
         // Insert messages for this turn
-        for (msg_idx, msg) in turn.iter().enumerate() {
-            let (role, text_content, thinking, output, tool_name, tool_input, tool_output) =
-                match msg {
-                    RoleMessage::User(text) => (
-                        Some("user".to_string()),
-                        Some(text.clone()),
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                    ),
-                    RoleMessage::System(text) => (
-                        Some("system".to_string()),
-                        Some(text.clone()),
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                    ),
-                    RoleMessage::Assistant(resp) => (
-                        Some("assistant".to_string()),
-                        None,
-                        Some(resp.thinking.clone()),
-                        Some(resp.output.clone()),
-                        None,
-                        None,
-                        None,
-                    ),
-                    RoleMessage::Tool(invocation) => (
-                        Some("tool".to_string()),
-                        None,
-                        None,
-                        None,
-                        Some(invocation.tool_name.clone()),
-                        Some(invocation.input.to_string()),
-                        Some(invocation.output.to_string()),
-                    ),
-                };
+        for (msg_idx, msg) in turn.messages.iter().enumerate() {
+            let (role, text_content, thinking, output, tool_name, tool_input, tool_output) = (
+                Some(msg.role.clone()),
+                msg.text_content.clone(),
+                msg.thinking.clone(),
+                msg.output.clone(),
+                msg.tool_name.clone(),
+                msg.tool_input.clone(),
+                msg.tool_output.clone(),
+            );
 
             db.execute_unprepared(&format!(
                 "INSERT INTO agent_turn_messages \
@@ -771,10 +741,11 @@ async fn load_agent_session(
         .await
         .map_err(|e| Error::Query(format!("failed to load agent_turns: {e}")))?;
 
-    let mut turns: Vec<Vec<RoleMessage>> = Vec::with_capacity(turn_rows.len());
+    let mut turns: Vec<AgentTurn> = Vec::with_capacity(turn_rows.len());
 
     for turn_row in &turn_rows {
         let turn_db_id: i32 = turn_row.try_get_by_index(0).unwrap_or(0);
+        let turn_index: i32 = turn_row.try_get_by_index(1).unwrap_or(0);
 
         // 3. Load messages for this turn (ordered by msg_index)
         let msg_rows = db
@@ -790,9 +761,10 @@ async fn load_agent_session(
             .await
             .map_err(|e| Error::Query(format!("failed to load turn messages: {e}")))?;
 
-        let mut messages: Vec<RoleMessage> = Vec::with_capacity(msg_rows.len());
+        let mut messages: Vec<AgentTurnMessage> = Vec::with_capacity(msg_rows.len());
 
         for msg_row in &msg_rows {
+            let _msg_index: i32 = msg_row.try_get_by_index(0).unwrap_or(0);
             let role: String = msg_row.try_get_by_index(1).unwrap_or_default();
             let text_content: Option<String> = msg_row.try_get_by_index(2).ok();
             let thinking: Option<String> = msg_row.try_get_by_index(3).ok();
@@ -801,34 +773,26 @@ async fn load_agent_session(
             let tool_input: Option<String> = msg_row.try_get_by_index(6).ok();
             let tool_output: Option<String> = msg_row.try_get_by_index(7).ok();
 
-            let message = match role.as_str() {
-                "user" => RoleMessage::User(text_content.unwrap_or_default()),
-                "system" => RoleMessage::System(text_content.unwrap_or_default()),
-                "assistant" => {
-                    let resp = AgentResponse {
-                        thinking: thinking.unwrap_or_default(),
-                        output: output.unwrap_or_default(),
-                    };
-                    RoleMessage::Assistant(resp)
-                }
-                "tool" => {
-                    let invocation = ToolInvocation {
-                        tool_name: tool_name.unwrap_or_default(),
-                        input: tool_input
-                            .and_then(|s| serde_json::from_str(&s).ok())
-                            .unwrap_or(serde_json::Value::Null),
-                        output: tool_output
-                            .and_then(|s| serde_json::from_str(&s).ok())
-                            .unwrap_or(serde_json::Value::Null),
-                    };
-                    RoleMessage::Tool(invocation)
-                }
-                _ => RoleMessage::User(String::new()),
-            };
-            messages.push(message);
+            messages.push(AgentTurnMessage {
+                id: None,
+                turn_id: turn_db_id,
+                msg_index: _msg_index,
+                role,
+                text_content,
+                thinking,
+                output,
+                tool_name,
+                tool_input,
+                tool_output,
+            });
         }
 
-        turns.push(messages);
+        turns.push(AgentTurn {
+            id: Some(turn_db_id),
+            session_id: id.clone(),
+            turn_index,
+            messages,
+        });
     }
 
     Ok(Some(AgentSession {

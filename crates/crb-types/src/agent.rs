@@ -58,6 +58,78 @@ pub struct AgentTurnMessage {
     pub tool_output: Option<String>,
 }
 
+impl From<RoleMessage> for AgentTurnMessage {
+    fn from(msg: RoleMessage) -> Self {
+        match msg {
+            RoleMessage::User(text) => Self {
+                role: "user".into(),
+                text_content: Some(text),
+                ..Default::default()
+            },
+            RoleMessage::System(text) => Self {
+                role: "system".into(),
+                text_content: Some(text),
+                ..Default::default()
+            },
+            RoleMessage::Assistant(resp) => Self {
+                role: "assistant".into(),
+                thinking: Some(resp.thinking),
+                output: Some(resp.output),
+                ..Default::default()
+            },
+            RoleMessage::Tool(inv) => Self {
+                role: "tool".into(),
+                tool_name: Some(inv.tool_name),
+                tool_input: Some(inv.input.to_string()),
+                tool_output: Some(inv.output.to_string()),
+                ..Default::default()
+            },
+        }
+    }
+}
+
+impl From<AgentTurnMessage> for RoleMessage {
+    fn from(msg: AgentTurnMessage) -> Self {
+        match msg.role.as_str() {
+            "user" => RoleMessage::User(msg.text_content.unwrap_or_default()),
+            "system" => RoleMessage::System(msg.text_content.unwrap_or_default()),
+            "assistant" => RoleMessage::Assistant(AgentResponse {
+                thinking: msg.thinking.unwrap_or_default(),
+                output: msg.output.unwrap_or_default(),
+            }),
+            "tool" => RoleMessage::Tool(ToolInvocation {
+                tool_name: msg.tool_name.unwrap_or_default(),
+                input: msg
+                    .tool_input
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_default(),
+                output: msg
+                    .tool_output
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_default(),
+            }),
+            _ => RoleMessage::User(String::new()),
+        }
+    }
+}
+
+impl Default for AgentTurnMessage {
+    fn default() -> Self {
+        Self {
+            id: None,
+            turn_id: 0,
+            msg_index: 0,
+            role: String::new(),
+            text_content: None,
+            thinking: None,
+            output: None,
+            tool_name: None,
+            tool_input: None,
+            tool_output: None,
+        }
+    }
+}
+
 /// A single turn in an agent session, stored in the `agent_turns` table.
 #[cfg_attr(
     feature = "seaorm-storage",
@@ -89,12 +161,12 @@ pub struct AgentTurn {
     /// The zero-based index of this turn within the session.
     pub turn_index: i32,
 
-    /// Messages in this turn (pure relation — no DB column).
+    /// Messages in this turn.
     #[cfg_attr(
         feature = "seaorm-storage",
         sea_orm(has_many, entity = "AgentTurnMessageEntity")
     )]
-    pub messages: Vec<RoleMessage>,
+    pub messages: Vec<AgentTurnMessage>,
 }
 
 /// A single agent session, containing turns and messages.
@@ -122,21 +194,18 @@ pub struct AgentSession {
     pub review_id: Option<MagicTypeId>,
 
     /// The model name used for this agent session.
-    #[cfg_attr(
-        feature = "seaorm-storage",
-        sea_orm(column_name = "model_name")
-    )]
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(column_name = "model_name"))]
     pub model_name: String,
 
     /// A list of turns the agent has taken in this session.
     ///
-    /// Each turn is an ordered list of [`RoleMessage`]'s,
+    /// Each turn contains its own ordered list of messages,
     /// which can be either user messages, tool messages, or assistant messages.
     #[cfg_attr(
         feature = "seaorm-storage",
         sea_orm(has_many, entity = "AgentTurnEntity")
     )]
-    pub turns: Vec<Vec<RoleMessage>>,
+    pub turns: Vec<AgentTurn>,
 }
 
 impl AgentSession {

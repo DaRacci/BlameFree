@@ -176,26 +176,36 @@ async fn test_agent_session_round_trip() {
         model_name: "spongebob".to_string(),
         review_id: None,
         turns: vec![
-            vec![
-                RoleMessage::User("Hello, review this PR".to_string()),
-                RoleMessage::Assistant(AgentResponse {
-                    thinking: "Thinking about security issues...".to_string(),
-                    output: "I'll check the code for vulnerabilities.".to_string(),
-                }),
-                RoleMessage::Tool(ToolInvocation {
-                    tool_name: "view_file".to_string(),
-                    input: serde_json::json!({"path": "src/main.rs"}),
-                    output: serde_json::json!({"content": "fn main() {}"}),
-                }),
-            ],
-            vec![
-                RoleMessage::System("You are a security reviewer.".to_string()),
-                RoleMessage::User("Focus on auth issues.".to_string()),
-                RoleMessage::Assistant(AgentResponse {
-                    thinking: "Checking authentication logic...".to_string(),
-                    output: "Found no auth issues in this file.".to_string(),
-                }),
-            ],
+            AgentTurn {
+                id: None,
+                session_id: id.clone(),
+                turn_index: 0,
+                messages: vec![
+                    RoleMessage::User("Hello, review this PR".to_string()),
+                    RoleMessage::Assistant(AgentResponse {
+                        thinking: "Thinking about security issues...".to_string(),
+                        output: "I'll check the code for vulnerabilities.".to_string(),
+                    }),
+                    RoleMessage::Tool(ToolInvocation {
+                        tool_name: "view_file".to_string(),
+                        input: serde_json::json!({"path": "src/main.rs"}),
+                        output: serde_json::json!({"content": "fn main() {}"}),
+                    }),
+                ],
+            },
+            AgentTurn {
+                id: None,
+                session_id: id.clone(),
+                turn_index: 1,
+                messages: vec![
+                    RoleMessage::System("You are a security reviewer.".to_string()),
+                    RoleMessage::User("Focus on auth issues.".to_string()),
+                    RoleMessage::Assistant(AgentResponse {
+                        thinking: "Checking authentication logic...".to_string(),
+                        output: "Found no auth issues in this file.".to_string(),
+                    }),
+                ],
+            },
         ],
     };
 
@@ -209,36 +219,37 @@ async fn test_agent_session_round_trip() {
     assert_eq!(loaded.id, id);
     assert_eq!(loaded.model_name, "spongebob");
     assert_eq!(loaded.turns.len(), 2, "should have 2 turns");
-
-    assert_eq!(loaded.turns[0].len(), 3, "turn 0 should have 3 messages");
-    match &loaded.turns[0][0] {
+    let turn0 = &loaded.turns[0];
+    let turn1 = &loaded.turns[1];
+    assert_eq!(turn0.messages.len(), 3, "turn 0 should have 3 messages");
+    match &turn0.messages[0] {
         RoleMessage::User(text) => assert_eq!(text, "Hello, review this PR"),
         other => panic!("expected User message, got {other:?}"),
     }
-    match &loaded.turns[0][1] {
+    match &turn0.messages[1] {
         RoleMessage::Assistant(resp) => {
             assert_eq!(resp.thinking, "Thinking about security issues...");
             assert_eq!(resp.output, "I'll check the code for vulnerabilities.");
         }
         other => panic!("expected Assistant message, got {other:?}"),
     }
-    match &loaded.turns[0][2] {
+    match &turn0.messages[2] {
         RoleMessage::Tool(invocation) => {
             assert_eq!(invocation.tool_name, "view_file");
         }
         other => panic!("expected Tool message, got {other:?}"),
     }
 
-    assert_eq!(loaded.turns[1].len(), 3, "turn 1 should have 3 messages");
-    match &loaded.turns[1][0] {
+    assert_eq!(turn1.messages.len(), 3, "turn 1 should have 3 messages");
+    match &turn1.messages[0] {
         RoleMessage::System(text) => assert_eq!(text, "You are a security reviewer."),
         other => panic!("expected System message, got {other:?}"),
     }
-    match &loaded.turns[1][1] {
+    match &turn1.messages[1] {
         RoleMessage::User(text) => assert_eq!(text, "Focus on auth issues."),
         other => panic!("expected User message, got {other:?}"),
     }
-    match &loaded.turns[1][2] {
+    match &turn1.messages[2] {
         RoleMessage::Assistant(resp) => {
             assert_eq!(resp.thinking, "Checking authentication logic...");
             assert_eq!(resp.output, "Found no auth issues in this file.");

@@ -104,7 +104,15 @@ impl From<(&str, &AgentSession)> for AgentLogResponse {
     /// Extracts the first `User` message as the prompt, and the most recent
     /// `Assistant` message's `output` / `thinking` as response / reasoning.
     fn from((run_id, session): (&str, &AgentSession)) -> Self {
-        let turns: Vec<&RoleMessage> = session.turns.iter().flatten().collect();
+        let all_messages: Vec<RoleMessage> = session
+            .turns
+            .iter()
+            .flat_map(|t| t.messages.iter())
+            .cloned()
+            .map(RoleMessage::from)
+            .collect();
+
+        let turns: Vec<&RoleMessage> = all_messages.iter().collect();
 
         let prompt = turns.iter().find_map(|m| {
             if let RoleMessage::User(p) = m {
@@ -153,7 +161,15 @@ impl From<(&str, &AgentSession)> for PrAgentEntry {
     /// Scans the session's turns to determine whether prompt/response/reasoning
     /// data is available.
     fn from((role, session): (&str, &AgentSession)) -> Self {
-        let turns: Vec<&RoleMessage> = session.turns.iter().flatten().collect();
+        let all_messages: Vec<RoleMessage> = session
+            .turns
+            .iter()
+            .flat_map(|t| t.messages.iter())
+            .cloned()
+            .map(RoleMessage::from)
+            .collect();
+
+        let turns: Vec<&RoleMessage> = all_messages.iter().collect();
 
         let has_prompt = turns.iter().any(|m| matches!(m, RoleMessage::User(_)));
         let has_response = turns.iter().any(|m| matches!(m, RoleMessage::Assistant(_)));
