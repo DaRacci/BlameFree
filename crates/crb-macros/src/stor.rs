@@ -9,7 +9,7 @@ use syn::{
 /// Parsed `#[flatten(tag = "...", variants = { ... })]` attribute.
 #[derive(Debug, Clone)]
 pub struct FlattenSpec {
-    /// Discriminator column name (e.g., "review_type").
+    /// Discriminator column name.
     pub tag: String,
     /// Each variant's flat column definitions.
     pub variants: Vec<FlattenVariantDef>,
@@ -18,11 +18,11 @@ pub struct FlattenSpec {
 /// A single variant's column definitions within a flatten annotation.
 #[derive(Debug, Clone)]
 pub struct FlattenVariantDef {
-    /// The tag VALUE for this variant (e.g., "pull_request").
+    /// The tag VALUE for this variant.
     #[allow(unused)]
     pub name: String,
     /// Column definitions: (column_name, type_string).
-    /// Type string is the DB column type (e.g., "String", "i32").
+    /// Type string is the DB column type.
     pub columns: Vec<(String, String)>,
 }
 
@@ -261,7 +261,7 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
                 let v_str = snake_to_pascal(&ident.to_string());
                 let v = Ident::new(&v_str, proc_macro2::Span::call_site());
                 match kind {
-                    RelationKind::HasMany { entity_alias } => {
+                    RelationKind::HasMany { entity_alias, .. } => {
                         let child_path = entity_path_from_alias(entity_alias);
                         quote! {
                             Relation::#v => Entity::has_many(#child_path).into()
@@ -711,6 +711,135 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
         }
     };
 
+    // Collect HasMany children: (field_ident, entity_alias, child_fk_override, tuple_linked)
+    let mut child_specs: Vec<(
+        Ident,          // field ident (e.g. "golden_comments")
+        String,         // entity alias (e.g. "GoldenCommentEntity")
+        String,         // FK name (from annotation or convention)
+        Option<String>, // tuple linked_child entity, if any
+    )> = Vec::new();
+
+    for pf in &processed {
+        if let Some(RelationKind::HasMany {
+            entity_alias,
+            child_fk,
+            tuple_linked_child,
+        }) = &pf.relation
+        {
+            // Child FK: annotation override or convention
+            let child_fk = child_fk
+                .clone()
+                .unwrap_or_else(|| format!("{}_id", to_snake_case(&raw_name)));
+
+            child_specs.push((
+                pf.ident.clone(),
+                entity_alias.clone(),
+                child_fk,
+                tuple_linked_child.clone(),
+            ));
+        }
+    }
+
+    let save_impl = if child_specs.is_empty() {
+        // Simple save: insert-or-upsert, no children
+        let is_auto_inc_pk = processed
+            .iter()
+            .any(|pf| pf.is_primary_key && pf.auto_increment);
+        let insert_body = if is_auto_inc_pk {
+            quote! {
+                let active = #active_name::from(self.clone());
+                let _ = active.insert(db).await?;
+                Ok(())
+            }
+        } else {
+            quote! {
+                let active = #active_name::from(self.clone());
+                match active.clone().insert(db).await {
+                    Ok(_) => Ok(()),
+                    Err(e) if e.to_string().to_lowercase().contains("unique") => {
+                        active.update(db).await
+                            .map_err(|e| ::anyhow::anyhow!("update failed: {e}"))?;
+                        Ok(())
+                    }
+                    Err(e) => Err(anyhow::anyhow!("insert failed: {e}")),
+                }
+            }
+        };
+        quote! {
+            #[async_trait::async_trait]
+            impl crate::Save for #struct_name {
+                async fn save(&self, db: &::sea_orm::DatabaseConnection) -> Result<(), ::anyhow::Error> {
+                    use ::sea_orm::{ActiveModelTrait, IntoActiveModel};
+                    #insert_body
+                }
+            }
+        }
+    } else {
+        // Has children: save parent, then iterate children with FK wiring
+        let parent_insert = {
+            let is_auto_inc_pk = processed
+                .iter()
+                .any(|pf| pf.is_primary_key && pf.auto_increment);
+            if is_auto_inc_pk {
+                quote! {
+                    let active = #active_name::from(self.clone());
+                    let saved_parent = active.insert(db).await?;
+                    let __parent_pk = saved_parent.id;
+                }
+            } else {
+                // PK is known before insert (non-auto-increment)
+                quote! {
+                    let __parent_pk = self.id.clone();
+                    let active = #active_name::from(self.clone());
+                    match active.clone().insert(db).await {
+                        Ok(_) => {},
+                        Err(e) if e.to_string().to_lowercase().contains("unique") => {
+                            active.update(db).await
+                                .map_err(|e| ::anyhow::anyhow!("update failed: {e}"))?;
+                        }
+                        Err(e) => return Err(::anyhow::anyhow!("insert failed: {e}")),
+                    };
+                }
+            }
+        };
+
+        let child_blocks: Vec<TokenStream2> = child_specs
+            .iter()
+            .map(|(field_ident, entity_alias, child_fk, tuple_linked)| {
+                let fk_ident = Ident::new(child_fk, proc_macro2::Span::call_site());
+
+                if let Some(_linked) = tuple_linked {
+                    // Tuple: Vec<(A, B)> — emit stub, needs manual impl
+                    quote! {
+                        // TODO: tuple save for #field_ident — implement manually
+                        let _ = (&self.#field_ident, db);
+                    }
+                } else {
+                    // Simple Vec<Child> — recursively call child's Save
+                    quote! {
+                        for __child in &self.#field_ident {
+                            let mut __child_clone = __child.clone();
+                            __child_clone.#fk_ident = __parent_pk.clone();
+                            __child_clone.save(db).await?;
+                        }
+                    }
+                }
+            })
+            .collect();
+
+        quote! {
+            #[async_trait::async_trait]
+            impl crate::Save for #struct_name {
+                async fn save(&self, db: &::sea_orm::DatabaseConnection) -> Result<(), ::anyhow::Error> {
+                    use ::sea_orm::{ActiveModelTrait, IntoActiveModel};
+                    #parent_insert
+                    #(#child_blocks)*
+                    Ok(())
+                }
+            }
+        }
+    };
+
     let expanded = quote! {
         /// SeaORM entity model auto-generated by `EntityModel` derive.
         #[doc(hidden)]
@@ -749,20 +878,23 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
         #entity_id_impl
         #new_impl
         #link_impl
+        #save_impl
     };
 
     TokenStream::from(expanded)
 }
 
-// ---------------------------------------------------------------------------
-// Data structures
-// ---------------------------------------------------------------------------
-
 /// Parsed relation directive for a field's `#[sea_orm(...)]` attributes.
 #[derive(Debug, Clone)]
 pub enum RelationKind {
     /// Field becomes `HasMany<ChildEntity>`.
-    HasMany { entity_alias: String },
+    HasMany {
+        entity_alias: String,
+        /// Optional FK column override: `child_fk = "session_id"`.
+        child_fk: Option<String>,
+        /// Optional tuple linked child: `tuple(linked_child = "JudgeVerdictEntity")`.
+        tuple_linked_child: Option<String>,
+    },
 
     /// Field becomes `HasOne<ChildEntity>`.
     HasOne { entity_alias: String },
@@ -800,62 +932,76 @@ pub struct ProcessedField {
     pub flatten: Option<FlattenSpec>,
 }
 
-// ---------------------------------------------------------------------------
-// Helper functions
-// ---------------------------------------------------------------------------
-
 /// Check if a type's last path segment matches a given name.
 pub fn type_ends_with(ty: &Type, name: &str) -> bool {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            return segment.ident == name;
-        }
-    }
-    false
+    let Type::Path(type_path) = ty else {
+        return false;
+    };
+
+    let Some(segment) = type_path.path.segments.last() else {
+        return false;
+    };
+
+    segment.ident == name
 }
 
 /// Get the last type name segment (e.g., ReviewMetadata from `crate::review::ReviewMetadata`).
 pub fn type_last_segment(ty: &Type) -> String {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            return segment.ident.to_string();
-        }
+    let Type::Path(type_path) = ty else {
+        return String::new();
+    };
+
+    let Some(segment) = type_path.path.segments.last() else {
+        return String::new();
+    };
+
+    segment.ident.to_string()
+}
+
+/// If the type is `Option<T>`, return `T`. Otherwise return None.
+pub fn get_optional_inner(ty: &Type) -> Option<Type> {
+    let Type::Path(type_path) = ty else {
+        return None;
+    };
+
+    let Some(segment) = type_path.path.segments.last() else {
+        return None;
+    };
+
+    if segment.ident != "Option" {
+        return None;
     }
-    String::new()
+
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return None;
+    };
+
+    let Some(syn::GenericArgument::Type(inner)) = args.args.first() else {
+        return None;
+    };
+
+    Some(inner.clone())
 }
 
 /// Check if type is `Option<MagicTypeId>`.
 pub fn is_optional_magic_type_id(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            if segment.ident == "Option" {
-                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                        return type_ends_with(inner, "MagicTypeId");
-                    }
-                }
-            }
-        }
+    if let Some(inner) = get_optional_inner(ty) {
+        return type_ends_with(&inner, "MagicTypeId");
     }
+
     false
 }
 
 /// If the type is `Option<T>`, return `T` token stream. Otherwise return the type itself.
 pub fn unwrap_option_type(ty: &Type) -> TokenStream2 {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            if segment.ident == "Option" {
-                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                        return quote! { #inner };
-                    }
-                }
-            }
-        }
-    }
-    quote! { #ty }
+    let Some(inner_type) = get_optional_inner(ty) else {
+        return quote! { #ty };
+    };
+
+    quote! { #inner_type }
 }
 
+/// Extract `key = "value"` from a list of attributes for a specific attribute scope.
 pub fn extract_key_value(
     attrs: &[Attribute],
     attribute_scope: &str,
@@ -872,6 +1018,7 @@ pub fn extract_key_value(
                 let value: LitStr = meta.value()?.parse()?;
                 result = Some(value.value());
             }
+
             Ok(())
         });
 
@@ -887,13 +1034,16 @@ pub fn extract_key_value(
 pub fn extract_value(tokens: &str, key: &str) -> String {
     for part in tokens.split(',') {
         let trimmed = part.trim();
-        if let Some(eq_pos) = trimmed.find('=') {
-            let k = trimmed[..eq_pos].trim();
-            if k == key {
-                return trimmed[eq_pos + 1..].trim().trim_matches('"').to_string();
-            }
+        let Some(eq_pos) = trimmed.find('=') else {
+            continue;
+        };
+
+        let k = trimmed[..eq_pos].trim();
+        if k == key {
+            return trimmed[eq_pos + 1..].trim().trim_matches('"').to_string();
         }
     }
+
     String::new()
 }
 
@@ -908,7 +1058,6 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
     let mut passthrough = Vec::new();
     let mut flatten: Option<FlattenSpec> = None;
 
-    // First, check for #[flatten(...)] attribute (used independently of sea_orm)
     for attr in &field.attrs {
         if attr.path().is_ident("flatten") {
             let flatten_spec: FlattenSpec = attr.parse_args().unwrap_or_else(|e| {
@@ -919,7 +1068,6 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
         }
     }
 
-    // Then process #[sea_orm(...)] attributes
     for attr in &field.attrs {
         if !attr.path().is_ident("sea_orm") {
             continue;
@@ -938,8 +1086,20 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
         }
 
         if inner_lower.contains("has_many") {
+            let child_fk = extract_value(&inner_str, "child_fk");
+            let tuple_linked = extract_value(&inner_str, "tuple");
             relation = Some(RelationKind::HasMany {
                 entity_alias: extract_value(&inner_str, "entity"),
+                child_fk: if child_fk.is_empty() {
+                    None
+                } else {
+                    Some(child_fk)
+                },
+                tuple_linked_child: if tuple_linked.is_empty() {
+                    None
+                } else {
+                    Some(tuple_linked)
+                },
             });
             continue;
         }
@@ -960,7 +1120,6 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
             continue;
         }
 
-        // Detect primary key & auto_increment
         if inner_lower.contains("primary_key") {
             is_primary_key = true;
         }
@@ -968,7 +1127,6 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
             auto_increment = true;
         }
 
-        // Pass through the original attribute verbatim
         passthrough.push(quote! { #[sea_orm(#inner_ts)] });
     }
 
@@ -1030,6 +1188,7 @@ pub fn snake_to_pascal(s: &str) -> String {
             result.push(ch);
         }
     }
+
     result
 }
 
@@ -1038,19 +1197,44 @@ pub fn scalar_column_type(ty: &Type) -> TokenStream2 {
     if type_ends_with(ty, "MagicTypeId") {
         return quote! { String };
     }
-    // Check for Option<MagicTypeId>
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.last() {
-            if segment.ident == "Option" {
-                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
-                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                        if type_ends_with(inner, "MagicTypeId") {
-                            return quote! { Option<String> };
-                        }
-                    }
-                }
-            }
-        }
+
+    let Some(inner_type) = get_optional_inner(ty) else {
+        return quote! { #ty };
+    };
+
+    if type_ends_with(&inner_type, "MagicTypeId") {
+        return quote! { Option<String> };
     }
-    quote! { #ty }
+
+    return quote! { #ty };
+}
+
+#[cfg(test)]
+mod tests {
+    use quote::ToTokens;
+
+    use super::*;
+
+    #[test]
+    fn test_snake_to_pascal() {
+        assert_eq!(snake_to_pascal("hello_world"), "HelloWorld");
+        assert_eq!(snake_to_pascal("foo_bar_baz"), "FooBarBaz");
+        assert_eq!(snake_to_pascal("snake_case"), "SnakeCase");
+        assert_eq!(snake_to_pascal("alreadyPascal"), "AlreadyPascal");
+        assert_eq!(snake_to_pascal("singleword"), "Singleword");
+    }
+
+    #[test]
+    fn test_get_option() {
+        let ty: Type = syn::parse_str("Option<i32>").unwrap();
+        let inner = get_optional_inner(&ty).unwrap();
+        assert_eq!(inner.to_token_stream().to_string(), "i32");
+
+        let ty: Type = syn::parse_str("Option<()>").unwrap();
+        let inner = get_optional_inner(&ty).unwrap();
+        assert_eq!(inner.to_token_stream().to_string(), "()");
+
+        let ty2: Type = syn::parse_str("String").unwrap();
+        assert!(get_optional_inner(&ty2).is_none());
+    }
 }

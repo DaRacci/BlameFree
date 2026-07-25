@@ -3,6 +3,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::Error;
+use crb_types::Save;
 
 /// Marker trait for domain types that can be persisted.
 ///
@@ -24,7 +25,10 @@ pub trait Store: Send + Sync + Clone {
     /// Persist an item.
     ///
     /// Inserts if new, updates if existing (upsert).
-    fn save<T: Storable>(&self, item: &T) -> impl Future<Output = Result<(), Error>> + Send;
+    fn save<T: Storable + crb_types::Save>(
+        &self,
+        item: &T,
+    ) -> impl Future<Output = Result<(), Error>> + Send;
 
     /// Load a single item by its `MagicTypeId`.
     ///
@@ -77,7 +81,7 @@ mod tests {
     struct DummyStore;
 
     impl Store for DummyStore {
-        async fn save<T: Storable>(&self, _item: &T) -> Result<(), Error> {
+        async fn save<T: Storable + super::Save>(&self, _item: &T) -> Result<(), Error> {
             Ok(())
         }
 

@@ -2,7 +2,11 @@ use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "seaorm-storage")]
-use crate::{benchmark::golden::GoldenCommentEntity, finding::FindingEntity};
+use crate::{
+    benchmark::golden::{GoldenCommentActiveModel, GoldenCommentEntity, GoldenCommentModel},
+    benchmark::judge::JudgeVerdictModel,
+    finding::{FindingActiveModel, FindingEntity, FindingModel},
+};
 use crate::{
     benchmark::{golden::GoldenComment, judge::JudgeVerdict},
     finding::Finding,
@@ -33,7 +37,7 @@ pub struct PrResult {
     /// Findings and their corresponding verdicts.
     #[cfg_attr(
         feature = "seaorm-storage",
-        sea_orm(has_many, entity = "FindingEntity")
+        sea_orm(has_many, entity = "FindingEntity", tuple = "JudgeVerdictEntity")
     )]
     pub findings_with_verdicts: Vec<(Finding, JudgeVerdict)>,
 }

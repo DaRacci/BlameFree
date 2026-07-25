@@ -7,7 +7,9 @@ use std::collections::HashMap;
 
 use chrono::Utc;
 use crb_types::{
-    agent::{AgentResponse, AgentSession, RoleMessage, ToolInvocation},
+    agent::{
+        AgentResponse, AgentSession, AgentTurn, AgentTurnMessage, RoleMessage, ToolInvocation,
+    },
     benchmark::{golden::GoldenComment, result::PrResult, standalone::Benchmark},
     review::{Review, ReviewStatus},
 };
@@ -181,16 +183,18 @@ async fn test_agent_session_round_trip() {
                 session_id: id.clone(),
                 turn_index: 0,
                 messages: vec![
-                    RoleMessage::User("Hello, review this PR".to_string()),
+                    RoleMessage::User("Hello, review this PR".to_string()).into(),
                     RoleMessage::Assistant(AgentResponse {
                         thinking: "Thinking about security issues...".to_string(),
                         output: "I'll check the code for vulnerabilities.".to_string(),
-                    }),
+                    })
+                    .into(),
                     RoleMessage::Tool(ToolInvocation {
                         tool_name: "view_file".to_string(),
                         input: serde_json::json!({"path": "src/main.rs"}),
                         output: serde_json::json!({"content": "fn main() {}"}),
-                    }),
+                    })
+                    .into(),
                 ],
             },
             AgentTurn {
@@ -198,12 +202,13 @@ async fn test_agent_session_round_trip() {
                 session_id: id.clone(),
                 turn_index: 1,
                 messages: vec![
-                    RoleMessage::System("You are a security reviewer.".to_string()),
-                    RoleMessage::User("Focus on auth issues.".to_string()),
+                    RoleMessage::System("You are a security reviewer.".to_string()).into(),
+                    RoleMessage::User("Focus on auth issues.".to_string()).into(),
                     RoleMessage::Assistant(AgentResponse {
                         thinking: "Checking authentication logic...".to_string(),
                         output: "Found no auth issues in this file.".to_string(),
-                    }),
+                    })
+                    .into(),
                 ],
             },
         ],
@@ -222,40 +227,43 @@ async fn test_agent_session_round_trip() {
     let turn0 = &loaded.turns[0];
     let turn1 = &loaded.turns[1];
     assert_eq!(turn0.messages.len(), 3, "turn 0 should have 3 messages");
-    match &turn0.messages[0] {
-        RoleMessage::User(text) => assert_eq!(text, "Hello, review this PR"),
-        other => panic!("expected User message, got {other:?}"),
-    }
-    match &turn0.messages[1] {
-        RoleMessage::Assistant(resp) => {
-            assert_eq!(resp.thinking, "Thinking about security issues...");
-            assert_eq!(resp.output, "I'll check the code for vulnerabilities.");
-        }
-        other => panic!("expected Assistant message, got {other:?}"),
-    }
-    match &turn0.messages[2] {
-        RoleMessage::Tool(invocation) => {
-            assert_eq!(invocation.tool_name, "view_file");
-        }
-        other => panic!("expected Tool message, got {other:?}"),
-    }
+    assert_eq!(&turn0.messages[0].role, "user");
+    assert_eq!(
+        turn0.messages[0].text_content.as_deref(),
+        Some("Hello, review this PR")
+    );
+    assert_eq!(&turn0.messages[1].role, "assistant");
+    assert_eq!(
+        turn0.messages[1].thinking.as_deref(),
+        Some("Thinking about security issues...")
+    );
+    assert_eq!(
+        turn0.messages[1].output.as_deref(),
+        Some("I'll check the code for vulnerabilities.")
+    );
+    assert_eq!(&turn0.messages[2].role, "tool");
+    assert_eq!(turn0.messages[2].tool_name.as_deref(), Some("view_file"));
 
     assert_eq!(turn1.messages.len(), 3, "turn 1 should have 3 messages");
-    match &turn1.messages[0] {
-        RoleMessage::System(text) => assert_eq!(text, "You are a security reviewer."),
-        other => panic!("expected System message, got {other:?}"),
-    }
-    match &turn1.messages[1] {
-        RoleMessage::User(text) => assert_eq!(text, "Focus on auth issues."),
-        other => panic!("expected User message, got {other:?}"),
-    }
-    match &turn1.messages[2] {
-        RoleMessage::Assistant(resp) => {
-            assert_eq!(resp.thinking, "Checking authentication logic...");
-            assert_eq!(resp.output, "Found no auth issues in this file.");
-        }
-        other => panic!("expected Assistant message, got {other:?}"),
-    }
+    assert_eq!(&turn1.messages[0].role, "system");
+    assert_eq!(
+        turn1.messages[0].text_content.as_deref(),
+        Some("You are a security reviewer.")
+    );
+    assert_eq!(&turn1.messages[1].role, "user");
+    assert_eq!(
+        turn1.messages[1].text_content.as_deref(),
+        Some("Focus on auth issues.")
+    );
+    assert_eq!(&turn1.messages[2].role, "assistant");
+    assert_eq!(
+        turn1.messages[2].thinking.as_deref(),
+        Some("Checking authentication logic...")
+    );
+    assert_eq!(
+        turn1.messages[2].output.as_deref(),
+        Some("Found no auth issues in this file.")
+    );
 }
 
 #[tokio::test]
@@ -298,7 +306,16 @@ async fn test_agent_session_delete() {
         id: id.clone(),
         model_name: "patrick".to_string(),
         review_id: None,
-        turns: vec![vec![RoleMessage::User("test".to_string())]],
+        turns: vec![AgentTurn {
+            id: None,
+            session_id: id.clone(),
+            turn_index: 0,
+            messages: vec![AgentTurnMessage {
+                role: "user".into(),
+                text_content: Some("test".to_string()),
+                ..Default::default()
+            }],
+        }],
     };
 
     store.save(&session).await.unwrap();

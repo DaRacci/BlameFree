@@ -164,7 +164,7 @@ pub struct AgentTurn {
     /// Messages in this turn.
     #[cfg_attr(
         feature = "seaorm-storage",
-        sea_orm(has_many, entity = "AgentTurnMessageEntity")
+        sea_orm(has_many, entity = "AgentTurnMessageEntity", child_fk = "turn_id")
     )]
     pub messages: Vec<AgentTurnMessage>,
 }
@@ -203,7 +203,7 @@ pub struct AgentSession {
     /// which can be either user messages, tool messages, or assistant messages.
     #[cfg_attr(
         feature = "seaorm-storage",
-        sea_orm(has_many, entity = "AgentTurnEntity")
+        sea_orm(has_many, entity = "AgentTurnEntity", child_fk = "session_id")
     )]
     pub turns: Vec<AgentTurn>,
 }

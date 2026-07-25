@@ -27,6 +27,14 @@ pub trait EntityId {
     fn get_id(&self) -> Option<Self::Id>;
 }
 
+/// Trait for domain structs that can persist themselves to the DB.
+///
+/// Auto-implemented by `#[derive(EntityModel)]` for structs with no flatten or ignored fields.
+#[cfg(feature = "seaorm-storage")]
+pub trait Save {
+    async fn save(&self, db: &sea_orm::DatabaseConnection) -> Result<(), anyhow::Error>;
+}
+
 use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};
 

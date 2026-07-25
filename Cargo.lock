@@ -1190,6 +1190,7 @@ name = "crb-types"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "crb-macros",
  "insta",
@@ -4068,6 +4069,7 @@ dependencies = [
 name = "riv-stor"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "crb-types",
  "mti",
