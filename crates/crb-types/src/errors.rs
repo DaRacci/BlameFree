@@ -32,4 +32,8 @@ impl ManyErrors {
     pub fn len(&self) -> usize {
         self.errors.len()
     }
+
+    pub fn extend(&mut self, other: Self) {
+        self.errors.extend(other.errors);
+    }
 }

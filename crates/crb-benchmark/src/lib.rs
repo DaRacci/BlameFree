@@ -1,5 +1,6 @@
 //! Benchmark execution for code review evaluation.
 
+use core::error;
 use std::{fmt, sync::Arc};
 
 use crb_agents::{
@@ -10,13 +11,23 @@ use crb_cache::traits::CacheBackend;
 use crb_reporting::cost::AnalyticsTracker;
 use crb_types::{
     RunEvent,
-    benchmark::{golden::GoldenCommentEntry, judge::JudgeVerdict},
+    benchmark::{
+        golden::GoldenCommentEntry,
+        judge::{JudgeVerdict, JudgedFindings},
+    },
     capabilities::ReasoningEffort,
+    errors::ManyErrors,
     finding::Finding,
     wrappers::Model,
 };
 use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
-use rig_core::{providers::openrouter, tool::server::ToolServer};
+use rig_core::{
+    agent::Agent,
+    client::Client,
+    completion::CompletionModel,
+    providers::openrouter::{self, OpenRouterExt},
+    tool::server::ToolServer,
+};
 use tokio::{
     sync::{broadcast::Sender, mpsc::Sender},
     task::JoinSet,
@@ -85,7 +96,10 @@ impl AgentDetailsProvider for BenchmarkConfig {
     }
 }
 
-impl RuntimeProvider for BenchmarkConfig {
+impl<A> RuntimeProvider<A> for BenchmarkConfig
+where
+    A: CompletionModel + Send + Sync + 'static,
+{
     fn get_id(&self) -> &MagicTypeId {
         &self.id
     }
@@ -98,7 +112,7 @@ impl RuntimeProvider for BenchmarkConfig {
         self.dashboard_tx.clone()
     }
 
-    fn get_client(&self) -> Arc<impl rig_core::prelude::CompletionClient> {
+    fn get_client(&self) -> Arc<Client<OpenRouterExt<A>>> {
         self.client.clone()
     }
 }
@@ -117,16 +131,43 @@ pub async fn evaluate_findings(
     config: Arc<BenchmarkConfig>,
     dataset: &GoldenCommentEntry,
     findings: &[Finding],
-) -> Vec<()> {
+) -> (JudgedFindings, Option<ManyErrors>) {
     let tools = ToolServer::new().run();
     let agent = build_agent(config.clone(), &*config, tools)
         .output_schema::<JudgeVerdict>()
         .build();
 
     let judge_set = JoinSet::new();
+    let mut verdicts = Vec::new();
+    let mut errors = ManyErrors::new();
     for finding in findings {
-        judge_finding(config.clone(), finding, golden_comments)
+        let (finding_verdicts, finding_errors) =
+            judge_finding(config.clone(), finding, golden_comments).await;
+
+        verdicts.extend(finding_verdicts);
+        if let Some(finding_errors) = finding_errors {
+            warn!(
+                "Errors occurred while judging finding {}: {:?}",
+                finding.id, finding_errors
+            );
+            errors.extend(finding_errors);
+        }
     }
 
-    vec![]
+    let mut judged_findings = JudgedFindings::default();
+    for verdict in verdicts {
+        let Some(finding) = findings.iter().find(|f| f.id == verdict.finding_id) else {
+            error!(
+                "How did this happen? Verdict for finding_id {} but no such finding exists in the provided findings.",
+                verdict.finding_id
+            );
+            continue;
+        };
+
+        judged_findings.findings.push((finding.clone(), verdict));
+    }
+
+    for comments in &dataset.comments {}
+
+    todo!()
 }

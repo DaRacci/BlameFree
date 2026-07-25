@@ -1,9 +1,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "seaorm-storage")]
-use crate::finding::FindingEntity;
 use crate::{benchmark::golden::GoldenComment, finding::Finding};
+#[cfg(feature = "seaorm-storage")]
+use crate::{benchmark::golden::GoldenCommentEntity, finding::FindingEntity};
 
 /// The structured verdict returned by the judge LLM.
 #[cfg_attr(
@@ -32,6 +32,19 @@ pub struct JudgeVerdict {
         )
     )]
     pub finding_id: Option<i32>,
+
+    /// FK back to the parent [`GoldenComment`].
+    #[cfg_attr(
+        feature = "seaorm-storage",
+        sea_orm(
+            belongs_to,
+            entity = "GoldenCommentEntity",
+            from = "linked_comment_id",
+            to = "id",
+            on_delete = "Cascade"
+        )
+    )]
+    pub linked_comment_id: Option<i32>,
 
     /// Brief explanation of why the judge determined a match or no match.
     #[serde(default)]

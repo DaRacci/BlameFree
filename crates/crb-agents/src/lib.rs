@@ -9,7 +9,7 @@ use crb_types::wrappers::{Model, WrappedData};
 use futures::StreamExt;
 use mti::prelude::MagicTypeId;
 use rig_core::agent::{Agent, AgentBuilder, MultiTurnStreamItem, WithToolServerHandle};
-use rig_core::client::CompletionClient;
+use rig_core::client::{Client, CompletionClient};
 use rig_core::completion::{CompletionModel, GetTokenUsage};
 use rig_core::message::{AssistantContent, ToolResultContent};
 use rig_core::providers::openrouter;
@@ -70,7 +70,7 @@ where
     A: CompletionModel + Send + Sync + 'static,
 {
     fn get_id(&self) -> &MagicTypeId;
-    fn get_client(&self) -> Arc<Agent<A>>;
+    fn get_client(&self) -> Arc<Client<A>>;
     fn get_analytics(&self) -> Arc<AnalyticsTracker>;
     fn get_dashboard_tx(&self) -> Option<Sender<RunEvent>>;
 }

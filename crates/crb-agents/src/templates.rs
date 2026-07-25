@@ -5,7 +5,6 @@
 
 use handlebars::Handlebars;
 use serde_json::Value;
-use std::collections::HashMap;
 
 /// Register a simple Handlebars helper whose implementation only needs
 /// the [`handlebars::Helper`] and [`handlebars::Output`] arguments.
