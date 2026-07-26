@@ -1,9 +1,14 @@
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{
-    Attribute, Data, DeriveInput, Fields, Ident, LitStr, Token, Type,
+    Data, DeriveInput, Fields, Ident, LitStr, Token, Type,
     parse::{Parse, ParseStream},
+};
+
+use crate::helpers::{
+    extract_key_value, extract_value, get_option_inner, snake_to_pascal, to_snake_case,
+    type_ends_with, type_last_segment, unwrap_option_type,
 };
 
 /// Parsed `#[flatten(tag = "...", variants = { ... })]` attribute.
@@ -35,38 +40,42 @@ impl Parse for FlattenSpec {
         while !input.is_empty() {
             let key: Ident = input.parse()?;
 
-            if key == "tag" {
-                let _: Token![=] = input.parse()?;
-                let lit: LitStr = input.parse()?;
-                tag = lit.value();
-            } else if key == "variants" {
-                let _: Token![=] = input.parse()?;
-                let variant_braces;
-                syn::braced!(variant_braces in input);
-                while !variant_braces.is_empty() {
-                    let variant_name: Ident = variant_braces.parse()?;
-                    let _: Token![=>] = variant_braces.parse()?;
-                    let col_braces;
-                    syn::braced!(col_braces in variant_braces);
-                    let mut columns: Vec<(String, String)> = Vec::new();
-                    while !col_braces.is_empty() {
-                        let col_name: Ident = col_braces.parse()?;
-                        let _: Token![:] = col_braces.parse()?;
-                        let col_type: Type = col_braces.parse()?;
-                        columns.push((col_name.to_string(), quote!(#col_type).to_string()));
-                        let _ = col_braces.parse::<Token![,]>();
-                    }
-                    variants.push(FlattenVariantDef {
-                        name: variant_name.to_string(),
-                        columns,
-                    });
-                    let _ = variant_braces.parse::<Token![,]>();
+            match key.to_string().as_str() {
+                "tag" => {
+                    let _: Token![=] = input.parse()?;
+                    let lit: LitStr = input.parse()?;
+                    tag = lit.value();
                 }
-            } else {
-                return Err(syn::Error::new(
-                    key.span(),
-                    format!("expected `tag` or `variants`, got `{key}`"),
-                ));
+                "variants" => {
+                    let _: Token![=] = input.parse()?;
+                    let variant_braces;
+                    syn::braced!(variant_braces in input);
+                    while !variant_braces.is_empty() {
+                        let variant_name: Ident = variant_braces.parse()?;
+                        let _: Token![=>] = variant_braces.parse()?;
+                        let col_braces;
+                        syn::braced!(col_braces in variant_braces);
+                        let mut columns: Vec<(String, String)> = Vec::new();
+                        while !col_braces.is_empty() {
+                            let col_name: Ident = col_braces.parse()?;
+                            let _: Token![:] = col_braces.parse()?;
+                            let col_type: Type = col_braces.parse()?;
+                            columns.push((col_name.to_string(), quote!(#col_type).to_string()));
+                            let _ = col_braces.parse::<Token![,]>();
+                        }
+                        variants.push(FlattenVariantDef {
+                            name: variant_name.to_string(),
+                            columns,
+                        });
+                        let _ = variant_braces.parse::<Token![,]>();
+                    }
+                }
+                _ => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("expected `tag` or `variants`, got `{key}`"),
+                    ));
+                }
             }
 
             let _ = input.parse::<Token![,]>();
@@ -78,6 +87,7 @@ impl Parse for FlattenSpec {
                 "missing required `tag = \"...\"` in #[flatten(...)]",
             ));
         }
+
         if variants.is_empty() {
             return Err(syn::Error::new(
                 input.span(),
@@ -87,6 +97,54 @@ impl Parse for FlattenSpec {
 
         Ok(FlattenSpec { tag, variants })
     }
+}
+
+/// Parsed relation directive for a field's `#[sea_orm(...)]` attributes.
+#[derive(Debug, Clone)]
+pub enum RelationKind {
+    /// Field becomes `HasMany<ChildEntity>`.
+    HasMany {
+        entity_alias: String,
+        /// Optional FK column override: `child_fk = "session_id"`.
+        child_fk: Option<String>,
+        /// Optional tuple linked child: `tuple(linked_child = "JudgeVerdictEntity")`.
+        tuple_linked_child: Option<String>,
+    },
+
+    /// Field becomes `HasOne<ChildEntity>`.
+    HasOne { entity_alias: String },
+
+    /// Field stays as a scalar column but also generates a belongs_to
+    /// Relation variant and `Related<ParentEntity>` impl.
+    BelongsTo {
+        entity_alias: String,
+        from: String,
+        to: String,
+    },
+}
+
+/// Parsed & classified struct field.
+pub struct ProcessedField {
+    pub ident: Ident,
+    pub ty: Type,
+
+    /// True if the field has #[sea_orm(ignore)].
+    pub is_ignored: bool,
+
+    /// True if the field is the primary key.
+    pub is_primary_key: bool,
+
+    /// True if the PK is auto-incremented by the DB.
+    pub auto_increment: bool,
+
+    /// `#[sea_orm(...)]` tokens to pass through verbatim.
+    pub passthrough: Vec<TokenStream2>,
+
+    /// If non-None, this field is a relation.
+    pub relation: Option<RelationKind>,
+
+    /// If non-None, this field uses #[flatten(...)].
+    pub flatten: Option<FlattenSpec>,
 }
 
 pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
@@ -120,22 +178,19 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
     let mut rel_entries: Vec<(Ident, RelationKind)> = Vec::new();
     let mut has_explicit_id = false;
 
-    // Collect: (field_ident, flattened_field_combined_tokens)
     let mut flatten_entries: Vec<(Ident, FlattenSpec)> = Vec::new();
-
     for pf in &processed {
         if pf.is_ignored {
             continue;
         }
 
         if let Some(ref spec) = pf.flatten {
-            // Flatten field: generate columns from the annotation
             flatten_entries.push((pf.ident.clone(), spec.clone()));
 
             // All flatten columns are Option<String> for universal compatibility.
             // Emit the discriminator column first.
             let tag_col = &spec.tag;
-            let tag_col_ident = Ident::new(tag_col, proc_macro2::Span::call_site());
+            let tag_col_ident = Ident::new(tag_col, Span::call_site());
             scalar_fields.push(quote! {
                 pub #tag_col_ident: Option<String>
             });
@@ -148,7 +203,7 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
                         continue;
                     }
                     seen_cols.push(col_name.clone());
-                    let col_ident = Ident::new(col_name, proc_macro2::Span::call_site());
+                    let col_ident = Ident::new(col_name, Span::call_site());
                     scalar_fields.push(quote! {
                         pub #col_ident: Option<String>
                     });
@@ -216,7 +271,6 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
         }
     }
 
-    // Surrogate auto-increment PK when no explicit `id` field
     if !has_explicit_id {
         scalar_fields.insert(
             0,
@@ -236,609 +290,15 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
     let column_name = format_ident!("{}Column", raw_name);
     let pk_name = format_ident!("{}PrimaryKey", raw_name);
 
-    // Build Relation enum variants
-    let relation_variants: Vec<TokenStream2> = rel_entries
-        .iter()
-        .map(|(ident, _)| {
-            let v = format_ident!("{}", snake_to_pascal(&ident.to_string()));
-            quote! { #v }
-        })
-        .collect();
-
-    // Build RelationTrait::def() — handle empty relations gracefully
-    let relation_trait_impl: TokenStream2 = if rel_entries.is_empty() {
-        quote! {
-            impl RelationTrait for Relation {
-                fn def(&self) -> sea_orm::RelationDef {
-                    match *self {}
-                }
-            }
-        }
-    } else {
-        let relation_def_arms: Vec<TokenStream2> = rel_entries
-            .iter()
-            .map(|(ident, kind)| {
-                let v_str = snake_to_pascal(&ident.to_string());
-                let v = Ident::new(&v_str, proc_macro2::Span::call_site());
-                match kind {
-                    RelationKind::HasMany { entity_alias, .. } => {
-                        let child_path = entity_path_from_alias(entity_alias);
-                        quote! {
-                            Relation::#v => Entity::has_many(#child_path).into()
-                        }
-                    }
-                    RelationKind::HasOne { entity_alias } => {
-                        let child_path = entity_path_from_alias(entity_alias);
-                        quote! {
-                            Relation::#v => Entity::has_one(#child_path).into()
-                        }
-                    }
-                    RelationKind::BelongsTo {
-                        entity_alias,
-                        from,
-                        to,
-                    } => {
-                        let parent_path = entity_path_from_alias(entity_alias);
-                        let from_col_pascal_str = snake_to_pascal(from);
-                        let from_col_pascal =
-                            Ident::new(&from_col_pascal_str, proc_macro2::Span::call_site());
-                        let to_col_pascal_str = snake_to_pascal(to);
-                        let to_col_pascal =
-                            Ident::new(&to_col_pascal_str, proc_macro2::Span::call_site());
-                        quote! {
-                            Relation::#v => Entity::belongs_to(#parent_path)
-                                .from(Column::#from_col_pascal)
-                                .to(<#parent_path as sea_orm::EntityTrait>::Column::#to_col_pascal)
-                                .into()
-                        }
-                    }
-                }
-            })
-            .collect();
-
-        quote! {
-            impl RelationTrait for Relation {
-                fn def(&self) -> sea_orm::RelationDef {
-                    match self {
-                        #(#relation_def_arms,)*
-                    }
-                }
-            }
-        }
-    };
-
-    // Build impl Related<T> for Entity for BelongsTo relations
-    let related_impls: Vec<TokenStream2> = rel_entries
-        .iter()
-        .filter_map(|(ident, kind)| {
-            if let RelationKind::BelongsTo { entity_alias, .. } = kind {
-                let parent_path = entity_path_from_alias(entity_alias);
-                let v_str = snake_to_pascal(&ident.to_string());
-                let rel_variant = Ident::new(&v_str, proc_macro2::Span::call_site());
-                Some(quote! {
-                    impl Related<#parent_path> for Entity {
-                        fn to() -> sea_orm::RelationDef {
-                            Relation::#rel_variant.def()
-                        }
-                        fn via() -> Option<sea_orm::RelationDef> {
-                            None
-                        }
-                    }
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    // Build From<Model> for DomainType and From<DomainType> for ActiveModel
-    let mut from_model_fields: Vec<TokenStream2> = Vec::new();
-    let mut from_domain_fields: Vec<TokenStream2> = Vec::new();
-
-    // Track which columns are set by flatten fields so scalar fields don't conflict
-    let mut flatten_col_names: Vec<String> = Vec::new();
-    for (_, spec) in &flatten_entries {
-        flatten_col_names.push(spec.tag.clone());
-        for vd in &spec.variants {
-            for (col_name, _) in &vd.columns {
-                if !flatten_col_names.contains(col_name) {
-                    flatten_col_names.push(col_name.clone());
-                }
-            }
-        }
-    }
-
-    for pf in &processed {
-        let ident = &pf.ident;
-        let is_pure_rel = matches!(
-            pf.relation,
-            Some(RelationKind::HasMany { .. }) | Some(RelationKind::HasOne { .. })
-        );
-
-        // Determine if this field is "scalar" — has a DB column
-        let is_scalar = !pf.is_ignored && !is_pure_rel && pf.flatten.is_none();
-
-        // Check auto-increment
-        let has_auto_increment = pf
-            .passthrough
-            .iter()
-            .any(|ts| ts.to_string().to_lowercase().contains("auto_increment"));
-
-        // Check if the field's domain type is MagicTypeId or Option<MagicTypeId>
-        let is_mtid = type_ends_with(&pf.ty, "MagicTypeId");
-        let is_opt_mtid = is_optional_magic_type_id(&pf.ty);
-
-        // --- From<Model> for DomainType (only scalar fields) ---
-        if is_scalar {
-            let model_expr = if has_auto_increment {
-                quote! { Default::default() }
-            } else if is_mtid {
-                quote! { m.#ident.parse::<mti::prelude::MagicTypeId>().unwrap_or_default() }
-            } else if is_opt_mtid {
-                quote! { m.#ident.map(|s| s.parse::<mti::prelude::MagicTypeId>().unwrap_or_default()) }
-            } else {
-                quote! { m.#ident }
-            };
-            from_model_fields.push(quote! { #ident: #model_expr });
-        }
-
-        // --- From<DomainType> for ActiveModel (only scalar fields) ---
-        if is_scalar {
-            let domain_expr = if has_auto_increment {
-                quote! { sea_orm::NotSet }
-            } else if is_mtid {
-                quote! { sea_orm::Set(d.#ident.to_string()) }
-            } else if is_opt_mtid {
-                quote! { sea_orm::Set(d.#ident.as_ref().map(|x| x.to_string())) }
-            } else {
-                quote! { sea_orm::Set(d.#ident) }
-            };
-            from_domain_fields.push(quote! { #ident: #domain_expr });
-        }
-    }
-
-    // Generate flatten field conversions for From<DomainType> only (not From<Model>)
-    let mut flatten_let_bindings: Vec<TokenStream2> = Vec::new();
-    let mut flatten_set_fields: Vec<TokenStream2> = Vec::new();
-
-    for (idx, (field_ident, spec)) in flatten_entries.iter().enumerate() {
-        // Get the type name for the bridge struct naming convention
-        let pf = processed
-            .iter()
-            .find(|pf| pf.ident == *field_ident)
-            .unwrap();
-        let field_ty_name = type_last_segment(&pf.ty);
-
-        // Bridge struct name: __<FieldType>Columns (e.g., __ReviewMetadataColumns)
-        let bridge_ident = format_ident!("__{}Columns", field_ty_name);
-        let cols_ident = format_ident!("__cols_{}", idx);
-
-        // Collect all column names for this flatten
-        let mut all_flatten_cols: Vec<(String, String)> = Vec::new();
-        all_flatten_cols.push((spec.tag.clone(), "Option<String>".to_string()));
-        for vd in &spec.variants {
-            for (col_name, col_type) in &vd.columns {
-                if !all_flatten_cols.iter().any(|(c, _)| c == col_name) {
-                    all_flatten_cols.push((col_name.clone(), format!("Option<{col_type}")));
-                }
-            }
-        }
-
-        // --- From<DomainType> -> convert domain enum to bridge, then Set each column ---
-        let set_fields: Vec<TokenStream2> = all_flatten_cols
-            .iter()
-            .map(|(col_name, _)| {
-                let col_ident = Ident::new(col_name, proc_macro2::Span::call_site());
-                quote! { #col_ident: sea_orm::Set(#cols_ident.#col_ident) }
-            })
-            .collect();
-
-        flatten_let_bindings.push(quote! {
-            let #cols_ident: #bridge_ident = d.#field_ident.into();
-        });
-        flatten_set_fields.extend(set_fields);
-    }
-
-    // Combine all from-model fields: just scalar fields (flatten fields use ..Default::default())
-    let final_from_model_fields: Vec<TokenStream2> = from_model_fields;
-
-    // Determine if there are flatten fields (triggers From<Model> generation)
-    let has_flatten = !flatten_entries.is_empty();
-
-    // Determine if there are ignored/pure-relation fields that need Default::default()
-    let has_ignored_fields = processed.iter().any(|pf| {
-        let is_pure_rel = matches!(
-            pf.relation,
-            Some(RelationKind::HasMany { .. }) | Some(RelationKind::HasOne { .. })
-        );
-        (pf.is_ignored || is_pure_rel) && pf.flatten.is_none()
-    });
-
-    let from_model_impl = if final_from_model_fields.is_empty() {
-        quote! {}
-    } else if has_ignored_fields && !has_flatten {
-        // Only ignored fields, no flatten — preserve old behavior, skip From<Model>.
-        // The user writes their own conversion for this case.
-        quote! {}
-    } else {
-        // Either all fields are populated from Model, or there are flatten fields
-        // that we populate via the bridge struct.
-        // If there are also ignored fields, use ..Default::default().
-        let scalar_fields = &final_from_model_fields;
-        if has_ignored_fields {
-            quote! {
-                impl From<Model> for super::#struct_name {
-                    fn from(m: Model) -> Self {
-                        Self {
-                            #(#scalar_fields,)*
-                            ..Default::default()
-                        }
-                    }
-                }
-            }
-        } else {
-            quote! {
-                impl From<Model> for super::#struct_name {
-                    fn from(m: Model) -> Self {
-                        Self {
-                            #(#scalar_fields,)*
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    let final_from_domain_fields: Vec<TokenStream2> = from_domain_fields
-        .into_iter()
-        .chain(flatten_set_fields)
-        .collect();
-
-    let from_domain_impl = if final_from_domain_fields.is_empty() && flatten_let_bindings.is_empty()
-    {
-        quote! {}
-    } else {
-        let set_fields = &final_from_domain_fields;
-        let let_bindings = &flatten_let_bindings;
-        quote! {
-            impl From<super::#struct_name> for ActiveModel {
-                fn from(d: super::#struct_name) -> Self {
-                    #(#let_bindings)*
-                    Self {
-                        #(#set_fields,)*
-                    }
-                }
-            }
-        }
-    };
-
-    // ── EntityId impl ──────────────────────────────────────
-    // Find the PK field and derive its Id type.
-    let (pk_ident, pk_is_option, entity_id_ty) = if has_explicit_id {
-        let pk = processed
-            .iter()
-            .find(|pf| pf.is_primary_key)
-            .expect("EntityModel: no primary key found");
-        let is_opt = type_ends_with(&pk.ty, "Option");
-        // Unwrap Option<T> → T
-        let inner_ty = if is_opt {
-            // Parse unwrapped type from Option<T>
-            if let Type::Path(tp) = &pk.ty {
-                if let Some(seg) = tp.path.segments.last() {
-                    if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
-                        if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
-                            Some(quote!(#inner))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        let id_ty = if let Some(ref inner) = inner_ty {
-            quote!(#inner)
-        } else {
-            let pk_ty = &pk.ty;
-            quote!(#pk_ty)
-        };
-        (pk.ident.clone(), is_opt, id_ty)
-    } else {
-        // Implicit auto-increment PK
-        let pk = Ident::new("id", proc_macro2::Span::call_site());
-        (pk, false, quote!(i32))
-    };
-
-    let entity_id_impl = {
-        let get_id_expr = if pk_is_option {
-            quote! { self.#pk_ident.clone() }
-        } else {
-            quote! { Some(self.#pk_ident.clone()) }
-        };
-        quote! {
-            impl crate::EntityId for #struct_name {
-                type Id = #entity_id_ty;
-                fn get_id(&self) -> Option<Self::Id> {
-                    #get_id_expr
-                }
-            }
-        }
-    };
-
-    // ── new() ──────────────────────────────────────────────
-    //
-    // Skip generation if any field has #[sea_orm(ignore)] — we can't guess
-    // a reasonable default for arbitrary types.
-    let has_ignored = processed.iter().any(|pf| pf.is_ignored);
-
-    let new_impl = if has_ignored {
-        quote! {}
-    } else {
-        // Build complete field list for the struct literal.
-        // Each entry: (field_name, expression_token_stream)
-        let mut all_fields: Vec<(Ident, TokenStream2)> = Vec::new();
-        let mut new_param_decls: Vec<TokenStream2> = Vec::new();
-
-        for pf in &processed {
-            if pf.flatten.is_some() {
-                continue; // flatten fields handled via ..Default::default() fallback below
-            }
-
-            let name = &pf.ident;
-
-            // HasMany / HasOne — pure relation, always Vec::new()
-            if matches!(
-                pf.relation,
-                Some(RelationKind::HasMany { .. }) | Some(RelationKind::HasOne { .. })
-            ) {
-                all_fields.push((name.clone(), quote! { Vec::new() }));
-                continue;
-            }
-
-            // Auto-increment PK → None
-            if pf.is_primary_key && pf.auto_increment {
-                all_fields.push((name.clone(), quote! { None }));
-                continue;
-            }
-
-            // Optional FK (BelongsTo on Option<T>) → None
-            if matches!(pf.relation, Some(RelationKind::BelongsTo { .. }))
-                && type_ends_with(&pf.ty, "Option")
-            {
-                all_fields.push((name.clone(), quote! { None }));
-                continue;
-            }
-
-            // All other fields become required params
-            let ty = pf.ty.clone();
-            all_fields.push((name.clone(), quote! { #name }));
-            new_param_decls.push(quote! { #name: #ty });
-        }
-
-        // Determine fallback: if there are flatten fields, use ..Default::default().
-        // Otherwise emit a complete literal.
-        let has_flatten = processed.iter().any(|pf| pf.flatten.is_some());
-        let defaults_fallback = if has_flatten {
-            quote! { ..Default::default() }
-        } else {
-            quote! {}
-        };
-
-        if new_param_decls.is_empty() && !has_flatten {
-            quote! {}
-        } else {
-            let set_fields = all_fields
-                .iter()
-                .map(|(name, expr)| quote! { #name: #expr });
-            quote! {
-                impl #struct_name {
-                    pub fn new(#(#new_param_decls),*) -> Self {
-                        Self {
-                            #(#set_fields,)*
-                            #defaults_fallback
-                        }
-                    }
-                }
-            }
-        }
-    };
-
-    // ── link() ─────────────────────────────────────────────
-    // Collect FK field info: (fk_field_ident, entity_name, to_column, inner_type)
-    // inner_type is the unwrapped type of the FK field (e.g. i32 from Option<i32>).
-    let fk_entries: Vec<(Ident, String, String, TokenStream2)> = processed
-        .iter()
-        .filter_map(|pf| {
-            if let Some(RelationKind::BelongsTo {
-                entity_alias, to, ..
-            }) = &pf.relation
-            {
-                // Unwrap Option<T> → T for the FK type
-                let inner_ty = unwrap_option_type(&pf.ty);
-                Some((pf.ident.clone(), entity_alias.clone(), to.clone(), inner_ty))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    let link_impl = if fk_entries.is_empty() {
-        quote! {}
-    } else {
-        let link_params: Vec<TokenStream2> = fk_entries
-            .iter()
-            .map(|(_, entity_alias, _, inner_ty)| {
-                // Strip "Entity" suffix, snake_case the entity name
-                let entity_type = entity_alias.strip_suffix("Entity").unwrap_or(entity_alias);
-                let param_name =
-                    Ident::new(&to_snake_case(entity_type), proc_macro2::Span::call_site());
-                quote! { #param_name: &dyn crate::EntityId<Id = #inner_ty> }
-            })
-            .collect();
-
-        let link_sets: Vec<TokenStream2> = fk_entries
-            .iter()
-            .map(|(fk_ident, entity_alias, _, _inner_ty)| {
-                let entity_type = entity_alias.strip_suffix("Entity").unwrap_or(entity_alias);
-                let param_name =
-                    Ident::new(&to_snake_case(entity_type), proc_macro2::Span::call_site());
-                // Find the FK field to check if it's Option<T>
-                let fk_pf = processed.iter().find(|pf| pf.ident == *fk_ident).unwrap();
-                let is_opt_fk = type_ends_with(&fk_pf.ty, "Option");
-                let get_id_expr = if is_opt_fk {
-                    quote! { #param_name.get_id() }
-                } else {
-                    quote! { #param_name.get_id().expect("link: entity missing id") }
-                };
-                quote! { self.#fk_ident = #get_id_expr; }
-            })
-            .collect();
-
-        quote! {
-            impl #struct_name {
-                pub fn link(mut self, #(#link_params),*) -> Self {
-                    #(#link_sets)*
-                    self
-                }
-            }
-        }
-    };
-
-    // Collect HasMany children: (field_ident, entity_alias, child_fk_override, tuple_linked)
-    let mut child_specs: Vec<(
-        Ident,          // field ident (e.g. "golden_comments")
-        String,         // entity alias (e.g. "GoldenCommentEntity")
-        String,         // FK name (from annotation or convention)
-        Option<String>, // tuple linked_child entity, if any
-    )> = Vec::new();
-
-    for pf in &processed {
-        if let Some(RelationKind::HasMany {
-            entity_alias,
-            child_fk,
-            tuple_linked_child,
-        }) = &pf.relation
-        {
-            // Child FK: annotation override or convention
-            let child_fk = child_fk
-                .clone()
-                .unwrap_or_else(|| format!("{}_id", to_snake_case(&raw_name)));
-
-            child_specs.push((
-                pf.ident.clone(),
-                entity_alias.clone(),
-                child_fk,
-                tuple_linked_child.clone(),
-            ));
-        }
-    }
-
-    let save_impl = if child_specs.is_empty() {
-        // Simple save: insert-or-upsert, no children
-        let is_auto_inc_pk = processed
-            .iter()
-            .any(|pf| pf.is_primary_key && pf.auto_increment);
-        let insert_body = if is_auto_inc_pk {
-            quote! {
-                let active = #active_name::from(self.clone());
-                let _ = active.insert(db).await?;
-                Ok(())
-            }
-        } else {
-            quote! {
-                let active = #active_name::from(self.clone());
-                match active.clone().insert(db).await {
-                    Ok(_) => Ok(()),
-                    Err(e) if e.to_string().to_lowercase().contains("unique") => {
-                        active.update(db).await
-                            .map_err(|e| ::anyhow::anyhow!("update failed: {e}"))?;
-                        Ok(())
-                    }
-                    Err(e) => Err(anyhow::anyhow!("insert failed: {e}")),
-                }
-            }
-        };
-        quote! {
-            #[async_trait::async_trait]
-            impl crate::Save for #struct_name {
-                async fn save(&self, db: &::sea_orm::DatabaseConnection) -> Result<(), ::anyhow::Error> {
-                    use ::sea_orm::{ActiveModelTrait, IntoActiveModel};
-                    #insert_body
-                }
-            }
-        }
-    } else {
-        // Has children: save parent, then iterate children with FK wiring
-        let parent_insert = {
-            let is_auto_inc_pk = processed
-                .iter()
-                .any(|pf| pf.is_primary_key && pf.auto_increment);
-            if is_auto_inc_pk {
-                quote! {
-                    let active = #active_name::from(self.clone());
-                    let saved_parent = active.insert(db).await?;
-                    let __parent_pk = saved_parent.id;
-                }
-            } else {
-                // PK is known before insert (non-auto-increment)
-                quote! {
-                    let __parent_pk = self.id.clone();
-                    let active = #active_name::from(self.clone());
-                    match active.clone().insert(db).await {
-                        Ok(_) => {},
-                        Err(e) if e.to_string().to_lowercase().contains("unique") => {
-                            active.update(db).await
-                                .map_err(|e| ::anyhow::anyhow!("update failed: {e}"))?;
-                        }
-                        Err(e) => return Err(::anyhow::anyhow!("insert failed: {e}")),
-                    };
-                }
-            }
-        };
-
-        let child_blocks: Vec<TokenStream2> = child_specs
-            .iter()
-            .map(|(field_ident, entity_alias, child_fk, tuple_linked)| {
-                let fk_ident = Ident::new(child_fk, proc_macro2::Span::call_site());
-
-                if let Some(_linked) = tuple_linked {
-                    // Tuple: Vec<(A, B)> — emit stub, needs manual impl
-                    quote! {
-                        // TODO: tuple save for #field_ident — implement manually
-                        let _ = (&self.#field_ident, db);
-                    }
-                } else {
-                    // Simple Vec<Child> — recursively call child's Save
-                    quote! {
-                        for __child in &self.#field_ident {
-                            let mut __child_clone = __child.clone();
-                            __child_clone.#fk_ident = __parent_pk.clone();
-                            __child_clone.save(db).await?;
-                        }
-                    }
-                }
-            })
-            .collect();
-
-        quote! {
-            #[async_trait::async_trait]
-            impl crate::Save for #struct_name {
-                async fn save(&self, db: &::sea_orm::DatabaseConnection) -> Result<(), ::anyhow::Error> {
-                    use ::sea_orm::{ActiveModelTrait, IntoActiveModel};
-                    #parent_insert
-                    #(#child_blocks)*
-                    Ok(())
-                }
-            }
-        }
-    };
+    let relation_variants = build_relation_variants(&rel_entries);
+    let relation_trait_impl = build_relation_trait_impl(&rel_entries);
+    let related_impls = build_related_impls(rel_entries);
+    let (from_domain_impl, from_model_impl) =
+        build_from_traits(&processed, flatten_entries, struct_name);
+    let entity_id_impl = build_entity_id_impl(&processed, has_explicit_id, struct_name);
+    let new_impl = build_new_function(&processed, struct_name);
+    let link_impl = build_link_function(&processed, struct_name);
+    let save_impl = build_save_function(processed, struct_name, raw_name);
 
     let expanded = quote! {
         /// SeaORM entity model auto-generated by `EntityModel` derive.
@@ -884,167 +344,580 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-/// Parsed relation directive for a field's `#[sea_orm(...)]` attributes.
-#[derive(Debug, Clone)]
-pub enum RelationKind {
-    /// Field becomes `HasMany<ChildEntity>`.
-    HasMany {
-        entity_alias: String,
-        /// Optional FK column override: `child_fk = "session_id"`.
-        child_fk: Option<String>,
-        /// Optional tuple linked child: `tuple(linked_child = "JudgeVerdictEntity")`.
-        tuple_linked_child: Option<String>,
-    },
-
-    /// Field becomes `HasOne<ChildEntity>`.
-    HasOne { entity_alias: String },
-
-    /// Field stays as a scalar column but also generates a belongs_to
-    /// Relation variant and `Related<ParentEntity>` impl.
-    BelongsTo {
-        entity_alias: String,
-        from: String,
-        to: String,
-    },
+fn build_relation_variants(rel_entries: &Vec<(Ident, RelationKind)>) -> Vec<TokenStream2> {
+    // Build Relation enum variants
+    let relation_variants: Vec<TokenStream2> = rel_entries
+        .iter()
+        .map(|(ident, _)| {
+            let v = format_ident!("{}", snake_to_pascal(&ident.to_string()));
+            quote! { #v }
+        })
+        .collect();
+    relation_variants
 }
 
-/// Parsed & classified struct field.
-pub struct ProcessedField {
-    pub ident: Ident,
-    pub ty: Type,
-
-    /// True if the field has #[sea_orm(ignore)].
-    pub is_ignored: bool,
-
-    /// True if the field is the primary key.
-    pub is_primary_key: bool,
-
-    /// True if the PK is auto-incremented by the DB.
-    pub auto_increment: bool,
-
-    /// `#[sea_orm(...)]` tokens to pass through verbatim.
-    pub passthrough: Vec<TokenStream2>,
-
-    /// If non-None, this field is a relation.
-    pub relation: Option<RelationKind>,
-
-    /// If non-None, this field uses #[flatten(...)].
-    pub flatten: Option<FlattenSpec>,
-}
-
-/// Check if a type's last path segment matches a given name.
-pub fn type_ends_with(ty: &Type, name: &str) -> bool {
-    let Type::Path(type_path) = ty else {
-        return false;
-    };
-
-    let Some(segment) = type_path.path.segments.last() else {
-        return false;
-    };
-
-    segment.ident == name
-}
-
-/// Get the last type name segment (e.g., ReviewMetadata from `crate::review::ReviewMetadata`).
-pub fn type_last_segment(ty: &Type) -> String {
-    let Type::Path(type_path) = ty else {
-        return String::new();
-    };
-
-    let Some(segment) = type_path.path.segments.last() else {
-        return String::new();
-    };
-
-    segment.ident.to_string()
-}
-
-/// If the type is `Option<T>`, return `T`. Otherwise return None.
-pub fn get_optional_inner(ty: &Type) -> Option<Type> {
-    let Type::Path(type_path) = ty else {
-        return None;
-    };
-
-    let Some(segment) = type_path.path.segments.last() else {
-        return None;
-    };
-
-    if segment.ident != "Option" {
-        return None;
-    }
-
-    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
-        return None;
-    };
-
-    let Some(syn::GenericArgument::Type(inner)) = args.args.first() else {
-        return None;
-    };
-
-    Some(inner.clone())
-}
-
-/// Check if type is `Option<MagicTypeId>`.
-pub fn is_optional_magic_type_id(ty: &Type) -> bool {
-    if let Some(inner) = get_optional_inner(ty) {
-        return type_ends_with(&inner, "MagicTypeId");
-    }
-
-    false
-}
-
-/// If the type is `Option<T>`, return `T` token stream. Otherwise return the type itself.
-pub fn unwrap_option_type(ty: &Type) -> TokenStream2 {
-    let Some(inner_type) = get_optional_inner(ty) else {
-        return quote! { #ty };
-    };
-
-    quote! { #inner_type }
-}
-
-/// Extract `key = "value"` from a list of attributes for a specific attribute scope.
-pub fn extract_key_value(
-    attrs: &[Attribute],
-    attribute_scope: &str,
-    target_key: &str,
-) -> Option<String> {
-    for attr in attrs {
-        if !attr.path().is_ident(attribute_scope) {
-            continue;
-        }
-
-        let mut result: Option<String> = None;
-        let _ = attr.parse_nested_meta(|meta| {
-            if meta.path.is_ident(target_key) {
-                let value: LitStr = meta.value()?.parse()?;
-                result = Some(value.value());
+// Build RelationTrait::def()
+fn build_relation_trait_impl(rel_entries: &Vec<(Ident, RelationKind)>) -> TokenStream2 {
+    if rel_entries.is_empty() {
+        return quote! {
+            impl RelationTrait for Relation {
+                fn def(&self) -> sea_orm::RelationDef {
+                    match *self {}
+                }
             }
+        };
+    }
 
-            Ok(())
-        });
+    let relation_def_arms: Vec<TokenStream2> = rel_entries
+        .iter()
+        .map(|(ident, kind)| {
+            let v_str = snake_to_pascal(&ident.to_string());
+            let v = Ident::new(&v_str, Span::call_site());
+            match kind {
+                RelationKind::HasMany { entity_alias, .. } => {
+                    let child_path = entity_path_from_alias(entity_alias);
+                    quote! {
+                        Relation::#v => Entity::has_many(#child_path).into()
+                    }
+                }
 
-        if let Some(name) = result {
-            return Some(name);
+                RelationKind::HasOne { entity_alias } => {
+                    let child_path = entity_path_from_alias(entity_alias);
+                    quote! {
+                        Relation::#v => Entity::has_one(#child_path).into()
+                    }
+                }
+
+                RelationKind::BelongsTo {
+                    entity_alias,
+                    from,
+                    to,
+                } => {
+                    let parent_path = entity_path_from_alias(entity_alias);
+                    let from_col_pascal_str = snake_to_pascal(from);
+                    let from_col_pascal = Ident::new(&from_col_pascal_str, Span::call_site());
+                    let to_col_pascal_str = snake_to_pascal(to);
+                    let to_col_pascal = Ident::new(&to_col_pascal_str, Span::call_site());
+                    quote! {
+                        Relation::#v => Entity::belongs_to(#parent_path)
+                            .from(Column::#from_col_pascal)
+                            .to(<#parent_path as sea_orm::EntityTrait>::Column::#to_col_pascal)
+                            .into()
+                    }
+                }
+            }
+        })
+        .collect();
+
+    quote! {
+        impl RelationTrait for Relation {
+            fn def(&self) -> sea_orm::RelationDef {
+                match self {
+                    #(#relation_def_arms,)*
+                }
+            }
+        }
+    }
+}
+
+// Build impl Related<T> for Entity for BelongsTo relations
+fn build_related_impls(rel_entries: Vec<(Ident, RelationKind)>) -> Vec<TokenStream2> {
+    rel_entries
+        .iter()
+        .filter_map(|(ident, kind)| {
+            let RelationKind::BelongsTo { entity_alias, .. } = kind else {
+                return None;
+            };
+
+            let parent_path = entity_path_from_alias(entity_alias);
+            let v_str = snake_to_pascal(&ident.to_string());
+            let rel_variant = Ident::new(&v_str, Span::call_site());
+            Some(quote! {
+                impl Related<#parent_path> for Entity {
+                    fn to() -> sea_orm::RelationDef {
+                        Relation::#rel_variant.def()
+                    }
+                    fn via() -> Option<sea_orm::RelationDef> {
+                        None
+                    }
+                }
+            })
+        })
+        .collect()
+}
+
+// Build From<Model> for DomainType and From<DomainType> for ActiveModel
+fn build_from_traits(
+    processed: &Vec<ProcessedField>,
+    flatten_entries: Vec<(Ident, FlattenSpec)>,
+    struct_name: &Ident,
+) -> (TokenStream2, TokenStream2) {
+    let mut from_model_fields: Vec<TokenStream2> = Vec::new();
+    let mut from_domain_fields: Vec<TokenStream2> = Vec::new();
+
+    // Track which columns are set by flatten fields so scalar fields don't conflict
+    let mut flatten_col_names: Vec<String> = Vec::new();
+    for (_, spec) in &flatten_entries {
+        flatten_col_names.push(spec.tag.clone());
+        for vd in &spec.variants {
+            for (col_name, _) in &vd.columns {
+                if !flatten_col_names.contains(col_name) {
+                    flatten_col_names.push(col_name.clone());
+                }
+            }
         }
     }
 
-    None
+    for pf in processed {
+        let ident = &pf.ident;
+        let is_pure_rel = matches!(
+            pf.relation,
+            Some(RelationKind::HasMany { .. }) | Some(RelationKind::HasOne { .. })
+        );
+        let is_scalar = !pf.is_ignored && !is_pure_rel && pf.flatten.is_none();
+        let has_auto_increment = pf
+            .passthrough
+            .iter()
+            .any(|ts| ts.to_string().to_lowercase().contains("auto_increment"));
+
+        let is_mtid = type_ends_with(&pf.ty, "MagicTypeId");
+        let is_opt_mtid =
+            get_option_inner(&pf.ty).is_some_and(|inner| type_ends_with(&inner, "MagicTypeId"));
+
+        if is_scalar {
+            let model_expr = if has_auto_increment {
+                quote! { Default::default() }
+            } else if is_mtid {
+                quote! { m.#ident.parse::<mti::prelude::MagicTypeId>().unwrap_or_default() }
+            } else if is_opt_mtid {
+                quote! { m.#ident.map(|s| s.parse::<mti::prelude::MagicTypeId>().unwrap_or_default()) }
+            } else {
+                quote! { m.#ident }
+            };
+            from_model_fields.push(quote! { #ident: #model_expr });
+        }
+
+        if is_scalar {
+            let domain_expr = if has_auto_increment {
+                quote! { sea_orm::NotSet }
+            } else if is_mtid {
+                quote! { sea_orm::Set(d.#ident.to_string()) }
+            } else if is_opt_mtid {
+                quote! { sea_orm::Set(d.#ident.as_ref().map(|x| x.to_string())) }
+            } else {
+                quote! { sea_orm::Set(d.#ident) }
+            };
+            from_domain_fields.push(quote! { #ident: #domain_expr });
+        }
+    }
+
+    let mut flatten_let_bindings: Vec<TokenStream2> = Vec::new();
+    let mut flatten_set_fields: Vec<TokenStream2> = Vec::new();
+    for (idx, (field_ident, spec)) in flatten_entries.iter().enumerate() {
+        let pf = processed
+            .iter()
+            .find(|pf| pf.ident == *field_ident)
+            .unwrap();
+        let field_ty_name = type_last_segment(&pf.ty);
+
+        let bridge_ident = format_ident!("__{}Columns", field_ty_name);
+        let cols_ident = format_ident!("__cols_{}", idx);
+
+        let mut all_flatten_cols: Vec<(String, String)> = Vec::new();
+        all_flatten_cols.push((spec.tag.clone(), "Option<String>".to_string()));
+        for vd in &spec.variants {
+            for (col_name, col_type) in &vd.columns {
+                if !all_flatten_cols.iter().any(|(c, _)| c == col_name) {
+                    all_flatten_cols.push((col_name.clone(), format!("Option<{col_type}")));
+                }
+            }
+        }
+
+        let set_fields: Vec<TokenStream2> = all_flatten_cols
+            .iter()
+            .map(|(col_name, _)| {
+                let col_ident = Ident::new(col_name, Span::call_site());
+                quote! { #col_ident: sea_orm::Set(#cols_ident.#col_ident) }
+            })
+            .collect();
+
+        flatten_let_bindings.push(quote! {
+            let #cols_ident: #bridge_ident = d.#field_ident.into();
+        });
+        flatten_set_fields.extend(set_fields);
+    }
+
+    let has_flatten = !flatten_entries.is_empty();
+    let has_ignored_fields = processed.iter().any(|pf| {
+        let is_pure_rel = matches!(
+            pf.relation,
+            Some(RelationKind::HasMany { .. }) | Some(RelationKind::HasOne { .. })
+        );
+        (pf.is_ignored || is_pure_rel) && pf.flatten.is_none()
+    });
+
+    let from_model_impl = if from_model_fields.is_empty() {
+        quote! {}
+    } else if has_ignored_fields && !has_flatten {
+        quote! {
+          compile_error!(
+            "EntityModel: cannot derive From<Model> when there are ignored fields and no flatten fields"
+          );
+        }
+    } else {
+        // Either all fields are populated from Model, or there are flatten fields that we populate via the bridge struct.
+        // If there are also ignored fields, use ..Default::default().
+        if has_ignored_fields {
+            from_model_fields.push(quote! { ..Default::default() });
+        }
+
+        quote! {
+            impl From<Model> for super::#struct_name {
+                fn from(m: Model) -> Self {
+                    Self {
+                        #(#from_model_fields,)*
+                    }
+                }
+            }
+        }
+    };
+
+    let final_from_domain_fields: Vec<TokenStream2> = from_domain_fields
+        .into_iter()
+        .chain(flatten_set_fields)
+        .collect();
+
+    let from_domain_impl = if final_from_domain_fields.is_empty() && flatten_let_bindings.is_empty()
+    {
+        quote! {}
+    } else {
+        let set_fields = &final_from_domain_fields;
+        let let_bindings = &flatten_let_bindings;
+        quote! {
+            impl From<super::#struct_name> for ActiveModel {
+                fn from(d: super::#struct_name) -> Self {
+                    #(#let_bindings)*
+                    Self {
+                        #(#set_fields,)*
+                    }
+                }
+            }
+        }
+    };
+
+    (from_domain_impl, from_model_impl)
 }
 
-/// Extract `key = "value"` from a raw token string for a specific key.
-pub fn extract_value(tokens: &str, key: &str) -> String {
-    for part in tokens.split(',') {
-        let trimmed = part.trim();
-        let Some(eq_pos) = trimmed.find('=') else {
+fn build_entity_id_impl(
+    processed: &Vec<ProcessedField>,
+    has_explicit_id: bool,
+    struct_name: &Ident,
+) -> TokenStream2 {
+    let return_quote = |entity_id_ty, get_id_expr| {
+        quote! {
+            impl crate::EntityId for #struct_name {
+                type Id = #entity_id_ty;
+                fn get_id(&self) -> Option<Self::Id> {
+                    #get_id_expr
+                }
+            }
+        }
+    };
+
+    if !has_explicit_id {
+        return return_quote(quote!(i32), quote! { Some(self.id.clone()) });
+    }
+
+    let pk = processed
+        .iter()
+        .find(|pf| pf.is_primary_key)
+        .expect("EntityModel: no primary key found");
+
+    let get_id_expr = {
+        let pk_ident = &pk.ident;
+        quote! { self.#pk_ident.clone() }
+    };
+
+    let (inner_ty, get_id_expr) = get_option_inner(&pk.ty)
+        .map(|ty| (ty, quote! { Some(#get_id_expr) }))
+        .unwrap_or_else(|| (pk.ty.clone(), get_id_expr));
+
+    return_quote(quote!(#inner_ty), get_id_expr)
+}
+
+fn build_new_function(processed: &Vec<ProcessedField>, struct_name: &Ident) -> TokenStream2 {
+    // Skip generation if any field has #[sea_orm(ignore)]
+    // we can't guess a reasonable default for arbitrary types.
+    if processed.iter().any(|pf| pf.is_ignored) {
+        return quote! {};
+    }
+
+    // Build complete field list for the struct literal.
+    // Each entry: (field_name, expression_token_stream)
+    let mut all_fields = Vec::new();
+    let mut new_param_decls = Vec::new();
+
+    for pf in processed {
+        if pf.flatten.is_some() {
+            // flatten fields handled via fallback below
             continue;
+        }
+
+        let name = &pf.ident;
+
+        if matches!(
+            pf.relation,
+            Some(RelationKind::HasMany { .. }) | Some(RelationKind::HasOne { .. })
+        ) {
+            all_fields.push((name.clone(), quote! { Vec::new() }));
+            continue;
+        }
+
+        if pf.is_primary_key && pf.auto_increment {
+            all_fields.push((name.clone(), quote! { None }));
+            continue;
+        }
+
+        if matches!(pf.relation, Some(RelationKind::BelongsTo { .. }))
+            && get_option_inner(&pf.ty).is_some()
+        {
+            all_fields.push((name.clone(), quote! { None }));
+            continue;
+        }
+
+        let ty = pf.ty.clone();
+        all_fields.push((name.clone(), quote! { #name }));
+        new_param_decls.push(quote! { #name: #ty });
+    }
+
+    // If there are flatten fields, use ..Default::default().
+    // Otherwise emit a complete literal.
+    let has_flatten = processed.iter().any(|pf| pf.flatten.is_some());
+    let defaults_fallback = if has_flatten {
+        quote! { ..Default::default() }
+    } else {
+        quote! {}
+    };
+
+    if new_param_decls.is_empty() && !has_flatten {
+        return quote! {};
+    }
+
+    let set_fields = all_fields
+        .iter()
+        .map(|(name, expr)| quote! { #name: #expr });
+
+    quote! {
+        impl #struct_name {
+            pub fn new(#(#new_param_decls),*) -> Self {
+                Self {
+                    #(#set_fields,)*
+                    #defaults_fallback
+                }
+            }
+        }
+    }
+}
+
+fn build_link_function(processed: &Vec<ProcessedField>, struct_name: &Ident) -> TokenStream2 {
+    struct LinkParam {
+        ident: Ident,
+        entity_alias: String,
+        ty: TokenStream2,
+    }
+
+    let fk_entries: Vec<_> = processed
+        .iter()
+        .filter_map(|pf| {
+            pf.relation.as_ref().and_then(|rel| match rel {
+                RelationKind::BelongsTo { entity_alias, .. } => Some(LinkParam {
+                    ident: pf.ident.clone(),
+                    entity_alias: entity_alias.clone(),
+                    ty: unwrap_option_type(&pf.ty),
+                }),
+                _ => None,
+            })
+        })
+        .collect();
+
+    if fk_entries.is_empty() {
+        return quote! {};
+    }
+
+    fn get_entity_type(str: &String) -> &str {
+        str.strip_suffix("Entity").unwrap_or(str)
+    }
+
+    let link_params: Vec<_> = fk_entries
+        .iter()
+        .map(|link| {
+            let entity_type = get_entity_type(&link.entity_alias);
+            let param_name = Ident::new(&to_snake_case(entity_type), Span::call_site());
+            let inner_ty = &link.ty;
+            quote! { #param_name: &dyn crate::EntityId<Id = #inner_ty> }
+        })
+        .collect();
+
+    let link_sets: Vec<_> = fk_entries
+        .iter()
+        .map(|link| {
+            let entity_type = get_entity_type(&link.entity_alias);
+            let param_name = Ident::new(&to_snake_case(entity_type), Span::call_site());
+            let fk_ident = &link.ident;
+
+            let fk_pf = processed.iter().find(|pf| pf.ident == link.ident).unwrap();
+            let is_opt_fk = type_ends_with(&fk_pf.ty, "Option");
+            let get_id_expr = match is_opt_fk {
+                true => quote!(#param_name.get_id()),
+                false => quote!(#param_name.get_id().expect("link: entity missing id")),
+            };
+
+            quote! { self.#fk_ident = #get_id_expr; }
+        })
+        .collect();
+
+    quote! {
+        impl #struct_name {
+            pub fn link(mut self, #(#link_params),*) -> Self {
+                #(#link_sets)*
+                self
+            }
+        }
+    }
+}
+
+fn build_save_function(
+    processed: Vec<ProcessedField>,
+    struct_name: &Ident,
+    raw_name: String,
+) -> TokenStream2 {
+    struct ChildSpec {
+        field_ident: Ident,
+        fk: String,
+        tuple_linked: Option<String>,
+    }
+
+    let mut child_specs = Vec::new();
+    for pf in &processed {
+        if let Some(RelationKind::HasMany {
+            child_fk,
+            tuple_linked_child,
+            ..
+        }) = &pf.relation
+        {
+            let child_fk = child_fk
+                .clone()
+                .unwrap_or_else(|| format!("{}_id", to_snake_case(&raw_name)));
+
+            child_specs.push(ChildSpec {
+                field_ident: pf.ident.clone(),
+                fk: child_fk,
+                tuple_linked: tuple_linked_child.clone(),
+            });
+        }
+    }
+
+    if child_specs.is_empty() {
+        let basic_save_impl = |insert_body| {
+            quote! {
+                impl crate::Save for #struct_name {
+                    async fn save(&self, db: &::sea_orm::DatabaseConnection) -> Result<(), ::anyhow::Error> {
+                        use ::sea_orm::{ActiveModelTrait, IntoActiveModel};
+                        #insert_body
+                    }
+                }
+            }
         };
 
-        let k = trimmed[..eq_pos].trim();
-        if k == key {
-            return trimmed[eq_pos + 1..].trim().trim_matches('"').to_string();
+        if is_auto_inc_pk(processed) {
+            return basic_save_impl(quote! {
+                let active = #*active_name::from(self.clone());
+                let _ = active.insert(db).await?;
+                Ok(())
+            });
         }
+
+        return basic_save_impl(quote! {
+            let active = #*active_name::from(self.clone());
+            match active.clone().insert(db).await {
+                Ok(_) => Ok(()),
+                Err(e) if e.to_string().to_lowercase().contains("unique") => {
+                    active.update(db).await
+                        .map_err(|e| ::anyhow::anyhow!("update failed: {e}"))?;
+                    Ok(())
+                }
+                Err(e) => Err(anyhow::anyhow!("insert failed: {e}")),
+            }
+        });
     }
 
-    String::new()
+    let parent_insert = {
+        let active = quote! { let active = #*active_name::from(self.clone()) };
+
+        if is_auto_inc_pk(processed) {
+            return quote! {
+                #active;
+                let saved_parent = active.insert(db).await?;
+                let __parent_pk = saved_parent.id;
+            };
+        }
+
+        quote! {
+            #active;
+            let __parent_pk = self.id.clone();
+            match active.clone().insert(db).await {
+                Ok(_) => {},
+                Err(e) if e.to_string().to_lowercase().contains("unique") => {
+                    active.update(db).await
+                        .map_err(|e| ::anyhow::anyhow!("update failed: {e}"))?;
+                }
+                Err(e) => return Err(::anyhow::anyhow!("insert failed: {e}")),
+            };
+        }
+    };
+
+    let child_blocks: Vec<TokenStream2> = child_specs
+        .iter()
+        .map(|child| {
+            let fk_ident = Ident::new(&child.fk, Span::call_site());
+            let field_ident = &child.field_ident;
+
+            if let Some(tuple) = &child.tuple_linked {
+              return quote! {
+                compile_error!(
+                    "EntityModel: field {} is a tuple-linked child ({}); this is not yet supported.",
+                    stringify!(#field_ident),
+                    #tuple
+                );
+              }
+            }
+
+            quote! {
+                for __child in &self.#field_ident {
+                    let mut __child_clone = __child.clone();
+                    __child_clone.#fk_ident = __parent_pk.clone();
+                    __child_clone.save(db).await?;
+                }
+            }
+        })
+        .collect();
+
+    quote! {
+        impl crate::Save for #struct_name {
+            async fn save(&self, db: &::sea_orm::DatabaseConnection) -> Result<(), ::anyhow::Error> {
+                use ::sea_orm::{ActiveModelTrait, IntoActiveModel};
+                #parent_insert
+                #(#child_blocks)*
+                Ok(())
+            }
+        }
+    }
+}
+
+fn is_auto_inc_pk(processed: Vec<ProcessedField>) -> bool {
+    processed
+        .iter()
+        .any(|pf| pf.is_primary_key && pf.auto_increment)
 }
 
 /// Scan a field's attrs and classify it as scalar / relation / ignored / flattened.
@@ -1145,51 +1018,8 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
 /// Convert an entity alias like `"GoldenCommentEntity"` to a reference
 /// to the re-exported Entity type via `super::`.
 pub fn entity_path_from_alias(alias: &str) -> TokenStream2 {
-    let alias_ident = Ident::new(alias, proc_macro2::Span::call_site());
+    let alias_ident = Ident::new(alias, Span::call_site());
     quote! { super::#alias_ident }
-}
-
-/// Convert PascalCase or camelCase to snake_case.
-pub fn to_snake_case(s: &str) -> String {
-    let mut result = String::with_capacity(s.len() + 4);
-    let mut chars = s.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch.is_uppercase() {
-            if !result.is_empty() && !result.ends_with('_') {
-                // Insert underscore before uppercase, but not if it's first or
-                // the previous char is already uppercase (handles acronyms).
-                if let Some(&next) = chars.peek() {
-                    if next.is_lowercase() {
-                        result.push('_');
-                    }
-                }
-            }
-            for lc in ch.to_lowercase() {
-                result.push(lc);
-            }
-        } else {
-            result.push(ch);
-        }
-    }
-    result
-}
-
-/// Convert snake_case to PascalCase
-pub fn snake_to_pascal(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut capitalize_next = true;
-    for ch in s.chars() {
-        if ch == '_' {
-            capitalize_next = true;
-        } else if capitalize_next {
-            result.extend(ch.to_uppercase());
-            capitalize_next = false;
-        } else {
-            result.push(ch);
-        }
-    }
-
-    result
 }
 
 /// Derive the SeaORM column type for a scalar domain field.
@@ -1198,7 +1028,7 @@ pub fn scalar_column_type(ty: &Type) -> TokenStream2 {
         return quote! { String };
     }
 
-    let Some(inner_type) = get_optional_inner(ty) else {
+    let Some(inner_type) = get_option_inner(ty) else {
         return quote! { #ty };
     };
 
@@ -1207,34 +1037,4 @@ pub fn scalar_column_type(ty: &Type) -> TokenStream2 {
     }
 
     return quote! { #ty };
-}
-
-#[cfg(test)]
-mod tests {
-    use quote::ToTokens;
-
-    use super::*;
-
-    #[test]
-    fn test_snake_to_pascal() {
-        assert_eq!(snake_to_pascal("hello_world"), "HelloWorld");
-        assert_eq!(snake_to_pascal("foo_bar_baz"), "FooBarBaz");
-        assert_eq!(snake_to_pascal("snake_case"), "SnakeCase");
-        assert_eq!(snake_to_pascal("alreadyPascal"), "AlreadyPascal");
-        assert_eq!(snake_to_pascal("singleword"), "Singleword");
-    }
-
-    #[test]
-    fn test_get_option() {
-        let ty: Type = syn::parse_str("Option<i32>").unwrap();
-        let inner = get_optional_inner(&ty).unwrap();
-        assert_eq!(inner.to_token_stream().to_string(), "i32");
-
-        let ty: Type = syn::parse_str("Option<()>").unwrap();
-        let inner = get_optional_inner(&ty).unwrap();
-        assert_eq!(inner.to_token_stream().to_string(), "()");
-
-        let ty2: Type = syn::parse_str("String").unwrap();
-        assert!(get_optional_inner(&ty2).is_none());
-    }
 }
