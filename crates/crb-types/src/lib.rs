@@ -31,8 +31,11 @@ pub trait EntityId {
 ///
 /// Auto-implemented by `#[derive(EntityModel)]` for structs with no flatten or ignored fields.
 #[cfg(feature = "seaorm-storage")]
+#[allow(async_fn_in_trait)]
 pub trait Save {
-    async fn save(&self, db: &sea_orm::DatabaseConnection) -> Result<(), anyhow::Error>;
+    async fn save(&self, db: &sea_orm::DatabaseConnection) -> Result<(), anyhow::Error>
+    where
+        Self: Send + Sync;
 }
 
 use mti::prelude::MagicTypeId;

@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-seaorm-storage = ["sea-orm/macros", "crb-macros", "dep:async-trait"]
+seaorm-storage = ["sea-orm/macros", "crb-macros"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -17,7 +17,6 @@ schemars = { workspace = true }
 mti = { workspace = true, features = ["serde"] }
 crb-macros = { path = "../crb-macros", optional = true }
 sea-orm = { version = "2.0.0-rc.43", optional = true, features = ["macros"] }
-async-trait = { workspace = true, optional = true }
 
 [dev-dependencies]
 insta = { workspace = true }

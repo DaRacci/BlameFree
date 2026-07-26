@@ -11,7 +11,6 @@ pub mod store;
 pub mod traits;
 
 use crate::traits::Storable;
-use crb_types::Save;
 use crb_types::{
     agent::AgentSession,
     benchmark::{golden::GoldenComment, result::PrResult, standalone::Benchmark},

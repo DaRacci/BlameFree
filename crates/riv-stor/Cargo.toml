@@ -10,7 +10,6 @@ default = ["sqlite"]
 sqlite = []
 
 [dependencies]
-async-trait = { workspace = true }
 chrono = { workspace = true }
 crb-types = { path = "../crb-types", features = ["seaorm-storage"] }
 mti = { workspace = true }

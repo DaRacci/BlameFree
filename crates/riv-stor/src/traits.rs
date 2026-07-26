@@ -28,35 +28,30 @@ pub trait Store: Send + Sync + Clone {
     fn save<T: Storable + crb_types::Save>(
         &self,
         item: &T,
-    ) -> impl Future<Output = Result<(), Error>> + Send;
+    ) -> impl Future<Output = Result<(), Error>>;
 
     /// Load a single item by its `MagicTypeId`.
     ///
     /// Returns `None` if not found.
-    fn load<T: Storable>(
-        &self,
-        id: &MagicTypeId,
-    ) -> impl Future<Output = Result<Option<T>, Error>> + Send;
+    fn load<T: Storable>(&self, id: &MagicTypeId)
+    -> impl Future<Output = Result<Option<T>, Error>>;
 
     /// List items matching the type-specific options.
     fn list<T: Storable>(
         &self,
         options: &T::Options,
-    ) -> impl Future<Output = Result<Vec<T>, Error>> + Send;
+    ) -> impl Future<Output = Result<Vec<T>, Error>>;
 
     /// Delete an item by its `MagicTypeId`.
     ///
     /// Returns `true` if something was deleted.
-    fn delete<T: Storable>(
-        &self,
-        id: &MagicTypeId,
-    ) -> impl Future<Output = Result<bool, Error>> + Send;
+    fn delete<T: Storable>(&self, id: &MagicTypeId) -> impl Future<Output = Result<bool, Error>>;
 
     /// Run schema migrations.
     /// Called once at startup.
     ///
     /// This function is idempotent and safe to call multiple times.
-    fn migrate(&self) -> impl Future<Output = Result<(), Error>> + Send;
+    fn migrate(&self) -> impl Future<Output = Result<(), Error>>;
 }
 
 #[cfg(test)]
