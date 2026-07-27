@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use crb_types::Save;
+use crb_types::stor::Save;
 use crb_types::{
     agent::{AgentSession, AgentSessionEntity, AgentTurn, AgentTurnMessage},
     benchmark::{

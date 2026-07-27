@@ -648,7 +648,7 @@ fn build_entity_id_impl(
 ) -> TokenStream2 {
     let return_quote = |entity_id_ty, get_id_expr| {
         quote! {
-            impl crate::EntityId for #struct_name {
+            impl crate::stor::EntityId for #struct_name {
                 type Id = #entity_id_ty;
                 fn get_id(&self) -> Option<Self::Id> {
                     #get_id_expr
@@ -784,7 +784,7 @@ fn build_link_function(processed: &Vec<ProcessedField>, struct_name: &Ident) -> 
             let entity_type = get_entity_type(&link.entity_alias);
             let param_name = Ident::new(&to_snake_case(entity_type), Span::call_site());
             let inner_ty = &link.ty;
-            quote! { #param_name: &dyn crate::EntityId<Id = #inner_ty> }
+            quote! { #param_name: &dyn crate::stor::EntityId<Id = #inner_ty> }
         })
         .collect();
 
@@ -890,7 +890,7 @@ fn build_save_function(
             }
         };
         return quote! {
-            impl crate::Save for #struct_name {
+            impl crate::stor::Save for #struct_name {
                 async fn save(&self, db: &::sea_orm::DatabaseConnection) -> Result<(), ::anyhow::Error> {
                     use ::sea_orm::{ActiveModelTrait, IntoActiveModel};
                     #insert_body
@@ -946,7 +946,7 @@ fn build_save_function(
         .collect();
 
     quote! {
-        impl crate::Save for #struct_name {
+        impl crate::stor::Save for #struct_name {
             async fn save(&self, db: &::sea_orm::DatabaseConnection) -> Result<(), ::anyhow::Error> {
                 use ::sea_orm::{ActiveModelTrait, IntoActiveModel};
                 #parent_insert

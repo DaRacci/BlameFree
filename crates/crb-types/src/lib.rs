@@ -9,6 +9,7 @@ pub mod finding;
 pub mod flatten;
 pub mod review;
 pub mod severity;
+pub mod stor;
 pub mod vcs;
 pub mod wrappers;
 
@@ -16,27 +17,6 @@ pub mod wrappers;
 /// matching what the `crb_macros::FlattenedStruct` derive macro generates.
 #[cfg(feature = "seaorm-storage")]
 extern crate self as crb_types;
-
-/// Trait for domain structs that have a surrogate primary key.
-///
-/// Auto-implemented by `#[derive(EntityModel)]`. The `Id` associated type
-/// is the unwrapped PK type (e.g. `i32` for `Option<i32>`, `MagicTypeId`
-/// for non-Option PKs).
-pub trait EntityId {
-    type Id: Clone;
-    fn get_id(&self) -> Option<Self::Id>;
-}
-
-/// Trait for domain structs that can persist themselves to the DB.
-///
-/// Auto-implemented by `#[derive(EntityModel)]` for structs with no flatten or ignored fields.
-#[cfg(feature = "seaorm-storage")]
-#[allow(async_fn_in_trait)]
-pub trait Save {
-    async fn save(&self, db: &sea_orm::DatabaseConnection) -> Result<(), anyhow::Error>
-    where
-        Self: Send + Sync;
-}
 
 use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};

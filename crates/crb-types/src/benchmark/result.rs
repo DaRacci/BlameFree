@@ -47,7 +47,7 @@ pub struct PrResult {
 }
 
 #[cfg(feature = "seaorm-storage")]
-impl crate::Save for PrResult {
+impl crate::stor::Save for PrResult {
     async fn save(&self, db: &sea_orm::DatabaseConnection) -> Result<(), anyhow::Error> {
         use sea_orm::ActiveModelTrait;
         use sea_orm::IntoActiveModel;
