@@ -15,20 +15,20 @@ export OPENAI_API_KEY="sk-..."
 export OPENAI_BASE_URL="https://openrouter.ai/api/v1"
 
 # Review working-tree changes
-cargo run --release --bin crb-harness -- review --working --model deepseek/deepseek-v4-pro
+cargo run --release --bin riv -- review --working --model deepseek/deepseek-v4-pro
 ```
 
 ## CLI usage
 
 ```bash
 # Review working-tree changes
-cargo run --release --bin crb-harness -- review --working
+cargo run --release --bin riv -- review --working
 
 # Review a specific commit range
-cargo run --release --bin crb-harness -- review --commits HEAD~3..HEAD
+cargo run --release --bin riv -- review --commits HEAD~3..HEAD
 
 # Review changes in a specific repo with a custom model
-cargo run --release --bin crb-harness -- review \
+cargo run --release --bin riv -- review \
   --working \
   --path /path/to/repo \
   --model gpt-4o
