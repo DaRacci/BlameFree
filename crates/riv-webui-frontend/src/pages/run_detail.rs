@@ -1,14 +1,14 @@
 use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
+use leptos::prelude::*;
+use leptos_router::components::A;
+use leptos_router::hooks::use_params_map;
+use lucide_leptos::{ArrowLeft, Play, TriangleAlert};
 use riv_types::benchmark::metrics::{Metrics, MetricsProvider};
 use riv_types::cost::AnalyticsSnapshot;
 use riv_types::review::{Review, ReviewStatus};
 use riv_types::vcs::pr::PrMeta;
 use riv_webui_shared::{review::RunConfig, route};
-use leptos::prelude::*;
-use leptos_router::components::A;
-use leptos_router::hooks::use_params_map;
-use lucide_leptos::{ArrowLeft, Play, TriangleAlert};
 use serde::Deserialize;
 
 /// Local API response type — matches the old `RunDetail` JSON format.

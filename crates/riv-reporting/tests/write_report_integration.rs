@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fs};
 
+use mti::prelude::{MagicTypeIdExt, V7};
 use riv_reporting::cost::{AnalyticsSnapshot, CacheUsage, SessionUsage};
 use riv_reporting::write_report;
 use riv_types::benchmark::golden::GoldenComment;
@@ -7,7 +8,6 @@ use riv_types::benchmark::judge::JudgeVerdict;
 use riv_types::benchmark::result::PrResult;
 use riv_types::finding::Finding;
 use riv_types::vcs::pr::PrMeta;
-use mti::prelude::{MagicTypeIdExt, V7};
 
 fn make_cost_snapshot() -> AnalyticsSnapshot {
     let id = "agent".create_type_id::<V7>();

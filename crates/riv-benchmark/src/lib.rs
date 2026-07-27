@@ -3,6 +3,14 @@
 use core::error;
 use std::{fmt, sync::Arc};
 
+use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
+use rig_core::{
+    agent::Agent,
+    client::Client,
+    completion::CompletionModel,
+    providers::openrouter::{self, OpenRouterExt},
+    tool::server::ToolServer,
+};
 use riv_agents::{
     AgentConfig, AgentConfigProvider, AgentDetailsProvider, RuntimeProvider, build_agent,
     stream_agent,
@@ -19,14 +27,6 @@ use riv_types::{
     errors::ManyErrors,
     finding::Finding,
     wrappers::Model,
-};
-use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
-use rig_core::{
-    agent::Agent,
-    client::Client,
-    completion::CompletionModel,
-    providers::openrouter::{self, OpenRouterExt},
-    tool::server::ToolServer,
 };
 use tokio::{
     sync::{broadcast::Sender, mpsc::Sender},

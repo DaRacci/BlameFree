@@ -11,13 +11,13 @@ pub mod store;
 pub mod traits;
 
 use crate::traits::Storable;
+use mti::prelude::MagicTypeId;
 use riv_types::{
     agent::AgentSession,
     benchmark::{golden::GoldenComment, result::PrResult, standalone::Benchmark},
     cost::AnalyticsSnapshot,
     review::Review,
 };
-use mti::prelude::MagicTypeId;
 
 // ---------------------------------------------------------------------------
 // Storable implementations for domain types

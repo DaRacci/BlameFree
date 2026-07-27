@@ -171,7 +171,10 @@ mod tests {
             }));
             assert_eq!(result.message, "computed");
             assert_eq!(result.count, 42);
-            assert_eq!(call_count, 1, "compute function should have been called once");
+            assert_eq!(
+                call_count, 1,
+                "compute function should have been called once"
+            );
         }
     }
 
@@ -200,7 +203,10 @@ mod tests {
             }));
             assert_eq!(result.message, "cached");
             assert_eq!(result.count, 99);
-            assert_eq!(call_count, 0, "compute function should NOT have been called on cache hit");
+            assert_eq!(
+                call_count, 0,
+                "compute function should NOT have been called on cache hit"
+            );
         }
     }
 
@@ -232,8 +238,14 @@ mod tests {
                     count: 2,
                 }
             }));
-            assert_eq!(r2.message, "first", "should return cached 'first' not recomputed 'second'");
-            assert_eq!(compute_count, 1, "compute should have been called exactly once");
+            assert_eq!(
+                r2.message, "first",
+                "should return cached 'first' not recomputed 'second'"
+            );
+            assert_eq!(
+                compute_count, 1,
+                "compute should have been called exactly once"
+            );
         }
     }
 }

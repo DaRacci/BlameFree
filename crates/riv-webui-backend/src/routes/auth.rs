@@ -9,15 +9,15 @@ use axum::{
     http::HeaderMap,
     response::{IntoResponse, Redirect},
 };
+use mti::prelude::{MagicTypeIdExt, V7};
+use oauth2::{AuthorizationCode, CsrfToken, Scope, TokenResponse, reqwest::async_http_client};
+use reqwest::{StatusCode, header};
 use riv_shared::string::random_string;
+use riv_stor::traits::Store;
 use riv_webui_shared::{
     auth::AuthUser,
     routes::{AUTH_CALLBACK, AUTH_LOGIN, AUTH_LOGOUT, AUTH_ME},
 };
-use mti::prelude::{MagicTypeIdExt, V7};
-use oauth2::{AuthorizationCode, CsrfToken, Scope, TokenResponse, reqwest::async_http_client};
-use reqwest::{StatusCode, header};
-use riv_stor::traits::Store;
 
 routes_register! {
   get AUTH_ME => me,

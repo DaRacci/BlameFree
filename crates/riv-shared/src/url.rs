@@ -1,8 +1,8 @@
 //! URL parsing utilities.
 
 use anyhow::{Result, anyhow};
-use riv_types::benchmark::golden::GoldenCommentEntry;
 use regex::Regex;
+use riv_types::benchmark::golden::GoldenCommentEntry;
 
 /// Parse a standard GitHub PR URL into `(owner, repo, pr_number)`.
 ///

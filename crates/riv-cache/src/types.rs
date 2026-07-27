@@ -63,13 +63,23 @@ mod tests {
         let ts = now();
         // Format should be: seconds.nanoseconds (9 digits nanos)
         let parts: Vec<&str> = ts.split('.').collect();
-        assert_eq!(parts.len(), 2, "timestamp should have exactly one dot separator");
+        assert_eq!(
+            parts.len(),
+            2,
+            "timestamp should have exactly one dot separator"
+        );
         // Seconds part should be a non-empty number
         assert!(!parts[0].is_empty(), "seconds part should not be empty");
-        assert!(parts[0].chars().all(|c| c.is_ascii_digit()), "seconds part should be digits only");
+        assert!(
+            parts[0].chars().all(|c| c.is_ascii_digit()),
+            "seconds part should be digits only"
+        );
         // Nanos part should be exactly 9 digits
         assert_eq!(parts[1].len(), 9, "nanos part should be 9 digits");
-        assert!(parts[1].chars().all(|c| c.is_ascii_digit()), "nanos part should be digits only");
+        assert!(
+            parts[1].chars().all(|c| c.is_ascii_digit()),
+            "nanos part should be digits only"
+        );
     }
 
     #[test]

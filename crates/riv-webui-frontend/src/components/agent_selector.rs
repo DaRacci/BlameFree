@@ -1,5 +1,5 @@
-use riv_webui_shared::config::AgentInfo;
 use leptos::prelude::*;
+use riv_webui_shared::config::AgentInfo;
 
 /// A reusable checkbox group for selecting roles/agents.
 ///

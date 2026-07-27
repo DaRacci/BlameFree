@@ -1,7 +1,7 @@
 #![allow(unused)]
 
-use riv_macros::Cacheable;
 use riv_cache::traits::CacheKey;
+use riv_macros::Cacheable;
 use riv_types::wrappers::Prompt;
 use serde::{Deserialize, Serialize};
 

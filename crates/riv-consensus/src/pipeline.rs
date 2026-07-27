@@ -3,10 +3,10 @@
 
 use std::sync::Arc;
 
-use riv_reporting::cost::AnalyticsSnapshot;
-use riv_types::benchmark::golden::GoldenComment;
 use rig_core::agent::Agent;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
+use riv_reporting::cost::AnalyticsSnapshot;
+use riv_types::benchmark::golden::GoldenComment;
 
 use riv_types::finding::Finding;
 

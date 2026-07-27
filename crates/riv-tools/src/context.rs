@@ -21,9 +21,9 @@
 
 use std::{collections::HashMap, path::Path};
 
+use linguist::detect_language_by_extension;
 use riv_shared::diff::Diff;
 use riv_types::wrappers::WrappedData;
-use linguist::detect_language_by_extension;
 
 /// Information about languages detected in a diff.
 #[derive(Debug, Clone, Default)]

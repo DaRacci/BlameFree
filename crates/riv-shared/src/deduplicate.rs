@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use riv_types::finding::Finding;
 use regex::Regex;
+use riv_types::finding::Finding;
 
 use crate::jaccard::jaccard_similarity;
 

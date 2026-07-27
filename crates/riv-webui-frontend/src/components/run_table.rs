@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 
-use riv_types::review::{Review, ReviewStatus};
 use leptos::either::{Either, EitherOf3};
 use leptos::prelude::*;
 use lucide_leptos::{ArrowDown, ArrowUp};
+use riv_types::review::{Review, ReviewStatus};
 
 #[component]
 pub fn RunTable(runs: Vec<Review>) -> impl IntoView {

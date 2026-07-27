@@ -1,5 +1,5 @@
-use riv_shared::pattern::{PatternProvider, has_pattern, make_pattern_list};
 use regex::Regex;
+use riv_shared::pattern::{PatternProvider, has_pattern, make_pattern_list};
 use std::sync::LazyLock;
 
 /// An inflated category that should be downgraded.

@@ -7,10 +7,10 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use axum::http::{StatusCode, header};
-use riv_webui_shared::auth::AuthUser;
 use oauth2::basic::BasicClient;
 use oauth2::{AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
 use reqwest::Client as HttpClient;
+use riv_webui_shared::auth::AuthUser;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumDiscriminants, IntoStaticStr, VariantArray};
 use tokio::sync::RwLock;

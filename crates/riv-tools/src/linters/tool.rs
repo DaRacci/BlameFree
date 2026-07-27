@@ -1,9 +1,9 @@
 use std::process::Command;
 use std::{io, time::Duration};
 
-use riv_types::finding::Finding;
 use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
+use riv_types::finding::Finding;
 use schemars::JsonSchema;
 use serde::Deserialize;
 

@@ -1,8 +1,8 @@
-use riv_webui_shared::route;
-use riv_webui_shared::review::{AgentLogResponse, LogsListResponse};
 use leptos::either::Either;
 use leptos::prelude::*;
 use log::error;
+use riv_webui_shared::review::{AgentLogResponse, LogsListResponse};
+use riv_webui_shared::route;
 
 #[component]
 pub fn LogViewer(logs: LogsListResponse, run_id: String) -> impl IntoView {

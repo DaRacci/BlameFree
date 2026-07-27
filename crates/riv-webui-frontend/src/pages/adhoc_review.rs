@@ -1,14 +1,14 @@
 use crate::AppConfig;
 use crate::components::agent_selector::RoleSelector;
+use gloo_net::http::Request;
+use leptos::prelude::*;
+use leptos::task::spawn_local;
+use leptos_router::hooks::use_navigate;
 use riv_types::review::ReviewStatus;
 use riv_types::vcs::pr::PrMeta;
 use riv_webui_shared::config::AgentInfo;
 use riv_webui_shared::route;
 use riv_webui_shared::routes::{API_ADHOC_REVIEW, API_CONFIG};
-use gloo_net::http::Request;
-use leptos::prelude::*;
-use leptos::task::spawn_local;
-use leptos_router::hooks::use_navigate;
 use serde::Deserialize;
 
 /// Local response type — matches the old `AdhocReviewResponse` JSON format.
@@ -484,8 +484,8 @@ fn render_config_section(
 fn render_error_view(error: ReadSignal<Option<String>>) -> impl IntoView {
     move || {
         error.get().map(|e| {
-        view! { <div class="error-message text-error mb-lg">{e}</div> }
-    })
+            view! { <div class="error-message text-error mb-lg">{e}</div> }
+        })
     }
 }
 

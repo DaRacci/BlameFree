@@ -1,14 +1,6 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use riv_agents::send_event;
-use riv_reporting::cost::SessionUsageProvider;
-use riv_shared::diff::Diff;
-use riv_types::RunEvent;
-use riv_types::agent::{AgentChunk, ToolByte};
-use riv_types::cost::SessionUsage;
-use riv_types::finding::Finding;
-use riv_types::wrappers::WrappedData;
 use futures::StreamExt;
 use mti::prelude::MagicTypeId;
 use rig_core::agent::{Agent, MultiTurnStreamItem, PromptHook};
@@ -17,6 +9,14 @@ use rig_core::message::{AssistantContent, ToolResultContent};
 use rig_core::streaming::{
     StreamedAssistantContent, StreamedUserContent, StreamingPrompt, ToolCallDeltaContent,
 };
+use riv_agents::send_event;
+use riv_reporting::cost::SessionUsageProvider;
+use riv_shared::diff::Diff;
+use riv_types::RunEvent;
+use riv_types::agent::{AgentChunk, ToolByte};
+use riv_types::cost::SessionUsage;
+use riv_types::finding::Finding;
+use riv_types::wrappers::WrappedData;
 use serde::de::DeserializeOwned;
 use tracing::{error, info};
 
@@ -44,14 +44,14 @@ pub async fn review_pr(diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> 
 /// Build an `EvalConfig` from `ReviewArgs` for a one-shot review.
 #[cfg(feature = "binary")]
 pub fn build_review_config(args: &crate::config::ReviewArgs) -> Result<EvalConfig> {
-    use riv_agents::AgentEntry;
-    use riv_reporting::cost::AnalyticsTracker;
-    use riv_types::wrappers::Model;
     use rig_core::agent::Agent;
     use rig_core::client::{CompletionClient, ProviderClient};
     use rig_core::providers::openrouter;
     use rig_core::providers::openrouter::responses_api::ResponsesCompletionModel;
     use rig_core::tool::server::ToolServer;
+    use riv_agents::AgentEntry;
+    use riv_reporting::cost::AnalyticsTracker;
+    use riv_types::wrappers::Model;
 
     let client = Arc::new(client);
 

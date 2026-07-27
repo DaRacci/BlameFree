@@ -3,8 +3,8 @@
 //! Queries the OpenRouter models API to discover which models support reasoning, with a fallback heuristic when the API is unreachable.
 //! Results are cached via [`std::sync::OnceLock`]; Initialised once, then read lock-free by all threads.
 
-use riv_types::wrappers::{Model, WrappedData};
 use rig_core::providers::openai::responses_api::ReasoningEffort;
+use riv_types::wrappers::{Model, WrappedData};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::sync::OnceLock;

@@ -1,11 +1,6 @@
 //! Agent orchestration and prompt library.
 
 use anyhow::{Result, anyhow};
-use riv_reporting::cost::{AnalyticsTracker, SessionUsageProvider};
-use riv_types::RunEvent;
-use riv_types::agent::{AgentChunk, ToolByte};
-use riv_types::cost::SessionUsage;
-use riv_types::wrappers::{Model, WrappedData};
 use futures::StreamExt;
 use mti::prelude::MagicTypeId;
 use rig_core::agent::{Agent, AgentBuilder, MultiTurnStreamItem, WithToolServerHandle};
@@ -17,6 +12,11 @@ use rig_core::streaming::{
     StreamedAssistantContent, StreamedUserContent, StreamingPrompt, ToolCallDeltaContent,
 };
 use rig_core::tool::server::ToolServerHandle;
+use riv_reporting::cost::{AnalyticsTracker, SessionUsageProvider};
+use riv_types::RunEvent;
+use riv_types::agent::{AgentChunk, ToolByte};
+use riv_types::cost::SessionUsage;
+use riv_types::wrappers::{Model, WrappedData};
 use serde::de::DeserializeOwned;
 use tokio::sync::broadcast::Sender;
 use tracing::error;
@@ -116,10 +116,7 @@ where
     A: CompletionModel + Send + Sync + 'static,
 {
     let cfg = config.get_agent_config();
-    let agent = cfg
-        .client
-        .agent(cfg.model.get())
-        .build();
+    let agent = cfg.client.agent(cfg.model.get()).build();
     let analytics_trcker = &config.get_analytics();
     let mut stream = agent.stream_prompt(prompt).await;
     while let Some(chunk) = stream.next().await {

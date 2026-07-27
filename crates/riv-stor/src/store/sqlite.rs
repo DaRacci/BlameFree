@@ -2,6 +2,7 @@
 
 use std::{any::TypeId, sync::Arc};
 
+use mti::prelude::MagicTypeId;
 use riv_types::stor::{LoadDepth, Save};
 use riv_types::{
     agent::{AgentSession, AgentSessionEntity},
@@ -12,7 +13,6 @@ use riv_types::{
     finding::{FindingColumn, FindingEntity},
     review::{Review, ReviewEntity},
 };
-use mti::prelude::MagicTypeId;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, Database, DatabaseConnection, DeleteResult, EntityTrait,
     QueryFilter,

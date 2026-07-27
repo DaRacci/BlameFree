@@ -25,8 +25,8 @@ pub fn append_run_history(cache_dir: &Path, entry: &Review) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use riv_types::review::{ReviewMetadata, ReviewStatus};
     use mti::prelude::{MagicTypeIdExt, V7};
+    use riv_types::review::{ReviewMetadata, ReviewStatus};
     use std::collections::HashMap;
 
     use super::*;

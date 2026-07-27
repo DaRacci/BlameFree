@@ -1,6 +1,6 @@
 use axum::{extract::State, response::IntoResponse};
-use riv_webui_shared::routes::API_BENCHMARK_DATASETS;
 use riv_stor::traits::Store;
+use riv_webui_shared::routes::API_BENCHMARK_DATASETS;
 
 use crate::{routes_register, server::AppState};
 

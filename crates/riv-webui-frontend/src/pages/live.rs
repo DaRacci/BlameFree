@@ -3,12 +3,6 @@ use crate::components::agent_pane::AgentPane;
 use crate::components::metrics_card::MetricsCard;
 use crate::components::progress_bar::ProgressBar;
 use crate::sse;
-use riv_types::RunEvent;
-use riv_types::agent::AgentChunk;
-use riv_webui_shared::config::AgentInfo;
-use riv_webui_shared::review::ReviewStatus;
-use riv_webui_shared::route;
-use riv_webui_shared::routes::API_CONFIG;
 use gloo_net::http::Request;
 use leptos::either::{Either, EitherOf3};
 use leptos::prelude::*;
@@ -16,6 +10,12 @@ use leptos::task::spawn_local;
 use leptos_router::hooks::use_params_map;
 use log::{error, warn};
 use lucide_leptos::{ArrowLeft, Check, TriangleAlert};
+use riv_types::RunEvent;
+use riv_types::agent::AgentChunk;
+use riv_webui_shared::config::AgentInfo;
+use riv_webui_shared::review::ReviewStatus;
+use riv_webui_shared::route;
+use riv_webui_shared::routes::API_CONFIG;
 use std::collections::HashMap;
 
 /// State for a single agent within a single PR.

@@ -1,5 +1,3 @@
-use riv_webui_shared::auth::AuthUser;
-use riv_webui_shared::routes::API_CONFIG;
 use gloo_net::http::Request;
 use leptos::mount::mount_to_body;
 use leptos::prelude::*;
@@ -9,6 +7,8 @@ use leptos_router::components::{Route, Router, Routes};
 use leptos_router::hooks::use_location;
 use leptos_router::path;
 use lucide_leptos::{ChartBar, FlaskConical, LayoutDashboard, Menu, Settings};
+use riv_webui_shared::auth::AuthUser;
+use riv_webui_shared::routes::API_CONFIG;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::AppConfig;

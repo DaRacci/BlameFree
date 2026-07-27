@@ -1,5 +1,5 @@
-use riv_webui_shared::config::AppConfig;
 use leptos::prelude::*;
+use riv_webui_shared::config::AppConfig;
 
 /// A reusable dropdown for selecting a model.
 #[allow(clippy::redundant_clone)]

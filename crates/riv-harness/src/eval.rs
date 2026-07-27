@@ -1,5 +1,7 @@
 use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc};
 
+use mti::prelude::MagicTypeId;
+use rig_core::providers::openrouter;
 use riv_agents::{AgentConfig, AgentConfigProvider, agent::AgentEntry};
 use riv_cache::traits::CacheBackend;
 use riv_reporting::cost::AnalyticsTracker;
@@ -10,8 +12,6 @@ use riv_types::{
     vcs::{pr::PrMeta, repository::RemoteRepositoryMeta},
     wrappers::{Model, WrappedData},
 };
-use mti::prelude::MagicTypeId;
-use rig_core::providers::openrouter;
 
 /// Strategy for evaluating a PR review.
 #[derive(Debug, Clone, PartialEq)]

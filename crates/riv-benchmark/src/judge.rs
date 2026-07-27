@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
+use mti::prelude::{MagicTypeIdExt, V7};
+use rig_core::completion::CompletionModel;
 use riv_agents::prompts::PromptLibrary;
 use riv_agents::{DEFAULT_TEMPERATURE, RuntimeProvider, stream_agent};
 use riv_types::benchmark::golden::GoldenComment;
 use riv_types::errors::ManyErrors;
 use riv_types::finding::Finding;
-use mti::prelude::{MagicTypeIdExt, V7};
-use rig_core::completion::CompletionModel;
 
 use riv_types::benchmark::judge::JudgeVerdict;
 use serde_json::Map;

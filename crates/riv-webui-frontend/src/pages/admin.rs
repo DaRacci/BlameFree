@@ -1,13 +1,13 @@
 use crate::sse;
-use riv_webui_shared::admin::LogsResponse;
-use riv_webui_shared::routes::API_ADMIN_LOGS;
-use riv_webui_shared::routes::API_ADMIN_LOGS_STREAM;
 use futures::StreamExt;
 use gloo_net::http::Request;
 use leptos::html;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use lucide_leptos::{ClipboardList, TriangleAlert};
+use riv_webui_shared::admin::LogsResponse;
+use riv_webui_shared::routes::API_ADMIN_LOGS;
+use riv_webui_shared::routes::API_ADMIN_LOGS_STREAM;
 
 /// Admin page component
 #[component]

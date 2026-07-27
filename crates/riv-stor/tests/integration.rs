@@ -6,6 +6,9 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
+use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
+use riv_stor::store::SqliteStore;
+use riv_stor::traits::Store;
 use riv_types::{
     agent::{
         AgentResponse, AgentSession, AgentTurn, AgentTurnMessage, RoleMessage, ToolInvocation,
@@ -13,9 +16,6 @@ use riv_types::{
     benchmark::{golden::GoldenComment, result::PrResult, standalone::Benchmark},
     review::{Review, ReviewStatus},
 };
-use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
-use riv_stor::store::SqliteStore;
-use riv_stor::traits::Store;
 use sea_orm::ConnectionTrait;
 
 /// create an in-memory SqliteStore with migrations applied.

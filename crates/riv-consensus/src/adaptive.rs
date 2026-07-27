@@ -90,7 +90,8 @@ pub fn get_agents_for_diff(
 /// Returns `false` (full 4-agent panel) otherwise.
 pub fn should_use_single_agent(diff: &Diff, max_files: usize, max_lines: usize) -> bool {
     let file_count = diff.sections.len();
-    let line_count = diff.sections
+    let line_count = diff
+        .sections
         .iter()
         .flat_map(|s| s.body.lines())
         .filter(|line| line.starts_with('+') || line.starts_with('-'))

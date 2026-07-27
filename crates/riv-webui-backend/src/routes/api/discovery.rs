@@ -2,8 +2,8 @@ use axum::{
     extract::{Path, State},
     response::IntoResponse,
 };
-use riv_webui_shared::routes::{API_DISCOVERY_CAPABILITIES, API_DISCOVERY_MODELS};
 use riv_stor::traits::Store;
+use riv_webui_shared::routes::{API_DISCOVERY_CAPABILITIES, API_DISCOVERY_MODELS};
 use tracing::instrument;
 
 use crate::{routes_register, server::AppState};

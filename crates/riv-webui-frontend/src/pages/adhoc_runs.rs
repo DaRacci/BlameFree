@@ -1,7 +1,7 @@
-use riv_webui_shared::review::Review;
-use riv_webui_shared::routes::API_ADHOC_RUNS;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use riv_webui_shared::review::Review;
+use riv_webui_shared::routes::API_ADHOC_RUNS;
 
 #[component]
 pub fn AdhocRunsPage() -> impl IntoView {

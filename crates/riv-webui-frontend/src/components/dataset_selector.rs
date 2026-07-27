@@ -1,5 +1,5 @@
-use riv_webui_shared::config::{AppConfig, DatasetInfo};
 use leptos::prelude::*;
+use riv_webui_shared::config::{AppConfig, DatasetInfo};
 
 /// A reusable dropdown for selecting a dataset.
 #[component]
