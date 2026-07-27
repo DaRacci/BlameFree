@@ -566,23 +566,38 @@ fn build_from_traits(
     }
 
     let has_flatten = !flatten_entries.is_empty();
-    let has_ignored_fields = processed.iter().any(|pf| {
-        let is_pure_rel = matches!(
+    let has_ignored_fields = processed
+        .iter()
+        .any(|pf| pf.is_ignored && pf.flatten.is_none());
+    let has_pure_relations = processed.iter().any(|pf| {
+        matches!(
             pf.relation,
             Some(RelationKind::HasMany { .. }) | Some(RelationKind::HasOne { .. })
-        );
-        (pf.is_ignored || is_pure_rel) && pf.flatten.is_none()
+        ) && pf.flatten.is_none()
     });
+    // Pure relation fields (HasMany/HasOne) are excluded from from_model_fields,
+    // so the struct literal needs ..Default::default() to fill them.
+    let needs_default_tail = has_ignored_fields || has_pure_relations;
 
     let from_model_impl = if from_model_fields.is_empty() {
         quote! {}
     } else if has_ignored_fields && !has_flatten {
+        // Can't map ignored fields from Model — developer must add #[flatten] or remove ignore.
+        quote! {
+            compile_error!(
+                "EntityModel: struct has #[sea_orm(ignore)] fields but no #[flatten]; \
+                 either remove the ignore or add flatten so defaults can be used"
+            );
+        }
+    } else if has_pure_relations && !has_flatten {
+        // Structs with HasMany/HasOne but no flatten: skip From<Model>.
+        // These structs don't derive Default and aren't loaded via model.into().
         quote! {}
     } else {
         // Either all fields are populated from Model, or there are flatten fields that we populate via the bridge struct.
         // If there are also ignored fields, use ..Default::default()
         let normal_fields: Vec<_> = from_model_fields.iter().cloned().collect();
-        let default_tail = if has_ignored_fields {
+        let default_tail = if needs_default_tail {
             quote! { ..Default::default() }
         } else {
             quote! {}
