@@ -3,7 +3,6 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::error::Error;
-use crb_types::stor::Save;
 
 /// Marker trait for domain types that can be persisted.
 ///

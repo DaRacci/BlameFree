@@ -390,7 +390,6 @@ fn build_relation_variants(rel_entries: &Vec<(Ident, RelationKind)>) -> Vec<Toke
     relation_variants
 }
 
-// Build RelationTrait::def()
 fn build_relation_trait_impl(rel_entries: &Vec<(Ident, RelationKind)>) -> TokenStream2 {
     if rel_entries.is_empty() {
         return quote! {
@@ -604,7 +603,6 @@ fn build_from_traits(
     let from_model_impl = if from_model_fields.is_empty() {
         quote! {}
     } else if has_ignored_fields && !has_flatten {
-        // Can't map ignored fields from Model — developer must add #[flatten] or remove ignore.
         quote! {
             compile_error!(
                 "EntityModel: struct has #[sea_orm(ignore)] fields but no #[flatten]; \

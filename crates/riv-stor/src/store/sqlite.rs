@@ -14,38 +14,12 @@ use crb_types::{
 };
 use mti::prelude::MagicTypeId;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, Database, DatabaseConnection, DeleteResult,
-    EntityTrait, IntoActiveModel, QueryFilter,
+    ColumnTrait, ConnectionTrait, Database, DatabaseConnection, DeleteResult, EntityTrait,
+    QueryFilter,
 };
 
 use crate::error::Error;
 use crate::traits::{Storable, Store};
-
-/// check if a SeaORM error is a duplicate key.
-fn is_duplicate_key(err: &sea_orm::DbErr) -> bool {
-    let msg = err.to_string().to_lowercase();
-    msg.contains("unique constraint") || msg.contains("primary key") || msg.contains("duplicate")
-}
-
-/// try insert, fall back to update on duplicate key.
-macro_rules! upsert {
-    ($db:expr, $model:expr) => {{
-        let fallback = $model.clone();
-        let active = $model.into_active_model();
-        match active.insert($db).await {
-            Ok(_) => Ok(()),
-            Err(e) if is_duplicate_key(&e) => {
-                let active = fallback.into_active_model();
-                active
-                    .update($db)
-                    .await
-                    .map_err(|e2| Error::Query(format!("failed to update: {e2}")))?;
-                Ok(())
-            }
-            Err(e) => Err(Error::Query(format!("failed to insert: {e}"))),
-        }
-    }};
-}
 
 /// A SQLite-backed storage backend
 ///
