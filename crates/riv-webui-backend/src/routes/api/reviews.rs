@@ -2,7 +2,7 @@ use axum::{
     Json,
     extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
 };
 use mti::prelude::MagicTypeId;
 use riv_stor::traits::Store;
@@ -25,7 +25,7 @@ routes_register! {
 }
 
 #[instrument(skip(state), name = API_REVIEWS_LIST)]
-pub async fn list_reviews<S>(State(state): State<AppState<S>>) -> impl IntoResponse
+pub async fn list_reviews<S>(State(state): State<AppState<S>>) -> Response
 where
     S: Store + Send + Sync + Clone + 'static,
 {
@@ -33,10 +33,14 @@ where
         .store
         .list::<Review>(&())
         .await
-        .map(|reviews| (StatusCode::OK, Json(reviews)))
+        .map(|reviews| (StatusCode::OK, Json(reviews)).into_response())
         .unwrap_or_else(|err| {
             error!("Failed to list reviews: {}", err);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(vec![]))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(Vec::<Review>::new()),
+            )
+                .into_response()
         })
 }
 
@@ -44,7 +48,7 @@ where
 pub async fn get_review<S>(
     State(state): State<AppState<S>>,
     Path(review_id): Path<MagicTypeId>,
-) -> impl IntoResponse
+) -> Response
 where
     S: Store + Send + Sync + Clone + 'static,
 {
@@ -54,19 +58,19 @@ where
         .await
         .map(|review| {
             if let Some(review) = review {
-                (StatusCode::OK, Json(Some(review)))
+                (StatusCode::OK, Json(Some(review))).into_response()
             } else {
-                (StatusCode::NOT_FOUND, Json(None::<Review>))
+                (StatusCode::NOT_FOUND, Json(None::<Review>)).into_response()
             }
         })
         .unwrap_or_else(|err| {
             error!("Failed to get review {}: {}", review_id, err);
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(None::<Review>))
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(None::<Review>)).into_response()
         })
 }
 
 #[instrument(skip(state), name = API_REVIEWS_SUBMIT)]
-pub async fn submit_review<S>(State(state): State<AppState<S>>) -> impl IntoResponse
+pub async fn submit_review<S>(State(state): State<AppState<S>>) -> Response
 where
     S: Store + Send + Sync + Clone + 'static,
 {
@@ -78,7 +82,7 @@ where
 pub async fn get_review_logs<S>(
     State(state): State<AppState<S>>,
     Path((review_id, agent_id)): Path<(MagicTypeId, MagicTypeId)>,
-) -> impl IntoResponse
+) -> Response
 where
     S: Store + Send + Sync + Clone + 'static,
 {
@@ -91,7 +95,7 @@ where
 pub async fn get_review_agents<S>(
     State(state): State<AppState<S>>,
     Path(review_id): Path<MagicTypeId>,
-) -> impl IntoResponse
+) -> Response
 where
     S: Store + Send + Sync + Clone + 'static,
 {
@@ -128,7 +132,7 @@ where
 pub async fn stream_review<S>(
     State(state): State<AppState<S>>,
     Path(review_id): Path<MagicTypeId>,
-) -> impl IntoResponse
+) -> Response
 where
     S: Store + Send + Sync + Clone + 'static,
 {

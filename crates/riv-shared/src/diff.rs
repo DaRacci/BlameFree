@@ -26,7 +26,11 @@ impl CacheKey for Diff {
     fn cache_key(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(self.raw.as_bytes());
-        format!("{:x}", hasher.finalize())
+        hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>()
     }
 }
 

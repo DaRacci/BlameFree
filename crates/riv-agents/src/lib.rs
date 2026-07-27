@@ -3,8 +3,8 @@
 use anyhow::{Result, anyhow};
 use futures::StreamExt;
 use mti::prelude::MagicTypeId;
-use rig_core::agent::{Agent, AgentBuilder, MultiTurnStreamItem, WithToolServerHandle};
-use rig_core::client::{Client, CompletionClient};
+use rig_core::agent::{AgentBuilder, MultiTurnStreamItem, WithToolServerHandle};
+use rig_core::client::CompletionClient;
 use rig_core::completion::{CompletionModel, GetTokenUsage};
 use rig_core::message::{AssistantContent, ToolResultContent};
 use rig_core::providers::openrouter;
@@ -65,12 +65,8 @@ pub trait AgentDetailsProvider {
     fn get_description(&self) -> &str;
 }
 
-pub trait RuntimeProvider<A>: Send + Sync
-where
-    A: CompletionModel + Send + Sync + 'static,
-{
+pub trait RuntimeProvider: Send + Sync {
     fn get_id(&self) -> &MagicTypeId;
-    fn get_client(&self) -> Arc<Client<A>>;
     fn get_analytics(&self) -> Arc<AnalyticsTracker>;
     fn get_dashboard_tx(&self) -> Option<Sender<RunEvent>>;
 }
@@ -80,7 +76,7 @@ pub fn build_agent<P>(
     config: Arc<P>,
     agent: &impl AgentDetailsProvider,
     tool_server_handle: ToolServerHandle,
-) -> AgentBuilder<impl CompletionModel, (), WithToolServerHandle>
+) -> AgentBuilder<impl CompletionModel, WithToolServerHandle>
 where
     P: AgentConfigProvider + Send + Sync,
 {
@@ -105,18 +101,19 @@ where
     builder
 }
 
-pub async fn stream_agent<Output, R, A>(
+/// Shared inner streaming loop used by `stream_agent` and `stream_agent_with_agent`.
+async fn stream_agent_inner<Output, R, M, Res>(
     config: Arc<R>,
     agent_id: &MagicTypeId,
     prompt: &str,
+    agent: impl StreamingPrompt<M, Res>,
 ) -> Result<Output>
 where
     Output: DeserializeOwned,
-    R: RuntimeProvider<A> + AgentConfigProvider + Send + Sync + 'static,
-    A: CompletionModel + Send + Sync + 'static,
+    R: RuntimeProvider + Send + Sync,
+    M: CompletionModel + 'static,
+    Res: Clone + Unpin + GetTokenUsage,
 {
-    let cfg = config.get_agent_config();
-    let agent = cfg.client.agent(cfg.model.get()).build();
     let analytics_trcker = &config.get_analytics();
     let mut stream = agent.stream_prompt(prompt).await;
     while let Some(chunk) = stream.next().await {
@@ -216,6 +213,10 @@ where
                         );
                     }
                 },
+                StreamedAssistantContent::Unknown(_) => {
+                    // Provider-native output item not modeled by rig-core.
+                    // Silently skip — no action needed.
+                }
                 StreamedAssistantContent::Reasoning(_) => {
                     send_event!(
                         config,
@@ -300,4 +301,40 @@ where
         agent_id,
         config.get_id()
     ))
+}
+
+/// Stream an agent by building it internally from the config, then streaming the response.
+///
+/// Backward-compatible 3-argument signature (used by benchmark/judge).
+pub async fn stream_agent<Output, R>(
+    config: Arc<R>,
+    agent_id: &MagicTypeId,
+    prompt: &str,
+) -> Result<Output>
+where
+    Output: DeserializeOwned,
+    R: RuntimeProvider + AgentConfigProvider + Send + Sync + 'static,
+{
+    let cfg = config.get_agent_config();
+    let agent = cfg.client.agent(cfg.model.get()).build();
+    stream_agent_inner(config, agent_id, prompt, agent).await
+}
+
+/// Stream an agent using a caller-provided agent instance.
+///
+/// Use this when you have already built the agent (e.g. with output schema / tools)
+/// and want to stream its response through the same event loop.
+pub async fn stream_agent_with_agent<Output, R, M, Res>(
+    config: Arc<R>,
+    agent_id: &MagicTypeId,
+    agent: impl StreamingPrompt<M, Res>,
+    prompt: &str,
+) -> Result<Output>
+where
+    Output: DeserializeOwned,
+    R: RuntimeProvider + Send + Sync + 'static,
+    M: CompletionModel + 'static,
+    Res: Clone + Unpin + GetTokenUsage,
+{
+    stream_agent_inner(config, agent_id, prompt, agent).await
 }

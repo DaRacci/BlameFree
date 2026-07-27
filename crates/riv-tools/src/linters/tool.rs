@@ -1,7 +1,6 @@
 use std::process::Command;
 use std::{io, time::Duration};
 
-use rig_core::completion::ToolDefinition;
 use rig_core::tool::Tool;
 use riv_types::finding::Finding;
 use schemars::JsonSchema;
@@ -48,12 +47,12 @@ impl Tool for LinterTool {
     type Args = LinterArgs;
     type Output = Vec<Finding>;
 
-    async fn definition(&self, _prompt: String) -> ToolDefinition {
-        ToolDefinition {
-            name: self.name.clone(),
-            description: format!("Run `{}` linter on a repository", self.name),
-            parameters: serde_json::to_value(schemars::schema_for!(LinterArgs)).unwrap_or_default(),
-        }
+    fn description(&self) -> String {
+        format!("Run `{}` linter on a repository", self.name)
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        serde_json::to_value(schemars::schema_for!(LinterArgs)).unwrap_or_default()
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {

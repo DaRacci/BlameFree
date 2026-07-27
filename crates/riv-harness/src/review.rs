@@ -1,24 +1,8 @@
-use std::sync::Arc;
-
-use anyhow::{Context, Result, anyhow};
-use futures::StreamExt;
-use mti::prelude::MagicTypeId;
-use rig_core::agent::{Agent, MultiTurnStreamItem, PromptHook};
-use rig_core::completion::{CompletionModel, GetTokenUsage};
-use rig_core::message::{AssistantContent, ToolResultContent};
-use rig_core::streaming::{
-    StreamedAssistantContent, StreamedUserContent, StreamingPrompt, ToolCallDeltaContent,
-};
-use riv_agents::send_event;
-use riv_reporting::cost::SessionUsageProvider;
+use anyhow::{Context, Result};
 use riv_shared::diff::Diff;
-use riv_types::RunEvent;
-use riv_types::agent::{AgentChunk, ToolByte};
-use riv_types::cost::SessionUsage;
 use riv_types::finding::Finding;
 use riv_types::wrappers::WrappedData;
-use serde::de::DeserializeOwned;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::eval::EvalConfig;
 use crate::pipeline;

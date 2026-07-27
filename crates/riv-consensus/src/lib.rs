@@ -5,6 +5,7 @@
 //! judge fallback against golden comments.
 
 pub mod adaptive;
+pub mod judge;
 pub mod pipeline;
 
 use riv_reporting::cost::AnalyticsSnapshot;
@@ -134,6 +135,7 @@ mod tests {
             true_positives: vec![(
                 GoldenComment {
                     id: None,
+                    pr_result_id: Default::default(),
                     comment: "foo".into(),
                     severity: Severity::Critical,
                 },
@@ -179,6 +181,8 @@ mod tests {
             agents: vec![],
             true_positives: vec![(
                 GoldenComment {
+                    id: None,
+                    pr_result_id: Default::default(),
                     comment: "bug".into(),
                     severity: Severity::Critical,
                 },
@@ -198,6 +202,8 @@ mod tests {
                 ..Default::default()
             }],
             false_negatives: vec![GoldenComment {
+                id: None,
+                pr_result_id: Default::default(),
                 comment: "missed".into(),
                 severity: Severity::Low,
             }],
@@ -226,6 +232,8 @@ mod tests {
                 ..Default::default()
             }],
             false_negatives: vec![GoldenComment {
+                id: None,
+                pr_result_id: Default::default(),
                 comment: "expected".into(),
                 severity: Severity::Critical,
             }],

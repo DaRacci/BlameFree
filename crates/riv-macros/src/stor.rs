@@ -694,7 +694,6 @@ fn build_entity_id_impl(
 fn build_entity_loader(struct_name: &Ident, entity_name: &Ident) -> TokenStream2 {
     quote! {
         #[cfg(feature = "seaorm-storage")]
-        #[allow(async_fn_in_trait)]
         impl crate::stor::EntityLoader for #struct_name {
             async fn load_by_id(
                 db: &::sea_orm::DatabaseConnection,
@@ -839,7 +838,6 @@ fn build_load_children(
 
     quote! {
         #[cfg(feature = "seaorm-storage")]
-        #[allow(async_fn_in_trait)]
         impl crate::stor::LoadChildren for #struct_name {
             async fn load_children(
                 &mut self,

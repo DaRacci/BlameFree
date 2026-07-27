@@ -207,9 +207,46 @@ pub fn run(dataset_dir: &Path, benchmark_dir: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::TempDir;
+
     use super::*;
-    use riv_shared::test_utils::setup_temp_repo;
-    use std::fs;
+    use std::{fs, path::PathBuf};
+
+    /// Create a temp git repo with one file committed.
+    pub fn setup_temp_repo() -> (TempDir, PathBuf) {
+        let dir = TempDir::new().expect("create temp dir");
+        let repo_path = dir.path().to_path_buf();
+
+        Command::new("git")
+            .args(["init"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("git init");
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("git config email");
+        Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("git config name");
+
+        std::fs::write(repo_path.join("hello.txt"), "hello world").expect("write file");
+        Command::new("git")
+            .args(["add", "hello.txt"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("git add");
+        Command::new("git")
+            .args(["commit", "-m", "Initial commit"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("git commit");
+
+        (dir, repo_path)
+    }
 
     #[test]
     fn worktree_add_and_remove() {

@@ -2,10 +2,12 @@ use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc};
 
 use mti::prelude::MagicTypeId;
 use rig_core::providers::openrouter;
-use riv_agents::{AgentConfig, AgentConfigProvider, agent::AgentEntry};
+use riv_agents::{AgentConfig, AgentConfigProvider, RuntimeProvider, agent::AgentEntry};
 use riv_cache::traits::CacheBackend;
 use riv_reporting::cost::AnalyticsTracker;
 use riv_rules::RuleSet;
+use tokio::sync::broadcast::Sender;
+
 use riv_types::{
     RunEvent,
     capabilities::ReasoningEffort,
@@ -63,6 +65,20 @@ pub struct EvalConfig {
 
     /// Template variables for the agent prompts.
     pub template_vars: Option<HashMap<String, serde_json::Value>>,
+}
+
+impl RuntimeProvider for EvalConfig {
+    fn get_id(&self) -> &MagicTypeId {
+        &self.review_id
+    }
+
+    fn get_analytics(&self) -> Arc<AnalyticsTracker> {
+        self.cost_tracker.clone()
+    }
+
+    fn get_dashboard_tx(&self) -> Option<Sender<RunEvent>> {
+        self.dashboard_tx.clone()
+    }
 }
 
 impl AgentConfigProvider for EvalConfig {

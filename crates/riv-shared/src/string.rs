@@ -1,8 +1,9 @@
-use rand::{Rng, distributions::Alphanumeric};
+use rand::RngExt;
+use rand::distr::Alphanumeric;
 
 /// Generate a random alphanumeric string of the given length.
 pub fn random_string(length: usize) -> String {
-    rand::thread_rng()
+    rand::rng()
         .sample_iter(&Alphanumeric)
         .take(length)
         .map(char::from)

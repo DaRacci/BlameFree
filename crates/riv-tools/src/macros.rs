@@ -42,13 +42,13 @@ macro_rules! impl_tool {
             type Args = $args;
             type Output = $output;
 
-            async fn definition(&self, _prompt: String) -> rig_core::completion::ToolDefinition {
-                rig_core::completion::ToolDefinition {
-                    name: Self::NAME.to_string(),
-                    description: $description.to_string(),
-                    parameters: serde_json::to_value(schemars::schema_for!($args))
-                        .unwrap_or_default(),
-                }
+            fn description(&self) -> String {
+                $description.to_string()
+            }
+
+            fn parameters(&self) -> serde_json::Value {
+                serde_json::to_value(schemars::schema_for!($args))
+                    .unwrap_or_default()
             }
 
             $($call)*
@@ -94,9 +94,7 @@ mod tests {
         insta::assert_snapshot!(MockTool::NAME);
 
         let tool = MockTool;
-        let def = tool.definition("prompt".into()).await;
-        insta::assert_debug_snapshot!(def.name);
-        insta::assert_debug_snapshot!(def.description);
+        insta::assert_debug_snapshot!(tool.description());
     }
 
     struct MockToolEmptyDesc;
@@ -111,8 +109,7 @@ mod tests {
     #[tokio::test]
     async fn test_impl_tool_empty_description() {
         let tool = MockToolEmptyDesc;
-        let def = tool.definition("".into()).await;
-        insta::assert_snapshot!(def.description);
+        insta::assert_debug_snapshot!(tool.description());
     }
 
     struct MockToolSpecial;

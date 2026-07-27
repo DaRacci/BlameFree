@@ -1,39 +1,22 @@
 //! Benchmark execution for code review evaluation.
 
-use core::error;
 use std::{fmt, sync::Arc};
 
-use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
-use rig_core::{
-    agent::Agent,
-    client::Client,
-    completion::CompletionModel,
-    providers::openrouter::{self, OpenRouterExt},
-    tool::server::ToolServer,
-};
-use riv_agents::{
-    AgentConfig, AgentConfigProvider, AgentDetailsProvider, RuntimeProvider, build_agent,
-    stream_agent,
-};
+use mti::prelude::MagicTypeId;
+use riv_agents::{AgentConfig, AgentConfigProvider, AgentDetailsProvider};
 use riv_cache::traits::CacheBackend;
 use riv_reporting::cost::AnalyticsTracker;
 use riv_types::{
     RunEvent,
-    benchmark::{
-        golden::GoldenCommentEntry,
-        judge::{JudgeVerdict, JudgedFindings},
-    },
+    benchmark::{golden::GoldenCommentEntry, judge::JudgedFindings},
     capabilities::ReasoningEffort,
     errors::ManyErrors,
     finding::Finding,
     wrappers::Model,
 };
-use tokio::{
-    sync::{broadcast::Sender, mpsc::Sender},
-    task::JoinSet,
-};
+use tokio::sync::broadcast::Sender;
 
-use crate::judge::judge_finding;
+use rig_core::providers::openrouter;
 
 pub mod diffs;
 pub mod judge;
@@ -70,6 +53,20 @@ pub struct BenchmarkConfig {
     pub dashboard_tx: Option<Sender<RunEvent>>,
 }
 
+impl riv_agents::RuntimeProvider for BenchmarkConfig {
+    fn get_id(&self) -> &MagicTypeId {
+        &self.id
+    }
+
+    fn get_analytics(&self) -> Arc<AnalyticsTracker> {
+        self.analytics.clone()
+    }
+
+    fn get_dashboard_tx(&self) -> Option<Sender<RunEvent>> {
+        self.dashboard_tx.clone()
+    }
+}
+
 impl AgentConfigProvider for BenchmarkConfig {
     fn get_agent_config(&self) -> riv_agents::AgentConfig<'_> {
         AgentConfig {
@@ -96,27 +93,6 @@ impl AgentDetailsProvider for BenchmarkConfig {
     }
 }
 
-impl<A> RuntimeProvider<A> for BenchmarkConfig
-where
-    A: CompletionModel + Send + Sync + 'static,
-{
-    fn get_id(&self) -> &MagicTypeId {
-        &self.id
-    }
-
-    fn get_analytics(&self) -> Arc<AnalyticsTracker> {
-        self.analytics.clone()
-    }
-
-    fn get_dashboard_tx(&self) -> Option<Sender<RunEvent>> {
-        self.dashboard_tx.clone()
-    }
-
-    fn get_client(&self) -> Arc<Client<OpenRouterExt<A>>> {
-        self.client.clone()
-    }
-}
-
 impl fmt::Debug for BenchmarkConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BenchmarkConfig")
@@ -128,48 +104,12 @@ impl fmt::Debug for BenchmarkConfig {
 }
 
 pub async fn evaluate_findings(
-    config: Arc<BenchmarkConfig>,
+    _config: Arc<BenchmarkConfig>,
     dataset: &GoldenCommentEntry,
     findings: &[Finding],
 ) -> (JudgedFindings, Option<ManyErrors>) {
-    let tools = ToolServer::new().run();
-    let agent = build_agent(config.clone(), &*config, tools)
-        .output_schema::<JudgeVerdict>()
-        .build();
-
-    let judge_set = JoinSet::new();
-    let mut verdicts = Vec::new();
-    let mut errors = ManyErrors::new();
-    for finding in findings {
-        let (finding_verdicts, finding_errors) =
-            judge_finding(config.clone(), finding, golden_comments).await;
-
-        verdicts.extend(finding_verdicts);
-        if let Some(finding_errors) = finding_errors {
-            warn!(
-                "Errors occurred while judging finding {}: {:?}",
-                finding.id, finding_errors
-            );
-            errors.extend(finding_errors);
-        }
-    }
-
-    let mut judged_findings = JudgedFindings::default();
-    for verdict in verdicts {
-        let Some(finding) = findings.iter().find(|f| f.id == verdict.finding_id) else {
-            error!(
-                "How did this happen? Verdict for finding_id {} but no such finding exists in the provided findings.",
-                verdict.finding_id
-            );
-            continue;
-        };
-
-        let mut f = finding.clone();
-        f.verdict = Some(verdict);
-        judged_findings.findings.push(f);
-    }
-
-    for comments in &dataset.comments {}
+    let _ = dataset;
+    let _ = findings;
 
     todo!()
 }

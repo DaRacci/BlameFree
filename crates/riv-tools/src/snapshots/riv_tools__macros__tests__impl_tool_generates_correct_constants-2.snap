@@ -1,5 +1,5 @@
 ---
 source: crates/riv-tools/src/macros.rs
-expression: def.name
+expression: tool.description()
 ---
-"mock_tool"
+"A mock tool for testing the impl_tool! macro."

@@ -7,7 +7,11 @@ impl CacheKey for Prompt {
     fn cache_key(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(self.0.as_bytes());
-        format!("{:x}", hasher.finalize())
+        hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect()
     }
 }
 
@@ -15,7 +19,11 @@ impl CacheKey for Model {
     fn cache_key(&self) -> String {
         let mut hasher = Sha256::new();
         hasher.update(self.0.as_bytes());
-        format!("{:x}", hasher.finalize())
+        hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect()
     }
 }
 

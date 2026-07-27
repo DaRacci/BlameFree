@@ -7,11 +7,8 @@ pub mod filter;
 pub mod fs;
 pub mod jaccard;
 pub mod pattern;
-pub mod url;
-
 pub mod string;
-#[cfg(test)]
-pub mod test_utils;
+pub mod url;
 
 /// Default model for ad-hoc and judge review tasks.
 pub const DEFAULT_MODEL: &str = "deepseek/deepseek-v4-flash";

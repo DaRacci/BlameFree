@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use mti::prelude::{MagicTypeIdExt, V7};
-use rig_core::completion::CompletionModel;
+
 use riv_agents::prompts::PromptLibrary;
-use riv_agents::{DEFAULT_TEMPERATURE, RuntimeProvider, stream_agent};
+use riv_agents::{AgentConfigProvider, RuntimeProvider, stream_agent};
 use riv_types::benchmark::golden::GoldenComment;
 use riv_types::errors::ManyErrors;
 use riv_types::finding::Finding;
@@ -31,14 +31,13 @@ fn create_judge_prompt(finding: &Finding, golden_comment: &GoldenComment) -> Str
 /// Run the Judge against a single finding and the set of golden comments.
 ///
 /// If there are zero golden comments, the function will return early with an empty vector of verdicts and zero duration.
-pub async fn judge_finding<R, A>(
+pub async fn judge_finding<R>(
     provider: Arc<R>,
     finding: &Finding,
     golden_comments: &[GoldenComment],
 ) -> (Vec<JudgeVerdict>, Option<ManyErrors>)
 where
-    R: RuntimeProvider<A> + Send + Sync + 'static,
-    A: CompletionModel + Send + Sync + 'static,
+    R: RuntimeProvider + AgentConfigProvider + Send + Sync + 'static,
 {
     if golden_comments.is_empty() {
         return (Vec::new(), None);
@@ -50,7 +49,7 @@ where
         let provider = provider.clone();
         judge_set.spawn(async move {
             let agent_id = "judge".create_type_id::<V7>();
-            stream_agent::<JudgeVerdict, _, _>(provider, &agent_id, &prompt).await
+            stream_agent::<JudgeVerdict, _>(provider, &agent_id, &prompt).await
         });
     }
 

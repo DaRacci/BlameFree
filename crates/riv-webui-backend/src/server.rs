@@ -24,6 +24,7 @@ use tracing::info;
 
 use crate::auth::SessionStore;
 use crate::config::WebUiConfig;
+#[cfg(feature = "embed-frontend")]
 use crate::static_assets::StaticAssets;
 
 async fn list_reasoning_efforts() -> Json<Vec<ReasoningEffort>> {
@@ -118,6 +119,7 @@ async fn static_or_index(State(_): State<AppState<impl Store>>, uri: Uri) -> Res
     let path = uri.path().trim_start_matches('/');
     let asset_path = if path.is_empty() { INDEX_HTML } else { path };
 
+    #[cfg(feature = "embed-frontend")]
     if let Some(asset) = StaticAssets::get(asset_path) {
         let content_type =
             mime_type_from_extension(Path::new(asset_path).extension().and_then(|e| e.to_str()));
@@ -135,6 +137,7 @@ async fn static_or_index(State(_): State<AppState<impl Store>>, uri: Uri) -> Res
 
     //TODO: 404 for SPA fallback if index.html is not found in embedded assets or disk
     // SPA fallback: serve embedded index.html for any unrecognized path
+    #[cfg(feature = "embed-frontend")]
     if let Some(index) = StaticAssets::get("index.html") {
         return Response::builder()
             .header(header::CONTENT_TYPE, "text/html; charset=utf-8")

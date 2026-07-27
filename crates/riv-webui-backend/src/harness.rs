@@ -24,13 +24,33 @@ use riv_stor::traits::Store;
 use riv_types::RunEvent;
 use riv_types::benchmark::judge::JudgeVerdict;
 use riv_types::benchmark::result::PrResult;
+use riv_types::capabilities::ReasoningEffort;
 use riv_types::cost::AnalyticsSnapshot;
 use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
 use riv_types::vcs::pr::PrMeta;
 use riv_types::vcs::repository::{RemoteRepositoryMeta, VCSPlatform};
 use riv_types::wrappers::Model;
+use riv_webui_shared::config::AgentInfo;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, broadcast};
 use tracing::{error, info, warn};
+
+/// Local benchmark configuration for harness execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BenchmarkConfig {
+    pub model: String,
+    pub max_findings: usize,
+    pub reasoning_effort: Option<ReasoningEffort>,
+    pub agents: Vec<AgentInfo>,
+}
+
+/// Load a cached diff from the benchmark directory.
+fn load_cached_diff(bench_dir: &Path, owner: &str, repo: &str, pr_number: u32) -> Option<String> {
+    let diff_path = bench_dir
+        .join("diffs")
+        .join(format!("{}_{}_{}.diff", owner, repo, pr_number));
+    fs::read_to_string(&diff_path).ok()
+}
 
 /// Run the harness inline, calling library functions directly.
 ///
@@ -100,9 +120,7 @@ pub async fn run_harness(
 
         let diff_str = parse_github_url(&pr_entry.url)
             .ok()
-            .and_then(|(owner, repo, num)| {
-                riv_benchmark::diff_cache::load_cached_diff(&bench_dir, &owner, &repo, num)
-            })
+            .and_then(|(owner, repo, num)| load_cached_diff(&bench_dir, &owner, &repo, num))
             .unwrap_or_default();
 
         let cost_tracker = Arc::new(AnalyticsTracker::new());

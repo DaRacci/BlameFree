@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use riv_agents::{build_agent, stream_agent};
+use riv_agents::{build_agent, send_event, stream_agent_with_agent};
 use riv_consensus::adaptive::get_agents_for_diff;
 use riv_shared::diff::{self, Diff};
 use riv_tools::build_tool_server;
@@ -123,7 +123,8 @@ async fn run_reviewers(diff: &Diff, config: &EvalConfig) -> (Vec<Finding>, Optio
                 .output_schema::<Vec<Finding>>()
                 .build();
 
-            stream_agent::<Vec<Finding>, _, _>(config, &agent_id, &agent, &diff_str).await
+            stream_agent_with_agent::<Vec<Finding>, _, _, _>(config, &agent_id, agent, &diff_str)
+                .await
         });
     }
 

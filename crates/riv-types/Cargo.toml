@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-seaorm-storage = ["sea-orm/macros", "riv-macros"]
+seaorm-storage = ["sea-orm/macros", "riv-macros", "trait-variant"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -16,6 +16,7 @@ strum = { workspace = true }
 schemars = { workspace = true }
 mti = { workspace = true, features = ["serde"] }
 riv-macros = { path = "../riv-macros", optional = true }
+trait-variant = { workspace = true, optional = true }
 sea-orm = { version = "2.0.0-rc.43", optional = true, features = ["macros"] }
 
 [dev-dependencies]

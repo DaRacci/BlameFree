@@ -1,5 +1,5 @@
 ---
 source: crates/riv-tools/src/macros.rs
-expression: def.description
+expression: tool.description()
 ---
-
+""

@@ -5,9 +5,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::Context;
 use axum::http::{StatusCode, header};
-use oauth2::basic::BasicClient;
 use oauth2::{AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
 use reqwest::Client as HttpClient;
 use riv_webui_shared::auth::AuthUser;
@@ -241,26 +239,23 @@ pub async fn fetch_user(
     })
 }
 
-/// Build an [`oauth2::BasicClient`] for the given provider.
-pub fn build_oauth_client(
+/// Build URLs and return components needed to construct an oauth2 client.
+///
+/// Callers must chain `.set_auth_uri(auth_url).set_token_uri(token_url).set_redirect_uri(redirect_url)`
+/// on the returned client.
+pub fn build_oauth_client_urls(
     config: &OAuthConfig,
     provider: &OAuthProvider,
-) -> anyhow::Result<BasicClient> {
-    let auth_url = provider.auth_url();
-    let token_url = provider.token_url();
-
-    let auth_url = AuthUrl::new(auth_url.to_string()).context("Invalid authorization URL")?;
-    let token_url = TokenUrl::new(token_url.to_string()).context("Invalid token URL")?;
+) -> anyhow::Result<(ClientId, ClientSecret, AuthUrl, TokenUrl, RedirectUrl)> {
+    let auth_url = AuthUrl::new(provider.auth_url())
+        .map_err(|e| anyhow::anyhow!("Invalid authorization URL: {e}"))?;
+    let token_url = TokenUrl::new(provider.token_url())
+        .map_err(|e| anyhow::anyhow!("Invalid token URL: {e}"))?;
     let redirect_url = RedirectUrl::new(config.redirect_url.clone())
-        .context(format!("Invalid redirect URL: {}", config.redirect_url))?;
+        .map_err(|e| anyhow::anyhow!("Invalid redirect URL: {e}"))?;
 
-    let client = BasicClient::new(
-        ClientId::new(config.client_id.clone()),
-        Some(ClientSecret::new(config.client_secret.clone())),
-        auth_url,
-        Some(token_url),
-    )
-    .set_redirect_uri(redirect_url);
+    let client_id = ClientId::new(config.client_id.clone());
+    let client_secret = ClientSecret::new(config.client_secret.clone());
 
-    Ok(client)
+    Ok((client_id, client_secret, auth_url, token_url, redirect_url))
 }

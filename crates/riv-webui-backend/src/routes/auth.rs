@@ -1,8 +1,9 @@
 use crate::{
-    auth::{CallbackQuery, LoginQuery, SESSION_COOKIE_NAME, build_oauth_client, fetch_user},
+    auth::{CallbackQuery, LoginQuery, SESSION_COOKIE_NAME, build_oauth_client_urls, fetch_user},
     routes_register,
     server::AppState,
 };
+use axum::http::{StatusCode, header};
 use axum::{
     Json,
     extract::{Query, State},
@@ -10,8 +11,9 @@ use axum::{
     response::{IntoResponse, Redirect},
 };
 use mti::prelude::{MagicTypeIdExt, V7};
-use oauth2::{AuthorizationCode, CsrfToken, Scope, TokenResponse, reqwest::async_http_client};
-use reqwest::{StatusCode, header};
+use oauth2::{
+    AuthorizationCode, CsrfToken, Scope, TokenResponse, basic::BasicClient, reqwest as oauth2_http,
+};
 use riv_shared::string::random_string;
 use riv_stor::traits::Store;
 use riv_webui_shared::{
@@ -41,7 +43,13 @@ where
         .ok_or_else(|| err_tuple("OAuth not configured"))?;
 
     let provider = query.provider.as_ref().unwrap_or(&oauth.provider);
-    let client = build_oauth_client(oauth, provider).map_err(|e| err_tuple(e.to_string()))?;
+    let (client_id, client_secret, auth_url, token_url, redirect_url) =
+        build_oauth_client_urls(oauth, provider).map_err(|e| err_tuple(e.to_string()))?;
+    let client = BasicClient::new(client_id)
+        .set_client_secret(client_secret)
+        .set_auth_uri(auth_url)
+        .set_token_uri(token_url)
+        .set_redirect_uri(redirect_url);
     let csrf_token = CsrfToken::new(random_string(32));
     let scopes: Vec<Scope> = oauth.scopes.iter().map(|s| Scope::new(s.clone())).collect();
     let (auth_url, _csrf) = client.authorize_url(|| csrf_token).add_scopes(scopes).url();
@@ -64,11 +72,16 @@ where
         .as_ref()
         .ok_or_else(|| err_tuple("OAuth not configured"))?;
 
-    let client =
-        build_oauth_client(oauth, &oauth.provider).map_err(|e| err_tuple(e.to_string()))?;
+    let (client_id, client_secret, auth_url, token_url, redirect_url) =
+        build_oauth_client_urls(oauth, &oauth.provider).map_err(|e| err_tuple(e.to_string()))?;
+    let client = BasicClient::new(client_id)
+        .set_client_secret(client_secret)
+        .set_auth_uri(auth_url)
+        .set_token_uri(token_url)
+        .set_redirect_uri(redirect_url);
     let token_response = client
         .exchange_code(AuthorizationCode::new(query.code.clone()))
-        .request_async(async_http_client)
+        .request_async(&oauth2_http::Client::new())
         .await
         .map_err(|e| err_tuple(format!("Token exchange failed: {e}")))?;
 
@@ -147,7 +160,9 @@ fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
     for pair in cookie_header.split(';') {
         let pair = pair.trim();
         if let Some(value) = pair.strip_prefix(&format!("{SESSION_COOKIE_NAME}=")) {
-            return Some(value.to_string());
+            if !value.trim().is_empty() {
+                return Some(value.to_string());
+            }
         }
     }
     None
