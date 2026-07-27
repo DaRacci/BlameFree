@@ -37,7 +37,7 @@ mod tests {
         let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
         let entry = Review {
             id: "run-001".create_type_id::<V7>(),
-            agent_sessions: HashMap::new(),
+            agent_sessions: Vec::new(),
             analytics: None,
             duration: None,
             status: ReviewStatus::Completed,
@@ -57,7 +57,7 @@ mod tests {
         let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
         let entry1 = Review {
             id: "run-001".create_type_id::<V7>(),
-            agent_sessions: HashMap::new(),
+            agent_sessions: Vec::new(),
             analytics: None,
             duration: None,
             status: ReviewStatus::Completed,
@@ -65,7 +65,7 @@ mod tests {
         };
         let entry2 = Review {
             id: "run-002".create_type_id::<V7>(),
-            agent_sessions: HashMap::new(),
+            agent_sessions: Vec::new(),
             analytics: None,
             duration: None,
             status: ReviewStatus::Completed,
@@ -87,7 +87,7 @@ mod tests {
         let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
         let entry = Review {
             id: "run-001".create_type_id::<V7>(),
-            agent_sessions: HashMap::new(),
+            agent_sessions: Vec::new(),
             analytics: None,
             duration: None,
             status: ReviewStatus::Completed,

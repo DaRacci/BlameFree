@@ -112,7 +112,7 @@ pub async fn list_runs(State(state): State<AppState<impl Store>>) -> impl IntoRe
 
             runs.push(Review {
                 id: id.as_str().create_type_id::<V7>(),
-                agent_sessions: HashMap::new(),
+                agent_sessions: Vec::new(),
                 analytics: None,
                 duration: Some(Duration::from_secs_f64(0.0)),
                 status: ReviewStatus::Running,
@@ -250,7 +250,7 @@ pub async fn start_run(
 
     let response = Review {
         id: run_id.as_str().create_type_id::<V7>(),
-        agent_sessions: HashMap::new(),
+        agent_sessions: Vec::new(),
         analytics: None,
         duration: None,
         status: ReviewStatus::Running,

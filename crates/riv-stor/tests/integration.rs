@@ -13,7 +13,7 @@ use crb_types::{
     benchmark::{golden::GoldenComment, result::PrResult, standalone::Benchmark},
     review::{Review, ReviewStatus},
 };
-use mti::prelude::MagicTypeId;
+use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
 use riv_stor::store::SqliteStore;
 use riv_stor::traits::Store;
 use sea_orm::ConnectionTrait;
@@ -25,9 +25,7 @@ async fn make_store() -> SqliteStore {
 
 /// create a deterministic MagicTypeId from a u64.
 fn make_id(n: u64) -> MagicTypeId {
-    format!("test-id-{n}")
-        .parse::<MagicTypeId>()
-        .unwrap_or_default()
+    format!("test-id-{n}").create_type_id::<V7>()
 }
 
 #[tokio::test]
@@ -61,7 +59,7 @@ async fn test_review_round_trip() {
     let id = make_id(1);
     let review = Review {
         id: id.clone(),
-        agent_sessions: HashMap::new(),
+        agent_sessions: Vec::new(),
         analytics: None,
         duration: None,
         status: ReviewStatus::Running,
@@ -272,7 +270,7 @@ async fn test_pr_result_cascade_delete() {
 
     let id = make_id(40);
     let gc = GoldenComment {
-        id: Some(make_id(401)),
+        id: Some(401),
         pr_result_id: id.clone(),
         comment: "Cascade test comment".to_string(),
         severity: crb_types::severity::Severity::Medium,

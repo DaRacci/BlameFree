@@ -8,7 +8,7 @@ use crate::{
 #[cfg(feature = "seaorm-storage")]
 use crate::{
     benchmark::{
-        golden::{GoldenCommentEntity, GoldenCommentModel},
+        golden::{GoldenCommentColumn, GoldenCommentEntity, GoldenCommentModel},
         judge::{JudgeVerdictEntity, JudgeVerdictModel},
     },
     finding::{FindingActiveModel, FindingEntity, FindingModel},

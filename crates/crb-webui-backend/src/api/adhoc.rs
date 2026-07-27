@@ -135,7 +135,7 @@ pub async fn start_adhoc_review(
         StatusCode::OK,
         Json(Review {
             id: run_id.as_str().create_type_id::<V7>(),
-            agent_sessions: HashMap::new(),
+            agent_sessions: Vec::new(),
             analytics: None,
             duration: None,
             status: ReviewStatus::Running,
@@ -242,7 +242,7 @@ pub async fn get_adhoc_run(
     let detail = RunDetailResponse {
         meta: Review {
             id: id.as_str().create_type_id::<V7>(),
-            agent_sessions: HashMap::new(),
+            agent_sessions: Vec::new(),
             analytics: None,
             duration: duration_secs.map(Duration::from_secs_f64),
             status: ReviewStatus::Completed,
@@ -452,7 +452,7 @@ async fn run_adhoc_review_inner(
 
     let review = Review {
         id: run_id.to_string().create_type_id::<V7>(),
-        agent_sessions: HashMap::new(),
+        agent_sessions: Vec::new(),
         analytics: None,
         duration: Some(elapsed),
         status: ReviewStatus::Completed,
@@ -510,7 +510,7 @@ fn scan_adhoc_run_dir(path: &Path, run_id: &str) -> Option<Review> {
 
     Some(Review {
         id: run_id.create_type_id::<V7>(),
-        agent_sessions: HashMap::new(),
+        agent_sessions: Vec::new(),
         analytics: None,
         duration: None,
         status,

@@ -33,7 +33,7 @@ pub struct GoldenComment {
         feature = "seaorm-storage",
         sea_orm(primary_key, auto_increment = true)
     )]
-    pub id: Option<MagicTypeId>,
+    pub id: Option<i32>,
 
     /// FK back to the parent [`PrResult`].
     #[cfg_attr(

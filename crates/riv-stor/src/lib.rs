@@ -46,12 +46,10 @@ impl Storable for Benchmark {
 
 use std::sync::LazyLock;
 
-static FALLBACK_ID: LazyLock<MagicTypeId> = LazyLock::new(MagicTypeId::default);
-
 impl Storable for GoldenComment {
     type Options = ();
     fn item_id(&self) -> &MagicTypeId {
-        self.id.as_ref().unwrap_or(&FALLBACK_ID)
+        &self.pr_result_id
     }
 }
 

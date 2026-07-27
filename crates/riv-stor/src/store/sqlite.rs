@@ -243,7 +243,7 @@ async fn load_pr_result(
             let gcs: Vec<GoldenComment> = golden_models
                 .into_iter()
                 .map(|gc| GoldenComment {
-                    id: Some(gc.id.to_string().parse::<MagicTypeId>().unwrap_or_default()),
+                    id: Some(gc.id),
                     pr_result_id: id.clone(),
                     comment: gc.comment,
                     severity: gc.severity,

@@ -111,7 +111,11 @@ where
         }
     };
 
-    let agents = review.agent_sessions.into_keys().collect::<Vec<_>>();
+    let agents = review
+        .agent_sessions
+        .iter()
+        .map(|s| s.id.clone())
+        .collect::<Vec<_>>();
     (StatusCode::OK, Json(Some(agents))).into_response()
 }
 

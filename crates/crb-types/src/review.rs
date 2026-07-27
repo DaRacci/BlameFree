@@ -1,11 +1,13 @@
-use std::collections::HashMap;
 use std::time::Duration;
 
 use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};
 use strum::{Display, IntoStaticStr};
 
+#[cfg(not(feature = "seaorm-storage"))]
 use crate::agent::AgentSession;
+#[cfg(feature = "seaorm-storage")]
+use crate::agent::{AgentSession, AgentSessionColumn, AgentSessionEntity};
 use crate::cost::AnalyticsSnapshot;
 use crate::vcs::pr::PrMeta;
 use crate::vcs::repository::{GitRepositoryMeta, RemoteRepositoryMeta};
@@ -21,11 +23,14 @@ pub struct Review {
     /// The global unique identifier for the review.
     pub id: MagicTypeId,
 
-    /// A mapping of the unique Agent IDs to their corresponding AgentSession.
+    /// Agent sessions for this review.
     ///
     /// This will be populated as agents join the review.
-    #[cfg_attr(feature = "seaorm-storage", sea_orm(ignore))]
-    pub agent_sessions: HashMap<MagicTypeId, AgentSession>,
+    #[cfg_attr(
+        feature = "seaorm-storage",
+        sea_orm(has_many, entity = "AgentSessionEntity", child_fk = "review_id")
+    )]
+    pub agent_sessions: Vec<AgentSession>,
 
     /// The final analytics snapshot for the review.
     ///

@@ -194,7 +194,7 @@ pub async fn run_harness(
 
     let overall_review = Review {
         id: run_id.to_string().create_type_id::<V7>(),
-        agent_sessions: HashMap::new(),
+        agent_sessions: Vec::new(),
         analytics: Some(AnalyticsSnapshot::default()),
         duration: Some(std::time::Duration::from_secs_f64(
             start.elapsed().as_secs_f64(),

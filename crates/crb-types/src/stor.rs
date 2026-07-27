@@ -45,11 +45,16 @@ pub trait EntityLoader: Sized {
 #[allow(async_fn_in_trait)]
 pub trait LoadChildren: Sized {
     /// Hydrate this entity's children (direct children for `Shallow`, full tree for `Deep`).
+    ///
+    /// Default impl is a no-op. Entities with HasMany/HasOne relations override this
+    /// to load children from the database.
     async fn load_children(
         &mut self,
-        db: &sea_orm::DatabaseConnection,
-        depth: LoadDepth,
-    ) -> Result<(), anyhow::Error>;
+        _db: &sea_orm::DatabaseConnection,
+        _depth: LoadDepth,
+    ) -> Result<(), anyhow::Error> {
+        Ok(())
+    }
 
     /// Convenience: hydrate full tree. Equivalent to `load_children(db, LoadDepth::Deep)`.
     async fn ensure_fully_hydrated(
