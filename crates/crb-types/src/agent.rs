@@ -136,7 +136,7 @@ impl Default for AgentTurnMessage {
     derive(crb_macros::EntityModel),
     sea_orm(table_name = "agent_turns")
 )]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AgentTurn {
     /// Surrogate primary key, auto-incremented by the DB.
     #[cfg_attr(
@@ -175,7 +175,7 @@ pub struct AgentTurn {
     derive(crb_macros::EntityModel),
     sea_orm(table_name = "agent_sessions")
 )]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AgentSession {
     /// The unique ID of the agent session.
     pub id: MagicTypeId,

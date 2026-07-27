@@ -33,7 +33,7 @@ pub trait Store: Send + Sync + Clone {
     /// Load a single item by its `MagicTypeId`.
     ///
     /// Returns `None` if not found.
-    fn load<T: Storable + crb_types::stor::EntityLoader>(
+    fn load<T: Storable + crb_types::stor::EntityLoader + crb_types::stor::LoadChildren>(
         &self,
         id: &MagicTypeId,
     ) -> impl Future<Output = Result<Option<T>, Error>>;
@@ -82,7 +82,9 @@ mod tests {
             Ok(())
         }
 
-        async fn load<T: Storable + crb_types::stor::EntityLoader>(
+        async fn load<
+            T: Storable + crb_types::stor::EntityLoader + crb_types::stor::LoadChildren,
+        >(
             &self,
             _id: &MagicTypeId,
         ) -> Result<Option<T>, Error> {

@@ -22,7 +22,7 @@ use crate::{
     derive(crb_macros::EntityModel),
     sea_orm(table_name = "pr_results", skip_save)
 )]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PrResult {
     /// The [`crate::review::Review::id`] of this PR result.
     pub id: MagicTypeId,

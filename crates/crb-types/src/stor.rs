@@ -43,7 +43,7 @@ pub trait EntityLoader: Sized {
 /// `has_one`, or hydratable `ignore` fields.
 #[cfg(feature = "seaorm-storage")]
 #[allow(async_fn_in_trait)]
-pub trait LoadChildren: EntityLoader {
+pub trait LoadChildren: Sized {
     /// Hydrate this entity's children (direct children for `Shallow`, full tree for `Deep`).
     async fn load_children(
         &mut self,

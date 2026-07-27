@@ -2,9 +2,9 @@
 
 use std::{any::TypeId, sync::Arc};
 
-use crb_types::stor::Save;
+use crb_types::stor::{LoadDepth, Save};
 use crb_types::{
-    agent::{AgentSession, AgentSessionEntity, AgentTurn, AgentTurnMessage},
+    agent::{AgentSession, AgentSessionEntity},
     benchmark::{
         golden::{GoldenComment, GoldenCommentColumn, GoldenCommentEntity},
         judge::{JudgeVerdict, JudgeVerdictColumn, JudgeVerdictEntity, JudgeVerdictModel},
@@ -103,13 +103,19 @@ impl Store for SqliteStore {
             .map_err(|e| Error::Query(e.to_string()))
     }
 
-    async fn load<T: Storable + crb_types::stor::EntityLoader>(
+    async fn load<T: Storable + crb_types::stor::EntityLoader + crb_types::stor::LoadChildren>(
         &self,
         id: &MagicTypeId,
     ) -> Result<Option<T>, Error> {
-        T::load_by_id(&self.db, id)
+        let mut entity = T::load_by_id(&self.db, id)
             .await
-            .map_err(|e| Error::Query(e.to_string()))
+            .map_err(|e| Error::Query(e.to_string()))?;
+        if let Some(ref mut e) = entity {
+            e.load_children(&self.db, LoadDepth::Deep)
+                .await
+                .map_err(|e| Error::Query(e.to_string()))?;
+        }
+        Ok(entity)
     }
 
     async fn list<T: Storable + crb_types::stor::EntityLoader>(
@@ -316,108 +322,4 @@ async fn load_findings_and_verdicts(
     }
 
     Ok(results)
-}
-
-/// Load an `AgentSession` with its turns and messages (3-level cascade).
-async fn load_agent_session(
-    db: &DatabaseConnection,
-    id: &MagicTypeId,
-) -> Result<Option<AgentSession>, Error> {
-    let session_id_str = id.to_string();
-
-    // 1. Load the session row
-    let session_row = db
-        .query_one_raw(sea_orm::Statement::from_string(
-            db.get_database_backend(),
-            format!(
-                "SELECT id, review_id, model_name FROM agent_sessions WHERE id = '{id}'",
-                id = session_id_str.replace('\'', "''"),
-            ),
-        ))
-        .await
-        .map_err(|e| Error::Query(format!("failed to load agent_session: {e}")))?;
-
-    let session_row = match session_row {
-        Some(row) => row,
-        None => return Ok(None),
-    };
-
-    let review_id: Option<String> = session_row.try_get_by_index::<String>(1).ok();
-    let model_name: String = session_row
-        .try_get_by_index::<String>(2)
-        .unwrap_or_default();
-
-    // 2. Load turns (ordered by turn_index)
-    let turn_rows = db
-        .query_all_raw(sea_orm::Statement::from_string(
-            db.get_database_backend(),
-            format!(
-                "SELECT id, turn_index FROM agent_turns \
-                     WHERE session_id = '{id}' ORDER BY turn_index ASC",
-                id = session_id_str.replace('\'', "''"),
-            ),
-        ))
-        .await
-        .map_err(|e| Error::Query(format!("failed to load agent_turns: {e}")))?;
-
-    let mut turns: Vec<AgentTurn> = Vec::with_capacity(turn_rows.len());
-
-    for turn_row in &turn_rows {
-        let turn_db_id: i32 = turn_row.try_get_by_index(0).unwrap_or(0);
-        let turn_index: i32 = turn_row.try_get_by_index(1).unwrap_or(0);
-
-        // 3. Load messages for this turn (ordered by msg_index)
-        let msg_rows = db
-            .query_all_raw(sea_orm::Statement::from_string(
-                db.get_database_backend(),
-                format!(
-                    "SELECT msg_index, role, text_content, thinking, output, \
-                         tool_name, tool_input, tool_output \
-                         FROM agent_turn_messages WHERE turn_id = {tid} ORDER BY msg_index ASC",
-                    tid = turn_db_id,
-                ),
-            ))
-            .await
-            .map_err(|e| Error::Query(format!("failed to load turn messages: {e}")))?;
-
-        let mut messages: Vec<AgentTurnMessage> = Vec::with_capacity(msg_rows.len());
-
-        for msg_row in &msg_rows {
-            let _msg_index: i32 = msg_row.try_get_by_index(0).unwrap_or(0);
-            let role: String = msg_row.try_get_by_index(1).unwrap_or_default();
-            let text_content: Option<String> = msg_row.try_get_by_index(2).ok();
-            let thinking: Option<String> = msg_row.try_get_by_index(3).ok();
-            let output: Option<String> = msg_row.try_get_by_index(4).ok();
-            let tool_name: Option<String> = msg_row.try_get_by_index(5).ok();
-            let tool_input: Option<String> = msg_row.try_get_by_index(6).ok();
-            let tool_output: Option<String> = msg_row.try_get_by_index(7).ok();
-
-            messages.push(AgentTurnMessage {
-                id: None,
-                turn_id: turn_db_id,
-                msg_index: _msg_index,
-                role,
-                text_content,
-                thinking,
-                output,
-                tool_name,
-                tool_input,
-                tool_output,
-            });
-        }
-
-        turns.push(AgentTurn {
-            id: Some(turn_db_id),
-            session_id: id.clone(),
-            turn_index,
-            messages,
-        });
-    }
-
-    Ok(Some(AgentSession {
-        id: id.clone(),
-        review_id: review_id.and_then(|r| r.parse::<MagicTypeId>().ok()),
-        model_name,
-        turns,
-    }))
 }
