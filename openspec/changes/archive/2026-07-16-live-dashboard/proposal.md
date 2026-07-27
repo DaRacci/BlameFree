@@ -7,7 +7,7 @@
 
 ## Summary
 
-Add an optional Ratatui-based terminal UI dashboard to `crb-harness` that shows all 4 agent processes (SA, CL, AR, SEC) in real-time — their current thought streams, progress, and running cost — alongside a progress bar for the overall PR evaluation run.
+Add an optional Ratatui-based terminal UI dashboard to `riv-harness` that shows all 4 agent processes (SA, CL, AR, SEC) in real-time — their current thought streams, progress, and running cost — alongside a progress bar for the overall PR evaluation run.
 
 ## Why
 
@@ -15,7 +15,7 @@ Current tracing output gives no real-time visibility into agent thought streams,
 
 ## What Changes
 
-Add an optional Ratatui-based terminal UI dashboard to crb-harness showing all 4 agent processes (SA, CL, AR, SEC) in real-time — their current thought streams, progress, and running cost — alongside a progress bar for the overall PR evaluation run. Event-driven via mpsc channel, renders at 10fps, gated by --dashboard CLI flag.
+Add an optional Ratatui-based terminal UI dashboard to riv-harness showing all 4 agent processes (SA, CL, AR, SEC) in real-time — their current thought streams, progress, and running cost — alongside a progress bar for the overall PR evaluation run. Event-driven via mpsc channel, renders at 10fps, gated by --dashboard CLI flag.
 
 ## Motivation
 
@@ -41,7 +41,7 @@ A live TUI dashboard solves all four with a single terminal window showing agent
 ## Scope
 
 - **In scope:**
-  - New `crb-dashboard` module within `crb-harness` (not a separate crate)
+  - New `riv-dashboard` module within `riv-harness` (not a separate crate)
   - Ratatui + crossterm dependencies
   - Event-driven architecture: agents emit events over an `mpsc` channel, dashboard task renders at 10fps
   - 4-pane agent view (one per role: SA, CL, AR, SEC), each showing latest thought chunk
@@ -69,9 +69,9 @@ A live TUI dashboard solves all four with a single terminal window showing agent
 ## Directory Structure
 
 ```
-review-harness/
+BlameFree/
 └── crates/
-    └── crb-harness/
+    └── riv-harness/
         ├── Cargo.toml             # + ratatui, crossterm dependencies
         └── src/
             ├── main.rs            # Wire --dashboard flag, spawn dashboard task

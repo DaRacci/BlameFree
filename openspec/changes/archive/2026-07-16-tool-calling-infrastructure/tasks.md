@@ -2,12 +2,12 @@
 
 ## Phase 1: Foundation
 
-- [x] **1.1 Create `crates/crb-tools/Cargo.toml` and `src/lib.rs`**
+- [x] **1.1 Create `crates/riv-tools/Cargo.toml` and `src/lib.rs`**
   - Define the `Finding` struct.
   - Re-export all public types from the module.
   - Define `LinterError`, `GitError` error types.
 
-- [x] **1.2 Implement linter tools in `crates/crb-tools/src/lib.rs`**
+- [x] **1.2 Implement linter tools in `crates/riv-tools/src/lib.rs`**
   - Define `LinterArgs`, `LinterError`.
   - Implement `LinterTool` struct with `Tool` trait.
   - Implement `LinterConfig` deserialization from TOML.
@@ -17,7 +17,7 @@
   - Write `parse_govet_output()` parser.
   - Write factories: `create_ruff_tool()`, `create_eslint_tool()`, `create_govet_tool()`.
 
-- [x] **1.3 Implement git tools in `crates/crb-tools/src/lib.rs`**
+- [x] **1.3 Implement git tools in `crates/riv-tools/src/lib.rs`**
   - Define `GitCleanArgs`, `GitDiffArgs`, `GitError`.
   - Implement `GitCleanTool` with `Tool` trait.
   - Implement `GitDiffTool` with `Tool` trait.
@@ -51,7 +51,7 @@
 - [x] **3.2 Wire into harness orchestration**
   - Create `run_all_linters(repo_path)` function.
   - Create `aggregate_results()` for producing a `LintReport`.
-  - Integrate with the main review loop in `crb-harness`.
+  - Integrate with the main review loop in `riv-harness`.
 
 ## Phase 4: Edge Cases & Hardening
 

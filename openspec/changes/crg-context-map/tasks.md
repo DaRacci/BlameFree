@@ -1,6 +1,6 @@
 # Tasks: CRG Context Map
 
-> **Note (2026-07-16):** All tasks below target a hypothetical `crb-context` crate and `scripts/build_context_map.py` that do not exist in the codebase. 0 of 34 tasks have been started. The repo has been heavily refactored since this task list was written — none of the crate paths or integration points match the current codebase structure. Revisit after the ongoing refactoring stabilizes.
+> **Note (2026-07-16):** All tasks below target a hypothetical `riv-context` crate and `scripts/build_context_map.py` that do not exist in the codebase. 0 of 34 tasks have been started. The repo has been heavily refactored since this task list was written — none of the crate paths or integration points match the current codebase structure. Revisit after the ongoing refactoring stabilizes.
 
 ## Phase 0: Research & Prototyping
 
@@ -23,10 +23,10 @@
   - Adjust data schema based on gaps found during validation
   - Update estimate for Phase 1 crate implementation
 
-## Phase 1: Context Map Builder (crb-context crate)
+## Phase 1: Context Map Builder (riv-context crate)
 
-- [ ] **1.1 Create `crb-context` crate with Rust tree-sitter bindings**
-  - `cargo init crates/crb-context`
+- [ ] **1.1 Create `riv-context` crate with Rust tree-sitter bindings**
+  - `cargo init crates/riv-context`
   - Add dependencies: `tree-sitter`, `serde`, `serde_json`, `rayon`
   - Add language grammars for all 7 supported languages
   - Define `ContextMap` struct with all schema sections
@@ -68,7 +68,7 @@
   - Compute `repo_state_hash` from HEAD commit hash
   - Compute `context_cache_key` from repo_state_hash + diff_hash + model_name
   - Implement `from_cache()` and `save_to_cache()`
-  - On-disk cache directory: `~/.cache/crb-context/`
+  - On-disk cache directory: `~/.cache/riv-context/`
 - [ ] **1.9 Integration test: build context map for 10 PRs**
   - Parse 10 discourse-graphite benchmark PRs
   - Measure: build time, compact text token count, cache hit rate
@@ -169,6 +169,6 @@
 ## Phase 5: Documentation & Polish
 
 - [ ] **5.1 Update architecture docs** — Document the CRG context map pipeline in project docs
-- [ ] **5.2 API docs** — Module-level and function-level `///` docs in `crb-context` crate
+- [ ] **5.2 API docs** — Module-level and function-level `///` docs in `riv-context` crate
 - [ ] **5.3 Developer guide** — How to add a new language, how to add a new query tool
 - [ ] **5.4 Benchmark results** — Publish benchmark results comparing all 4 approaches

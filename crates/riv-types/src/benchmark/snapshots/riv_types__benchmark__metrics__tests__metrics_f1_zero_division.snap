@@ -1,0 +1,5 @@
+---
+source: crates/riv-types/src/benchmark/metrics.rs
+expression: m.f1()
+---
+0.0

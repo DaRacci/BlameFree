@@ -1,4 +1,4 @@
-# Design: HTTP Review Server (crb-server)
+# Design: HTTP Review Server (riv-server)
 
 ## 1. Overview
 
@@ -49,7 +49,7 @@ The review server exposes the multi-agent code review pipeline as a RESTful HTTP
                                                │ template vars
                                                ▼
                                     ┌──────────────────────────┐
-                                    │  crb-consensus::         │
+                                    │  riv-consensus::         │
                                     │  run_consensus()         │
                                     │                          │
                                     │  ┌──▶ SA Agent ──┐       │
@@ -372,14 +372,14 @@ and violations of best practices. Respond with a JSON array of findings.
 ## 7. CLI Arguments
 
 ```bash
-crb-server \
+riv-server \
     --port 8080 \
     --prompts-dir prompts/experiments/EXP-013 \
     --model deepseek/deepseek-v4-flash \
     --judge-model deepseek/deepseek-v4-flash \
     --concurrency 4 \
     --rules-dir .crb/rules/ \
-    --repos-cache /tmp/crb-repos \
+    --repos-cache /tmp/riv-repos \
     --max-jobs 100
 ```
 
@@ -392,32 +392,32 @@ crb-server \
 | `--prompts-dir` | `PROMPTS_DIR` | `prompts/builtin` | Prompt library directory |
 | `--concurrency` | `CONCURRENCY` | `4` | Max concurrent LLM calls |
 | `--rules-dir` | `RULES_DIR` | `.crb/rules/` | Rule directory |
-| `--repos-cache` | `REPOS_CACHE` | `/tmp/crb-repos` | Repo clone cache |
+| `--repos-cache` | `REPOS_CACHE` | `/tmp/riv-repos` | Repo clone cache |
 | `--max-jobs` | `MAX_JOBS` | `100` | Max in-memory review jobs |
 | `--roles` | `ROLES` | `SA,CL,AR,SEC` | Agent roles to use |
 | `--max-findings` | `MAX_FINDINGS` | `20` | Max findings per agent |
 
 ## 8. Dependencies
 
-### crb-server/Cargo.toml
+### riv-server/Cargo.toml
 
 ```toml
 [package]
-name = "crb-server"
+name = "riv-server"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "crb-server"
+name = "riv-server"
 path = "src/main.rs"
 
 [dependencies]
-crb-agents = { path = "../crb-agents" }
-crb-judge = { path = "../crb-judge" }
-crb-consensus = { path = "../crb-consensus" }
-crb-reporting = { path = "../crb-reporting" }
-crb-tools = { path = "../crb-tools" }
-crb-rules = { path = "../crb-rules" }
+riv-agents = { path = "../riv-agents" }
+riv-judge = { path = "../riv-judge" }
+riv-consensus = { path = "../riv-consensus" }
+riv-reporting = { path = "../riv-reporting" }
+riv-tools = { path = "../riv-tools" }
+riv-rules = { path = "../riv-rules" }
 rig-core = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
 axum = "0.7"
@@ -441,7 +441,7 @@ members = ["crates/*"]
 
 [workspace.dependencies]
 # ... existing deps ...
-# axum and uuid are NOT workspace-level — they're specific to crb-server
+# axum and uuid are NOT workspace-level — they're specific to riv-server
 ```
 
 ## 9. Error Handling
@@ -480,4 +480,4 @@ let cors = CorsLayer::new()
 | Repo cache | Git shallow clone to temp dir | Avoids re-cloning for repeated reviews of same repo |
 | Diff source | Inline `diff` field in request | Client can provide diff directly; server falls back to git |
 | Template injection | `PromptLibrary::render()` | Reuses existing template infrastructure. No new prompt system |
-| Concurrency | `tokio::sync::Semaphore` | Reuses same pattern from crb-harness. Single shared throttle |
+| Concurrency | `tokio::sync::Semaphore` | Reuses same pattern from riv-harness. Single shared throttle |

@@ -85,7 +85,7 @@ The `exp14_template_vars` feature SHALL be checked at runtime instead of compile
 
 ### Requirement: Feature gate behavior (exp14_submit_finding)
 
-The `exp14_submit_finding` feature in `crb-agents/src/templates.rs` SHALL be checked at runtime instead of compile time.
+The `exp14_submit_finding` feature in `riv-agents/src/templates.rs` SHALL be checked at runtime instead of compile time.
 (Previously: `cfg!(feature = "exp14_submit_finding")`)
 
 #### Scenario: Submit finding enabled

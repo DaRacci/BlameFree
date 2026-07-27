@@ -2,8 +2,8 @@
 
 use std::{any::TypeId, sync::Arc};
 
-use crb_types::stor::{LoadDepth, Save};
-use crb_types::{
+use riv_types::stor::{LoadDepth, Save};
+use riv_types::{
     agent::{AgentSession, AgentSessionEntity},
     benchmark::{
         result::{PrResult, PrResultEntity},
@@ -75,7 +75,7 @@ impl Store for SqliteStore {
             .map_err(|e| Error::Query(e.to_string()))
     }
 
-    async fn load<T: Storable + crb_types::stor::EntityLoader + crb_types::stor::LoadChildren>(
+    async fn load<T: Storable + riv_types::stor::EntityLoader + riv_types::stor::LoadChildren>(
         &self,
         id: &MagicTypeId,
     ) -> Result<Option<T>, Error> {
@@ -90,7 +90,7 @@ impl Store for SqliteStore {
         Ok(entity)
     }
 
-    async fn list<T: Storable + crb_types::stor::EntityLoader>(
+    async fn list<T: Storable + riv_types::stor::EntityLoader>(
         &self,
         _options: &T::Options,
     ) -> Result<Vec<T>, Error> {

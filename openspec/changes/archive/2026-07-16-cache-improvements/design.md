@@ -2,16 +2,16 @@
 
 ## Overview
 
-New cache management capabilities are added to `crb-harness/src/cache.rs` (core logic) and exposed via `crb-benchmark/src/main.rs` (CLI subcommands). The `_summary.json` format is extended with `_runs.json` (append-only run history). No backward compatibility is maintained for the old summary format.
+New cache management capabilities are added to `riv-harness/src/cache.rs` (core logic) and exposed via `riv-benchmark/src/main.rs` (CLI subcommands). The `_summary.json` format is extended with `_runs.json` (append-only run history). No backward compatibility is maintained for the old summary format.
 
 ## Code Locations
 
 | Component | File | Changes |
 |---|---|---|
-| LlmCache methods | `crates/crb-harness/src/cache.rs` | Add stats(), prune(), scrub(), backup(), restore(), rebuild() |
-| CLI subcommands | `crates/crb-benchmark/src/main.rs` | Commands enum: CacheStats, CachePrune, CacheScrub, CacheBackup, CacheRestore, CacheRebuild; extend Clean with --outputs |
-| Summary/history | `crates/crb-harness/src/lib.rs` | write_summary() -> append to _runs.json |
-| Helpers | `crates/crb-reporting/src/lib.rs` | Per-PR metadata writing helpers |
+| LlmCache methods | `crates/riv-harness/src/cache.rs` | Add stats(), prune(), scrub(), backup(), restore(), rebuild() |
+| CLI subcommands | `crates/riv-benchmark/src/main.rs` | Commands enum: CacheStats, CachePrune, CacheScrub, CacheBackup, CacheRestore, CacheRebuild; extend Clean with --outputs |
+| Summary/history | `crates/riv-harness/src/lib.rs` | write_summary() -> append to _runs.json |
+| Helpers | `crates/riv-reporting/src/lib.rs` | Per-PR metadata writing helpers |
 
 ## Data Flow
 
@@ -78,13 +78,13 @@ All destructive actions have `--dry-run`.
 Output can be formatted as table (default) or `--json`.
 
 ```
-crb-benchmark cache-stats [--cache-dir <path>] [--json]
-crb-benchmark cache-prune [--cache-dir <path>] [--max-age <days>] [--max-size <bytes>] [--max-prs <n>] [--dry-run]
-crb-benchmark cache-scrub [--cache-dir <path>] [--dry-run] [--repair]
-crb-benchmark cache-backup [--cache-dir <path>] [--output <path>]
-crb-benchmark cache-restore <backup_file> [--cache-dir <path>]
-crb-benchmark cache-rebuild [--cache-dir <path>] [--dry-run]
-crb-benchmark clean [--benchmark-dir <path>] [--all] [--outputs]
+riv-benchmark cache-stats [--cache-dir <path>] [--json]
+riv-benchmark cache-prune [--cache-dir <path>] [--max-age <days>] [--max-size <bytes>] [--max-prs <n>] [--dry-run]
+riv-benchmark cache-scrub [--cache-dir <path>] [--dry-run] [--repair]
+riv-benchmark cache-backup [--cache-dir <path>] [--output <path>]
+riv-benchmark cache-restore <backup_file> [--cache-dir <path>]
+riv-benchmark cache-rebuild [--cache-dir <path>] [--dry-run]
+riv-benchmark clean [--benchmark-dir <path>] [--all] [--outputs]
 ```
 
 ## Auto-backup on Run

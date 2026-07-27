@@ -7,23 +7,23 @@
 ## Project Layout
 
 ```
-review-harness/
+BlameFree/
 ├── crates/
-│   ├── crb-agents/        # Agent prompt templates
-│   ├── crb-auditor/       # Severity auditor
-│   ├── crb-benchmark/     # dataset loading, PR iteration, result aggregation
-│   ├── crb-cache/         # Content-addressed cache
-│   ├── crb-consensus/     # LLM-as-judge, match scoring, and consensus orchestration
-│   ├── crb-harness/       # Core evaluation engine: pipeline, runner, config, review orchestration
-│   ├── crb-macros/        # Proc-macros for generating boilerplate
-│   ├── crb-reporting/     # analytics, cost tracking, and history persistence
-│   ├── crb-rules/         # Dynamic rules loaded based on the touched files in a review
-│   ├── crb-shared/        # Shared utilities across crates
-│   ├── crb-tools/         # LLM Tools, linters, and MCP
-│   ├── crb-types/         # Domain types: Generic structs, and enums that are used across multiple crates
-│   ├── crb-webui-backend/ # Dashboard backend
-│   ├── crb-webui-frontend/# Leptos WASM frontend
-│   ├── crb-webui-shared/  # Shared types between frontend and backend
+│   ├── riv-agents/        # Agent prompt templates
+│   ├── riv-auditor/       # Severity auditor
+│   ├── riv-benchmark/     # dataset loading, PR iteration, result aggregation
+│   ├── riv-cache/         # Content-addressed cache
+│   ├── riv-consensus/     # LLM-as-judge, match scoring, and consensus orchestration
+│   ├── riv-harness/       # Core evaluation engine: pipeline, runner, config, review orchestration
+│   ├── riv-macros/        # Proc-macros for generating boilerplate
+│   ├── riv-reporting/     # analytics, cost tracking, and history persistence
+│   ├── riv-rules/         # Dynamic rules loaded based on the touched files in a review
+│   ├── riv-shared/        # Shared utilities across crates
+│   ├── riv-tools/         # LLM Tools, linters, and MCP
+│   ├── riv-types/         # Domain types: Generic structs, and enums that are used across multiple crates
+│   ├── riv-webui-backend/ # Dashboard backend
+│   ├── riv-webui-frontend/# Leptos WASM frontend
+│   ├── riv-webui-shared/  # Shared types between frontend and backend
 └── .forgejo/workflows/    # CI (Forgejo Actions)
 ```
 
@@ -52,11 +52,11 @@ cargo insta review         # interactively accept/reject changes
 
 ### Cache System
 
-Content-addressed caching using `crb-cache`. `CacheBackend` trait with `FilesystemBackend` default.
+Content-addressed caching using `riv-cache`. `CacheBackend` trait with `FilesystemBackend` default.
 Cache keys are SHA-256 hashes of prompt + model + input. The `get_or_compute` method encapsulates the load->miss->compute->store pattern.
 
 ### PromptLibrary
 
-Singleton at `crb_agents::prompts::PromptLibrary`. Uses `include_dir!` for embedded prompt templates.
+Singleton at `riv_agents::prompts::PromptLibrary`. Uses `include_dir!` for embedded prompt templates.
 Agents are addressed by abbreviation (e.g. `"SA"` for Security Analyst).
 Declare agents in `PromptLibrary::config(abbrev)`, never use raw role strings.

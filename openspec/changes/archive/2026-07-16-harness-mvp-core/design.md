@@ -2,31 +2,31 @@
 
 ## Architecture
 
-review-harness/                          # Cargo workspace root
+BlameFree/                          # Cargo workspace root
 ├── Cargo.toml                           # [workspace] members = ["crates/*"]
 ├── crates/
-│   ├── crb-harness/                     # Binary — orchestrates benchmark
-│   │   ├── Cargo.toml                   # deps: crb-agents, crb-judge, crb-consensus, crb-tools, crb-reporting, rig-core, tokio, clap, tracing
+│   ├── riv-harness/                     # Binary — orchestrates benchmark
+│   │   ├── Cargo.toml                   # deps: riv-agents, riv-judge, riv-consensus, riv-tools, riv-reporting, rig-core, tokio, clap, tracing
 │   │   └── src/main.rs
-│   ├── crb-aggregator/                  # aggregate_findings.py port
+│   ├── riv-aggregator/                  # aggregate_findings.py port
 │   │   ├── Cargo.toml                   # deps: serde, serde_json, regex
 │   │   └── src/{lib.rs, main.rs}
-│   ├── crb-auditor/                     # severity_auditor.py port
+│   ├── riv-auditor/                     # severity_auditor.py port
 │   │   ├── Cargo.toml                   # deps: serde, serde_json, regex
 │   │   └── src/{lib.rs, main.rs}
-│   ├── crb-agents/                      # Agent builders + prompt templates
+│   ├── riv-agents/                      # Agent builders + prompt templates
 │   │   ├── Cargo.toml                   # deps: rig-core, serde, schemars
 │   │   └── src/lib.rs
-│   ├── crb-judge/                       # Judge + metrics
+│   ├── riv-judge/                       # Judge + metrics
 │   │   ├── Cargo.toml                   # deps: rig-core, serde, schemars
 │   │   └── src/lib.rs
-│   ├── crb-consensus/                   # Multi-agent orchestration
-│   │   ├── Cargo.toml                   # deps: rig-core, tokio, crb-agents, crb-judge
+│   ├── riv-consensus/                   # Multi-agent orchestration
+│   │   ├── Cargo.toml                   # deps: rig-core, tokio, riv-agents, riv-judge
 │   │   └── src/lib.rs
-│   ├── crb-tools/                       # Tool trait implementations
+│   ├── riv-tools/                       # Tool trait implementations
 │   │   ├── Cargo.toml                   # deps: rig-core, tokio, serde, schemars
 │   │   └── src/lib.rs
-│   └── crb-reporting/                   # Output formatting
+│   └── riv-reporting/                   # Output formatting
 │       ├── Cargo.toml                   # deps: serde, serde_json, csv
 │       └── src/lib.rs
 └── datasets/
@@ -34,22 +34,22 @@ review-harness/                          # Cargo workspace root
 
 ## Inter-crate dependency graph
 
-crb-harness (binary)
-  ├── crb-consensus
-  │     ├── crb-agents
-  │     ├── crb-judge
-  │     └── crb-tools
-  ├── crb-reporting
-  ├── crb-aggregator (used as library, also has standalone CLI)
-  └── crb-auditor (used as library, also has standalone CLI)
+riv-harness (binary)
+  ├── riv-consensus
+  │     ├── riv-agents
+  │     ├── riv-judge
+  │     └── riv-tools
+  ├── riv-reporting
+  ├── riv-aggregator (used as library, also has standalone CLI)
+  └── riv-auditor (used as library, also has standalone CLI)
 
 ## Key decisions
-- crb-aggregator and crb-auditor: dual lib+bin — usable as `cargo run -p crb-aggregator` standalone
-- crb-agents: defines Finding type (shared across consensus, tools, judge)
-- crb-judge: defines JudgeVerdict type and Martian prompt
-- crb-consensus: orchestration — depends on crb-agents for agent creation, crb-judge for evaluation, crb-tools for linter integration
-- crb-tools: linter/git tool implementations via rig Tool trait
-- crb-reporting: pure output — JSON + CSV, no LLM deps
+- riv-aggregator and riv-auditor: dual lib+bin — usable as `cargo run -p riv-aggregator` standalone
+- riv-agents: defines Finding type (shared across consensus, tools, judge)
+- riv-judge: defines JudgeVerdict type and Martian prompt
+- riv-consensus: orchestration — depends on riv-agents for agent creation, riv-judge for evaluation, riv-tools for linter integration
+- riv-tools: linter/git tool implementations via rig Tool trait
+- riv-reporting: pure output — JSON + CSV, no LLM deps
 
 ## Core Loop (Pseudocode)
 
@@ -137,8 +137,8 @@ async fn main() -> Result<()> {
 || Async runtime | tokio (rt-multi-thread, macros) | Industry standard Rust async. JoinSet for concurrent PR eval |
 || LLM client | rig-core 0.39 | Provider-agnostic traits (CompletionModel, Extractor), published on crates.io, MIT licensed |
 || Workspace layout | `crates/*` pattern | Each component independently compilable, testable, publishable |
-|| Dual lib+bin | crb-aggregator, crb-auditor | Reusable as library, usable as standalone CLI |
-|| Shared types | `crb-agents` crate | Finding, Severity, Candidate shared across all crates |
+|| Dual lib+bin | riv-aggregator, riv-auditor | Reusable as library, usable as standalone CLI |
+|| Shared types | `riv-agents` crate | Finding, Severity, Candidate shared across all crates |
 || Diff source | Pre-scaffolded files | Avoid git dependency in MVP. Add git operations later |
 || Judge prompt | Martian JUDGE_PROMPT verbatim | Proven effective, MIT licensed |
 || Config model | clap derive + struct | Type-safe CLI parsing, env var fallback via clap env feature |
@@ -153,16 +153,16 @@ async fn main() -> Result<()> {
 members = ["crates/*"]
 ```
 
-### Main binary (`crates/crb-harness/Cargo.toml`)
+### Main binary (`crates/riv-harness/Cargo.toml`)
 ```toml
 [dependencies]
-crb-agents = { path = "../crb-agents" }
-crb-judge = { path = "../crb-judge" }
-crb-consensus = { path = "../crb-consensus" }
-crb-tools = { path = "../crb-tools" }
-crb-reporting = { path = "../crb-reporting" }
-crb-aggregator = { path = "../crb-aggregator" }
-crb-auditor = { path = "../crb-auditor" }
+riv-agents = { path = "../riv-agents" }
+riv-judge = { path = "../riv-judge" }
+riv-consensus = { path = "../riv-consensus" }
+riv-tools = { path = "../riv-tools" }
+riv-reporting = { path = "../riv-reporting" }
+riv-aggregator = { path = "../riv-aggregator" }
+riv-auditor = { path = "../riv-auditor" }
 rig-core = "0.39"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 clap = { version = "4", features = ["derive", "env"] }

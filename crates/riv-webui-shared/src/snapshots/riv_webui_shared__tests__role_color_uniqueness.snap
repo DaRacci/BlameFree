@@ -1,0 +1,5 @@
+---
+source: crates/riv-webui-shared/src/lib.rs
+expression: colors.len()
+---
+6

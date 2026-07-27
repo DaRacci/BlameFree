@@ -1,0 +1,25 @@
+[package]
+name = "riv-types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+seaorm-storage = ["sea-orm/macros", "riv-macros"]
+
+[dependencies]
+anyhow = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+schemars = { workspace = true }
+mti = { workspace = true, features = ["serde"] }
+riv-macros = { path = "../riv-macros", optional = true }
+sea-orm = { version = "2.0.0-rc.43", optional = true, features = ["macros"] }
+
+[dev-dependencies]
+insta = { workspace = true }
+
+[lints]
+workspace = true

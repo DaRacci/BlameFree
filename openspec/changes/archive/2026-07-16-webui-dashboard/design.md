@@ -6,15 +6,15 @@ The codebase is split into **3 crates** under `crates/`:
 
 | Crate | Path | Purpose |
 |-------|------|---------|
-| **crb-webui-backend** | `crates/crb-webui-backend/` | axum HTTP server, API handlers, in-process harness execution, auth |
-| **crb-webui-frontend** | `crates/crb-webui-frontend/` | Leptos CSR WASM frontend, pages, components, SSE client |
-| **crb-webui-shared** | `crates/crb-webui-shared/` | JSON-serializable types (`Serialize`+`Deserialize`) shared by backend and frontend |
+| **riv-webui-backend** | `crates/riv-webui-backend/` | axum HTTP server, API handlers, in-process harness execution, auth |
+| **riv-webui-frontend** | `crates/riv-webui-frontend/` | Leptos CSR WASM frontend, pages, components, SSE client |
+| **riv-webui-shared** | `crates/riv-webui-shared/` | JSON-serializable types (`Serialize`+`Deserialize`) shared by backend and frontend |
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Web Browser                               │
 │  ┌─────────────────────────────────────────────────────────┐│
-│  │           crb-webui-frontend (Leptos WASM)               ││
+│  │           riv-webui-frontend (Leptos WASM)               ││
 │  │  /         -> HomePage (past runs + ad-hoc runs lists)   ││
 │  │  /runs/:id -> RunDetailPage (metrics, table, cost)       ││
 │  │  /runs/:id/live -> LivePage (4-pane agent SSE monitor)   ││
@@ -27,7 +27,7 @@ The codebase is split into **3 crates** under `crates/`:
 └──────────────────────────┼──────────────────────────────────┘
                            │ HTTP / SSE / WASM
 ┌──────────────────────────┼──────────────────────────────────┐
-│               crb-webui-backend (axum, port 8080)            │
+│               riv-webui-backend (axum, port 8080)            │
 │  ┌─────────────────────────────────────────────────────────┐│
 │  │  API Endpoints (18 total)                               ││
 │  │  GET    /api/runs                       -> list runs    ││
@@ -51,10 +51,10 @@ The codebase is split into **3 crates** under `crates/`:
 │  └─────────────────────────────────────────────────────────┘│
 │                                                              │
 │  ┌─────────────────────────────────────────────────────────┐│
-│  │  In-Process Harness Runner (crates/crb-webui-backend/   ││
+│  │  In-Process Harness Runner (crates/riv-webui-backend/   ││
 │  │  src/harness.rs)                                        ││
 │  │                                                         ││
-│  │  Calls crb_harness::pipeline::evaluate() directly       ││
+│  │  Calls riv_harness::pipeline::evaluate() directly       ││
 │  │  as a library function (NOT a subprocess).              ││
 │  │  Sets up EvalConfig with dashboard_tx broadcast sender, ││
 │  │  runs each PR through the pipeline, writes result files,││
@@ -62,7 +62,7 @@ The codebase is split into **3 crates** under `crates/`:
 │  └─────────────────────────────────────────────────────────┘│
 │                                                              │
 │  ┌─────────────────────────────────────────────────────────┐│
-│  │  Shared Types (crb-webui-shared/)                       ││
+│  │  Shared Types (riv-webui-shared/)                       ││
 │  │  - runs.rs: RunSummary, RunDetail, PrResult, VerdictJson││
 │  │  - config.rs: RoleInfo, DatasetInfo, ReasoningEfforts   ││
 │  │  - adhoc.rs: AdhocRunSummary, GithubPrListItem          ││
@@ -128,7 +128,7 @@ struct ActiveRun {
 - Uses `axum::response::Sse` with `tokio_stream::wrappers::BroadcastStream`
 - Event payloads are `data: <json>\n\n`
 - Multiple clients can watch the same run simultaneously
-- Events use `crb_types::RunEvent` enum (serialized as JSON):
+- Events use `riv_types::RunEvent` enum (serialized as JSON):
   - `AgentStarted` — `{ pr_key, role }`
   - `AgentChunk` — `{ role, chunk }`
   - `AgentFinished` — `{ role, findings, success }`
@@ -138,7 +138,7 @@ struct ActiveRun {
 
 ### In-Process Harness Execution
 
-- Backend calls `crb_harness::pipeline::evaluate()` directly as a Rust library call
+- Backend calls `riv_harness::pipeline::evaluate()` directly as a Rust library call
 - NOT a subprocess — no `--dashboard-events` flag needed
 - `EvalConfig.dashboard_tx: Option<broadcast::Sender<RunEvent>>` routes events directly
 - On `POST /api/runs`, returns the run ID immediately via `201 Created`
@@ -232,7 +232,7 @@ struct LivePageState {
 ### Communication Flow (Live View)
 
 ```
-crb_harness::pipeline::evaluate (in-process library call)
+riv_harness::pipeline::evaluate (in-process library call)
   └── Calls dashboard_tx.send(RunEvent::AgentChunk { role: "SA", chunk: "..." })
       ───────────────────────────────────────────┐
                                                  ▼

@@ -3,24 +3,24 @@
 ## Architecture
 
 ```
-review-harness/
+BlameFree/
 ├── Cargo.toml                           # [workspace] members = ["crates/*"]
 └── crates/
-    ├── crb-harness/                     # Binary — CLI entrypoint: --validate, --ci, --cached-diffs
-    │   ├── Cargo.toml                   # deps: crb-tools, crb-reporting, crb-agents, clap
+    ├── riv-harness/                     # Binary — CLI entrypoint: --validate, --ci, --cached-diffs
+    │   ├── Cargo.toml                   # deps: riv-tools, riv-reporting, riv-agents, clap
     │   └── src/main.rs
-    ├── crb-tools/                       # Git tool operations (scaffolding port)
+    ├── riv-tools/                       # Git tool operations (scaffolding port)
     │   ├── Cargo.toml                   # deps: serde
     │   └── src/lib.rs                   # git helpers: clean_repo, checkout_pr, extract_diff
-    └── crb-reporting/                   # Validation (baseline comparison + output)
+    └── riv-reporting/                   # Validation (baseline comparison + output)
         ├── Cargo.toml                   # deps: serde, serde_json
         └── src/lib.rs                   # load_baseline, compute_delta, validate_run
 ```
 
-## Scaffolding Module (in `crates/crb-tools/src/lib.rs`)
+## Scaffolding Module (in `crates/riv-tools/src/lib.rs`)
 
 ```rust
-// crates/crb-tools/src/lib.rs — git helper functions
+// crates/riv-tools/src/lib.rs — git helper functions
 use std::path::Path;
 use std::process::Command;
 
@@ -66,10 +66,10 @@ pub fn extract_diff(repo_path: &Path, base: &str, head: &str) -> Result<String, 
 }
 ```
 
-## Validation Module (in `crates/crb-reporting/src/lib.rs`)
+## Validation Module (in `crates/riv-reporting/src/lib.rs`)
 
 ```rust
-// crates/crb-reporting/src/lib.rs — baseline comparison
+// crates/riv-reporting/src/lib.rs — baseline comparison
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -158,9 +158,9 @@ fn load_results(path: &Path) -> Result<HashMap<String, f64>, Box<dyn std::error:
 ```bash
 # ./run_ci.sh — intended for cron or GitHub Actions
 export OPENROUTER_API_KEY="${OPENROUTER_API_KEY}"
-cd review-harness
-cargo build --release -p crb-harness
-./target/release/crb-harness --ci \
+cd BlameFree
+cargo build --release -p riv-harness
+./target/release/riv-harness --ci \
     --dataset datasets/golden_comments/ \
     --repos repos/ \
     --output results/$(date +%Y%m%d_%H%M%S)/ \
@@ -174,7 +174,7 @@ cargo build --release -p crb-harness
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Git operations | `std::process::Command` in `crates/crb-tools` | Reduces dependency weight; git CLI is stable and available in all CI environments |
+| Git operations | `std::process::Command` in `crates/riv-tools` | Reduces dependency weight; git CLI is stable and available in all CI environments |
 | Serialization | serde + serde_json | Standard Rust JSON toolkit; zero extra deps for the project |
 | Baseline format | JSON file with summary metrics + per-PR breakdown | Matches existing v5.14 output format |
 | Noise threshold | ±2pp F1, ±3pp precision/recall | Based on empirical variance observed in v5.12–v5.14 runs |

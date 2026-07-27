@@ -7,11 +7,11 @@
 - [x] cargo check (if rustc available)
 
 ## Phase 2 — Core Loop
-- [x] Implement `crates/crb-harness/src/main.rs`: clap CLI, tokio::task::JoinSet concurrency loop, evaluate_pr() orchestration
-- [x] Implement `crates/crb-agents/src/lib.rs`: build_agent() with per-role prompt templates via rig AgentBuilder, provider routing for OpenRouter/OpenAI/Anthropic
-- [x] Implement `crates/crb-judge/src/lib.rs`: Martian JUDGE_PROMPT integration via rig Extractor, JudgeVerdict struct with schemars
-- [x] Implement `crates/crb-reporting/src/lib.rs`: per-PR JSON via serde, summary CSV via csv crate, tracing spans for latency
-- [x] Implement `crates/crb-consensus/src/lib.rs`: run_consensus(), evaluate_pr() orchestration wiring
+- [x] Implement `crates/riv-harness/src/main.rs`: clap CLI, tokio::task::JoinSet concurrency loop, evaluate_pr() orchestration
+- [x] Implement `crates/riv-agents/src/lib.rs`: build_agent() with per-role prompt templates via rig AgentBuilder, provider routing for OpenRouter/OpenAI/Anthropic
+- [x] Implement `crates/riv-judge/src/lib.rs`: Martian JUDGE_PROMPT integration via rig Extractor, JudgeVerdict struct with schemars
+- [x] Implement `crates/riv-reporting/src/lib.rs`: per-PR JSON via serde, summary CSV via csv crate, tracing spans for latency
+- [x] Implement `crates/riv-consensus/src/lib.rs`: run_consensus(), evaluate_pr() orchestration wiring
 
 ## Phase 3 — Validation
 - [ ] Run against regression set (3 PRs) and compare results against known v5.14 baseline

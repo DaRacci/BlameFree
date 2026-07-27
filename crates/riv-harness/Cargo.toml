@@ -1,0 +1,49 @@
+[package]
+name = "riv-harness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "riv"
+path = "src/main.rs"
+required-features = ["binary"]
+
+[features]
+default = []
+binary = ["clap", "dotenvy", "tracing-subscriber", "riv-shared/backend"]
+exp14_template_vars = ["riv-tools/exp14_template_vars"]
+exp16_adaptive_agents = ["riv-consensus/exp16_adaptive_agents"]
+
+[dependencies]
+anyhow = { workspace = true }
+riv-agents = { path = "../riv-agents" }
+riv-auditor = { path = "../riv-auditor" }
+riv-cache = { path = "../riv-cache" }
+riv-consensus = { path = "../riv-consensus" }
+riv-reporting = { path = "../riv-reporting" }
+riv-rules = { path = "../riv-rules" }
+riv-shared = { path = "../riv-shared" }
+riv-tools = { path = "../riv-tools" }
+riv-types = { path = "../riv-types" }
+futures = { workspace = true }
+mti = { workspace = true, features = ["serde"] }
+reqwest = { workspace = true, features = ["blocking"] }
+rig-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+# Binary dependencies
+clap = { workspace = true, optional = true }
+dotenvy = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

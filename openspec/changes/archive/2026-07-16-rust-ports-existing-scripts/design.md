@@ -5,20 +5,20 @@
 Both modules live as separate workspace crates with dual lib.rs+main.rs. The library exposes pure functions; the CLI wraps those functions with clap argument parsing.
 
 ```
-review-harness/
+BlameFree/
 ├── Cargo.toml                     # [workspace] members = ["crates/*"]
 └── crates/
-    ├── crb-aggregator/             # Port of aggregate_findings.py
-    │   ├── Cargo.toml              # deps: serde, serde_json, regex, crb-agents
+    ├── riv-aggregator/             # Port of aggregate_findings.py
+    │   ├── Cargo.toml              # deps: serde, serde_json, regex, riv-agents
     │   └── src/
     │       ├── lib.rs              # Pure library: parse_report, semantic_dedup, aggregate_batch, etc.
     │       └── main.rs             # Standalone CLI: --reports-dir, --output, --replace, --pr-filter
-    ├── crb-auditor/                # Port of severity_auditor.py
-    │   ├── Cargo.toml              # deps: serde, serde_json, regex, crb-agents
+    ├── riv-auditor/                # Port of severity_auditor.py
+    │   ├── Cargo.toml              # deps: serde, serde_json, regex, riv-agents
     │   └── src/
     │       ├── lib.rs              # Pure library: apply_severity_auditor, format_report, patterns
     │       └── main.rs             # Standalone CLI: --findings-file, --output, --report
-    └── crb-agents/                 # Shared types
+    └── riv-agents/                 # Shared types
         ├── Cargo.toml              # deps: serde, schemars
         └── src/lib.rs              # Finding, Severity, Candidate types
 ```
@@ -143,9 +143,9 @@ Returns:
 - `Map<Url, Candidates>` — mapping PR URL -> tool-name -> candidate list
 - `Stats` — `{ total_findings, candidates, parse_warnings, reports_with_warnings, passed_to_adjudication, report_stats }`
 
-### Key Types (shared, defined in `crb-agents` crate)
+### Key Types (shared, defined in `riv-agents` crate)
 
-See `crates/crb-agents/src/lib.rs` for `Finding`, `Candidate`, and `Severity` type definitions, now shared across all workspace crates.
+See `crates/riv-agents/src/lib.rs` for `Finding`, `Candidate`, and `Severity` type definitions, now shared across all workspace crates.
 
 ### Regex Compilation
 
@@ -231,12 +231,12 @@ Generate human-readable report:
 || Decision | Choice | Rationale |
 ||----------|--------|-----------|
 || Language | Rust | Same language as harness; zero overhead integration; no subprocess |
-|| Crate structure | Separate crates (crb-aggregator, crb-auditor) | Independently publishable, testable, and usable as library or CLI |
+|| Crate structure | Separate crates (riv-aggregator, riv-auditor) | Independently publishable, testable, and usable as library or CLI |
 || Regex crate | `regex` | Standard, well-optimised; compiled patterns via `LazyLock` |
 || JSON parsing | `serde_json` | Already a dependency; matches existing `Finding` serde derives |
 || Module boundary | Pure functions, no I/O | File I/O stays in main.rs; modules are testable in isolation |
 || Dedup strategy | Group-key then Jaccard | Matches Python exactly; O(n²) Jaccard only for remaining ungrouped |
-|| Severity type | `enum Severity` in `crb-agents` | Strongly-typed, cross-crate shared; no magic strings |
+|| Severity type | `enum Severity` in `riv-agents` | Strongly-typed, cross-crate shared; no magic strings |
 || Compile-once patterns | `LazyLock<Vec<Regex>>` | Pattern list grows rarely; negligible memory cost |
 || parse_report order | table -> bullet -> JSON | Matches Python; table format is the primary Phase 4 format |
 || NEVER_DOWNGRADE priority | Highest | Security/integrity/correctness patterns must always win |

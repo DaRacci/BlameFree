@@ -2,7 +2,7 @@
 
 ## Phase 1: Core Types & Agent Infrastructure
 
-- [x] **1.1 Define types in `crates/crb-consensus/src/lib.rs`**
+- [x] **1.1 Define types in `crates/riv-consensus/src/lib.rs`**
   - Define `Finding` struct (`file: String`, `line: u32`, `severity: String`,
     `message: String`, `code: Option<String>`).
   - Implement `JsonSchema` + `Deserialize` + `Serialize` (for Extractor + output).
@@ -15,7 +15,7 @@
 - [x] **1.2 Implement `build_reviewer_agent()` in `lib.rs`**
   - Implement `build_reviewer_agent(config: &ReviewerConfig, diff: &str)`
     returning a rig `Extractor<Output = Vec<Finding>>`.
-  - Use configurable provider via `crb-agents` builder.
+  - Use configurable provider via `riv-agents` builder.
   - Each agent gets the role-specific system prompt + full diff as preamble.
   - Enforce `max_findings` cap on output.
 
@@ -32,7 +32,7 @@
     returning `MatchResult`.
   - Initial implementation: heuristic matching (exact file + line + severity,
     substring message match).
-  - Advanced implementation: LLM-based semantic matching via `crb-judge`
+  - Advanced implementation: LLM-based semantic matching via `riv-judge`
     `Extractor`.
 
 - [x] **2.2 Implement `run_consensus()` orchestration**

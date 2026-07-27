@@ -1,4 +1,4 @@
-# Proposal: HTTP Review Server (crb-server)
+# Proposal: HTTP Review Server (riv-server)
 
 **Change ID:** review-server
 **Status:** Draft
@@ -7,19 +7,19 @@
 
 ## Summary
 
-Introduce `crb-server`, a new member crate of the review-harness workspace that exposes the existing multi-agent review pipeline as an HTTP API. This enables remote code review requests via a RESTful interface, with automatic repository context gathering (clone, branch checkout, tech-stack detection, module analysis) injected into agent prompts via the `PromptLibrary` template system.
+Introduce `riv-server`, a new member crate of the BlameFree workspace that exposes the existing multi-agent review pipeline as an HTTP API. This enables remote code review requests via a RESTful interface, with automatic repository context gathering (clone, branch checkout, tech-stack detection, module analysis) injected into agent prompts via the `PromptLibrary` template system.
 
 ## Why
 
-The existing crb-harness CLI operates in batch mode on pre-loaded datasets. It has no facility for on-demand per-PR review requests from external tools (GitHub webhooks, CI pipelines, IDE plugins, or UI dashboards).
+The existing riv-harness CLI operates in batch mode on pre-loaded datasets. It has no facility for on-demand per-PR review requests from external tools (GitHub webhooks, CI pipelines, IDE plugins, or UI dashboards).
 
 ## What Changes
 
-Introduce crb-server, a new member crate of the review-harness workspace that exposes the existing multi-agent review pipeline as an HTTP API (axum-based). Includes POST /review, GET /review/{id}, GET /review/{id}/comments, GET /health, POST /review/{id}/cancel, GET /reviews endpoints, repo context gathering (clone, checkout, tech-stack detection, module analysis), and job-based async processing.
+Introduce riv-server, a new member crate of the BlameFree workspace that exposes the existing multi-agent review pipeline as an HTTP API (axum-based). Includes POST /review, GET /review/{id}, GET /review/{id}/comments, GET /health, POST /review/{id}/cancel, GET /reviews endpoints, repo context gathering (clone, checkout, tech-stack detection, module analysis), and job-based async processing.
 
 ## Motivation
 
-The existing `crb-harness` CLI operates in batch mode on pre-loaded golden-comment datasets. It works well for benchmarking and CI validation but has no facility for on-demand, per-PR review requests from external tools (GitHub webhooks, CI pipelines, IDE plugins, or UI dashboards).
+The existing `riv-harness` CLI operates in batch mode on pre-loaded golden-comment datasets. It works well for benchmarking and CI validation but has no facility for on-demand, per-PR review requests from external tools (GitHub webhooks, CI pipelines, IDE plugins, or UI dashboards).
 
 A review server unlocks several use cases:
 
@@ -28,12 +28,12 @@ A review server unlocks several use cases:
 3. **Interactive exploration** — A web UI or dashboard can poll review status and browse findings grouped by agent role.
 4. **Service composition** — The server's health check and review endpoints can be composed into larger automation workflows.
 
-The architecture reuses the existing agent infrastructure (`crb-agents`, `crb-consensus`, `crb-judge`, `crb-reporting`) and extends it with repository context gathering, job-based async processing, and a clean REST API.
+The architecture reuses the existing agent infrastructure (`riv-agents`, `riv-consensus`, `riv-judge`, `riv-reporting`) and extends it with repository context gathering, job-based async processing, and a clean REST API.
 
 ## Scope
 
 - **In scope:**
-  - HTTP server crate `crb-server` with axum-based routing
+  - HTTP server crate `riv-server` with axum-based routing
   - `POST /review` — submit a PR diff for review
   - `GET /review/{id}` — poll review status and findings
   - `GET /review/{id}/comments` — GitHub-compatible comment output
@@ -62,16 +62,16 @@ The architecture reuses the existing agent infrastructure (`crb-agents`, `crb-co
 2. **In-memory store (HashMap + Arc<RwLock>)** — Simple, fast, matches the single-process deployment model. Persistence via restart is acceptable for MVP.
 3. **Job-based async processing** — Reviews run as `tokio::spawn` tasks with status updates. The HTTP handler returns immediately with a `review_id`; the client polls for completion.
 4. **Repo context as template variables** — Context is gathered before agent invocation and injected via `PromptLibrary::render()` with template variables `{repo}`, `{language}`, `{tech_stack}`, `{modules}`. Works with both built-in and file-based prompts.
-5. **Reuse of existing crates** — `crb-agents::build_agent()`, `crb-consensus::run_consensus()`, `crb-judge`, `crb-reporting::GoldenCommentEntry` (adapted for server response). No duplication of agent or judge logic.
-6. **Concurrency via existing semaphore** — The `--concurrency` flag controls how many LLM agent calls run simultaneously, reusing the same `tokio::sync::Semaphore` pattern from `crb-harness`.
+5. **Reuse of existing crates** — `riv-agents::build_agent()`, `riv-consensus::run_consensus()`, `riv-judge`, `riv-reporting::GoldenCommentEntry` (adapted for server response). No duplication of agent or judge logic.
+6. **Concurrency via existing semaphore** — The `--concurrency` flag controls how many LLM agent calls run simultaneously, reusing the same `tokio::sync::Semaphore` pattern from `riv-harness`.
 
 ## Directory Structure
 
 ```
-review-harness/
+BlameFree/
 ├── Cargo.toml                     # [workspace] members = ["crates/*"]
 └── crates/
-    └── crb-server/                # HTTP review server
+    └── riv-server/                # HTTP review server
         ├── Cargo.toml             # deps: axum, tower-http, uuid, + workspace crates
         └── src/
             ├── main.rs            # axum server entry, route definitions, CLI parsing

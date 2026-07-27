@@ -2,11 +2,11 @@
 
 ## 1. Architecture
 
-Tool implementations live in `crb-tools` crate. They are wired into agents via `build_agent()`'s `extra_preamble` parameter — a string containing tool descriptions, usage rules, and budget constraints is appended to the agent's system prompt.
+Tool implementations live in `riv-tools` crate. They are wired into agents via `build_agent()`'s `extra_preamble` parameter — a string containing tool descriptions, usage rules, and budget constraints is appended to the agent's system prompt.
 
 ```
 ┌─────────────────┐     tool_prompt_section()     ┌──────────────┐
-│  crb-harness     │ ──────────────────────────►  │  crb-tools   │
+│  riv-harness     │ ──────────────────────────►  │  riv-tools   │
 │  main.rs         │                               │  lib.rs      │
 │  evaluate_pr_*() │ ◄──────────────────────────── │  shell.rs    │
 │                  │      tool_preamble String     │  read_file.rs│
@@ -15,7 +15,7 @@ Tool implementations live in `crb-tools` crate. They are wired into agents via `
          │ build_agent(..., extra_preamble)        │  budget.rs   │
          ▼                                        └──────────────┘
 ┌─────────────────┐
-│  crb-agents     │
+│  riv-agents     │
 │  lib.rs         │
 │  build_agent()  │
 └─────────────────┘
@@ -96,7 +96,7 @@ Available tools:
 
 ### Harness (main.rs)
 
-- `evaluate_pr_single_agent()`: Computes `tool_preamble` via `crb_tools::tool_prompt_section()` and passes as `extra_preamble` to `build_agent()`.
+- `evaluate_pr_single_agent()`: Computes `tool_preamble` via `riv_tools::tool_prompt_section()` and passes as `extra_preamble` to `build_agent()`.
 - `evaluate_pr_consensus()`: Computes `tool_preamble` and passes through consensus pipeline.
 
 ### Consensus (lib.rs)

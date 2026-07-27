@@ -430,7 +430,7 @@ When `prefers-reduced-motion: reduce` is active, skeleton elements SHALL have th
 
 ## Implementation Notes
 
-1. All 55 design tokens (53 CSS custom properties + 2 `@keyframes` animations + 3 `@custom-media` breakpoints) SHALL be defined in `tokens.css` at `crates/crb-webui-frontend/css/tokens.css`.
+1. All 55 design tokens (53 CSS custom properties + 2 `@keyframes` animations + 3 `@custom-media` breakpoints) SHALL be defined in `tokens.css` at `crates/riv-webui-frontend/css/tokens.css`.
 2. No hardcoded color, spacing, type, or shadow value SHALL appear outside of `tokens.css`.
 3. `tokens.css` SHALL be imported statically via `styles.css`. No Rust/WASM bindings are required for token access.
 4. Theme overrides MAY redefine any semantic variable (e.g., `--accent-blue`) to create alternative themes; derivative tokens using `var()` references (e.g., `--text-link: var(--accent-blue)`) SHALL update automatically.

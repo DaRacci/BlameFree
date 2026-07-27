@@ -1,0 +1,36 @@
+[package]
+name = "riv-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+exp14_template_vars = []
+exp14_submit_finding = []
+
+[dependencies]
+# anyhow = { workspace = true }
+riv-shared = { path = "../riv-shared" }
+riv-types = { path = "../riv-types" }
+dunce = { workspace = true }
+linguist = { workspace = true }
+# reqwest = { workspace = true }
+# rig-compose = { workspace = true }
+rig-core = { workspace = true }
+# rig-mcp = { workspace = true }
+# rmcp = { workspace = true, features = ["client","macros","transport-streamable-http-client-reqwest"] }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

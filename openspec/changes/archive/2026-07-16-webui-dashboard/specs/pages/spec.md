@@ -1,10 +1,10 @@
 # Delta for Pages & Components
 
 > **Implementation:**
-> - All pages in `crates/crb-webui-frontend/src/pages/`
-> - All components in `crates/crb-webui-frontend/src/components/`
-> - App router in `crates/crb-webui-frontend/src/app.rs`
-> - SSE client in `crates/crb-webui-frontend/src/sse.rs`
+> - All pages in `crates/riv-webui-frontend/src/pages/`
+> - All components in `crates/riv-webui-frontend/src/components/`
+> - App router in `crates/riv-webui-frontend/src/app.rs`
+> - SSE client in `crates/riv-webui-frontend/src/sse.rs`
 
 **Current routes (9 total):**
 - `/` — Dashboard / Home
@@ -50,7 +50,7 @@
 └────────────────────────────────────────────────────────┘
 ```
 
-**Implementation file:** `crates/crb-webui-frontend/src/pages/home.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/pages/home.rs`
 
 **Data sources:**
 - `GET /api/runs` for benchmark runs
@@ -128,7 +128,7 @@ And the PRs Reviewed card shows the sum of all PR counts
 └────────────────────────────────────────────────────────┘
 ```
 
-**Implementation file:** `crates/crb-webui-frontend/src/pages/run_detail.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/pages/run_detail.rs`
 
 **Data source:** `GET /api/runs/:id`
 
@@ -195,7 +195,7 @@ Then the Logs cell is a disabled/non-clickable styled element with a "No cached 
 └────────────────────────────────────────────────────────┘
 ```
 
-**Implementation file:** `crates/crb-webui-frontend/src/pages/pr_detail.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/pages/pr_detail.rs`
 
 **Data sources:**
 - `GET /api/runs/:id/prs/:pr_key` for agent availability
@@ -256,7 +256,7 @@ And the page header shows the PR title and details
 └────────────────────────────────────────────────────────┘
 ```
 
-**Implementation file:** `crates/crb-webui-frontend/src/pages/new_run.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/pages/new_run.rs`
 
 **Data sources:**
 - `GET /api/config` for available models and roles
@@ -330,7 +330,7 @@ And submitting state is managed (disabled button, loading text)
 └────────────────────────────────────────────────────────┘
 ```
 
-**Implementation file:** `crates/crb-webui-frontend/src/pages/live.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/pages/live.rs`
 
 **Data source:** `GET /api/runs/:id/live` (SSE stream)
 
@@ -420,7 +420,7 @@ And the page header shows the run as completed
 └────────────────────────────────────────────────────────┘
 ```
 
-**Implementation file:** `crates/crb-webui-frontend/src/pages/adhoc_review.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/pages/adhoc_review.rs`
 
 **Data sources:**
 - `GET /api/config` for available models and roles
@@ -474,7 +474,7 @@ And on success, the app navigates to `/adhoc/runs/{run_id}`
 └────────────────────────────────────────────────────────┘
 ```
 
-**Implementation file:** `crates/crb-webui-frontend/src/pages/adhoc_runs.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/pages/adhoc_runs.rs`
 
 #### Scenario: Lists all ad-hoc runs from API
 
@@ -498,14 +498,14 @@ And a "[+ New]" button links to `/adhoc/new`
 │  ┌────────────────────────────────────────────────────┐ │
 │  │ 750 lines         ● Connected                      │ │
 │  │ ────────────────────────────────────────────────── │ │
-│  │ 2026-07-16 INFO Starting crb-webui on port 8080   │ │
+│  │ 2026-07-16 INFO Starting riv-webui on port 8080   │ │
 │  │ 2026-07-16 INFO Listening on http://0.0.0.0:8080 │ │
 │  │ ...live scrolling...                               │ │
 │  └────────────────────────────────────────────────────┘ │
 └────────────────────────────────────────────────────────┘
 ```
 
-**Implementation file:** `crates/crb-webui-frontend/src/pages/admin.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/pages/admin.rs`
 
 **Data sources:**
 - `GET /api/admin/logs` for initial log content
@@ -538,7 +538,7 @@ Then the scroll position automatically moves to the bottom
 
 **Description:** The Sidebar component SHALL be a persistent sidebar navigation with links to Dashboard, Benchmarks, Ad-hoc Review, and Admin pages. Supports desktop collapse and mobile overlay modes.
 
-**Implementation file:** `crates/crb-webui-frontend/src/app.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/app.rs`
 
 **Links:**
 - Dashboard (`/`)
@@ -580,7 +580,7 @@ Clicking the hamburger opens an overlay sidebar with a backdrop
 
 **Description:** The AgentPane component SHALL display the status and streaming response of a single agent role in the live view.
 
-**Implementation file:** `crates/crb-webui-frontend/src/components/agent_pane.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/components/agent_pane.rs`
 
 **Props:** `name: String`, `status: Signal<String>`, `response: Signal<Option<String>>`, `current_pr: Signal<Option<String>>`
 
@@ -627,7 +627,7 @@ Then it shows the ✗ icon with "failed" label
 
 **Description:** The ProgressBar component SHALL be a horizontal progress bar with label for showing completion percentage.
 
-**Implementation file:** `crates/crb-webui-frontend/src/components/progress_bar.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/components/progress_bar.rs`
 
 **Props:** `value: u32`, `max: u32`, `label: String`
 
@@ -662,7 +662,7 @@ Then the fill bar has `width: 0%` (no division by zero)
 
 **Description:** The MetricsCard component SHALL be a simple card displaying a label and a numeric/text value, used for dashboard metrics.
 
-**Implementation file:** `crates/crb-webui-frontend/src/components/metrics_card.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/components/metrics_card.rs`
 
 **Props:** `value: impl Into<String>`, `label: &'static str`, `value_style: Option<&'static str>`
 
@@ -681,7 +681,7 @@ And the label "Total Cost" is displayed below
 
 **Description:** The RunTable component SHALL be a sortable table of benchmark runs used on the home page (though not currently wired there — used as a standalone component).
 
-**Implementation file:** `crates/crb-webui-frontend/src/components/run_table.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/components/run_table.rs`
 
 **Props:** `runs: Vec<RunSummary>`
 
@@ -714,7 +714,7 @@ Then a "Live" button links to `/runs/:id/live`
 
 **Description:** The RoleSelector component SHALL be a checkbox group for selecting reviewer roles, with incompatibility enforcement. Disabled roles show a tooltip explaining the conflict.
 
-**Implementation file:** `crates/crb-webui-frontend/src/components/role_selector.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/components/role_selector.rs`
 
 **Props:**
 - `available_roles: Vec<RoleInfo>` — all roles with their incompatibility info
@@ -753,7 +753,7 @@ Then "BE" becomes enabled again
 
 **Description:** The LogViewer component SHALL be an expandable viewer for agent logs per PR, used on the PR detail page. Shows prompt, response, and reasoning sections with lazy loading per agent.
 
-**Implementation file:** `crates/crb-webui-frontend/src/components/log_viewer.rs`
+**Implementation file:** `crates/riv-webui-frontend/src/components/log_viewer.rs`
 
 **Props:** `logs: LogsListResponse`, `run_id: String`
 

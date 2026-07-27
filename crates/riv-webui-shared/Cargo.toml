@@ -1,0 +1,18 @@
+[package]
+name = "riv-webui-shared"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+riv-macros = { path = "../riv-macros" }
+riv-types = { path = "../riv-types" }
+serde.workspace = true
+serde_json.workspace = true
+strum.workspace = true
+mti.workspace = true
+uuid = { workspace = true, features = ["js"] }
+
+[dev-dependencies]
+insta = { workspace = true }

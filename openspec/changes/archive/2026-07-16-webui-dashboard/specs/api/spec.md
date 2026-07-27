@@ -1,15 +1,15 @@
 # Delta for API Endpoints
 
 > **Implementation location:**
-> - `crates/crb-webui-backend/src/api/runs.rs` — run endpoints
-> - `crates/crb-webui-backend/src/api/config.rs` — config endpoints
-> - `crates/crb-webui-backend/src/api/adhoc.rs` — ad-hoc review endpoints
-> - `crates/crb-webui-backend/src/api/admin.rs` — admin endpoints
-> - `crates/crb-webui-backend/src/api/live.rs` — SSE streaming
-> - `crates/crb-webui-shared/src/runs.rs` — request/response types
-> - `crates/crb-webui-shared/src/config.rs` — config types
-> - `crates/crb-webui-shared/src/adhoc.rs` — ad-hoc types
-> - `crates/crb-webui-shared/src/admin.rs` — admin types
+> - `crates/riv-webui-backend/src/api/runs.rs` — run endpoints
+> - `crates/riv-webui-backend/src/api/config.rs` — config endpoints
+> - `crates/riv-webui-backend/src/api/adhoc.rs` — ad-hoc review endpoints
+> - `crates/riv-webui-backend/src/api/admin.rs` — admin endpoints
+> - `crates/riv-webui-backend/src/api/live.rs` — SSE streaming
+> - `crates/riv-webui-shared/src/runs.rs` — request/response types
+> - `crates/riv-webui-shared/src/config.rs` — config types
+> - `crates/riv-webui-shared/src/adhoc.rs` — ad-hoc types
+> - `crates/riv-webui-shared/src/admin.rs` — admin types
 
 ## ADDED Requirements
 
@@ -185,7 +185,7 @@ Then the response is `404` with `{ "error": "Run not found: <id>" }`
 ```
 
 **Notes:**
-- Backend calls `crb_harness::pipeline::evaluate()` directly via in-process library call
+- Backend calls `riv_harness::pipeline::evaluate()` directly via in-process library call
 - Returns immediately with run_id; client opens SSE stream to see progress
 - The `EvalConfig.dashboard_tx` field routes events via broadcast channel
 - `use_cache` defaults to `true`
@@ -545,7 +545,7 @@ Then the response is an empty JSON array `[]`
 
 **Notes:**
 - Accepts `url` (not separate owner/repo/pr_number fields)
-- Parses URL via `crb_shared::url::parse_github_url`
+- Parses URL via `riv_shared::url::parse_github_url`
 - Invalid URL returns 400 with error message
 - Runs asynchronously via `tokio::spawn`
 
@@ -683,7 +683,7 @@ Then the response is `502 BAD_GATEWAY` with an error message
 **Response `200 OK`:**
 ```json
 {
-  "logs": "2026-07-16 INFO Starting crb-webui on port 8080\n...",
+  "logs": "2026-07-16 INFO Starting riv-webui on port 8080\n...",
   "available": true,
   "message": null
 }

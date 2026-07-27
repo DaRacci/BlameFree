@@ -30,7 +30,7 @@ Each individual finding from the review pipeline SHALL be represented as a struc
 | `source_role` | `String` | Yes | Which agent role produced this finding: `"SA"`, `"CL"`, `"AR"`, `"SEC"` |
 
 #### Conversion from Finding
-`crb-agents::Finding` -> `ReviewFinding`:
+`riv-agents::Finding` -> `ReviewFinding`:
 ```
 ReviewFinding.file         = Finding.file
 ReviewFinding.line         = Finding.line
@@ -172,7 +172,7 @@ The system SHALL return empty arrays and zero-value metrics for reviews with no 
 - AND the comments endpoint SHALL return HTTP 409 Conflict
 
 ### Requirement: Backward Compatibility
-The `ReviewComment` format SHALL be compatible with the existing `crb-reporting::GoldenCommentEntry` structure when used in non-server contexts.
+The `ReviewComment` format SHALL be compatible with the existing `riv-reporting::GoldenCommentEntry` structure when used in non-server contexts.
 
 #### Compatibility mapping
 ```

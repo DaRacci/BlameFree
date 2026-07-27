@@ -1,0 +1,35 @@
+[package]
+name = "riv-webui-frontend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+console_error_panic_hook = { workspace = true }
+console_log = { workspace = true }
+riv-shared = { path = "../riv-shared" }
+riv-types = { path = "../riv-types" }
+riv-webui-shared = { path = "../riv-webui-shared" }
+futures = { workspace = true }
+gloo-net = { workspace = true }
+gloo-timers = { workspace = true, features = ["futures"] }
+js-sys = { workspace = true }
+leptos = { workspace = true, features = ["csr"] }
+leptos_meta = { workspace = true }
+leptos_router = { workspace = true }
+log = { workspace = true }
+lucide-leptos = { workspace = true, features = ["all-icons"] }
+paste = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+strum = { workspace = true }
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+web-sys = { workspace = true, features = ["EventSource", "MessageEvent"] }
+
+[dev-dependencies]
+insta = { workspace = true }

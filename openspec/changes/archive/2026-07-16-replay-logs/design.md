@@ -69,6 +69,6 @@ cache/{run_id}/_summary.json
 
 
 
-### Types (in crb-webui-shared/src/runs.rs)
+### Types (in riv-webui-shared/src/runs.rs)
 
 All log and replay types are defined in the shared crate, not in the backend.

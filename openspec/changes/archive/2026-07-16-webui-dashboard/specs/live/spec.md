@@ -1,12 +1,12 @@
 # Delta for SSE Live Events
 
 > **Implementation:**
-> - SSE handler: `crates/crb-webui-backend/src/api/live.rs`
-> - Event types: `crb_types::RunEvent` enum (serialized to JSON with tag/content format)
-> - SSE client: `crates/crb-webui-frontend/src/sse.rs`
-> - In-process events sent via `broadcast::Sender<RunEvent>` from `crates/crb-webui-backend/src/harness.rs`
+> - SSE handler: `crates/riv-webui-backend/src/api/live.rs`
+> - Event types: `riv_types::RunEvent` enum (serialized to JSON with tag/content format)
+> - SSE client: `crates/riv-webui-frontend/src/sse.rs`
+> - In-process events sent via `broadcast::Sender<RunEvent>` from `crates/riv-webui-backend/src/harness.rs`
 
-**Important architecture note:** Events are not emitted by a subprocess. Instead, `crb-webui-backend/src/harness.rs` calls `crb_harness::pipeline::evaluate()` directly as a library call. Events are sent through a `broadcast::Sender<RunEvent>` stored in `ActiveRun.tx`.
+**Important architecture note:** Events are not emitted by a subprocess. Instead, `riv-webui-backend/src/harness.rs` calls `riv_harness::pipeline::evaluate()` directly as a library call. Events are sent through a `broadcast::Sender<RunEvent>` stored in `ActiveRun.tx`.
 
 ## Transport
 

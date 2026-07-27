@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use chrono::Utc;
-use crb_types::{
+use riv_types::{
     agent::{
         AgentResponse, AgentSession, AgentTurn, AgentTurnMessage, RoleMessage, ToolInvocation,
     },
@@ -63,7 +63,7 @@ async fn test_review_round_trip() {
         analytics: None,
         duration: None,
         status: ReviewStatus::Running,
-        metadata: crb_types::review::ReviewMetadata::Plain,
+        metadata: riv_types::review::ReviewMetadata::Plain,
     };
 
     store.save(&review).await.unwrap();
@@ -112,13 +112,13 @@ async fn test_pr_result_with_golden_comments() {
         id: None,
         pr_result_id: id.clone(),
         comment: "Expected comment 1".to_string(),
-        severity: crb_types::severity::Severity::High,
+        severity: riv_types::severity::Severity::High,
     };
     let gc2 = GoldenComment {
         id: None,
         pr_result_id: id.clone(),
         comment: "Expected comment 2".to_string(),
-        severity: crb_types::severity::Severity::Low,
+        severity: riv_types::severity::Severity::Low,
     };
 
     let pr = PrResult {
@@ -160,8 +160,8 @@ async fn test_pr_result_with_golden_comments() {
         .iter()
         .find(|g| g.comment == "Expected comment 2")
         .unwrap();
-    assert_eq!(found_gc1.severity, crb_types::severity::Severity::High);
-    assert_eq!(found_gc2.severity, crb_types::severity::Severity::Low);
+    assert_eq!(found_gc1.severity, riv_types::severity::Severity::High);
+    assert_eq!(found_gc2.severity, riv_types::severity::Severity::Low);
 }
 
 #[tokio::test]
@@ -273,7 +273,7 @@ async fn test_pr_result_cascade_delete() {
         id: Some(401),
         pr_result_id: id.clone(),
         comment: "Cascade test comment".to_string(),
-        severity: crb_types::severity::Severity::Medium,
+        severity: riv_types::severity::Severity::Medium,
     };
 
     let pr = PrResult {

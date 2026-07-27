@@ -4,7 +4,7 @@
 
 ### 1.1 Location
 
-`crates/crb-harness/src/config.rs` (extend existing `ReviewArgs` / add `RuntimeConfig` struct).
+`crates/riv-harness/src/config.rs` (extend existing `ReviewArgs` / add `RuntimeConfig` struct).
 
 ### 1.2 Struct Definition
 
@@ -12,8 +12,8 @@
 /// Runtime-configurable experimental feature flags.
 ///
 /// These replace `cfg!(feature = "exp14_*")` / `cfg!(feature = "exp16_*")`
-/// compile-time gates. Defaults match `crates/crb-harness/Cargo.toml` defaults
-/// (`default = []` — all flags off). The webui backend (`crb-webui-backend`)
+/// compile-time gates. Defaults match `crates/riv-harness/Cargo.toml` defaults
+/// (`default = []` — all flags off). The webui backend (`riv-webui-backend`)
 /// enables some by default at its own Cargo.toml level.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfig {
@@ -28,15 +28,15 @@ pub struct RuntimeConfig {
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
-            exp14_template_vars: false,   // matches crb-harness Cargo.toml (default = [])
-            exp14_submit_finding: false,  // matches crb-harness Cargo.toml (default = [])
-            exp16_adaptive_agents: false, // matches crb-harness Cargo.toml (default = [])
+            exp14_template_vars: false,   // matches riv-harness Cargo.toml (default = [])
+            exp14_submit_finding: false,  // matches riv-harness Cargo.toml (default = [])
+            exp16_adaptive_agents: false, // matches riv-harness Cargo.toml (default = [])
         }
     }
 }
 ```
 
-> **Note on defaults:** `crb-webui-backend/Cargo.toml` enables `exp14_template_vars` and `exp16_adaptive_agents` in its `default` feature set. When the harness is compiled via the webui backend, those features are on by default at the Cargo level. After runtime conversion, the webui backend will set its own defaults via its API/CLI entry points instead of relying on Cargo features.
+> **Note on defaults:** `riv-webui-backend/Cargo.toml` enables `exp14_template_vars` and `exp16_adaptive_agents` in its `default` feature set. When the harness is compiled via the webui backend, those features are on by default at the Cargo level. After runtime conversion, the webui backend will set its own defaults via its API/CLI entry points instead of relying on Cargo features.
 
 ### 1.3 Global Accessor
 
@@ -63,7 +63,7 @@ impl RuntimeConfig {
 
 RuntimeConfig is populated from three sources, listed in ascending priority order:
 
-#### CLI path (`crb-harness` binary)
+#### CLI path (`riv-harness` binary)
 
 The `Review` subcommand accepts `--flag-*` args to control each feature:
 
@@ -79,7 +79,7 @@ exp16_adaptive_agents: bool,
 
 All default to `false` via `RuntimeConfig::default()`.
 
-#### WebUI path (`crb-webui`)
+#### WebUI path (`riv-webui`)
 
 - **Ad-hoc review form**: The "Advanced options" section contains a checkbox/toggle for each flag (`exp14_template_vars`, `exp14_submit_finding`, `exp16_adaptive_agents`).
 - **Benchmark run form**: Same toggles appear in the benchmark run configuration panel.
@@ -141,7 +141,7 @@ The same pattern applies to all three experimental feature gates:
 - `exp14_submit_finding` → check `runtime_config.exp14_submit_finding` before wiring collector
 - `exp16_adaptive_agents` → check `runtime_config.exp16_adaptive_agents` before adaptive dispatch
 
-> **Note on `exp14_submit_finding`:** Currently used via `cfg!(feature = "exp14_submit_finding")` in `crb-agents/src/templates.rs` (inside a macro/template context). This is already a runtime-evaluated macro (not `#[cfg]` attribute) — the compile-time binding is only that the feature flag must be enabled at build time for the code to be compiled. After conversion, the template will use the runtime config value instead.
+> **Note on `exp14_submit_finding`:** Currently used via `cfg!(feature = "exp14_submit_finding")` in `riv-agents/src/templates.rs` (inside a macro/template context). This is already a runtime-evaluated macro (not `#[cfg]` attribute) — the compile-time binding is only that the feature flag must be enabled at build time for the code to be compiled. After conversion, the template will use the runtime config value instead.
 
 > **Note on `binary` flag:** `#[cfg(feature = "binary")]` is used to conditionally compile `config.rs` module and `build_review_config()` function. This is a pure compilation concern (binary vs library build) and is **not** converted to runtime.
 
@@ -314,13 +314,13 @@ All new `RunMetadata` fields use `#[serde(default)]`. When reading an old JSON f
 
 ### 5.2 Dashboard Event Backward Compatibility
 
-The `DashboardEvent` enum in `crb-dashboard` already uses Serde. Adding `metadata` fields to `RunFinished` and a new `RunStarted` variant is backward compatible at the Rust type level (pattern matching must be updated). For JSON stdout / SSE consumers, `RunFinished` gains an optional `metadata` field — consumers that ignore unknown keys (or use `#[serde(deny_unknown_fields)]` on their side) will need updating.
+The `DashboardEvent` enum in `riv-dashboard` already uses Serde. Adding `metadata` fields to `RunFinished` and a new `RunStarted` variant is backward compatible at the Rust type level (pattern matching must be updated). For JSON stdout / SSE consumers, `RunFinished` gains an optional `metadata` field — consumers that ignore unknown keys (or use `#[serde(deny_unknown_fields)]` on their side) will need updating.
 
 ### 5.3 CLI Flag Defaults
 
-Defaults match `crates/crb-harness/Cargo.toml` feature defaults:
+Defaults match `crates/riv-harness/Cargo.toml` feature defaults:
 - `exp14_template_vars`: `false` (was not in `default = []`)
 - `exp14_submit_finding`: `false` (was not in `default = []`)
 - `exp16_adaptive_agents`: `false` (was not in `default = []`)
 
-The webui backend (`crb-webui-backend`) currently enables `exp14_template_vars` and `exp16_adaptive_agents` in its own `default` feature set. After migration, the webui backend will pass its own defaults at the API/CLI level rather than relying on Cargo feature composition.
+The webui backend (`riv-webui-backend`) currently enables `exp14_template_vars` and `exp16_adaptive_agents` in its own `default` feature set. After migration, the webui backend will pass its own defaults at the API/CLI level rather than relying on Cargo feature composition.

@@ -36,7 +36,7 @@ Pre-compute a Code-Reference Graph (CRG) context map once per worktree checkout,
 
 ### In scope
 
-- **`crb-context` crate** — Rust-based CRG builder with tree-sitter bindings, per-language extractors (Python, JS/TS, Rust, Go, Java, Ruby), dependency graph, call graph, diff-aware context, and compact text renderer.
+- **`riv-context` crate** — Rust-based CRG builder with tree-sitter bindings, per-language extractors (Python, JS/TS, Rust, Go, Java, Ruby), dependency graph, call graph, diff-aware context, and compact text renderer.
 - **Context map data schema** — File tree, symbol definitions, references, dependency graph, call graph, diff context, test coverage mapping.
 - **5 query tools** — `context_query`, `read_context_section`, `find_references`, `find_definition`, `show_diff_context`.
 - **Prompt injection strategy** — `{context_map}` template variable, PageRank-based ranking, budget-aware token selection.
@@ -61,8 +61,8 @@ Pre-compute a Code-Reference Graph (CRG) context map once per worktree checkout,
 ## Directory Structure
 
 ```
-review-harness/
-├── crates/crb-context/
+BlameFree/
+├── crates/riv-context/
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs              # Public API: build_context_map()

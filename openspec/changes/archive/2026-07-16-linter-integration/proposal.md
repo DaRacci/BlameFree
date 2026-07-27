@@ -7,10 +7,10 @@ Add linter evaluation to the harness via Rust `rig::tool::Tool` trait implementa
 The harness needs static analysis capabilities to supplement LLM agent findings with concrete linter results. Without linter integration, the harness misses real code issues that static analysis would catch, reducing the comprehensiveness of the review.
 
 ## What Changes
-Add crb-tools crate with Rust Tool trait implementations wrapping linter subprocess calls. Each linter reads a PR checkout directory, runs via tokio::process::Command, parses output into a shared Finding struct, and returns results. Linters run concurrently with LLM agent calls.
+Add riv-tools crate with Rust Tool trait implementations wrapping linter subprocess calls. Each linter reads a PR checkout directory, runs via tokio::process::Command, parses output into a shared Finding struct, and returns results. Linters run concurrently with LLM agent calls.
 
 ## Scope
-Build a `crb-tools` crate with one `Tool` impl per linter. Each reads a PR checkout directory, runs the linter via `tokio::process::Command`, parses output into a shared `Finding` struct (serde + schemars), and returns results. Findings feed into the same judge pipeline.
+Build a `riv-tools` crate with one `Tool` impl per linter. Each reads a PR checkout directory, runs the linter via `tokio::process::Command`, parses output into a shared `Finding` struct (serde + schemars), and returns results. Findings feed into the same judge pipeline.
 
 Out of scope: porting `scaffold_pr.sh` to Rust (separate change).
 

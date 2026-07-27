@@ -7,11 +7,11 @@
 
 ## Summary
 
-Redesign the `crb-webui` frontend with a professional dark-themed UI featuring a cohesive color system, proper responsive layout, consistent typography hierarchy, and polished component designs. This is a pure frontend redesign — no backend APIs, no new features, no data model changes.
+Redesign the `riv-webui` frontend with a professional dark-themed UI featuring a cohesive color system, proper responsive layout, consistent typography hierarchy, and polished component designs. This is a pure frontend redesign — no backend APIs, no new features, no data model changes.
 
 ## Motivation
 
-The current `crb-webui` interface is functional but visually unpolished:
+The current `riv-webui` interface is functional but visually unpolished:
 
 1. **No visual hierarchy** — flat, unstyled HTML-like appearance with minimal distinction between headings, content, and actions
 2. **Inconsistent spacing** — ad-hoc margins and padding across pages and components

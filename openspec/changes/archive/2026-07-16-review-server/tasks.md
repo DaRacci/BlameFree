@@ -1,9 +1,9 @@
-# Tasks: HTTP Review Server (crb-server)
+# Tasks: HTTP Review Server (riv-server)
 
 ## Phase 1 — Project Setup & Types
 
 - [ ] **1.1 Create crate scaffolding**
-  - Create `crates/crb-server/` directory structure
+  - Create `crates/riv-server/` directory structure
   - Write `Cargo.toml` with dependencies (axum, tower-http, uuid, chrono, + workspace crates)
   - Create `src/main.rs`, `src/routes/mod.rs`, `src/routes/review.rs`, `src/routes/health.rs`
   - Create `src/state.rs`, `src/store.rs`, `src/context.rs`, `src/models.rs`
@@ -53,7 +53,7 @@
 - [ ] **3.1 Implement `AppState` in `src/state.rs`**
   - Fields: client, prompt_lib, store, sem, repos_cache, prompts_dir, model, judge_model, roles, max_findings, ruleset, start_time
   - `AppState::from_cli(args: &CliArgs) -> Result<Self>` constructor
-  - Load `PromptLibrary` from `--prompts-dir` (same pattern as crb-harness)
+  - Load `PromptLibrary` from `--prompts-dir` (same pattern as riv-harness)
   - Create LLM client from environment (`rig-core::providers::openai::Client::from_env()`)
   - Create `tokio::sync::Semaphore` with `--concurrency`
   - Load `RuleSet` from `--rules-dir` if not skipped
@@ -96,7 +96,7 @@
   - Extract `owner`, `repo`, `pr_number` from URL (reuse `extract_pr_info` or similar)
   - Clone/cache repo via `context::gather_repo_context()`
   - Detect tech stack and modules
-  - Run `crb-consensus::run_consensus()` or `crb-agents::build_agent()` + `crb-judge`
+  - Run `riv-consensus::run_consensus()` or `riv-agents::build_agent()` + `riv-judge`
   - Convert `ConsensusReport` / agent findings to `Vec<ReviewFinding>`
   - Compute `ReviewMetrics` from findings
 
@@ -174,7 +174,7 @@
 
 - [ ] **6.1 Wire consensus pipeline into server**
   - Create reviewer configs from `AppState.roles` and model settings
-  - Create `crb-consensus::ReviewerConfig` for each role
+  - Create `riv-consensus::ReviewerConfig` for each role
   - Call `run_consensus()` with diff, goldens (empty for server — no golden comparison in API mode), reviewer configs, client, judge, rules preamble, prompt lib with template vars
   - Convert `ConsensusReport` agents findings into `Vec<ReviewFinding>`
 
@@ -229,13 +229,13 @@
 - [ ] **8.2 Error handling hardening**
   - Graceful shutdown: catch SIGINT/SIGTERM, drain in-flight reviews, close listener
   - Timeout for repo cloning (60s)
-  - Timeout for agent calls (120s, matching crb-consensus)
-  - Retry logic for transient LLM failures (optional, could reuse from crb-harness)
+  - Timeout for agent calls (120s, matching riv-consensus)
+  - Retry logic for transient LLM failures (optional, could reuse from riv-harness)
 
 - [ ] **8.3 Documentation**
   - Module-level doc comments on all public types and functions
-  - README.md for crb-server with:
-    - Quick start: `cargo run -p crb-server`
+  - README.md for riv-server with:
+    - Quick start: `cargo run -p riv-server`
     - Example curl commands for each endpoint
     - Environment variable reference
     - Prompt template variable documentation

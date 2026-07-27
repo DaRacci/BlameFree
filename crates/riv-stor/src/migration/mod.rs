@@ -7,7 +7,7 @@ use sea_orm::{ConnectionTrait, DatabaseConnection, Schema};
 
 use crate::error::Error;
 
-use crb_types::{
+use riv_types::{
     agent::{AgentSessionEntity, AgentTurnEntity, AgentTurnMessageEntity},
     benchmark::{
         golden::GoldenCommentEntity, judge::JudgeVerdictEntity, result::PrResultEntity,

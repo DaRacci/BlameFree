@@ -6,7 +6,7 @@ The CRG context map system has four layers:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     CRG Builder (crb-context)                │
+│                     CRG Builder (riv-context)                │
 │                                                             │
 │  tree-sitter ─► per-language extractors ─► CRG (graph)     │
 │       ▲                                                      │
@@ -35,7 +35,7 @@ The CRG context map system has four layers:
 
 ### Integration with Existing Pipeline
 
-**Current pipeline (from `crb-consensus`):**
+**Current pipeline (from `riv-consensus`):**
 ```
 diff -> build_agent() -> agent.prompt(diff) -> parse findings -> judge
                           ↑
@@ -190,10 +190,10 @@ AFFECTED: validate_token (src/auth.py:42) — 2 callers may be affected
 
 ## 3. Rust Crate Structure
 
-### `crb-context` Crate
+### `riv-context` Crate
 
 ```
-crates/crb-context/
+crates/riv-context/
 ├── Cargo.toml
 └── src/
     ├── lib.rs              # Public API: build_context_map(), ContextMap struct
@@ -267,7 +267,7 @@ crates/crb-context/
 ### Context Map Builder API
 
 ```rust
-// In crates/crb-context/src/lib.rs
+// In crates/riv-context/src/lib.rs
 
 pub struct ContextMap {
     // Full graph stored in JSON for tool queries
@@ -338,7 +338,7 @@ Each tool is a `ContextMapTool` struct that implements a common trait and is reg
 ### Tool Registration
 
 ```rust
-// In crb-agents or crb-context tools registration
+// In riv-agents or riv-context tools registration
 let context_map = ContextMap::from_cache("repo_hash_diff_hash")?;
 
 client
@@ -393,7 +393,7 @@ let context_cache_key = compute_context_cache_key(
 
 ## 8. Integration Points
 
-### `crb-agents/src/lib.rs`
+### `riv-agents/src/lib.rs`
 
 ```rust
 // New parameter: context_map_text
@@ -412,7 +412,7 @@ pub fn build_agent(
 ) -> Agent<ResponsesCompletionModel>
 ```
 
-### `crb-consensus/src/lib.rs`
+### `riv-consensus/src/lib.rs`
 
 ```rust
 // Before running reviewers:
@@ -440,13 +440,13 @@ Since this design was written, the codebase has changed significantly:
       workdir: Option<&str>,
   ) -> Agent
   ```
-  (See actual code in `crb-agents/src/lib.rs` for the exact current signature.)
+  (See actual code in `riv-agents/src/lib.rs` for the exact current signature.)
 
 - **Tool registration uses `ToolServerHandle` trait objects**, not per-tool `.tool()` chaining. Tools are provided as a `Vec<Box<dyn ToolServerHandle>>` to `build_agent()`.
 
 - **The template engine uses `{{handlebars}}` syntax**, not `{placeholders}`. If `{context_map}` is used, it must be resolved before passing to the Handlebars renderer or the template should use `{{context_map}}` instead.
 
-- **The consensus pipeline has been refactored** — `evaluate_pr_with_consensus` may no longer exist in the same form. Check the actual pipeline entry point in `crb-consensus`.
+- **The consensus pipeline has been refactored** — `evaluate_pr_with_consensus` may no longer exist in the same form. Check the actual pipeline entry point in `riv-consensus`.
 
 Before implementing, the design should be updated to target the actual 15-crate workspace structure rather than the simplified crate layout assumed here.
 

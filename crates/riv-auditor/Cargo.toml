@@ -1,0 +1,17 @@
+[package]
+name = "riv-auditor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "riv_auditor"
+path = "src/lib.rs"
+
+[dependencies]
+riv-types = { path = "../riv-types" }
+riv-shared = { path = "../riv-shared" }
+regex = { workspace = true }
+
+[lints]
+workspace = true

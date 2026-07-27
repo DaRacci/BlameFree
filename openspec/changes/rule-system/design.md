@@ -1,22 +1,22 @@
-# Design: Rule System (crb-rules)
+# Design: Rule System (riv-rules)
 
 ## Architecture
 
-### New crate: `crates/crb-rules/`
+### New crate: `crates/riv-rules/`
 
 ```
-review-harness/
+BlameFree/
 ├── Cargo.toml                              # [workspace] members already covers "crates/*"
 ├── crates/
-│   ├── crb-rules/                          # NEW — library crate
+│   ├── riv-rules/                          # NEW — library crate
 │   │   ├── Cargo.toml                      # deps: serde, serde_yaml, glob, anyhow, tracing
 │   │   └── src/
 │   │       ├── lib.rs                      # Public API: Rule, RuleSet, detect_language
 │   │       ├── parser.rs                   # YAML frontmatter parsing logic
 │   │       ├── matcher.rs                  # Glob + language matching
 │   │       └── preamble.rs                 # System prompt formatting
-│   ├── crb-agents/                         # MODIFIED — accepts rules_preamble
-│   ├── crb-harness/                        # MODIFIED — --rules-dir flag, startup loading
+│   ├── riv-agents/                         # MODIFIED — accepts rules_preamble
+│   ├── riv-harness/                        # MODIFIED — --rules-dir flag, startup loading
 │   └── ...
 └── .crb/
     └── rules/                              # Default rules directory (project-level)
@@ -29,13 +29,13 @@ review-harness/
 ### Inter-crate dependency
 
 ```
-crb-harness (binary)
-  ├── crb-rules          # NEW — load rules at startup, format preamble
-  ├── crb-agents         # MODIFIED — build_agent() accepts rules_preamble
-  ├── crb-consensus
-  │     ├── crb-agents
-  │     ├── crb-judge
-  │     └── crb-tools
+riv-harness (binary)
+  ├── riv-rules          # NEW — load rules at startup, format preamble
+  ├── riv-agents         # MODIFIED — build_agent() accepts rules_preamble
+  ├── riv-consensus
+  │     ├── riv-agents
+  │     ├── riv-judge
+  │     └── riv-tools
   ...
 ```
 
@@ -43,7 +43,7 @@ crb-harness (binary)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     crb-harness main loop                    │
+│                     riv-harness main loop                    │
 │                                                              │
 │  1. Parse CLI args (--rules-dir .crb/rules/)                 │
 │  2. Load RuleSet::load_from_dir(rules_dir)                   │
@@ -54,7 +54,7 @@ crb-harness (binary)
 │     d. Pass preamble string to build_agent(..., preamble)    │
 │     e. Agent evaluates with enriched system prompt           │
 │                                                              │
-│  crb-agents::build_agent() now accepts optional preamble:    │
+│  riv-agents::build_agent() now accepts optional preamble:    │
 │    client.agent(model)                                       │
 │      .preamble(format!("{rules_preamble}\n\n{role_preamble}"))│
 │      .build()                                                │
@@ -230,7 +230,7 @@ pub fn format_preamble(&self, file_paths: &[PathBuf]) -> String {
 
 ## Integration Points
 
-### crb-agents: `build_agent()` signature change
+### riv-agents: `build_agent()` signature change
 
 ```rust
 // BEFORE
@@ -254,7 +254,7 @@ let full_preamble = match rules_preamble {
 client.agent(model).preamble(&full_preamble).build()
 ```
 
-### crb-harness: CLI changes
+### riv-harness: CLI changes
 
 ```rust
 #[derive(clap::Parser)]
@@ -292,11 +292,11 @@ let agent = build_agent(client, model, role, preamble.as_deref());
 
 `members = ["crates/*"]` already picks up the new crate automatically.
 
-### New crate (`crates/crb-rules/Cargo.toml`)
+### New crate (`crates/riv-rules/Cargo.toml`)
 
 ```toml
 [package]
-name = "crb-rules"
+name = "riv-rules"
 version = "0.1.0"
 edition = "2021"
 

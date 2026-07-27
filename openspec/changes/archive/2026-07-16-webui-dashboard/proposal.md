@@ -11,11 +11,11 @@ The current user experience for the review harness is entirely terminal-based: C
 
 ## What Changes
 
-Adds `crates/crb-webui-backend/`, `crates/crb-webui-frontend/`, and `crates/crb-webui-shared/` crates providing an axum HTTP backend with 18 REST API endpoints, a Leptos WASM frontend with 8 pages, SSE streaming for live agent monitoring, and in-process harness integration.
+Adds `crates/riv-webui-backend/`, `crates/riv-webui-frontend/`, and `crates/riv-webui-shared/` crates providing an axum HTTP backend with 18 REST API endpoints, a Leptos WASM frontend with 8 pages, SSE streaming for live agent monitoring, and in-process harness integration.
 
 ## Summary
 
-Add a web-based UI dashboard (`crb-webui`) as a new crate that provides a browser GUI for the review harness. This replaces the need to parse terminal output and JSON files by offering a visual interface for benchmark results, live monitoring, and benchmark launching.
+Add a web-based UI dashboard (`riv-webui`) as a new crate that provides a browser GUI for the review harness. This replaces the need to parse terminal output and JSON files by offering a visual interface for benchmark results, live monitoring, and benchmark launching.
 
 ## Motivation
 
@@ -35,12 +35,12 @@ A web dashboard solves all of these with a single browser interface.
 ## Scope
 
 - **In scope:**
-  - New `crb-webui` crate with axum HTTP backend
+  - New `riv-webui` crate with axum HTTP backend
   - Leptos WASM frontend with isomorphic routing
   - REST API for listing past runs, viewing results, and launching benchmarks
   - SSE streaming for live agent monitoring
   - Static file serving of the Leptos WASM bundle
-  - CLI entrypoint: `cargo run -p crb-webui`
+  - CLI entrypoint: `cargo run -p riv-webui`
 
 - **Out of scope:**
   - Authentication / multi-user support
@@ -53,6 +53,6 @@ A web dashboard solves all of these with a single browser interface.
 
 1. **Leptos + axum** — Leptos provides isomorphic Rust WASM with SSR-like hydration. Axum is chosen for its async SSE support and ecosystem.
 2. **SSE over WebSocket** — SSE is simpler to implement, works with standard HTTP, and fits the server->client streaming pattern (no bidirectional communication needed).
-3. **Subprocess management** — The backend spawns `crb-harness --dashboard-events` as a subprocess and reads JSON events from its stdout. This decouples the harness from the web UI.
+3. **Subprocess management** — The backend spawns `riv-harness --dashboard-events` as a subprocess and reads JSON events from its stdout. This decouples the harness from the web UI.
 4. **Filesystem-based persistence** — Past runs are discovered by scanning the `output/` directory for per-PR JSON files and aggregate summaries.
-5. **Optional `--dashboard-events` flag on crb-harness** — When set, the harness outputs structured JSON events (one per line) to stdout instead of (or in addition to) tracing output.
+5. **Optional `--dashboard-events` flag on riv-harness** — When set, the harness outputs structured JSON events (one per line) to stdout instead of (or in addition to) tracing output.

@@ -284,10 +284,10 @@ output_format = "text"
 ## 4. Module Structure
 
 ```
-review-harness/
+BlameFree/
 ├── Cargo.toml                     # [workspace] members = ["crates/*"]
 └── crates/
-    └── crb-tools/                 # Tool trait implementations
+    └── riv-tools/                 # Tool trait implementations
         ├── Cargo.toml             # deps: rig-core, tokio, serde, schemars
         └── src/
             └── lib.rs
@@ -353,4 +353,4 @@ plain Rust:
 - `run_all_linters(repo_path: &str) -> Vec<(String, Result<Vec<Finding>>)>`
 - `aggregate_results(results: Vec<(String, Vec<Finding>)>) -> LintReport`
 
-These benefit from separate module organization in `crb-harness/src/`.
+These benefit from separate module organization in `riv-harness/src/`.

@@ -11,7 +11,7 @@ Code review quality varies dramatically by reviewer perspective. A single LLM ag
 
 ## What Changes
 
-Adds the `crb-consensus` crate with role-specialized reviewer agents (SA, CL, AR, SEC), concurrent agent invocation via `tokio::JoinSet`, a judge module for evaluating findings against golden comments, and consensus aggregation producing precision/recall/F1 metrics. Integrates with the existing `crb-harness` pipeline and `crb-shared` types.
+Adds the `riv-consensus` crate with role-specialized reviewer agents (SA, CL, AR, SEC), concurrent agent invocation via `tokio::JoinSet`, a judge module for evaluating findings against golden comments, and consensus aggregation producing precision/recall/F1 metrics. Integrates with the existing `riv-harness` pipeline and `riv-shared` types.
 
 ## Summary
 
@@ -75,11 +75,11 @@ truth.
 ## Directory Structure
 
 ```
-review-harness/
+BlameFree/
 ├── Cargo.toml                     # [workspace] members = ["crates/*"]
 └── crates/
-    └── crb-consensus/             # Multi-agent orchestration crate
-        ├── Cargo.toml             # deps: rig-core, tokio, crb-agents, crb-judge
+    └── riv-consensus/             # Multi-agent orchestration crate
+        ├── Cargo.toml             # deps: rig-core, tokio, riv-agents, riv-judge
         └── src/
             └── lib.rs             # Module exports, consensus flow entry point
                                    # Agent builder, role definitions, system prompts

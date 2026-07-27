@@ -32,9 +32,9 @@ Implement four tool types (ShellTool, ReadFileTool, GitTool, MCPTool) with per-r
 ## Directory Structure
 
 ```
-review-harness/
+BlameFree/
 └── crates/
-    └── crb-tools/
+    └── riv-tools/
         ├── src/
         │   ├── lib.rs        # tools_for_role(), tool_prompt_section()
         │   ├── shell.rs      # ShellTool

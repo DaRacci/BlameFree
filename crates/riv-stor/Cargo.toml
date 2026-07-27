@@ -11,7 +11,7 @@ sqlite = []
 
 [dependencies]
 chrono = { workspace = true }
-crb-types = { path = "../crb-types", features = ["seaorm-storage"] }
+riv-types = { path = "../riv-types", features = ["seaorm-storage"] }
 mti = { workspace = true }
 sea-orm = { workspace = true, features = ["macros", "sqlx-sqlite", "runtime-tokio", "chrono", "entity-registry", "schema-sync"] }
 serde = { workspace = true }

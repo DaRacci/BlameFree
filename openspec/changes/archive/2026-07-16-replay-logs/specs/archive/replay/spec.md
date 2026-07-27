@@ -28,7 +28,7 @@ Status: 400
 
 ### Implementation Details
 1. Check `cache/{run_id}` exists
-2. Spawn `crb-harness` with `--cache-dir cache/{run_id}` and `--output-dir output/{run_id}-replay`
+2. Spawn `riv-harness` with `--cache-dir cache/{run_id}` and `--output-dir output/{run_id}-replay`
 3. Use same config as original run (read from `output/{run_id}/_summary.json`)
 4. Store replay process handle in `AppState::replays: Arc<RwLock<HashMap<String, ReplayState>>>`
 5. Since cache is content-addressed, every API call should be a cache hit, making replay virtually instant

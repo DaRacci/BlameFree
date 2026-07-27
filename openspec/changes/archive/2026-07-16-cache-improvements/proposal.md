@@ -9,7 +9,7 @@ The existing `LlmCache` implementation provides content-addressed caching for LL
 
 ## What Changes
 
-Add six new CLI subcommands to `crb-benchmark` (`cache-stats`, `cache-prune`, `cache-scrub`, `cache-backup`, `cache-restore`, `cache-rebuild`) and corresponding `LlmCache` methods. Extend the `Clean` subcommand with `--outputs` flag and `Run` subcommand with `--auto-backup` flag. Add append-only `_runs.json` history file.
+Add six new CLI subcommands to `riv-benchmark` (`cache-stats`, `cache-prune`, `cache-scrub`, `cache-backup`, `cache-restore`, `cache-rebuild`) and corresponding `LlmCache` methods. Extend the `Clean` subcommand with `--outputs` flag and `Run` subcommand with `--auto-backup` flag. Add append-only `_runs.json` history file.
 
 ## Goals
 
@@ -26,4 +26,4 @@ Add six new CLI subcommands to `crb-benchmark` (`cache-stats`, `cache-prune`, `c
 - Distributed or networked cache backends.
 
 ## Project
-`/data/workspace/projects/review-harness`
+`/data/workspace/projects/BlameFree`

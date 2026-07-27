@@ -175,7 +175,7 @@ Then the response is `404` with `{ "error": "Run not found: <id>" }`
 ```
 
 **Notes:**
-- Backend calls `crb_harness::pipeline::evaluate()` directly via in-process library call
+- Backend calls `riv_harness::pipeline::evaluate()` directly via in-process library call
 - Returns immediately with run_id; client opens SSE stream to see progress
 - The `EvalConfig.dashboard_tx` field routes events via broadcast channel
 - `use_cache` defaults to `true`
@@ -535,7 +535,7 @@ Then the response is an empty JSON array `[]`
 
 **Notes:**
 - Accepts `url` (not separate owner/repo/pr_number fields)
-- Parses URL via `crb_shared::url::parse_github_url`
+- Parses URL via `riv_shared::url::parse_github_url`
 - Invalid URL returns 400 with error message
 - Runs asynchronously via `tokio::spawn`
 
@@ -673,7 +673,7 @@ Then the response is `502 BAD_GATEWAY` with an error message
 **Response `200 OK`:**
 ```json
 {
-  "logs": "2026-07-16 INFO Starting crb-webui on port 8080\n...",
+  "logs": "2026-07-16 INFO Starting riv-webui on port 8080\n...",
   "available": true,
   "message": null
 }

@@ -63,7 +63,7 @@ Typical roles include:
 
 ### 2.2 Finding Struct
 
-Located in `crates/crb-shared/src/finding.rs`:
+Located in `crates/riv-shared/src/finding.rs`:
 
 ```rust
 use schemars::JsonSchema;
@@ -108,7 +108,7 @@ All fields have serde aliases for robust LLM output parsing.
 
 ### 2.3 AgentEntry (replaces ReviewerConfig)
 
-Agents are defined by `AgentEntry` records parsed from markdown files via `crb-agents`:
+Agents are defined by `AgentEntry` records parsed from markdown files via `riv-agents`:
 
 ```rust
 pub struct AgentEntry {
@@ -123,15 +123,15 @@ pub struct AgentEntry {
 }
 ```
 
-### 2.4 Agent Construction via `crb-agents`
+### 2.4 Agent Construction via `riv-agents`
 
-Agents are built through `crb_agents::build_agent()`, which uses the
+Agents are built through `riv_agents::build_agent()`, which uses the
 `PromptLibrary` singleton to render agent prompts from embedded Handlebars
 templates:
 
 ```rust
-use crb_agents::build_agent;
-use crb_agents::prompts::PromptLibrary;
+use riv_agents::build_agent;
+use riv_agents::prompts::PromptLibrary;
 
 let agent = build_agent(
     &client,        // Arc<openai::Client>
@@ -153,7 +153,7 @@ Agent results are parsed as `Vec<Finding>` and capped at `config.max_findings`.
 
 ### 3.1 Parallel Agent Execution
 
-Reviewer execution is handled in `crates/crb-harness/src/pipeline.rs` via the
+Reviewer execution is handled in `crates/riv-harness/src/pipeline.rs` via the
 `evaluate()` function and its private `run_reviewers()` helper:
 
 ```rust
@@ -178,7 +178,7 @@ The `run_reviewers()` function:
 
 ### 3.2 Adaptive Dispatch
 
-Located in `crates/crb-consensus/src/adaptive.rs`:
+Located in `crates/riv-consensus/src/adaptive.rs`:
 
 ```rust
 pub fn get_agents_for_diff(
@@ -217,7 +217,7 @@ pub enum MatchResult {
 
 ### 3.4 Judge Agent
 
-Located in `crates/crb-consensus/src/judge.rs`. Implements a **cache → LLM → Jaccard**
+Located in `crates/riv-consensus/src/judge.rs`. Implements a **cache → LLM → Jaccard**
 pipeline:
 
 1. **Content-addressed cache**: Key = `sha256(judge_prompt_hash + finding_message + golden_comment + judge_model)`.
@@ -243,7 +243,7 @@ pub async fn judge_comment(
 
 ### 3.5 Full Orchestration
 
-Located in `crates/crb-consensus/src/pipeline.rs`:
+Located in `crates/riv-consensus/src/pipeline.rs`:
 
 ```rust
 pub struct ConsensusReport {
@@ -255,7 +255,7 @@ pub struct ConsensusReport {
 }
 ```
 
-Metrics are computed via the `MetricsProvider` trait (in `crb-types/src/benchmark.rs`)
+Metrics are computed via the `MetricsProvider` trait (in `riv-types/src/benchmark.rs`)
 rather than stored directly:
 
 ```rust
@@ -295,35 +295,35 @@ pub async fn run_consensus_post(
 ## 4. Module Structure
 
 ```
-review-harness/
+BlameFree/
 ├── Cargo.toml                     # [workspace] members = ["crates/*"]
 └── crates/
-    ├── crb-consensus/             # Multi-agent orchestration & judging
+    ├── riv-consensus/             # Multi-agent orchestration & judging
     │   ├── Cargo.toml
     │   └── src/
     │       ├── lib.rs             # Role, MatchResult, ConsensusReport
     │       ├── judge.rs           # judge_comment() (cache + LLM + Jaccard)
     │       ├── pipeline.rs        # run_consensus_post()
     │       └── adaptive.rs        # get_agents_for_diff(), adaptive dispatch
-    ├── crb-harness/
+    ├── riv-harness/
     │   └── src/
     │       ├── pipeline.rs        # evaluate(), run_reviewers(), run_linters()
     │       └── eval.rs            # EvalConfig
-    ├── crb-agents/
+    ├── riv-agents/
     │   └── src/
     │       ├── lib.rs             # build_agent()
     │       ├── agent.rs           # AgentEntry
     │       └── prompts.rs         # PromptLibrary (singleton)
-    ├── crb-shared/
+    ├── riv-shared/
     │   └── src/
     │       ├── finding.rs         # Finding struct
     │       ├── severity.rs        # Severity enum
     │       └── jaccard.rs         # jaccard_similarity()
-    ├── crb-reporting/
+    ├── riv-reporting/
     │   └── src/
     │       ├── golden.rs          # GoldenComment, GoldenCommentEntry
     │       └── cost.rs            # AnalyticsSnapshot, AnalyticsTracker
-    └── crb-types/
+    └── riv-types/
         └── src/
             └── benchmark.rs       # MetricsProvider, JudgeVerdict
 ```
@@ -341,7 +341,7 @@ review-harness/
 
 ## 6. Configuration
 
-Configuration is provided via `EvalConfig` in `crates/crb-harness/src/eval.rs`:
+Configuration is provided via `EvalConfig` in `crates/riv-harness/src/eval.rs`:
 
 ```rust
 pub struct EvalConfig {
@@ -370,6 +370,6 @@ The `EvalStrategy` determines whether to run a single generalist agent or a full
 multi-agent panel. Agents are resolved from the `PromptLibrary` by abbreviation,
 not hardcoded as `ReviewerConfig` instances.
 
-Agents use `crb_agents::build_agent()` with prompts rendered through the
+Agents use `riv_agents::build_agent()` with prompts rendered through the
 `PromptLibrary`'s Handlebars template, supporting variable substitution
 (`{diff}`, `{file_list}`, `{language}`, etc.) and optional rule preamble injection.

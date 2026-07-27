@@ -9,28 +9,28 @@
 - [x] Create `specs/pages/spec.md`
 
 ## Phase 2: Design Token System ✅
-- [x] Create `crates/crb-webui-frontend/css/tokens.css` — all CSS custom properties (colors, spacing, type, shadows, radii)
-- [x] Create `crates/crb-webui-frontend/css/reset.css` — minimal CSS reset (box-sizing, margin/padding reset)
-- [x] Create `crates/crb-webui-frontend/css/base.css` — base element styles (body, headings, links, code blocks)
-- [x] Create `crates/crb-webui-frontend/css/styles.css` — single entry point importing all CSS modules
+- [x] Create `crates/riv-webui-frontend/css/tokens.css` — all CSS custom properties (colors, spacing, type, shadows, radii)
+- [x] Create `crates/riv-webui-frontend/css/reset.css` — minimal CSS reset (box-sizing, margin/padding reset)
+- [x] Create `crates/riv-webui-frontend/css/base.css` — base element styles (body, headings, links, code blocks)
+- [x] Create `crates/riv-webui-frontend/css/styles.css` — single entry point importing all CSS modules
 - [x] Verify: `cargo check --workspace` builds successfully after CSS file additions (no Rust changes)
 
 ## Phase 3: Layout System ✅
-- [x] Create `crates/crb-webui-frontend/css/layout.css` — sidebar, main content grid, responsive breakpoints
-- [x] Create `crates/crb-webui-frontend/css/components/nav.css` — sidebar navigation styles (expanded, collapsed, active states)
+- [x] Create `crates/riv-webui-frontend/css/layout.css` — sidebar, main content grid, responsive breakpoints
+- [x] Create `crates/riv-webui-frontend/css/components/nav.css` — sidebar navigation styles (expanded, collapsed, active states)
 - [x] Implement sidebar component in Leptos — collapsible with toggle button
 - [x] Implement mobile overlay sidebar (slide-in panel for <768px)
 - [x] Wire up `App` root layout to use sidebar + main content area
 - [x] Test responsive behavior at 3 breakpoints (≥1200px, 768–1199px, <768px)
 
 ## Phase 4: Base Components ✅
-- [x] Create `crates/crb-webui-frontend/css/components/card.css` — card with header/body/footer slots, interactive hover
-- [x] Create `crates/crb-webui-frontend/css/components/button.css` — all variants (primary, success, danger, secondary, ghost)
-- [x] Create `crates/crb-webui-frontend/css/components/form.css` — inputs, labels, selects, checkboxes, sliders, validation states
-- [x] Create `crates/crb-webui-frontend/css/components/badge.css` — status badges with semantic colors
-- [x] Create `crates/crb-webui-frontend/css/components/table.css` — sortable table with sticky header, row hover
-- [x] Create `crates/crb-webui-frontend/css/components/skeleton.css` — shimmer animation, skeleton shapes
-- [x] Create `crates/crb-webui-frontend/css/components/progress.css` — progress bar with label
+- [x] Create `crates/riv-webui-frontend/css/components/card.css` — card with header/body/footer slots, interactive hover
+- [x] Create `crates/riv-webui-frontend/css/components/button.css` — all variants (primary, success, danger, secondary, ghost)
+- [x] Create `crates/riv-webui-frontend/css/components/form.css` — inputs, labels, selects, checkboxes, sliders, validation states
+- [x] Create `crates/riv-webui-frontend/css/components/badge.css` — status badges with semantic colors
+- [x] Create `crates/riv-webui-frontend/css/components/table.css` — sortable table with sticky header, row hover
+- [x] Create `crates/riv-webui-frontend/css/components/skeleton.css` — shimmer animation, skeleton shapes
+- [x] Create `crates/riv-webui-frontend/css/components/progress.css` — progress bar with label
 - [x] Refactor existing Leptos components to use new CSS classes and tokens
 - [x] Verify visual consistency across all components
 
@@ -44,13 +44,13 @@
 - [ ] Test: mock API failure to verify error states with retry
 
 ## Phase 6: Page Redesigns 🔶 In Progress
-- [x] Create `crates/crb-webui-frontend/css/pages/home.css` — home page layout (summary cards + run card grid)
+- [x] Create `crates/riv-webui-frontend/css/pages/home.css` — home page layout (summary cards + run card grid)
 - [ ] Redesign `HomePage` — metric summary row, run card grid [sparklines: NOT IMPLEMENTED, search: NOT IMPLEMENTED]
-- [x] Create `crates/crb-webui-frontend/css/pages/run-detail.css` — run detail layout (metric cards + table + cost breakdown)
+- [x] Create `crates/riv-webui-frontend/css/pages/run-detail.css` — run detail layout (metric cards + table + cost breakdown)
 - [ ] Redesign `RunDetailPage` — metric cards, basic table [sorting/filtering: NOT IMPLEMENTED, cost breakdown: NOT IMPLEMENTED]
-- [x] Create `crates/crb-webui-frontend/css/pages/new-run.css` — form with section dividers, aligned fields, validation
+- [x] Create `crates/riv-webui-frontend/css/pages/new-run.css` — form with section dividers, aligned fields, validation
 - [ ] Redesign `NewBenchmarkPage` — sectioned form with labels, helper text [sliders: NOT IMPLEMENTED, validation: PARTIAL]
-- [x] Create `crates/crb-webui-frontend/css/pages/live-view.css` — agent pane grid, progress bar, live status
+- [x] Create `crates/riv-webui-frontend/css/pages/live-view.css` — agent pane grid, progress bar, live status
 - [ ] Redesign `LiveViewPage` — 2×2 agent panes with status-colored borders, streaming content [per-agent metrics: NOT IMPLEMENTED]
 - [x] Verify all pages render correctly with mock data
 

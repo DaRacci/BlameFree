@@ -163,7 +163,7 @@ The system SHALL expose `GET /api/runs/:id/prs/:pr_key` to return agent availabi
 
 ### Requirement: Log Response Types in Shared Crate
 
-The system SHALL define all log-related request/response types in the `crb-webui-shared` crate's `runs.rs` module, shared between backend and frontend.
+The system SHALL define all log-related request/response types in the `riv-webui-shared` crate's `runs.rs` module, shared between backend and frontend.
 
 #### Scenario: LogsListResponse type
 
@@ -202,7 +202,7 @@ The system SHALL resolve the cache directory by trying multiple layouts, support
 - GIVEN an output directory at `output/run-123/` with a sibling `output/_cache/` directory
 - WHEN `resolve_cache_dir()` is called
 - THEN it returns `output/_cache/`
-- AND the `_cache` directory name is defined by `crb_cache::paths::CACHE_DIR_NAME`
+- AND the `_cache` directory name is defined by `riv_cache::paths::CACHE_DIR_NAME`
 
 #### Scenario: Legacy layouts checked as fallback
 

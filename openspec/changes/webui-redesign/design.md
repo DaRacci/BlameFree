@@ -494,7 +494,7 @@ The fundamental building block.
 ### File Structure
 
 ```
-crates/crb-webui-frontend/
+crates/riv-webui-frontend/
 ├── css/
 │   ├── tokens.css          # All CSS custom properties (colors, spacing, type, shadows)
 │   ├── reset.css           # Minimal reset (box-sizing, margin removal)
@@ -640,7 +640,7 @@ crates/crb-webui-frontend/
 
 ### Color Palette Verification
 
-All color tokens in this design match the actual `crates/crb-webui-frontend/css/tokens.css` exactly — no discrepancies in values or naming.
+All color tokens in this design match the actual `crates/riv-webui-frontend/css/tokens.css` exactly — no discrepancies in values or naming.
 
 ### Component Implementation: CSS vs Rust+CSS
 

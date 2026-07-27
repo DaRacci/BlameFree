@@ -51,7 +51,7 @@ Without this metadata, comparing results across runs is ambiguous — was the di
 - **JSON output**: Include metadata in all run-related JSON output files.
 - **Serialization**: Metadata is serialized alongside existing JSON structures with `#[serde(default)]` for backward compatibility.
 
-Note: `binary` is a compilation-only feature (`#[cfg(feature = "binary")]`) that gates the binary entrypoint and `ReviewArgs`. It has no runtime equivalent — it controls whether `crb-harness` exposes a `main()` or is only a library. It is excluded from runtime conversion.
+Note: `binary` is a compilation-only feature (`#[cfg(feature = "binary")]`) that gates the binary entrypoint and `ReviewArgs`. It has no runtime equivalent — it controls whether `riv-harness` exposes a `main()` or is only a library. It is excluded from runtime conversion.
 
 ### Out of scope (non-goals)
 

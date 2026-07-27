@@ -1,4 +1,4 @@
-# crb-eval Crate Design — Evaluation System for Code Review Benchmark Harness
+# riv-eval Crate Design — Evaluation System for Code Review Benchmark Harness
 
 > **Status**: Design Draft  
 > **Date**: 2026-06-26  
@@ -10,7 +10,7 @@
 
 1. [Kodus Eval System Analysis](#1-kodus-eval-system-analysis)
 2. [Gap Analysis](#2-gap-analysis)
-3. [Architecture Design for `crb-eval` Crate](#3-architecture-design-for-crb-eval-crate)
+3. [Architecture Design for `riv-eval` Crate](#3-architecture-design-for-riv-eval-crate)
 4. [Implementation Plan](#4-implementation-plan)
 5. [CLI Flag Additions](#5-cli-flag-additions)
 6. [Integration Points with Existing Crates](#6-integration-points-with-existing-crates)
@@ -111,10 +111,10 @@ The key design pattern Kodus uses:
 
 | Capability | We Have | Kodus Has | We Need |
 |-----------|---------|-----------|---------|
-| **LLM judging** | ✅ crb-judge with Martian JUDGE_PROMPT | ✅ recall-judge.js (Sonnet matcher) | ✅ Adequate |
-| **Precision/Recall/F1** | ✅ crb-judge::compute_metrics() | ✅ recall-assertion.js | ✅ Adequate |
-| **Golden datasets** | ✅ crb-reporting loads `GoldenCommentEntry` | ✅ Langfuse-extracted fixtures | **Format expansion needed** |
-| **Consensus pipeline** | ✅ crb-consensus (heuristic + LLM fallback) | ✅ Multi-agent orchestration | ✅ Adequate |
+| **LLM judging** | ✅ riv-judge with Martian JUDGE_PROMPT | ✅ recall-judge.js (Sonnet matcher) | ✅ Adequate |
+| **Precision/Recall/F1** | ✅ riv-judge::compute_metrics() | ✅ recall-assertion.js | ✅ Adequate |
+| **Golden datasets** | ✅ riv-reporting loads `GoldenCommentEntry` | ✅ Langfuse-extracted fixtures | **Format expansion needed** |
+| **Consensus pipeline** | ✅ riv-consensus (heuristic + LLM fallback) | ✅ Multi-agent orchestration | ✅ Adequate |
 | **Baseline validation** | ✅ validation.rs (threshold comparison) | ❌ Not in Kodus | ✅ Adequate |
 | **CI mode** | ✅ `--ci` flag | ❌ Not in Kodus | ✅ Adequate |
 | **Deterministic replay** | ❌ **Missing** | ✅ extract-replay-from-trace.js | **Critical gap** |
@@ -141,12 +141,12 @@ The key design pattern Kodus uses:
 
 ---
 
-## 3. Architecture Design for `crb-eval` Crate
+## 3. Architecture Design for `riv-eval` Crate
 
 ### 3.1 Crate Overview
 
 ```
-crates/crb-eval/
+crates/riv-eval/
 ├── Cargo.toml
 ├── src/
 │   ├── lib.rs                    # Public API
@@ -588,11 +588,11 @@ All metrics within thresholds.
 **Goal**: Allow the harness to record all LLM calls to disk and replay them on subsequent runs for deterministic, cost-free scoring.
 
 **Files to create**:
-- `crates/crb-eval/src/lib.rs` — crate root, re-exports
-- `crates/crb-eval/src/record/mod.rs` — TraceRecorder, LlmTrace, TraceSession types
-- `crates/crb-eval/src/record/recorder.rs` — RecordingClient, RecordingAgent implementations
-- `crates/crb-eval/src/replay/mod.rs` — TracePlayer, ReplayClient
-- `crates/crb-eval/src/replay/matcher.rs` — prompt hashing, exact/label/similarity matching
+- `crates/riv-eval/src/lib.rs` — crate root, re-exports
+- `crates/riv-eval/src/record/mod.rs` — TraceRecorder, LlmTrace, TraceSession types
+- `crates/riv-eval/src/record/recorder.rs` — RecordingClient, RecordingAgent implementations
+- `crates/riv-eval/src/replay/mod.rs` — TracePlayer, ReplayClient
+- `crates/riv-eval/src/replay/matcher.rs` — prompt hashing, exact/label/similarity matching
 
 **Implementation details**:
 - TraceRecorder wraps `rig_core::providers::openai::Client` by creating a new client with a middleware layer
@@ -603,7 +603,7 @@ All metrics within thresholds.
 - Flush every N traces (configurable, default 100) to avoid data loss on crash
 
 **Integration points**:
-- `crb-harness/src/main.rs` — add `--record-traces` and `--replay-traces` flags
+- `riv-harness/src/main.rs` — add `--record-traces` and `--replay-traces` flags
 - Main evaluation loop wraps client in RecordingClient when `--record-traces` is set
 - Main evaluation loop wraps client in ReplayClient when `--replay-traces` is set
 
@@ -614,10 +614,10 @@ All metrics within thresholds.
 **Goal**: Add golden dataset validation, multi-format loading, and integrity checks.
 
 **Files to create**:
-- `crates/crb-eval/src/golden/mod.rs`
-- `crates/crb-eval/src/golden/loader.rs` — load goldens from JSON, TOML, promptfoo YAML
-- `crates/crb-eval/src/golden/validator.rs` — duplicate detection, regex validation, empty checks
-- `crates/crb-eval/src/golden/format.rs` — format detection and conversion
+- `crates/riv-eval/src/golden/mod.rs`
+- `crates/riv-eval/src/golden/loader.rs` — load goldens from JSON, TOML, promptfoo YAML
+- `crates/riv-eval/src/golden/validator.rs` — duplicate detection, regex validation, empty checks
+- `crates/riv-eval/src/golden/format.rs` — format detection and conversion
 
 **Implementation details**:
 - Validator runs as a pre-check before evaluation starts
@@ -626,8 +626,8 @@ All metrics within thresholds.
 - Integrity report printed to stdout with issues found
 
 **Integration points**:
-- `crb-reporting/src/lib.rs` — can optionally delegate golden loading to crb-eval
-- `crb-harness/src/main.rs` — add `--validate-goldens` and `--golden-dir` flags
+- `riv-reporting/src/lib.rs` — can optionally delegate golden loading to riv-eval
+- `riv-harness/src/main.rs` — add `--validate-goldens` and `--golden-dir` flags
 
 **Deliverable**: `cargo run -- --validate-goldens datasets/golden_comments` validates all goldens and reports issues. `cargo run -- --golden-dir datasets/golden_comments --format toml` loads TOML-format goldens.
 
@@ -636,16 +636,16 @@ All metrics within thresholds.
 **Goal**: Add per-agent, per-category, per-severity metrics, confidence calibration, and cost tracking.
 
 **Files to create**:
-- `crates/crb-eval/src/metrics/mod.rs`
-- `crates/crb-eval/src/metrics/core.rs` — ExtendedMetrics, compute_extended_metrics()
-- `crates/crb-eval/src/metrics/per_agent.rs` — per-role breakdown
-- `crates/crb-eval/src/metrics/per_category.rs` — per-category breakdown
-- `crates/crb-eval/src/metrics/per_severity.rs` — per-severity breakdown
-- `crates/crb-eval/src/metrics/confidence.rs` — ECE and calibration plots
-- `crates/crb-eval/src/metrics/cost.rs` — token counting and USD estimation
-- `crates/crb-eval/src/report/mod.rs`
-- `crates/crb-eval/src/report/json.rs` — extended JSON report writer
-- `crates/crb-eval/src/report/markdown.rs` — human-readable markdown report
+- `crates/riv-eval/src/metrics/mod.rs`
+- `crates/riv-eval/src/metrics/core.rs` — ExtendedMetrics, compute_extended_metrics()
+- `crates/riv-eval/src/metrics/per_agent.rs` — per-role breakdown
+- `crates/riv-eval/src/metrics/per_category.rs` — per-category breakdown
+- `crates/riv-eval/src/metrics/per_severity.rs` — per-severity breakdown
+- `crates/riv-eval/src/metrics/confidence.rs` — ECE and calibration plots
+- `crates/riv-eval/src/metrics/cost.rs` — token counting and USD estimation
+- `crates/riv-eval/src/report/mod.rs`
+- `crates/riv-eval/src/report/json.rs` — extended JSON report writer
+- `crates/riv-eval/src/report/markdown.rs` — human-readable markdown report
 
 **Implementation details**:
 - `ExtendedMetrics` wraps the existing `Metrics` with additional breakdowns
@@ -655,9 +655,9 @@ All metrics within thresholds.
 - Reports written alongside existing output (`.json`, `.md` files)
 
 **Integration points**:
-- `crb-judge/src/lib.rs` — `compute_metrics()` extended to accept annotations
-- `crb-harness/src/main.rs` — post-evaluation calls `compute_extended_metrics()`
-- `crb-harness/src/main.rs` — writes markdown report alongside JSON results
+- `riv-judge/src/lib.rs` — `compute_metrics()` extended to accept annotations
+- `riv-harness/src/main.rs` — post-evaluation calls `compute_extended_metrics()`
+- `riv-harness/src/main.rs` — writes markdown report alongside JSON results
 
 **Deliverable**: After evaluation, `output/report.md` contains per-agent, per-severity, confidence, and cost metrics. `output/report.json` contains structured extended metrics.
 
@@ -666,20 +666,20 @@ All metrics within thresholds.
 **Goal**: Auto-detect regressions across extended metrics, not just overall F1.
 
 **Files to create**:
-- `crates/crb-eval/src/regression/mod.rs`
-- `crates/crb-eval/src/regression/detector.rs` — multi-metric regression detection
-- `crates/crb-eval/src/regression/reporter.rs` — regression report formatting
+- `crates/riv-eval/src/regression/mod.rs`
+- `crates/riv-eval/src/regression/detector.rs` — multi-metric regression detection
+- `crates/riv-eval/src/regression/reporter.rs` — regression report formatting
 
 **Implementation details**:
-- Extends `validation.rs` from crb-harness to check per-agent, per-severity metrics
+- Extends `validation.rs` from riv-harness to check per-agent, per-severity metrics
 - Baseline format extended to include per-agent and per-severity thresholds
 - CI mode auto-generates baseline from current run when `--write-baseline` is set
 - Regression report highlights which specific metric(s) regressed
 
 **Integration points**:
-- `crb-harness/src/validation.rs` — extended `Baseline` struct with per-agent thresholds
-- `crb-harness/src/main.rs` — `--ci` mode calls regression detection
-- `crb-harness/src/config.rs` — new `--thresholds` flag for custom thresholds
+- `riv-harness/src/validation.rs` — extended `Baseline` struct with per-agent thresholds
+- `riv-harness/src/main.rs` — `--ci` mode calls regression detection
+- `riv-harness/src/config.rs` — new `--thresholds` flag for custom thresholds
 
 **Deliverable**: `cargo run -- --ci` checks all extended metrics against baseline, exits nonzero on any regression. `cargo run -- --write-baseline baselines/5.15.json` captures current metrics as baseline.
 
@@ -687,7 +687,7 @@ All metrics within thresholds.
 
 ## 5. CLI Flag Additions
 
-### New Flags in `crb-harness`
+### New Flags in `riv-harness`
 
 ```rust
 // ── Recording / Replay ────────────────────────────────────────
@@ -799,17 +799,17 @@ OPTIONS:
 ### 6.1 Dependency Graph
 
 ```
-crb-eval
+riv-eval
   │
-  ├── depends on: crb-judge (Metrics, JudgeVerdict)
-  │               crb-reporting (GoldenCommentEntry, PrResult)
+  ├── depends on: riv-judge (Metrics, JudgeVerdict)
+  │               riv-reporting (GoldenCommentEntry, PrResult)
   │               rig-core (Client, Agent, CompletionClient)
   │               serde, serde_json, sha2, anyhow, tracing
   │
-  └── used by: crb-harness (eval pipeline extension)
+  └── used by: riv-harness (eval pipeline extension)
 ```
 
-### 6.2 Integration with `crb-harness/src/main.rs`
+### 6.2 Integration with `riv-harness/src/main.rs`
 
 **Current flow:**
 ```rust
@@ -857,28 +857,28 @@ if let Some(path) = args.write_baseline {
 }
 ```
 
-### 6.3 Integration with `crb-judge/src/lib.rs`
+### 6.3 Integration with `riv-judge/src/lib.rs`
 
-- `compute_metrics()` in crb-judge becomes the building block for crb-eval's `compute_extended_metrics()`
-- crb-eval calls crb-judge's `compute_metrics()` per agent/severity/category slice
+- `compute_metrics()` in riv-judge becomes the building block for riv-eval's `compute_extended_metrics()`
+- riv-eval calls riv-judge's `compute_metrics()` per agent/severity/category slice
 - `JudgeVerdict` gets optional `annotation` field for agent/severity/category metadata
 
-### 6.4 Integration with `crb-reporting/src/lib.rs`
+### 6.4 Integration with `riv-reporting/src/lib.rs`
 
 - `PrResult` gets optional `extended_metrics: Option<ExtendedMetrics>` field
 - `write_report()` extended to write `.md` and optional `.html` reports
-- `load_golden_datasets()` optionally delegates to crb-eval's multi-format loader
+- `load_golden_datasets()` optionally delegates to riv-eval's multi-format loader
 
-### 6.5 Integration with `crb-harness/src/validation.rs`
+### 6.5 Integration with `riv-harness/src/validation.rs`
 
 - `Baseline` struct extended to hold per-agent, per-severity thresholds
 - `ExtendedBaseline` type added alongside existing `Baseline`
 - `validate_against_baseline()` overloaded for extended metrics
 
-### 6.6 Integration with `crb-consensus/src/lib.rs`
+### 6.6 Integration with `riv-consensus/src/lib.rs`
 
 - Consensus pipeline produces `VerdictAnnotation` per verdict (which agent, severity, category)
-- These annotations feed into crb-eval's per-agent/per-severity metrics
+- These annotations feed into riv-eval's per-agent/per-severity metrics
 
 ---
 
@@ -934,12 +934,12 @@ if let Some(path) = args.write_baseline {
 
 | Crate | Changes | Lines | Complexity |
 |-------|---------|-------|------------|
-| `crb-harness/src/config.rs` | Add ~15 new CLI flags | 80 | Low |
-| `crb-harness/src/main.rs` | Extended eval pipeline | 100 | Medium |
-| `crb-harness/src/validation.rs` | Extended baseline types | 150 | Medium |
-| `crb-judge/src/lib.rs` | Optional annotation in JudgeVerdict | 20 | Low |
-| `crb-reporting/src/lib.rs` | Optional extended fields | 30 | Low |
-| `Cargo.toml` | Add crb-eval dependency | 5 | Low |
+| `riv-harness/src/config.rs` | Add ~15 new CLI flags | 80 | Low |
+| `riv-harness/src/main.rs` | Extended eval pipeline | 100 | Medium |
+| `riv-harness/src/validation.rs` | Extended baseline types | 150 | Medium |
+| `riv-judge/src/lib.rs` | Optional annotation in JudgeVerdict | 20 | Low |
+| `riv-reporting/src/lib.rs` | Optional extended fields | 30 | Low |
+| `Cargo.toml` | Add riv-eval dependency | 5 | Low |
 | **Subtotal** | | **385** | |
 
 ### Total: ~3,615 lines of Rust (new crate) + ~385 lines (existing crate changes)
@@ -1049,10 +1049,10 @@ output_per_1k = 0.0040
    - `extract-replay-from-trace.js` — Langfuse trace -> replay dataset
    - `promptfoo-recall.yaml` — promptfoo eval configuration
 2. **Existing Kodus Analysis** — `/data/workspace/projects/code-review-benchmark-research/research/kodus-ai-analysis.md`
-3. **Our Harness** — [/data/workspace/projects/review-harness/](/data/workspace/projects/review-harness/)
-   - `crb-harness/src/main.rs` — CLI entry point
-   - `crb-harness/src/validation.rs` — baseline comparison
-   - `crb-judge/src/lib.rs` — current metric computation
-   - `crb-consensus/src/lib.rs` — consensus pipeline
-   - `crb-reporting/src/lib.rs` — golden loading + output
+3. **Our Harness** — [/data/workspace/projects/BlameFree/](/data/workspace/projects/BlameFree/)
+   - `riv-harness/src/main.rs` — CLI entry point
+   - `riv-harness/src/validation.rs` — baseline comparison
+   - `riv-judge/src/lib.rs` — current metric computation
+   - `riv-consensus/src/lib.rs` — consensus pipeline
+   - `riv-reporting/src/lib.rs` — golden loading + output
 4. **Promptfoo** — [promptfoo.dev](https://www.promptfoo.dev/) — deterministic replay provider, assertions, multi-model evals

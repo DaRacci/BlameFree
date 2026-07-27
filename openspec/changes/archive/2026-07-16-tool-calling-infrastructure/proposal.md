@@ -61,10 +61,10 @@ in a way that is:
 ## Directory Structure
 
 ```
-review-harness/
+BlameFree/
 ├── Cargo.toml                     # [workspace] members = ["crates/*"]
 └── crates/
-    └── crb-tools/                 # Tool trait implementations
+    └── riv-tools/                 # Tool trait implementations
         ├── Cargo.toml             # deps: rig-core, tokio, serde, schemars
         └── src/
             └── lib.rs             # LinterTool, GitTool, types, parsers, config

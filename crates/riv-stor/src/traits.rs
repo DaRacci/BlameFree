@@ -24,7 +24,7 @@ pub trait Store: Send + Sync + Clone {
     /// Persist an item.
     ///
     /// Inserts if new, updates if existing (upsert).
-    fn save<T: Storable + crb_types::stor::Save>(
+    fn save<T: Storable + riv_types::stor::Save>(
         &self,
         item: &T,
     ) -> impl Future<Output = Result<(), Error>>;
@@ -32,13 +32,13 @@ pub trait Store: Send + Sync + Clone {
     /// Load a single item by its `MagicTypeId`.
     ///
     /// Returns `None` if not found.
-    fn load<T: Storable + crb_types::stor::EntityLoader + crb_types::stor::LoadChildren>(
+    fn load<T: Storable + riv_types::stor::EntityLoader + riv_types::stor::LoadChildren>(
         &self,
         id: &MagicTypeId,
     ) -> impl Future<Output = Result<Option<T>, Error>>;
 
     /// List items matching the type-specific options.
-    fn list<T: Storable + crb_types::stor::EntityLoader>(
+    fn list<T: Storable + riv_types::stor::EntityLoader>(
         &self,
         options: &T::Options,
     ) -> impl Future<Output = Result<Vec<T>, Error>>;
@@ -77,12 +77,12 @@ mod tests {
     struct DummyStore;
 
     impl Store for DummyStore {
-        async fn save<T: Storable + crb_types::stor::Save>(&self, _item: &T) -> Result<(), Error> {
+        async fn save<T: Storable + riv_types::stor::Save>(&self, _item: &T) -> Result<(), Error> {
             Ok(())
         }
 
         async fn load<
-            T: Storable + crb_types::stor::EntityLoader + crb_types::stor::LoadChildren,
+            T: Storable + riv_types::stor::EntityLoader + riv_types::stor::LoadChildren,
         >(
             &self,
             _id: &MagicTypeId,
@@ -90,7 +90,7 @@ mod tests {
             Ok(None)
         }
 
-        async fn list<T: Storable + crb_types::stor::EntityLoader>(
+        async fn list<T: Storable + riv_types::stor::EntityLoader>(
             &self,
             _options: &T::Options,
         ) -> Result<Vec<T>, Error> {

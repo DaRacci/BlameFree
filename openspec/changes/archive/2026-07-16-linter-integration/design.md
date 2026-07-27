@@ -2,13 +2,13 @@
 
 ## Architecture
 
-The linter runner lives in `crates/crb-tools/src/lib.rs`. It is called from `crb-harness/src/main.rs` via `crb-consensus` orchestration alongside LLM agent calls.
+The linter runner lives in `crates/riv-tools/src/lib.rs`. It is called from `riv-harness/src/main.rs` via `riv-consensus` orchestration alongside LLM agent calls.
 
 ```
-review-harness/
+BlameFree/
 ├── Cargo.toml                   # [workspace] members = ["crates/*"]
 └── crates/
-    ├── crb-tools/               # Tool trait implementations
+    ├── riv-tools/               # Tool trait implementations
     │   ├── Cargo.toml           # deps: rig-core, tokio, serde, schemars
     │   └── src/lib.rs           # LinterTool, GitTool, TOML config loading
     │       ├── struct LinterConfig { name, cmd, parser_kind, timeout_secs }
@@ -18,7 +18,7 @@ review-harness/
     │       ├── impl Tool for RubocopLinter
     │       ├── impl Tool for CheckstyleLinter
     │       └── fn run_linters(pr_path, language) -> Vec<Finding>
-    └── crb-agents/              # Shared Finding type
+    └── riv-agents/              # Shared Finding type
         ├── Cargo.toml           # deps: serde, schemars
         └── src/lib.rs           # Finding, severity types
 ```

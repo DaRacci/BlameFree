@@ -1,0 +1,29 @@
+[package]
+name = "riv-agents"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+exp14_submit_finding = []
+
+[dependencies]
+anyhow = { workspace = true }
+riv-reporting = { path = "../riv-reporting" }
+riv-types = { path = "../riv-types" }
+futures = { workspace = true }
+handlebars = { workspace = true }
+include_dir = { workspace = true }
+mti = { workspace = true, features = ["serde"] }
+rig-core = { workspace = true }
+# rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
+serde = { workspace = true }
+serde_fields = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,9 +1,9 @@
 # Tasks: Rust Ports of `aggregate_findings.py` + `severity_auditor.py`
 
-## Module: `crb-aggregator` crate
+## Module: `riv-aggregator` crate
 
 ### Infrastructure
-- [x] Create `crates/crb-aggregator/` with `Cargo.toml` (deps: serde, serde_json, regex, crb-agents)
+- [x] Create `crates/riv-aggregator/` with `Cargo.toml` (deps: serde, serde_json, regex, riv-agents)
 - [x] Create `src/lib.rs` with module structure and public API
 - [x] Create `src/main.rs` with clap CLI: --reports-dir, --output, --replace, --pr-filter
 - [x] Define `Stats` struct for batch aggregation results
@@ -28,10 +28,10 @@
 - [x] Define `LazyLock<Vec<Regex>>` for: extract-function patterns
 - [x] Define `LazyLock<Regex>` for each bullet/prose variant pattern
 
-## Module: `crb-auditor` crate
+## Module: `riv-auditor` crate
 
 ### Infrastructure
-- [x] Create `crates/crb-auditor/` with `Cargo.toml` (deps: serde, serde_json, regex, crb-agents)
+- [x] Create `crates/riv-auditor/` with `Cargo.toml` (deps: serde, serde_json, regex, riv-agents)
 - [x] Create `src/lib.rs` with module structure and public API
 - [x] Create `src/main.rs` with clap CLI: --findings-file, --output, --report
 - [x] Define `InflatedCategory` struct with name, patterns, description, downgrade_quantum fields
@@ -58,14 +58,14 @@
 - [x] `fn format_severity_audit_report(before: &[Finding], after: &[Finding]) -> String` — human-readable report
 
 ## Harness Integration
-- [x] Wire `crb-aggregator::aggregate_batch()` into evaluation pipeline in `crb-harness/src/main.rs`
-- [x] Wire `crb-auditor::apply_severity_auditor()` into evaluation pipeline in `crb-harness/src/main.rs`
-- [x] Ensure `Finding` / `Candidate` / `Severity` types in `crb-agents` are compatible with both crates (add `severity_audited: bool`, `severity_audit_reason: Option<String>` to `Finding` if not present)
+- [x] Wire `riv-aggregator::aggregate_batch()` into evaluation pipeline in `riv-harness/src/main.rs`
+- [x] Wire `riv-auditor::apply_severity_auditor()` into evaluation pipeline in `riv-harness/src/main.rs`
+- [x] Ensure `Finding` / `Candidate` / `Severity` types in `riv-agents` are compatible with both crates (add `severity_audited: bool`, `severity_audit_reason: Option<String>` to `Finding` if not present)
 - [ ] Add `aggregator_stats` and `severity_auditor_stats` to output metadata
 
 ## Testing (Unit Tests)
 
-### `crb-aggregator` Tests
+### `riv-aggregator` Tests
 - [x] `test_classify_severity_exact` — all 4 canonical values
 - [x] `test_classify_severity_abbreviations` — "crit", "med"
 - [x] `test_classify_severity_prefix_match` — "crit...", "hig...", "med...", "low..."
@@ -93,7 +93,7 @@
 - [x] `test_format_candidate_cross_validated` — [cross-validated] when cross_validated_by >= 2
 - [x] `test_aggregate_batch_single_pr` — full pipeline end-to-end
 
-### `crb-auditor` Tests
+### `riv-auditor` Tests
 - [x] `test_severity_value` — Critical=0, High=1, Medium=2, Low=3
 - [x] `test_has_never_downgrade_security` — SQL injection, XSS, RCE patterns found
 - [x] `test_has_never_downgrade_data_integrity` — race condition, deadlock patterns found

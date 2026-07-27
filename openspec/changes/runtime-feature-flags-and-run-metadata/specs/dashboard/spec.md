@@ -4,7 +4,7 @@
 
 ### Requirement: RunStarted event
 
-The system SHALL add a `RunStarted` variant to the `DashboardEvent` enum (in both `crb-dashboard` and `crb-webui/src/events.rs`).
+The system SHALL add a `RunStarted` variant to the `DashboardEvent` enum (in both `riv-dashboard` and `riv-webui/src/events.rs`).
 
 #### Scenario: RunStarted sent at start
 - GIVEN a benchmark run begins
@@ -39,7 +39,7 @@ The `RunFinished` variant SHALL gain an additional `metadata: RunMetadata` field
 
 ### Requirement: WebUI DashboardEvent alignment
 
-The `DashboardEvent` enum in `crates/crb-webui/src/events.rs` SHALL gain `RunStarted` and the extended `RunFinished` variant, matching the `crb-dashboard` crate.
+The `DashboardEvent` enum in `crates/riv-webui/src/events.rs` SHALL gain `RunStarted` and the extended `RunFinished` variant, matching the `riv-dashboard` crate.
 
 #### Scenario: WebUI handles RunStarted
 - GIVEN the web UI receives a `DashboardEvent::RunStarted` from the harness subprocess
@@ -55,7 +55,7 @@ The `DashboardEvent` enum in `crates/crb-webui/src/events.rs` SHALL gain `RunSta
 
 ### Requirement: ActiveRun carries metadata
 
-The `ActiveRun` struct in `crates/crb-webui/src/server.rs` SHALL store the `RunMetadata` for the currently running benchmark.
+The `ActiveRun` struct in `crates/riv-webui/src/server.rs` SHALL store the `RunMetadata` for the currently running benchmark.
 
 #### Scenario: Metadata tracked during run
 - GIVEN an active benchmark run

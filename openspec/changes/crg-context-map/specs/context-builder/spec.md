@@ -1,6 +1,6 @@
 # Delta for Context Map Builder
 
-> **Note (2026-07-16):** This spec targets a hypothetical `crb-context` crate that does not exist in the codebase. Not yet implemented.
+> **Note (2026-07-16):** This spec targets a hypothetical `riv-context` crate that does not exist in the codebase. Not yet implemented.
 
 ## ADDED Requirements
 

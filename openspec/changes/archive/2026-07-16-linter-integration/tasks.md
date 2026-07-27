@@ -1,9 +1,9 @@
 # Tasks: Linter Integration (Rust + rig Tool Trait)
 
 ## Core Infrastructure
-- [x] Define `Finding` struct in `crates/crb-agents/src/lib.rs` with serde `Serialize`/`Deserialize` + `schemars::JsonSchema` derives
-- [x] Create `crates/crb-tools/src/lib.rs` module: `LinterTool` struct, `run_linters()` helper, parser dispatch, TOML deserialization for linter config
-- [x] Define `LinterConfig` / `LinterToolConfig` structs (deserialized from TOML) in `crates/crb-tools/src/lib.rs`
+- [x] Define `Finding` struct in `crates/riv-agents/src/lib.rs` with serde `Serialize`/`Deserialize` + `schemars::JsonSchema` derives
+- [x] Create `crates/riv-tools/src/lib.rs` module: `LinterTool` struct, `run_linters()` helper, parser dispatch, TOML deserialization for linter config
+- [x] Define `LinterConfig` / `LinterToolConfig` structs (deserialized from TOML) in `crates/riv-tools/src/lib.rs`
 
 ## Linter Toolkit Tool Implementations
 - [x] Implement `RuffLinter` / `LinterTool` with `parser_kind = "ruff"`: `Tool` trait, `tokio::process::Command` for `ruff check --output-format json`, serde_json parse

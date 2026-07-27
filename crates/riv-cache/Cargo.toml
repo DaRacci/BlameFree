@@ -1,0 +1,18 @@
+[package]
+name = "riv-cache"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+riv-macros = { path = "../riv-macros" }
+riv-types = { path = "../riv-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }

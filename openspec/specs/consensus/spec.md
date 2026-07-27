@@ -9,10 +9,10 @@ The consensus module SHALL define and re-export several shared types that flow a
 
 Types are distributed across crates:
 
-- `Role` is defined in `crates/crb-consensus/src/lib.rs` and re-exported.
-- `Finding` is defined in `crates/crb-shared/src/finding.rs`.
-- `GoldenComment` is defined in `crates/crb-reporting/src/golden.rs`.
-- `MatchResult` and `ConsensusReport` are defined in `crates/crb-consensus/src/lib.rs`.
+- `Role` is defined in `crates/riv-consensus/src/lib.rs` and re-exported.
+- `Finding` is defined in `crates/riv-shared/src/finding.rs`.
+- `GoldenComment` is defined in `crates/riv-reporting/src/golden.rs`.
+- `MatchResult` and `ConsensusReport` are defined in `crates/riv-consensus/src/lib.rs`.
 
 **`Role`:**
 
@@ -171,11 +171,11 @@ pub struct AgentEntry {
 }
 ```
 
-Agents are built via `crb_agents::build_agent()` using the `PromptLibrary`:
+Agents are built via `riv_agents::build_agent()` using the `PromptLibrary`:
 
 ```rust
-use crb_agents::build_agent;
-use crb_agents::prompts::PromptLibrary;
+use riv_agents::build_agent;
+use riv_agents::prompts::PromptLibrary;
 
 let prompt_lib = PromptLibrary::get_instance();
 let agent_entry = prompt_lib.config("SA").unwrap();
@@ -224,7 +224,7 @@ let agent = build_agent(
 
 ### Requirement: Concurrent Reviewer Execution
 
-The concurrent reviewer execution SHALL be located in `crates/crb-harness/src/pipeline.rs` (private function):
+The concurrent reviewer execution SHALL be located in `crates/riv-harness/src/pipeline.rs` (private function):
 
 ```rust
 async fn run_reviewers(diff: &Diff, config: &EvalConfig) -> Vec<Finding>
@@ -234,7 +234,7 @@ async fn run_reviewers(diff: &Diff, config: &EvalConfig) -> Vec<Finding>
 1. Calls `get_agents_for_diff(diff, config.agents)` for adaptive agent selection.
 2. Creates a `tokio::task::JoinSet`.
 3. For each agent entry, spawns an async task that:
-   a. Builds the agent via `crb_agents::build_agent()`.
+   a. Builds the agent via `riv_agents::build_agent()`.
    b. Calls `agent.prompt(diff_str).extended_details().await`.
    c. Parses output as `Vec<Finding>`, caps at `config.max_findings`.
    d. On `Err`, logs and returns `Vec::new()`.
@@ -266,7 +266,7 @@ at the pipeline level, not in this function).
 
 ### Requirement: Adaptive Agent Dispatch
 
-The adaptive agent dispatch SHALL be located in `crates/crb-consensus/src/adaptive.rs`:
+The adaptive agent dispatch SHALL be located in `crates/riv-consensus/src/adaptive.rs`:
 
 ```rust
 pub fn get_agents_for_diff(
@@ -299,7 +299,7 @@ languages in `FULL_PANEL_LANGUAGES` always trigger the full panel.
 
 ### Requirement: LLM Judge with Cache and Jaccard Fallback
 
-The LLM judge with cache and Jaccard fallback SHALL be located in `crates/crb-consensus/src/judge.rs`:
+The LLM judge with cache and Jaccard fallback SHALL be located in `crates/riv-consensus/src/judge.rs`:
 
 ```rust
 pub async fn judge_comment(
@@ -390,7 +390,7 @@ Respond with ONLY a JSON object:
 
 ### Requirement: Metrics Computation
 
-Metrics SHALL be computed via the `MetricsProvider` trait in `crb-types/src/benchmark.rs`:
+Metrics SHALL be computed via the `MetricsProvider` trait in `riv-types/src/benchmark.rs`:
 
 | Metric | Formula | Description |
 |--------|---------|-------------|
@@ -437,7 +437,7 @@ Note: The current `MetricsProvider` trait returns `0.0` for the `0/0` case
 
 ### Requirement: Consensus Pipeline Entry Point
 
-The consensus pipeline entry point SHALL be located in `crates/crb-consensus/src/pipeline.rs`:
+The consensus pipeline entry point SHALL be located in `crates/riv-consensus/src/pipeline.rs`:
 
 ```rust
 /// Run the consensus judging step on already-completed review findings.
@@ -453,7 +453,7 @@ pub async fn run_consensus_post(
 
 **Flow:**
 1. Accepts already-completed review results from each agent (reviewers run
-   independently via `crb-harness/src/pipeline.rs::evaluate()`).
+   independently via `riv-harness/src/pipeline.rs::evaluate()`).
 2. Pools findings into a sorted `unmatched` list.
 3. For each golden, call `judge_comment()` (LLM + cache + Jaccard).
 4. First match per golden → `TruePositive` (matched finding removed from pool).
@@ -482,7 +482,7 @@ pub async fn run_consensus_post(
 
 ### Requirement: Configuration Schema
 
-Configuration SHALL be provided via `EvalConfig` in `crates/crb-harness/src/eval.rs`:
+Configuration SHALL be provided via `EvalConfig` in `crates/riv-harness/src/eval.rs`:
 
 ```rust
 pub struct EvalConfig {
@@ -532,32 +532,32 @@ Agents are resolved from the `PromptLibrary` by abbreviation, not hardcoded.
 The module structure SHALL follow the defined crate layout.
 
 ```
-review-harness/
+BlameFree/
 ├── Cargo.toml                     # [workspace] members = ["crates/*"]
 └── crates/
-    ├── crb-consensus/             # Multi-agent orchestration & judging
+    ├── riv-consensus/             # Multi-agent orchestration & judging
     │   ├── Cargo.toml
     │   └── src/
     │       ├── lib.rs             # Role, MatchResult, ConsensusReport, re-exports
     │       ├── judge.rs           # judge_comment() with cache + LLM + Jaccard
     │       ├── pipeline.rs        # run_consensus_post()
     │       └── adaptive.rs        # get_agents_for_diff() adaptive dispatch
-    ├── crb-harness/
+    ├── riv-harness/
     │   ├── src/
     │   │   ├── pipeline.rs        # evaluate(), run_reviewers()
     │   │   └── eval.rs            # EvalConfig
-    ├── crb-agents/
+    ├── riv-agents/
     │   ├── src/
     │   │   ├── lib.rs             # build_agent()
     │   │   ├── agent.rs           # AgentEntry
     │   │   └── prompts.rs         # PromptLibrary (singleton, embedded prompts)
-    ├── crb-shared/
+    ├── riv-shared/
     │   └── src/
     │       └── finding.rs         # Finding struct
-    ├── crb-reporting/
+    ├── riv-reporting/
     │   └── src/
     │       └── golden.rs          # GoldenComment, GoldenCommentEntry
-    └── crb-types/
+    └── riv-types/
         └── src/
             └── benchmark.rs       # MetricsProvider trait, JudgeVerdict
 ```
@@ -565,22 +565,22 @@ review-harness/
 **Crate Dependencies:**
 
 - `rig-core` (extractor feature) — structured LLM output and agent builder.
-- `crb-agents` — `build_agent()`, `PromptLibrary`, `AgentEntry`.
-- `crb-shared` — `Finding`, `Severity`, `jaccard_similarity`.
-- `crb-reporting` — `GoldenComment`, `GoldenCommentEntry`, `AnalyticsSnapshot`.
-- `crb-cache` — `CacheBackend`, content-addressed caching.
-- `crb-types` — `MetricsProvider`, `JudgeVerdict`, `EvalStrategy`.
-- `crb-harness` — `EvalConfig`, pipeline orchestration.
+- `riv-agents` — `build_agent()`, `PromptLibrary`, `AgentEntry`.
+- `riv-shared` — `Finding`, `Severity`, `jaccard_similarity`.
+- `riv-reporting` — `GoldenComment`, `GoldenCommentEntry`, `AnalyticsSnapshot`.
+- `riv-cache` — `CacheBackend`, content-addressed caching.
+- `riv-types` — `MetricsProvider`, `JudgeVerdict`, `EvalStrategy`.
+- `riv-harness` — `EvalConfig`, pipeline orchestration.
 - `tokio` (full features) — async runtime, JoinSet, timeouts.
 - `schemars` — JSON schema generation for `Finding`.
 - `serde` / `serde_json` — serialization.
 
 #### Scenario: Module structure follows the defined crate layout
-- GIVEN the review-harness workspace
+- GIVEN the BlameFree workspace
 - WHEN the project is built
 - THEN each crate in crates/ compiles independently
-- AND crb-consensus depends on crb-agents, crb-shared, crb-reporting, crb-cache, and crb-types
-- AND crb-harness depends on crb-consensus for consensus orchestration
+- AND riv-consensus depends on riv-agents, riv-shared, riv-reporting, riv-cache, and riv-types
+- AND riv-harness depends on riv-consensus for consensus orchestration
 
 ---
 

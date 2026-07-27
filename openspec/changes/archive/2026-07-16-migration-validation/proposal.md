@@ -9,10 +9,10 @@ Rust reimplementation of scaffold_pr.sh (git cleanup + checkout + diff extractio
 Out of scope: web dashboard, multi-model judge calibration, statistical significance testing.
 
 ## Approach
-Rewrite scaffold_pr.sh as git helper functions in `crates/crb-tools/src/lib.rs` using `std::process::Command` for git operations (no git2 crate — reduce deps). Create a validation module in `crates/crb-reporting/src/lib.rs` that computes result deltas between new harness and stored baseline. Add `--validate` and `--ci` flags to `crb-harness/src/main.rs` via clap.
+Rewrite scaffold_pr.sh as git helper functions in `crates/riv-tools/src/lib.rs` using `std::process::Command` for git operations (no git2 crate — reduce deps). Create a validation module in `crates/riv-reporting/src/lib.rs` that computes result deltas between new harness and stored baseline. Add `--validate` and `--ci` flags to `riv-harness/src/main.rs` via clap.
 
 ## Why
 Shell-based PR scaffolding is fragile, non-portable (Unix-only), and cannot be integrated with Rust's async runtime. A Rust reimplementation provides cross-platform compatibility, better error handling, and zero runtime dependency on Python.
 
 ## What Changes
-Port scaffold_pr.sh to Rust git helper functions in crb-tools. Create validation module in crb-reporting comparing harness output against v5.14 baseline. Add --validate and --ci flags to crb-harness CLI.
+Port scaffold_pr.sh to Rust git helper functions in riv-tools. Create validation module in riv-reporting comparing harness output against v5.14 baseline. Add --validate and --ci flags to riv-harness CLI.

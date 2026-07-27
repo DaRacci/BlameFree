@@ -11,7 +11,7 @@
 ## Phase 2: Backend Implementation
 
 ### 2.1 Log Endpoints
-- [x] Add `LogsListResponse`/`PrLogsEntry`/`AgentLogResponse`/`PrAgentsResponse`/`PrAgentEntry` types to `crb-webui-shared/src/runs.rs` (extra `reasoning` field)
+- [x] Add `LogsListResponse`/`PrLogsEntry`/`AgentLogResponse`/`PrAgentsResponse`/`PrAgentEntry` types to `riv-webui-shared/src/runs.rs` (extra `reasoning` field)
 - [x] Implement `GET /api/runs/:id/logs` — scan cache dir, return list of available PR+agent log entries
 - [x] Implement `GET /api/runs/:id/logs/:pr_key/:role` — read prompt+response+reasoning from cache files
 - [x] Implement `GET /api/runs/:id/prs/:pr_key` — PR title + per-agent availability (extra endpoint, not in original spec)
@@ -23,7 +23,7 @@
 
 ## Phase 3: Frontend Implementation
 
-### 3.1 Shared Types (crb-webui-shared)
+### 3.1 Shared Types (riv-webui-shared)
 - [x] `LogsListResponse` + `PrLogsEntry` types
 - [x] `AgentLogResponse` type with `reasoning` field
 - [x] `PrAgentsResponse` + `PrAgentEntry` types

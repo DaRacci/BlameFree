@@ -990,298 +990,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crb-agents"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "crb-reporting",
- "crb-types",
- "futures",
- "handlebars",
- "include_dir",
- "mti",
- "rig-core",
- "serde",
- "serde_fields",
- "serde_json",
- "serde_yaml",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "crb-auditor"
-version = "0.1.0"
-dependencies = [
- "crb-shared",
- "crb-types",
- "regex",
-]
-
-[[package]]
-name = "crb-benchmark"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "crb-agents",
- "crb-cache",
- "crb-harness",
- "crb-reporting",
- "crb-rules",
- "crb-shared",
- "crb-tools",
- "crb-types",
- "dotenvy",
- "mti",
- "rig-core",
- "serde",
- "serde_json",
- "strum",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "crb-cache"
-version = "0.1.0"
-dependencies = [
- "crb-macros",
- "crb-types",
- "insta",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "crb-consensus"
-version = "0.1.0"
-dependencies = [
- "crb-agents",
- "crb-cache",
- "crb-reporting",
- "crb-shared",
- "crb-types",
- "insta",
- "rig-core",
- "serde",
- "serde_json",
- "tracing",
-]
-
-[[package]]
-name = "crb-harness"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "crb-agents",
- "crb-auditor",
- "crb-cache",
- "crb-consensus",
- "crb-reporting",
- "crb-rules",
- "crb-shared",
- "crb-tools",
- "crb-types",
- "dotenvy",
- "futures",
- "insta",
- "mti",
- "reqwest 0.12.28",
- "rig-core",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "crb-macros"
-version = "0.1.0"
-dependencies = [
- "crb-cache",
- "crb-types",
- "proc-macro2",
- "quote",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "syn 2.0.118",
- "trybuild",
-]
-
-[[package]]
-name = "crb-reporting"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "crb-types",
- "insta",
- "mti",
- "rig-core",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "crb-rules"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "glob",
- "insta",
- "serde",
- "serde_yaml",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "crb-shared"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "crb-cache",
- "crb-types",
- "dotenvy",
- "rand 0.8.6",
- "regex",
- "rig-core",
- "sha2 0.10.9",
- "tempfile",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "crb-tools"
-version = "0.1.0"
-dependencies = [
- "crb-shared",
- "crb-types",
- "dunce",
- "insta",
- "linguist",
- "rig-core",
- "schemars",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "toml 0.8.23",
- "tracing",
-]
-
-[[package]]
-name = "crb-types"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "crb-macros",
- "insta",
- "mti",
- "schemars",
- "sea-orm",
- "serde",
- "serde_json",
- "strum",
-]
-
-[[package]]
-name = "crb-webui-backend"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "chrono",
- "clap",
- "crb-agents",
- "crb-benchmark",
- "crb-cache",
- "crb-harness",
- "crb-reporting",
- "crb-shared",
- "crb-types",
- "crb-webui-shared",
- "insta",
- "mti",
- "oauth2",
- "octocrab",
- "regex",
- "reqwest 0.12.28",
- "rig-core",
- "riv-stor",
- "rust-embed",
- "rustls 0.23.41",
- "serde",
- "serde_json",
- "strum",
- "tempfile",
- "tokio",
- "tokio-stream",
- "toml 0.8.23",
- "tower-http 0.5.2",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "crb-webui-frontend"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "console_log",
- "crb-shared",
- "crb-types",
- "crb-webui-shared",
- "futures",
- "gloo-net",
- "gloo-timers 0.3.0",
- "insta",
- "js-sys",
- "leptos",
- "leptos_meta",
- "leptos_router",
- "log",
- "lucide-leptos",
- "paste",
- "serde",
- "serde_json",
- "strum",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "crb-webui-shared"
-version = "0.1.0"
-dependencies = [
- "crb-macros",
- "crb-types",
- "insta",
- "mti",
- "serde",
- "serde_json",
- "strum",
- "uuid",
-]
-
-[[package]]
 name = "crc"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4065,17 +3773,309 @@ dependencies = [
 ]
 
 [[package]]
+name = "riv-agents"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "handlebars",
+ "include_dir",
+ "mti",
+ "rig-core",
+ "riv-reporting",
+ "riv-types",
+ "serde",
+ "serde_fields",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "riv-auditor"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "riv-shared",
+ "riv-types",
+]
+
+[[package]]
+name = "riv-benchmark"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dotenvy",
+ "mti",
+ "rig-core",
+ "riv-agents",
+ "riv-cache",
+ "riv-harness",
+ "riv-reporting",
+ "riv-rules",
+ "riv-shared",
+ "riv-tools",
+ "riv-types",
+ "serde",
+ "serde_json",
+ "strum",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "riv-cache"
+version = "0.1.0"
+dependencies = [
+ "insta",
+ "riv-macros",
+ "riv-types",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "riv-consensus"
+version = "0.1.0"
+dependencies = [
+ "insta",
+ "rig-core",
+ "riv-agents",
+ "riv-cache",
+ "riv-reporting",
+ "riv-shared",
+ "riv-types",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "riv-harness"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dotenvy",
+ "futures",
+ "insta",
+ "mti",
+ "reqwest 0.12.28",
+ "rig-core",
+ "riv-agents",
+ "riv-auditor",
+ "riv-cache",
+ "riv-consensus",
+ "riv-reporting",
+ "riv-rules",
+ "riv-shared",
+ "riv-tools",
+ "riv-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "riv-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "riv-cache",
+ "riv-types",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "syn 2.0.118",
+ "trybuild",
+]
+
+[[package]]
+name = "riv-reporting"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "insta",
+ "mti",
+ "rig-core",
+ "riv-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "riv-rules"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glob",
+ "insta",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "riv-shared"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "rand 0.8.6",
+ "regex",
+ "rig-core",
+ "riv-cache",
+ "riv-types",
+ "sha2 0.10.9",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "riv-stor"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "crb-types",
  "mti",
+ "riv-types",
  "sea-orm",
  "serde",
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "riv-tools"
+version = "0.1.0"
+dependencies = [
+ "dunce",
+ "insta",
+ "linguist",
+ "rig-core",
+ "riv-shared",
+ "riv-types",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.8.23",
+ "tracing",
+]
+
+[[package]]
+name = "riv-types"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "insta",
+ "mti",
+ "riv-macros",
+ "schemars",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "strum",
+]
+
+[[package]]
+name = "riv-webui-backend"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "clap",
+ "insta",
+ "mti",
+ "oauth2",
+ "octocrab",
+ "regex",
+ "reqwest 0.12.28",
+ "rig-core",
+ "riv-agents",
+ "riv-benchmark",
+ "riv-cache",
+ "riv-harness",
+ "riv-reporting",
+ "riv-shared",
+ "riv-stor",
+ "riv-types",
+ "riv-webui-shared",
+ "rust-embed",
+ "rustls 0.23.41",
+ "serde",
+ "serde_json",
+ "strum",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "toml 0.8.23",
+ "tower-http 0.5.2",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "riv-webui-frontend"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "console_log",
+ "futures",
+ "gloo-net",
+ "gloo-timers 0.3.0",
+ "insta",
+ "js-sys",
+ "leptos",
+ "leptos_meta",
+ "leptos_router",
+ "log",
+ "lucide-leptos",
+ "paste",
+ "riv-shared",
+ "riv-types",
+ "riv-webui-shared",
+ "serde",
+ "serde_json",
+ "strum",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "riv-webui-shared"
+version = "0.1.0"
+dependencies = [
+ "insta",
+ "mti",
+ "riv-macros",
+ "riv-types",
+ "serde",
+ "serde_json",
+ "strum",
+ "uuid",
 ]
 
 [[package]]

@@ -184,7 +184,7 @@ struct CostSummary {
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  crb-harness Live Dashboard                 00:01:23     │
+│  riv-harness Live Dashboard                 00:01:23     │
 ├──────────┬──────────┬──────────┬──────────┤              │
 │  SA      │  CL      │  AR      │  SEC     │              │
 │  PR: #42 │  PR: #42 │  PR: #42 │  PR: #42 │              │
@@ -424,7 +424,7 @@ impl DashboardState {
 
         let elapsed = format_elapsed(self.start_time.elapsed());
         frame.render_widget(
-            Paragraph::new(format!(" crb-harness Live Dashboard  {}", elapsed))
+            Paragraph::new(format!(" riv-harness Live Dashboard  {}", elapsed))
                 .style(Style::new().bold().white().on_blue()),
             chunks[0],
         );
@@ -592,7 +592,7 @@ This avoids duplicating cost-tracking logic. The `CostSummary` is sent to the da
 
 ## 9. Dependencies
 
-### Added to crb-harness/Cargo.toml
+### Added to riv-harness/Cargo.toml
 
 ```toml
 # TUI dashboard (optional)

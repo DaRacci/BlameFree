@@ -1,15 +1,15 @@
-# Tasks: Rule System (crb-rules Crate)
+# Tasks: Rule System (riv-rules Crate)
 
 ## Phase 1 — Crate Scaffold
 
-- [x] Create `crates/crb-rules/` directory with `Cargo.toml`:
-  - Package name: `crb-rules`, version `0.1.0`, edition `2021`
+- [x] Create `crates/riv-rules/` directory with `Cargo.toml`:
+  - Package name: `riv-rules`, version `0.1.0`, edition `2021`
   - Dependencies: `serde` (workspace), `serde_json` (workspace), `serde_yaml = "0.9"`, `glob = "0.3"`, `anyhow` (workspace), `tracing` (workspace)
   - Dev-dependencies: `tempfile = "3"`
 - [x] Add to workspace — no change needed: `members = ["crates/*"]` already covers it
 - [x] Create `src/lib.rs` with module declarations: `mod parser; mod matcher; mod preamble;`
 - [x] Create `src/parser.rs`, `src/matcher.rs`, `src/preamble.rs` as empty stubs
-- [x] Verify `cargo check -p crb-rules` succeeds
+- [x] Verify `cargo check -p riv-rules` succeeds
 
 ## Phase 2 — Core Types and Parsing
 
@@ -97,9 +97,9 @@
   - No matched rules returns empty string
   - Rules without description omit heading
 
-## Phase 6 — Integration: crb-agents
+## Phase 6 — Integration: riv-agents
 
-- [x] Modify `build_agent()` in `crates/crb-agents/src/lib.rs`:
+- [x] Modify `build_agent()` in `crates/riv-agents/src/lib.rs`:
   - Add `rules_preamble: Option<&str>` parameter
   - If `rules_preamble` is `Some` and non-empty, prepend to role preamble:
     ```rust
@@ -112,9 +112,9 @@
 - [x] Update all call sites of `build_agent()` in the workspace to pass `None` (backward compatible)
 - [x] Verify `cargo check` passes across workspace
 
-## Phase 7 — Integration: crb-harness
+## Phase 7 — Integration: riv-harness
 
-- [x] Add `crb-rules` dependency to `crates/crb-harness/Cargo.toml`
+- [x] Add `riv-rules` dependency to `crates/riv-harness/Cargo.toml`
 - [ ] Add CLI flags to `CliArgs`:
   - `--rules-dir <PATH>` with default `.crb/rules/`
   - `--skip-rules` (flag, disables rule loading)
@@ -125,11 +125,11 @@
   - Collect changed file paths from PR diff
   - Call `ruleset.format_preamble(&pr_files)` to get preamble string
   - Pass `Some(preamble_str)` to each `build_agent()` call
-- [x] Verify `cargo check -p crb-harness` succeeds
+- [x] Verify `cargo check -p riv-harness` succeeds
 
 ## Phase 8 — Testing
 
-- [ ] Create `crates/crb-rules/tests/` integration tests:
+- [ ] Create `crates/riv-rules/tests/` integration tests:
   - End-to-end: create temp directory with rule files, load, match, format
   - Empty directory, mix of matching and non-matching rules
   - Rules with no frontmatter treated as always-apply
@@ -142,7 +142,7 @@
 - [ ] Write harness-level integration test:
   - Start harness with `--rules-dir test_fixtures/ --skip-linters`
   - Verify preamble appears in agent system prompt
-- [x] Run full `cargo test -p crb-rules` and verify all tests pass
+- [x] Run full `cargo test -p riv-rules` and verify all tests pass
 
 ## Known Issues
 

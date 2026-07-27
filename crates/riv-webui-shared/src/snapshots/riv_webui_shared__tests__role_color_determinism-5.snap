@@ -1,0 +1,9 @@
+---
+source: crates/riv-webui-shared/src/lib.rs
+expression: "(input, a, b)"
+---
+(
+    "architect",
+    "hsl(93, 65%, 55%)",
+    "hsl(93, 65%, 55%)",
+)

@@ -3,7 +3,7 @@
 //! Provides a generic [`Store`] trait backed by concrete backend implementations.
 
 // Dependencies pulled in for their feature propagation
-use {crb_types as _, sea_orm as _};
+use {riv_types as _, sea_orm as _};
 
 pub mod error;
 pub mod migration;
@@ -11,7 +11,7 @@ pub mod store;
 pub mod traits;
 
 use crate::traits::Storable;
-use crb_types::{
+use riv_types::{
     agent::AgentSession,
     benchmark::{golden::GoldenComment, result::PrResult, standalone::Benchmark},
     cost::AnalyticsSnapshot,

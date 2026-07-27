@@ -1,0 +1,29 @@
+[package]
+name = "riv-shared"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+backend = ["dotenvy", "rig-core", "tracing-subscriber"]
+
+[dependencies]
+anyhow = { workspace = true }
+regex = { workspace = true }
+sha2 = { workspace = true }
+riv-cache = { path = "../riv-cache" }
+riv-types = { path = "../riv-types" }
+tracing = { workspace = true }
+rand = { workspace = true }
+
+# Backend dependencies
+dotenvy = { workspace = true, optional = true }
+rig-core = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

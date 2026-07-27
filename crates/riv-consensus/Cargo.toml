@@ -1,0 +1,27 @@
+[package]
+name = "riv-consensus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+exp14_submit_finding = ["riv-agents/exp14_submit_finding"]
+exp16_adaptive_agents = []
+
+[dependencies]
+riv-agents = { path = "../riv-agents" }
+riv-types = { path = "../riv-types" }
+riv-reporting = { path = "../riv-reporting" }
+riv-cache = { path = "../riv-cache" }
+riv-shared = { path = "../riv-shared" }
+rig-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true }
+
+[lints]
+workspace = true

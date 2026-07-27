@@ -237,7 +237,7 @@ The system SHALL accept an optional rules preamble in `build_agent()` and prepen
 
 ### Requirement: CLI Integration
 
-The system SHALL provide `--rules-dir` and `--skip-rules` CLI flags in `crb-harness` for controlling rule loading.
+The system SHALL provide `--rules-dir` and `--skip-rules` CLI flags in `riv-harness` for controlling rule loading.
 
 > **⚠️ Implementation status:** This requirement is specified but NOT yet implemented.
 > - No `--rules-dir` or `--skip-rules` flags exist in `ReviewArgs` / `CliArgs`
