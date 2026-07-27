@@ -11,7 +11,7 @@ use crate::{benchmark::golden::GoldenCommentEntity, finding::FindingEntity};
     derive(crb_macros::EntityModel),
     sea_orm(table_name = "judge_verdicts")
 )]
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
 pub struct JudgeVerdict {
     /// Surrogate primary key
     #[cfg_attr(
@@ -62,6 +62,6 @@ pub struct JudgeVerdict {
 /// Contains a list of the findings and verdicts
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct JudgedFindings {
-    pub findings: Vec<(Finding, JudgeVerdict)>,
+    pub findings: Vec<Finding>,
     pub missed_comments: Vec<GoldenComment>,
 }

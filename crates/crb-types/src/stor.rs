@@ -1,5 +1,43 @@
 use mti::prelude::MagicTypeId;
 
+/// Assign a MagicTypeId parent PK to a child FK field.
+///
+/// Generated Save code uses this trait so that child FK fields of different
+/// types (MagicTypeId, String, Option<String>, etc.) all accept the parent PK
+/// without orphan-rule violations.
+#[cfg(feature = "seaorm-storage")]
+pub trait FkFromMagicTypeId {
+    fn from_mtid(pk: &MagicTypeId) -> Self;
+}
+
+#[cfg(feature = "seaorm-storage")]
+impl FkFromMagicTypeId for MagicTypeId {
+    fn from_mtid(pk: &MagicTypeId) -> Self {
+        pk.clone()
+    }
+}
+
+#[cfg(feature = "seaorm-storage")]
+impl FkFromMagicTypeId for Option<MagicTypeId> {
+    fn from_mtid(pk: &MagicTypeId) -> Self {
+        Some(pk.clone())
+    }
+}
+
+#[cfg(feature = "seaorm-storage")]
+impl FkFromMagicTypeId for String {
+    fn from_mtid(pk: &MagicTypeId) -> Self {
+        pk.to_string()
+    }
+}
+
+#[cfg(feature = "seaorm-storage")]
+impl FkFromMagicTypeId for Option<String> {
+    fn from_mtid(pk: &MagicTypeId) -> Self {
+        Some(pk.to_string())
+    }
+}
+
 /// Trait for domain structs that have a surrogate primary key.
 ///
 /// Auto-implemented by `#[derive(EntityModel)]`. The `Id` associated type

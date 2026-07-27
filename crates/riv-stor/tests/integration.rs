@@ -125,7 +125,7 @@ async fn test_pr_result_with_golden_comments() {
         id: id.clone(),
         golden_comments: vec![gc1, gc2],
         benchmark_id: None,
-        findings_with_verdicts: Vec::new(),
+        findings: Vec::new(),
     };
 
     store.save(&pr).await.unwrap();
@@ -280,7 +280,7 @@ async fn test_pr_result_cascade_delete() {
         id: id.clone(),
         golden_comments: vec![gc],
         benchmark_id: None,
-        findings_with_verdicts: Vec::new(),
+        findings: Vec::new(),
     };
 
     store.save(&pr).await.unwrap();

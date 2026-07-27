@@ -674,7 +674,7 @@ pub async fn get_pr_detail(
                 id: pr_key.as_str().create_type_id::<V7>(),
                 golden_comments: vec![],
                 benchmark_id: None,
-                findings_with_verdicts: vec![],
+                findings: vec![],
             })
             .into_response();
         }

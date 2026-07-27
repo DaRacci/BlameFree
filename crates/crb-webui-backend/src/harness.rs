@@ -146,19 +146,18 @@ pub async fn run_harness(
                     id: review_id,
                     golden_comments: pr_entry.comments.clone(),
                     benchmark_id: None,
-                    findings_with_verdicts: findings
+                    findings: findings
                         .into_iter()
-                        .map(|f| {
-                            (
-                                f,
-                                JudgeVerdict {
-                                    id: None,
-                                    finding_id: None, // TODO
-                                    reasoning: "Pending judge evaluation".to_string(),
-                                    match_: false,
-                                    confidence: 0.0,
-                                },
-                            )
+                        .map(|mut f| {
+                            f.verdict = Some(JudgeVerdict {
+                                id: None,
+                                finding_id: None, // TODO
+                                linked_comment_id: None,
+                                reasoning: "Pending judge evaluation".to_string(),
+                                match_: false,
+                                confidence: 0.0,
+                            });
+                            f
                         })
                         .collect(),
                 };

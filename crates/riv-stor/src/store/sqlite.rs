@@ -6,12 +6,10 @@ use crb_types::stor::{LoadDepth, Save};
 use crb_types::{
     agent::{AgentSession, AgentSessionEntity},
     benchmark::{
-        golden::{GoldenComment, GoldenCommentColumn, GoldenCommentEntity},
-        judge::{JudgeVerdict, JudgeVerdictColumn, JudgeVerdictEntity, JudgeVerdictModel},
         result::{PrResult, PrResultEntity},
         standalone::{Benchmark, BenchmarkEntity},
     },
-    finding::{Finding, FindingColumn, FindingEntity, FindingModel},
+    finding::{FindingColumn, FindingEntity},
     review::{Review, ReviewEntity},
 };
 use mti::prelude::MagicTypeId;
@@ -219,107 +217,4 @@ impl Store for SqliteStore {
     async fn migrate(&self) -> Result<(), Error> {
         crate::migration::run_migrations(&self.db).await
     }
-}
-
-/// Load a `PrResult` with its children (golden_comments).
-async fn load_pr_result(
-    db: &DatabaseConnection,
-    id: &MagicTypeId,
-) -> Result<Option<PrResult>, Error> {
-    let model = PrResultEntity::find_by_id(id.to_string())
-        .one(db)
-        .await
-        .map_err(|e| Error::Query(format!("failed to load pr_result: {e}")))?;
-
-    match model {
-        Some(row) => {
-            // Load golden comments
-            let golden_models = GoldenCommentEntity::find()
-                .filter(GoldenCommentColumn::PrResultId.eq(id.to_string()))
-                .all(db)
-                .await
-                .map_err(|e| Error::Query(format!("failed to load golden comments: {e}")))?;
-
-            let gcs: Vec<GoldenComment> = golden_models
-                .into_iter()
-                .map(|gc| GoldenComment {
-                    id: Some(gc.id),
-                    pr_result_id: id.clone(),
-                    comment: gc.comment,
-                    severity: gc.severity,
-                })
-                .collect();
-
-            let benchmark_id = row
-                .benchmark_id
-                .as_ref()
-                .and_then(|s| s.parse::<MagicTypeId>().ok());
-
-            Ok(Some(PrResult {
-                id: id.clone(),
-                benchmark_id,
-                golden_comments: gcs,
-                findings_with_verdicts: load_findings_and_verdicts(db, id).await?,
-            }))
-        }
-        None => Ok(None),
-    }
-}
-
-/// Load findings and their judge verdicts for a given pr_result.
-async fn load_findings_and_verdicts(
-    db: &DatabaseConnection,
-    id: &MagicTypeId,
-) -> Result<Vec<(Finding, JudgeVerdict)>, Error> {
-    let finding_models = FindingEntity::find()
-        .filter(FindingColumn::PrResultId.eq(id.to_string()))
-        .all(db)
-        .await
-        .map_err(|e| Error::Query(format!("failed to load findings: {e}")))?;
-
-    let mut results = Vec::with_capacity(finding_models.len());
-    for fm in finding_models {
-        let finding = Finding {
-            id: Some(fm.id),
-            pr_result_id: fm.pr_result_id,
-            file: fm.file,
-            line: fm.line,
-            message: fm.message,
-            severity: fm.severity,
-            rule_code: fm.rule_code,
-            severity_audited: fm.severity_audited,
-            severity_audit_reason: fm.severity_audit_reason,
-            evidence: fm.evidence,
-            path_trace: fm.path_trace,
-            confidence: fm.confidence,
-            found_by: fm.found_by,
-            agent_count: fm.agent_count.map(|c| c as u64),
-            cross_validated: fm.cross_validated,
-            cross_validated_by: fm.cross_validated_by.map(|c| c as u64),
-            merged_from: fm.merged_from.map(|c| c as u64),
-        };
-
-        // Load the single verdict for this finding
-        let verdict_model = JudgeVerdictEntity::find()
-            .filter(JudgeVerdictColumn::FindingId.eq(fm.id))
-            .one(db)
-            .await
-            .map_err(|e| Error::Query(format!("failed to load judge_verdict: {e}")))?;
-
-        let verdict = match verdict_model {
-            Some(vm) => JudgeVerdict {
-                id: Some(vm.id),
-                finding_id: vm.finding_id,
-                linked_comment_id: vm.linked_comment_id,
-                reasoning: vm.reasoning,
-                match_: vm.match_,
-                confidence: vm.confidence,
-            },
-            None => continue,
-        };
-
-        results.push((finding, verdict));
-    }
-
-    Ok(results)
 }

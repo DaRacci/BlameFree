@@ -107,8 +107,6 @@ pub enum RelationKind {
         entity_alias: String,
         /// Optional FK column override: `child_fk = "session_id"`.
         child_fk: Option<String>,
-        /// Optional tuple linked child: `tuple(linked_child = "JudgeVerdictEntity")`.
-        tuple_linked_child: Option<String>,
     },
 
     /// Field becomes `HasOne<ChildEntity>`.
@@ -136,6 +134,9 @@ pub struct ProcessedField {
 
     /// True if the PK is auto-incremented by the DB.
     pub auto_increment: bool,
+
+    /// True if the field is nullable in the DB.
+    pub nullable: bool,
 
     /// `#[sea_orm(...)]` tokens to pass through verbatim.
     pub passthrough: Vec<TokenStream2>,
@@ -240,7 +241,10 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
                         let attrs = &pf.passthrough;
                         quote! { #(#attrs)* }
                     };
-                    let out_ty = scalar_column_type(&pf.ty);
+                    let mut out_ty = scalar_column_type(&pf.ty);
+                    if pf.nullable {
+                        out_ty = quote! { Option<#out_ty> };
+                    }
                     scalar_fields.push(quote! {
                         #sea_attrs
                         pub #field_ident: #out_ty
@@ -521,6 +525,9 @@ fn build_from_traits(
                 quote! { m.#ident.parse::<mti::prelude::MagicTypeId>().unwrap_or_default() }
             } else if is_opt_mtid {
                 quote! { m.#ident.map(|s| s.parse::<mti::prelude::MagicTypeId>().unwrap_or_default()) }
+            } else if pf.nullable {
+                // DB column is Optional, but domain type is concrete
+                quote! { m.#ident.unwrap_or_default() }
             } else {
                 quote! { m.#ident }
             };
@@ -534,6 +541,9 @@ fn build_from_traits(
                 quote! { sea_orm::Set(d.#ident.to_string()) }
             } else if is_opt_mtid {
                 quote! { sea_orm::Set(d.#ident.as_ref().map(|x| x.to_string())) }
+            } else if pf.nullable {
+                // Domain type is concrete, but ActiveModel column is Optional
+                quote! { sea_orm::Set(Some(d.#ident)) }
             } else {
                 quote! { sea_orm::Set(d.#ident) }
             };
@@ -727,7 +737,7 @@ fn build_load_children(
             RelationKind::HasMany {
                 entity_alias,
                 child_fk,
-                tuple_linked_child: None,
+                ..
             } => {
                 // Entity, domain type, and column are re-exported at the caller's module scope.
                 let child_entity = Ident::new(entity_alias, Span::call_site());
@@ -775,12 +785,6 @@ fn build_load_children(
                         }
                     }
                 });
-            }
-            RelationKind::HasMany {
-                tuple_linked_child: Some(_),
-                ..
-            } => {
-                // Tuple-linked children (e.g. PrResult's findings) are handled manually
             }
             RelationKind::HasOne { entity_alias } => {
                 let child_entity = Ident::new(entity_alias, Span::call_site());
@@ -870,10 +874,12 @@ fn build_new_function(processed: &Vec<ProcessedField>, struct_name: &Ident) -> T
 
         let name = &pf.ident;
 
-        if matches!(
-            pf.relation,
-            Some(RelationKind::HasMany { .. }) | Some(RelationKind::HasOne { .. })
-        ) {
+        if matches!(pf.relation, Some(RelationKind::HasOne { .. })) {
+            all_fields.push((name.clone(), quote! { None }));
+            continue;
+        }
+
+        if matches!(pf.relation, Some(RelationKind::HasMany { .. })) {
             all_fields.push((name.clone(), quote! { Vec::new() }));
             continue;
         }
@@ -1002,31 +1008,11 @@ fn build_save_function(
     struct ChildSpec {
         field_ident: Ident,
         fk: String,
-        tuple_linked: Option<String>,
     }
 
     let mut child_specs = Vec::new();
     for pf in processed {
-        if let Some(RelationKind::HasMany {
-            child_fk,
-            tuple_linked_child,
-            ..
-        }) = &pf.relation
-        {
-            // Detect tuple Vec<(A, B)> — require annotation or fail loudly
-            let ty = &pf.ty;
-            let ty_str = quote!(#ty).to_string();
-            if ty_str.contains('(') {
-                if tuple_linked_child.is_none() {
-                    let field_name = pf.ident.to_string();
-                    return quote! {
-                        compile_error!(concat!(
-                            "EntityModel: field ", #field_name,
-                            " is a tuple HasMany (Vec<(A, B)>). Add tuple = \"ChildEntity\" to the #[sea_orm(has_many)] attribute."
-                        ));
-                    };
-                };
-            }
+        if let Some(RelationKind::HasMany { child_fk, .. }) = &pf.relation {
             let child_fk = child_fk
                 .clone()
                 .unwrap_or_else(|| format!("{}_id", to_snake_case(&raw_name)));
@@ -1034,7 +1020,6 @@ fn build_save_function(
             child_specs.push(ChildSpec {
                 field_ident: pf.ident.clone(),
                 fk: child_fk,
-                tuple_linked: tuple_linked_child.clone(),
             });
         }
     }
@@ -1101,19 +1086,16 @@ fn build_save_function(
             let fk_ident = Ident::new(&child.fk, Span::call_site());
             let field_ident = &child.field_ident;
 
-            if let Some(tuple) = &child.tuple_linked {
-                return quote! {
-                    compile_error!(concat!(
-                        "EntityModel: field ", stringify!(#field_ident),
-                        " is a tuple-linked child (", #tuple, "); this is not yet supported."
-                    ));
-                };
-            }
+            let fk_assign = if auto_inc {
+                quote! { __child_clone.#fk_ident = __parent_pk; }
+            } else {
+                quote! { __child_clone.#fk_ident = crate::stor::FkFromMagicTypeId::from_mtid(&__parent_pk); }
+            };
 
             quote! {
                 for __child in &self.#field_ident {
                     let mut __child_clone = __child.clone();
-                    __child_clone.#fk_ident = __parent_pk.clone().into();
+                    #fk_assign;
                     __child_clone.save(db).await?;
                 }
             }
@@ -1139,6 +1121,7 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
     let mut is_ignored = false;
     let mut is_primary_key = false;
     let mut auto_increment = false;
+    let mut nullable = false;
     let mut relation: Option<RelationKind> = None;
     let mut passthrough = Vec::new();
     let mut flatten: Option<FlattenSpec> = None;
@@ -1172,18 +1155,12 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
 
         if inner_lower.contains("has_many") {
             let child_fk = extract_value(&inner_str, "child_fk");
-            let tuple_linked = extract_value(&inner_str, "tuple");
             relation = Some(RelationKind::HasMany {
                 entity_alias: extract_value(&inner_str, "entity"),
                 child_fk: if child_fk.is_empty() {
                     None
                 } else {
                     Some(child_fk)
-                },
-                tuple_linked_child: if tuple_linked.is_empty() {
-                    None
-                } else {
-                    Some(tuple_linked)
                 },
             });
             continue;
@@ -1211,6 +1188,9 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
         if inner_lower.contains("auto_increment") {
             auto_increment = true;
         }
+        if inner_lower.contains("nullable") {
+            nullable = true;
+        }
 
         passthrough.push(quote! { #[sea_orm(#inner_ts)] });
     }
@@ -1221,6 +1201,7 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
         is_ignored,
         is_primary_key,
         auto_increment,
+        nullable,
         passthrough,
         relation,
         flatten,

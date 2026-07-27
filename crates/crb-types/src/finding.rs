@@ -1,6 +1,11 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::benchmark::judge::JudgeVerdict;
+#[cfg(feature = "seaorm-storage")]
+use crate::benchmark::judge::JudgeVerdictColumn;
+#[cfg(feature = "seaorm-storage")]
+use crate::benchmark::judge::JudgeVerdictEntity;
 #[cfg(feature = "seaorm-storage")]
 use crate::benchmark::result::PrResultEntity;
 use crate::severity::Severity;
@@ -37,7 +42,7 @@ pub struct Finding {
         )
     )]
     #[cfg_attr(feature = "seaorm-storage", sea_orm(nullable))]
-    pub pr_result_id: Option<String>,
+    pub pr_result_id: String,
 
     /// Source file path where the issue was found, if available.
     #[serde(
@@ -128,6 +133,14 @@ pub struct Finding {
     /// How many original findings were merged to produce this one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merged_from: Option<u64>,
+
+    /// The judge's verdict for this finding, if evaluated.
+    #[cfg_attr(
+        feature = "seaorm-storage",
+        sea_orm(has_one, entity = "JudgeVerdictEntity")
+    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<JudgeVerdict>,
 }
 
 /// A confidence level for a finding.

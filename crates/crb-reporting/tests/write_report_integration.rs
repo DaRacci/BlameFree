@@ -5,6 +5,7 @@ use crb_reporting::write_report;
 use crb_types::benchmark::golden::GoldenComment;
 use crb_types::benchmark::judge::JudgeVerdict;
 use crb_types::benchmark::result::PrResult;
+use crb_types::finding::Finding;
 use crb_types::vcs::pr::PrMeta;
 use mti::prelude::{MagicTypeIdExt, V7};
 
@@ -46,30 +47,36 @@ fn make_pr(pr_title: &str, url: &str, has_cost: bool) -> PrResult {
             number: todo!(),
         },
         benchmark_id: None,
-        findings_with_verdicts: vec![
-            (
-                todo!(),
-                JudgeVerdict {
+        findings: vec![
+            Finding {
+                verdict: Some(JudgeVerdict {
                     reasoning: "Match found".into(),
                     match_: true,
                     confidence: 0.95,
-                },
-            ),
-            (
-                todo!(),
-                JudgeVerdict {
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            Finding {
+                verdict: Some(JudgeVerdict {
                     reasoning: "No match".into(),
                     match_: false,
                     confidence: 0.1,
-                },
-            ),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
         ],
         golden_comments: vec![
             GoldenComment {
+                id: None,
+                pr_result_id: todo!(),
                 comment: "This is a golden comment".into(),
                 severity: crb_types::severity::Severity::Info,
             },
             GoldenComment {
+                id: None,
+                pr_result_id: todo!(),
                 comment: "This is a medium severity".into(),
                 severity: crb_types::severity::Severity::Medium,
             },

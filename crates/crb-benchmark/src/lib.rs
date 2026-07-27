@@ -164,7 +164,9 @@ pub async fn evaluate_findings(
             continue;
         };
 
-        judged_findings.findings.push((finding.clone(), verdict));
+        let mut f = finding.clone();
+        f.verdict = Some(verdict);
+        judged_findings.findings.push(f);
     }
 
     for comments in &dataset.comments {}

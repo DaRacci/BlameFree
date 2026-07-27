@@ -438,13 +438,15 @@ async fn run_adhoc_review_inner(
         id: review_id.clone(),
         golden_comments: Vec::new(),
         benchmark_id: None,
-        findings_with_verdicts: findings
+        findings: findings
             .into_iter()
-            .map(|f| {
-                (
-                    f,
-                    JudgeVerdict::new("Pending judge evaluation".to_string(), false, 0.0),
-                )
+            .map(|mut f| {
+                f.verdict = Some(JudgeVerdict::new(
+                    "Pending judge evaluation".to_string(),
+                    false,
+                    0.0,
+                ));
+                f
             })
             .collect(),
     };
