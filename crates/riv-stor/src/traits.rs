@@ -33,11 +33,13 @@ pub trait Store: Send + Sync + Clone {
     /// Load a single item by its `MagicTypeId`.
     ///
     /// Returns `None` if not found.
-    fn load<T: Storable>(&self, id: &MagicTypeId)
-    -> impl Future<Output = Result<Option<T>, Error>>;
+    fn load<T: Storable + crb_types::stor::EntityLoader>(
+        &self,
+        id: &MagicTypeId,
+    ) -> impl Future<Output = Result<Option<T>, Error>>;
 
     /// List items matching the type-specific options.
-    fn list<T: Storable>(
+    fn list<T: Storable + crb_types::stor::EntityLoader>(
         &self,
         options: &T::Options,
     ) -> impl Future<Output = Result<Vec<T>, Error>>;
@@ -80,11 +82,17 @@ mod tests {
             Ok(())
         }
 
-        async fn load<T: Storable>(&self, _id: &MagicTypeId) -> Result<Option<T>, Error> {
+        async fn load<T: Storable + crb_types::stor::EntityLoader>(
+            &self,
+            _id: &MagicTypeId,
+        ) -> Result<Option<T>, Error> {
             Ok(None)
         }
 
-        async fn list<T: Storable>(&self, _options: &T::Options) -> Result<Vec<T>, Error> {
+        async fn list<T: Storable + crb_types::stor::EntityLoader>(
+            &self,
+            _options: &T::Options,
+        ) -> Result<Vec<T>, Error> {
             Ok(Vec::new())
         }
 

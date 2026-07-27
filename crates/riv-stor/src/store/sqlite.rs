@@ -1,21 +1,18 @@
 //! SQLite-backed storage implementation using SeaORM.
 
-use std::{
-    any::{Any, TypeId},
-    sync::Arc,
-};
+use std::{any::TypeId, sync::Arc};
 
 use crb_types::stor::Save;
 use crb_types::{
     agent::{AgentSession, AgentSessionEntity, AgentTurn, AgentTurnMessage},
     benchmark::{
-        golden::{GoldenComment, GoldenCommentColumn, GoldenCommentEntity, GoldenCommentModel},
+        golden::{GoldenComment, GoldenCommentColumn, GoldenCommentEntity},
         judge::{JudgeVerdict, JudgeVerdictColumn, JudgeVerdictEntity, JudgeVerdictModel},
-        result::{PrResult, PrResultEntity, PrResultModel},
-        standalone::{Benchmark, BenchmarkEntity, BenchmarkModel},
+        result::{PrResult, PrResultEntity},
+        standalone::{Benchmark, BenchmarkEntity},
     },
     finding::{Finding, FindingColumn, FindingEntity, FindingModel},
-    review::{Review, ReviewActiveModel, ReviewEntity, ReviewModel},
+    review::{Review, ReviewEntity},
 };
 use mti::prelude::MagicTypeId;
 use sea_orm::{
@@ -50,11 +47,6 @@ macro_rules! upsert {
             Err(e) => Err(Error::Query(format!("failed to insert: {e}"))),
         }
     }};
-}
-
-/// box a value as `Box<dyn Any>` without triggering trivial-cast lints.
-fn box_any<T: 'static>(value: T) -> Box<dyn Any> {
-    Box::new(value)
 }
 
 /// A SQLite-backed storage backend
@@ -111,71 +103,22 @@ impl Store for SqliteStore {
             .map_err(|e| Error::Query(e.to_string()))
     }
 
-    async fn load<T: Storable>(&self, id: &MagicTypeId) -> Result<Option<T>, Error> {
-        if TypeId::of::<T>() == TypeId::of::<Review>() {
-            let result = load_review(&self.db, id).await?;
-            let result: Option<Box<dyn Any>> = result.map(box_any);
-            return Ok(result.and_then(|b| b.downcast::<T>().ok().map(|b| *b)));
-        }
-
-        if TypeId::of::<T>() == TypeId::of::<PrResult>() {
-            let result = load_pr_result(&self.db, id).await?;
-            let result: Option<Box<dyn Any>> = result.map(box_any);
-            return Ok(result.and_then(|b| b.downcast::<T>().ok().map(|b| *b)));
-        }
-
-        if TypeId::of::<T>() == TypeId::of::<Benchmark>() {
-            let result = load_benchmark(&self.db, id).await?;
-            let result: Option<Box<dyn Any>> = result.map(box_any);
-            return Ok(result.and_then(|b| b.downcast::<T>().ok().map(|b| *b)));
-        }
-
-        if TypeId::of::<T>() == TypeId::of::<AgentSession>() {
-            let result = load_agent_session(&self.db, id).await?;
-            let result: Option<Box<dyn Any>> = result.map(box_any);
-            return Ok(result.and_then(|b| b.downcast::<T>().ok().map(|b| *b)));
-        }
-
-        Err(Error::Internal(
-            format!("unknown type for loading: {}", std::any::type_name::<T>()).into(),
-        ))
+    async fn load<T: Storable + crb_types::stor::EntityLoader>(
+        &self,
+        id: &MagicTypeId,
+    ) -> Result<Option<T>, Error> {
+        T::load_by_id(&self.db, id)
+            .await
+            .map_err(|e| Error::Query(e.to_string()))
     }
 
-    async fn list<T: Storable>(&self, _options: &T::Options) -> Result<Vec<T>, Error> {
-        if TypeId::of::<T>() == TypeId::of::<Review>() {
-            let result = list_reviews(&self.db).await?;
-            let result: Vec<Box<dyn Any>> = result.into_iter().map(box_any).collect();
-            return Ok(result
-                .into_iter()
-                .filter_map(|b| b.downcast::<T>().ok().map(|b| *b))
-                .collect());
-        }
-
-        if TypeId::of::<T>() == TypeId::of::<PrResult>() {
-            let result = list_pr_results(&self.db).await?;
-            let result: Vec<Box<dyn Any>> = result.into_iter().map(box_any).collect();
-            return Ok(result
-                .into_iter()
-                .filter_map(|b| b.downcast::<T>().ok().map(|b| *b))
-                .collect());
-        }
-
-        if TypeId::of::<T>() == TypeId::of::<Benchmark>() {
-            let result = list_benchmarks(&self.db).await?;
-            let result: Vec<Box<dyn Any>> = result.into_iter().map(box_any).collect();
-            return Ok(result
-                .into_iter()
-                .filter_map(|b| b.downcast::<T>().ok().map(|b| *b))
-                .collect());
-        }
-
-        Err(Error::Internal(
-            format!(
-                "list not implemented for type: {}",
-                std::any::type_name::<T>()
-            )
-            .into(),
-        ))
+    async fn list<T: Storable + crb_types::stor::EntityLoader>(
+        &self,
+        _options: &T::Options,
+    ) -> Result<Vec<T>, Error> {
+        T::load_all(&self.db)
+            .await
+            .map_err(|e| Error::Query(e.to_string()))
     }
 
     async fn delete<T: Storable>(&self, id: &MagicTypeId) -> Result<bool, Error> {
@@ -272,28 +215,6 @@ impl Store for SqliteStore {
     }
 }
 
-/// Load a `Review` by its ID.
-async fn load_review(db: &DatabaseConnection, id: &MagicTypeId) -> Result<Option<Review>, Error> {
-    let model = ReviewEntity::find_by_id(id.to_string())
-        .one(db)
-        .await
-        .map_err(|e| Error::Query(format!("failed to load review: {e}")))?;
-
-    match model {
-        Some(row) => Ok(Some(map_model_to_review(row))),
-        None => Ok(None),
-    }
-}
-
-/// List all `Review` entries.
-async fn list_reviews(db: &DatabaseConnection) -> Result<Vec<Review>, Error> {
-    let models = ReviewEntity::find()
-        .all(db)
-        .await
-        .map_err(|e| Error::Query(format!("failed to list reviews: {e}")))?;
-    Ok(models.into_iter().map(map_model_to_review).collect())
-}
-
 /// Load a `PrResult` with its children (golden_comments).
 async fn load_pr_result(
     db: &DatabaseConnection,
@@ -337,26 +258,6 @@ async fn load_pr_result(
         }
         None => Ok(None),
     }
-}
-
-/// List all `PrResult` entries (lightweight, no children loaded).
-async fn list_pr_results(db: &DatabaseConnection) -> Result<Vec<PrResult>, Error> {
-    let models = PrResultEntity::find()
-        .all(db)
-        .await
-        .map_err(|e| Error::Query(format!("failed to list pr_results: {e}")))?;
-    Ok(models
-        .into_iter()
-        .map(|m| PrResult {
-            id: m.id.parse::<MagicTypeId>().unwrap_or_default(),
-            benchmark_id: m
-                .benchmark_id
-                .as_ref()
-                .and_then(|s| s.parse::<MagicTypeId>().ok()),
-            golden_comments: Vec::new(),
-            findings_with_verdicts: Vec::new(),
-        })
-        .collect())
 }
 
 /// Load findings and their judge verdicts for a given pr_result.
@@ -415,46 +316,6 @@ async fn load_findings_and_verdicts(
     }
 
     Ok(results)
-}
-
-/// Load a `Benchmark` by its ID.
-async fn load_benchmark(
-    db: &DatabaseConnection,
-    id: &MagicTypeId,
-) -> Result<Option<Benchmark>, Error> {
-    let model = BenchmarkEntity::find_by_id(id.to_string())
-        .one(db)
-        .await
-        .map_err(|e| Error::Query(format!("failed to load benchmark: {e}")))?;
-
-    match model {
-        Some(row) => Ok(Some(Benchmark {
-            id: row.id.parse::<MagicTypeId>().unwrap_or_default(),
-            dataset_name: row.dataset_name,
-            dataset_version: row.dataset_version,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-        })),
-        None => Ok(None),
-    }
-}
-
-/// List all `Benchmark` entries.
-async fn list_benchmarks(db: &DatabaseConnection) -> Result<Vec<Benchmark>, Error> {
-    let models = BenchmarkEntity::find()
-        .all(db)
-        .await
-        .map_err(|e| Error::Query(format!("failed to list benchmarks: {e}")))?;
-    Ok(models
-        .into_iter()
-        .map(|m| Benchmark {
-            id: m.id.parse::<MagicTypeId>().unwrap_or_default(),
-            dataset_name: m.dataset_name,
-            dataset_version: m.dataset_version,
-            created_at: m.created_at,
-            updated_at: m.updated_at,
-        })
-        .collect())
 }
 
 /// Load an `AgentSession` with its turns and messages (3-level cascade).
@@ -559,8 +420,4 @@ async fn load_agent_session(
         model_name,
         turns,
     }))
-}
-
-fn map_model_to_review(model: ReviewModel) -> Review {
-    model.into()
 }
