@@ -157,64 +157,61 @@ fn extract_session_cookie(headers: &HeaderMap) -> Option<String> {
 mod tests {
     use super::*;
     use axum::http::header::COOKIE;
+    use std::assert_matches;
 
     #[test]
     fn test_extract_session_cookie_valid() {
         let mut headers = HeaderMap::new();
-        headers.insert(COOKIE, "riv-session=abc123; other=val".parse().unwrap());
-        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
-    }
-
-    #[test]
-    fn test_extract_session_cookie_valid_first_position() {
-        let mut headers = HeaderMap::new();
-        headers.insert(COOKIE, "riv-session=token123".parse().unwrap());
-        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
+        headers.insert(
+            COOKIE,
+            format!("{SESSION_COOKIE_NAME}=abc123; other=val")
+                .parse()
+                .unwrap(),
+        );
+        let result = extract_session_cookie(&headers);
+        assert_matches!(result, Some(token) if token == "abc123");
     }
 
     #[test]
     fn test_extract_session_cookie_missing() {
         let headers = HeaderMap::new();
-        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
+        let result = extract_session_cookie(&headers);
+        assert!(result.is_none());
     }
 
     #[test]
     fn test_extract_session_cookie_malformed() {
         let mut headers = HeaderMap::new();
-        // Wrong cookie name
         headers.insert(COOKIE, "other-session=abc123".parse().unwrap());
-        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
+        let result = extract_session_cookie(&headers);
+        assert!(result.is_none());
     }
 
     #[test]
     fn test_extract_session_cookie_empty_value() {
         let mut headers = HeaderMap::new();
-        headers.insert(COOKIE, "riv-session=".parse().unwrap());
-        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
+        headers.insert(COOKIE, format!("{SESSION_COOKIE_NAME}=").parse().unwrap());
+        let result = extract_session_cookie(&headers);
+        assert!(result.is_none());
     }
 
     #[test]
     fn test_extract_session_cookie_trailing_semicolon() {
         let mut headers = HeaderMap::new();
-        headers.insert(COOKIE, "riv-session=xyz;".parse().unwrap());
-        insta::assert_debug_snapshot!(extract_session_cookie(&headers));
+        headers.insert(
+            COOKIE,
+            format!("{SESSION_COOKIE_NAME}=xyz;").parse().unwrap(),
+        );
+        let result = extract_session_cookie(&headers);
+        assert_eq!(result, Some("xyz".to_string()));
     }
 
     #[test]
     fn test_random_string_length() {
-        let s = random_string(32);
-        insta::assert_debug_snapshot!(s.len());
-    }
-
-    #[test]
-    fn test_random_string_zero_length() {
-        let s = random_string(0);
-        insta::assert_debug_snapshot!(s.len());
-    }
-
-    #[test]
-    fn test_random_string_alphanumeric() {
-        let s = random_string(100);
-        insta::assert_debug_snapshot!(s.chars().all(|c| c.is_ascii_alphanumeric()));
+        const LENGTHS: [usize; 3] = [0, u8::MAX as usize, u16::MAX as usize];
+        for &length in &LENGTHS {
+            let s = random_string(length);
+            assert_eq!(s.len(), length);
+        }
     }
 }

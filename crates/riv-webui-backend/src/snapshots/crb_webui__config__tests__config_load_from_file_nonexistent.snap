@@ -1,5 +1,0 @@
----
-source: crates/crb-webui-backend/src/config.rs
-expression: result.is_none()
----
-true

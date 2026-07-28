@@ -131,7 +131,7 @@ pub fn derive_cachable_impl(input: &DeriveInput) -> TokenStream {
                     #(#ref_key_contributions,)*
                 ];
                 hasher.update(parts.join(":"));
-                format!("{:x}", hasher.finalize())
+                hasher.finalize().iter().fold(String::new(), |mut acc, b| { acc.push_str(&format!("{:02x}", b)); acc })
             }
         }
 
@@ -159,7 +159,7 @@ pub fn derive_cachable_impl(input: &DeriveInput) -> TokenStream {
                     #(#cache_key_contributions,)*
                 ];
                 hasher.update(parts.join(":"));
-                format!("{:x}", hasher.finalize())
+                hasher.finalize().iter().fold(String::new(), |mut acc, b| { acc.push_str(&format!("{:02x}", b)); acc })
             }
         }
     };

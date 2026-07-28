@@ -42,6 +42,7 @@ pub struct CallbackQuery {
 
 #[derive(Debug, Clone, Serialize, Deserialize, IntoStaticStr, EnumDiscriminants, Display)]
 #[strum_discriminants(derive(VariantArray))]
+#[serde(rename_all = "lowercase")]
 pub enum OAuthProvider {
     GitHub,
     Google,

@@ -1,8 +1,0 @@
----
-source: crates/crb-webui-backend/src/config.rs
-expression: default_scopes()
----
-[
-    "read:user",
-    "user:email",
-]

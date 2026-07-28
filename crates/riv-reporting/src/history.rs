@@ -27,12 +27,10 @@ pub fn append_run_history(cache_dir: &Path, entry: &Review) -> Result<()> {
 mod tests {
     use mti::prelude::{MagicTypeIdExt, V7};
     use riv_types::review::{ReviewMetadata, ReviewStatus};
-    use std::collections::HashMap;
 
     use super::*;
 
     #[test]
-    #[ignore = "Needs migration to Review field schema — previously used RunMeta with name/pr_count/total_cost/total_tokens"]
     fn test_append_run_history_creates_file() {
         let dir = tempfile::TempDir::new().expect("tempdir creation should succeed");
         let entry = Review {
@@ -41,7 +39,7 @@ mod tests {
             analytics: None,
             duration: None,
             status: ReviewStatus::Completed,
-            metadata: (),
+            metadata: ReviewMetadata::Plain,
         };
 
         let result = append_run_history(dir.path(), &entry);
