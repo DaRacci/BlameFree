@@ -3,7 +3,7 @@
 pub mod admin;
 pub mod four_zero_four;
 pub mod home;
-pub mod live;
+// pub mod live;
 // pub mod new_benchmark;
 // pub mod new_run;
 // pub mod pr_detail;

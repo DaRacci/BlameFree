@@ -2,22 +2,12 @@ use gloo_timers::callback::Interval;
 use leptos::either::EitherOf3;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use riv_types::review::{Review, ReviewStatus};
-use riv_webui_shared::routes::{API_ADHOC_RUNS, API_RUNS};
-use serde::Deserialize;
+use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
+use riv_webui_shared::routes::API_REVIEWS_LIST;
 
 use crate::fetch_json;
-use crate::{components::metrics_card::MetricsCard, signal_struct};
-use lucide_leptos::{ArrowRight, TriangleAlert};
-
-/// Response type matching the old `RunSummary` JSON format from the API.
-/// The API still nests a `Review` under a `meta` field alongside
-/// benchmark-only fields we no longer consume.
-#[derive(Debug, Clone, Deserialize)]
-#[deprecated]
-struct BenchmarkRunResponse {
-    meta: Review,
-}
+use crate::signal_struct;
+use lucide_leptos::TriangleAlert;
 
 signal_struct! {
   struct HomeSignals {
@@ -27,357 +17,74 @@ signal_struct! {
   }
 }
 
-#[component]
-pub fn HomePage() -> impl IntoView {
-    let signals = HomeSignals::new();
-
-    let fetch = move |sb: WriteSignal<Vec<Review>>,
-                      sa: WriteSignal<Vec<Review>>,
-                      sl: WriteSignal<bool>,
-                      se: WriteSignal<Option<String>>,
-                      sha: WriteSignal<bool>| {
-        spawn_local(async move {
-            let mut active = false;
-
-            match fetch_json::<Vec<Review>>(API_RUNS).await {
-                Ok(data) => {
-                    let reviews: Vec<Review> = data.into_iter().map(|r| r.meta).collect();
-                    if reviews.iter().any(|r| r.status == ReviewStatus::Running) {
-                        active = true;
-                    }
-                    sb.set(reviews);
-                }
-                Err(e) => se.set(Some(e)),
+fn review_label(r: &Review) -> String {
+    match &r.metadata {
+        ReviewMetadata::PullRequest(pr) => {
+            if pr.meta.title.is_empty() {
+                format!(
+                    "{}/{} #{}",
+                    pr.repository.owner, pr.repository.name, pr.meta.number
+                )
+            } else {
+                pr.meta.title.clone()
             }
-
-            match fetch_json::<Vec<Review>>(API_ADHOC_RUNS).await {
-                Ok(data) => {
-                    if data.iter().any(|r| r.status == ReviewStatus::Running) {
-                        active = true;
-                    }
-                    sa.set(data);
-                }
-                Err(e) => se.set(Some(e)),
-            }
-
-            sha.set(active);
-            sl.set(false);
-        });
-    };
-
-    fetch(
-        set_bench_runs,
-        set_adhoc_runs,
-        set_loading,
-        set_error,
-        set_has_active,
-    );
-
-    // Poll every 5s while there are active runs
-    Effect::new(move || {
-        if has_active.get() {
-            let interval = Interval::new(5_000, move || {
-                fetch(
-                    set_bench_runs,
-                    set_adhoc_runs,
-                    set_loading,
-                    set_error,
-                    set_has_active,
-                );
-            });
-            interval.forget();
         }
-    });
-
-    view! {
-        <div class="home-page">
-            <div class="page-header">
-                <h1 class="page-header__title">"Overview"</h1>
-                <div class="page-header__actions">
-                    <a href="/new" class="btn btn--primary">
-                        "New Benchmark"
-                    </a>
-                    <a href="/adhoc/new" class="btn btn--secondary">
-                        "Ad-hoc Review"
-                    </a>
-                </div>
-            </div>
-
-            {move || {
-                if loading.get() {
-                    EitherOf3::A(
-                        view! {
-                            <div class="content-grid content-grid--metrics">
-                                <div class="skeleton skeleton--metric"></div>
-                                <div class="skeleton skeleton--metric"></div>
-                                <div class="skeleton skeleton--metric"></div>
-                            </div>
-                            <div class="mt-xl">
-                                <div class="skeleton skeleton--card mb-lg" style="height: 180px;"></div>
-                                <div class="skeleton skeleton--card" style="height: 300px;"></div>
-                            </div>
-                        }
-                    )
-                } else if let Some(e) = error.get() {
-                    EitherOf3::B(
-                        view! {
-                            <div class="error-state" role="alert">
-                                <div class="error-state__icon"><TriangleAlert size=24 /></div>
-                                <h3 class="error-state__heading">"Failed to load data"</h3>
-                                <p class="error-state__message">{format!("Something went wrong: {}", e)}</p>
-                                <div class="error-state__action">
-                                    <button class="btn btn--primary" on:click=move |_| {
-                                        set_loading.set(true);
-                                        set_error.set(None);
-                                        fetch(
-                                            set_bench_runs,
-                                            set_adhoc_runs,
-                                            set_loading,
-                                            set_error,
-                                            set_has_active,
-                                        );
-                                    }>"Retry"</button>
-                                </div>
-                            </div>
-                        }
-                    )
-                } else {
-                    let bench = bench_runs.get();
-                    let adhoc = adhoc_runs.get();
-
-                    let completed_bench: Vec<&Review> = bench.iter()
-                        .filter(|r| r.status != ReviewStatus::Running && r.status != ReviewStatus::Pending)
-                        .collect();
-                    let completed_adhoc: Vec<&Review> = adhoc.iter()
-                        .filter(|r| r.status != ReviewStatus::Running && r.status != ReviewStatus::Pending)
-                        .collect();
-
-                    let total_runs = completed_bench.len() + completed_adhoc.len();
-                    let total_prs: usize = 0; // REMOVED: results_len was benchmark-specific
-                    let avg_f1 = 0.0; // REMOVED: metrics was benchmark-specific
-
-                    let active_bench: Vec<&Review> = bench.iter()
-                        .filter(|r| r.status == ReviewStatus::Running || r.status == ReviewStatus::Pending)
-                        .collect();
-                    let active_adhoc: Vec<&Review> = adhoc.iter()
-                        .filter(|r| r.status == ReviewStatus::Running || r.status == ReviewStatus::Pending)
-                        .collect();
-                    let has_any_active = !active_bench.is_empty() || !active_adhoc.is_empty();
-
-                    let mut merged: Vec<RecentRunItem> = Vec::new();
-                    for r in bench.iter() {
-                        merged.push(RecentRunItem::Benchmark(r.clone()));
-                    }
-                    for r in adhoc.iter() {
-                        merged.push(RecentRunItem::Adhoc(r.clone()));
-                    }
-                    merged.sort_by(|a, b| b.sort_key().cmp(&a.sort_key()));
-                    merged.truncate(10);
-
-                    EitherOf3::C(
-                        view! {
-                            <div class="content-grid content-grid--metrics">
-                                <MetricsCard value={total_runs.to_string()} label="Total Runs" />
-                                <MetricsCard value={if avg_f1 > 0.0 { format!("{:.2}", avg_f1) } else { "N/A".into() }} label="Avg F1" />
-                                <MetricsCard value={total_prs.to_string()} label="PRs Reviewed" />
-                            </div>
-
-                            <div class="quick-actions">
-                                <a href="/new" class="btn btn--primary btn--lg quick-actions__btn">
-                                    "New Benchmark"
-                                </a>
-                                <a href="/adhoc/new" class="btn btn--secondary btn--lg quick-actions__btn">
-                                    "Ad-hoc Review"
-                                </a>
-                            </div>
-
-                            {if has_any_active {
-                                view! {
-                                    <div class="section-header">
-                                        <h2 class="section-header__title">
-                                            <span class="active-runs-indicator"></span>
-                                            "Running Reviews"
-                                        </h2>
-                                        <span class="active-runs-count">{format!("{} running", active_bench.len() + active_adhoc.len())}</span>
-                                    </div>
-                                    <div class="content-grid content-grid--cards">
-                                        {active_bench.into_iter().map(|run| {
-                                            let live_path = format!("/runs/{}/live", run.id);
-                                            let detail_path = format!("/runs/{}/", run.id);
-                                            let detail_path2 = detail_path.clone();
-                                            let elapsed = run.duration
-                                                .map(|d| format_elapsed(d.as_secs_f64()))
-                                                .unwrap_or_else(|| "Just started".into());
-
-                                            view! {
-                                                <a href=live_path class="card card--interactive card--active-run card--block-link">
-                                                    <div class="card__header">
-                                                        <h3 class="card__title">{run.id.to_string()}</h3>
-                                                        <span class="badge badge--running">
-                                                            <span class="badge__dot badge__dot--pulse"></span>
-                                                            <span class="badge__label">"Running"</span>
-                                                        </span>
-                                                    </div>
-                                                    <div class="card__body">
-                                                        <div class="home-page__meta-row flex-row gap-lg text-sm text-secondary">
-                                                            <span>{elapsed}</span>
-                                                        </div>
-                                                    </div>
-                                                    <div class="card__footer">
-                                                        <a href=detail_path2 class="btn btn--ghost btn--sm"><ArrowRight size=16 /></a>
-                                                    </div>
-                                                </a>
-                                            }
-                                        }).collect::<Vec<_>>()}
-
-                                        {active_adhoc.into_iter().map(|run| {
-                                            let id_str = run.id.to_string();
-                                            let detail_path = format!("/adhoc/runs/{}", id_str);
-                                            let detail_path2 = detail_path.clone();
-                                            let title = "placeholder"; // TODO
-
-                                            view! {
-                                                <a href=detail_path class="card card--interactive card--active-run card--block-link">
-                                                    <div class="card__header">
-                                                        <h3 class="card__title">{title}</h3>
-                                                        <span class="badge badge--running">
-                                                            <span class="badge__dot badge__dot--pulse"></span>
-                                                            <span class="badge__label">"Running"</span>
-                                                        </span>
-                                                    </div>
-                                                    <div class="card__body">
-                                                        <div class="home-page__meta-row flex-row gap-lg text-sm text-secondary">
-                                                            <span>{format!("Model: placeholder")}</span>
-                                                            <span>"Ad-hoc"</span>
-                                                        </div>
-                                                    </div>
-                                                    <div class="card__footer">
-                                                        <a href=detail_path2 class="btn btn--ghost btn--sm"><ArrowRight size=16 /></a>
-                                                    </div>
-                                                </a>
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </div>
-                                }.into_any()
-                            } else {
-                                view! {
-                                    <div class="section-header">
-                                        <h2 class="section-header__title">"Running Reviews"</h2>
-                                    </div>
-                                    <div class="empty-state py-xl">
-                                        <p class="empty-state__message" style="margin: 0;">"No active reviews"</p>
-                                    </div>
-                                }.into_any()
-                            }}
-
-                            <div class="section-header">
-                                <h2 class="section-header__title">"Recent Runs"</h2>
-                            </div>
-                            {if merged.is_empty() {
-                                view! {
-                                    <div class="empty-state py-xl">
-                                        <p class="empty-state__message" style="margin: 0;">"No runs yet"</p>
-                                    </div>
-                                }.into_any()
-                            } else {
-                                view! {
-                                    <div class="home-page__recent-list">
-                                        {merged.into_iter().map(|item| {
-                                            let display_name = item.display_name();
-                                            let status = item.status().to_string();
-                                            let created = item.created_at();
-                                            let detail_path = item.detail_path();
-                                            let run_type = item.run_type_label();
-                                            let type_badge_class = match run_type {
-                                                "benchmark" => "badge--info",
-                                                _ => "badge--neutral",
-                                            };
-                                            let status_badge_class = match status.as_str() {
-                                                "running" | "pending" => "badge--warning",
-                                                "completed" | "done" => "badge--success",
-                                                "failed" => "badge--danger",
-                                                _ => "badge--neutral",
-                                            };
-
-                                            view! {
-                                                <a href=detail_path class="card card--interactive home-page__recent-row card--block-link">
-                                                    <div class="card__header">
-                                                        <h3 class="card__title">{display_name}</h3>
-                                                        <div class="flex-row gap-sm items-center">
-                                                            <span class=format!("badge {}", type_badge_class)>
-                                                                <span class="badge__dot"></span>
-                                                                <span class="badge__label">{run_type}</span>
-                                                            </span>
-                                                            <span class=format!("badge {}", status_badge_class)>
-                                                                <span class="badge__dot"></span>
-                                                                <span class="badge__label">{status}</span>
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <div class="card__body" style="padding-top: var(--spacing-md);">
-                                                        <span class="card__meta">{created}</span>
-                                                    </div>
-                                                </a>
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </div>
-                                }.into_any()
-                            }}
-                        }
-                    )
-                }
-            }}
-        </div>
+        ReviewMetadata::Commit(c) => {
+            let hash = if c.commit_hash.len() > 7 {
+                &c.commit_hash[..7]
+            } else {
+                &c.commit_hash
+            };
+            let repo = c
+                .repository
+                .repo_root
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .and_then(|s| s.to_str())
+                .unwrap_or("commit");
+            format!("{} @ {}", repo, hash)
+        }
+        ReviewMetadata::Plain => r.id.to_string(),
     }
 }
 
-#[derive(Clone)]
-enum RecentRunItem {
-    Benchmark(Review),
-    Adhoc(Review),
+fn review_subtitle(r: &Review) -> String {
+    match &r.metadata {
+        ReviewMetadata::PullRequest(pr) => {
+            format!("{}/{}", pr.repository.owner, pr.repository.name)
+        }
+        ReviewMetadata::Commit(c) => {
+            let hash = if c.commit_hash.len() > 7 {
+                &c.commit_hash[..7]
+            } else {
+                &c.commit_hash
+            };
+            hash.to_string()
+        }
+        ReviewMetadata::Plain => r.id.to_string(),
+    }
 }
 
-impl RecentRunItem {
-    fn status(&self) -> &ReviewStatus {
-        match self {
-            RecentRunItem::Benchmark(r) => &r.status,
-            RecentRunItem::Adhoc(r) => &r.status,
+fn review_pr_url(r: &Review) -> Option<String> {
+    match &r.metadata {
+        ReviewMetadata::PullRequest(pr) => {
+            if pr.meta.url.is_empty() {
+                None
+            } else {
+                Some(pr.meta.url.clone())
+            }
         }
+        _ => None,
     }
+}
 
-    fn sort_key(&self) -> String {
-        match self {
-            RecentRunItem::Benchmark(r) => r.id.to_string(),
-            RecentRunItem::Adhoc(r) => r.id.to_string(),
-        }
-    }
-
-    fn created_at(&self) -> String {
-        match self {
-            RecentRunItem::Benchmark(r) => r.id.to_string(),
-            RecentRunItem::Adhoc(r) => r.id.to_string(),
-        }
-    }
-
-    fn display_name(&self) -> String {
-        match self {
-            RecentRunItem::Benchmark(r) => r.id.to_string(),
-            RecentRunItem::Adhoc(r) => "placeholder".to_string(), // TODO
-        }
-    }
-
-    fn run_type_label(&self) -> &'static str {
-        match self {
-            RecentRunItem::Benchmark(_) => "benchmark",
-            RecentRunItem::Adhoc(_) => "ad-hoc",
-        }
-    }
-
-    fn detail_path(&self) -> String {
-        match self {
-            RecentRunItem::Benchmark(r) => format!("/runs/{}/", r.id),
-            RecentRunItem::Adhoc(r) => format!("/adhoc/runs/{}/", r.id),
-        }
+fn status_badge_class(status: &ReviewStatus) -> &'static str {
+    match status {
+        ReviewStatus::Running => "badge--warning",
+        ReviewStatus::Pending => "badge--neutral",
+        ReviewStatus::Completed => "badge--success",
+        ReviewStatus::Failed => "badge--danger",
+        ReviewStatus::Cancelled => "badge--neutral",
     }
 }
 
@@ -386,4 +93,241 @@ fn format_elapsed(secs: f64) -> String {
     let mins = total / 60;
     let secs_rem = total % 60;
     format!("{:02}:{:02} elapsed", mins, secs_rem)
+}
+
+#[component]
+pub fn HomePage() -> impl IntoView {
+    let signals = HomeSignals::new();
+
+    let do_fetch = {
+        let set_loading = signals.set_loading;
+        let set_error = signals.set_error;
+        let set_reviews = signals.set_reviews;
+        move || {
+            set_loading.set(true);
+            set_error.set(None);
+            spawn_local(async move {
+                match fetch_json::<Vec<Review>>(API_REVIEWS_LIST).await {
+                    Ok(data) => set_reviews.set(data),
+                    Err(e) => set_error.set(Some(e)),
+                }
+                set_loading.set(false);
+            });
+        }
+    };
+
+    do_fetch();
+
+    // Poll every 10s while any review is pending/running
+    Effect::new(move || {
+        let any_active = signals
+            .reviews
+            .get()
+            .iter()
+            .any(|r| matches!(r.status, ReviewStatus::Pending | ReviewStatus::Running));
+        if any_active {
+            let f = do_fetch.clone();
+            let interval = Interval::new(10_000, move || f());
+            interval.forget();
+        }
+    });
+
+    let active = move || {
+        signals
+            .reviews
+            .get()
+            .into_iter()
+            .filter(|r| matches!(r.status, ReviewStatus::Pending | ReviewStatus::Running))
+            .collect::<Vec<_>>()
+    };
+
+    let history = move || {
+        signals
+            .reviews
+            .get()
+            .into_iter()
+            .filter(|r| {
+                matches!(
+                    r.status,
+                    ReviewStatus::Completed | ReviewStatus::Failed | ReviewStatus::Cancelled
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+
+    view! {
+        <div class="home-page">
+            <div class="page-header">
+                <h1 class="page-header__title">"Overview"</h1>
+            </div>
+
+            {move || {
+                if signals.loading.get() {
+                    EitherOf3::A(
+                        view! {
+                            <div class="mt-xl">
+                                <div class="skeleton skeleton--card mb-lg" style="height: 180px;"></div>
+                                <div class="skeleton skeleton--card" style="height: 300px;"></div>
+                            </div>
+                        },
+                    )
+                } else if let Some(e) = signals.error.get() {
+                    EitherOf3::B(
+                        view! {
+                            <div class="error-state" role="alert">
+                                <div class="error-state__icon"><TriangleAlert size=24 /></div>
+                                <h3 class="error-state__heading">"Failed to load reviews"</h3>
+                                <p class="error-state__message">{format!("Something went wrong: {}", e)}</p>
+                                <div class="error-state__action">
+                                    <button class="btn btn--primary" on:click=move |_| do_fetch()>
+                                        "Retry"
+                                    </button>
+                                </div>
+                            </div>
+                        },
+                    )
+                } else {
+                    let active_runs = active();
+                    let history_runs = history();
+
+                    EitherOf3::C(
+                        view! {
+                            // ── Active / Pending section ──
+                            <div class="section-header">
+                                <h2 class="section-header__title">
+                                    <span class="active-runs-indicator"></span>
+                                    "Active Reviews"
+                                </h2>
+                                {if !active_runs.is_empty() {
+                                    view! {
+                                        <span class="active-runs-count">
+                                            {format!("{} running", active_runs.len())}
+                                        </span>
+                                    }.into_any()
+                                } else {
+                                    view! { <span></span> }.into_any()
+                                }}
+                            </div>
+
+                            {if active_runs.is_empty() {
+                                view! {
+                                    <div class="empty-state py-xl">
+                                        <p class="empty-state__message" style="margin: 0;">
+                                            "No active reviews"
+                                        </p>
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! {
+                                    <div class="content-grid content-grid--cards">
+                                        {active_runs.into_iter().map(|run| {
+                                            let label = review_label(&run);
+                                            let subtitle = review_subtitle(&run);
+                                            let status = &run.status;
+                                            let badge_class = status_badge_class(status);
+                                            let agent_count = run.agent_sessions.len();
+                                            let elapsed = run.duration
+                                                .map(|d| format_elapsed(d.as_secs_f64()))
+                                                .unwrap_or_else(|| "In progress".into());
+                                            let id_str = run.id.to_string();
+
+                                            view! {
+                                                <div class="card card--active-run">
+                                                    <div class="card__header">
+                                                        <h3 class="card__title">{label}</h3>
+                                                        <span class=format!("badge {}", badge_class)>
+                                                            <span class="badge__dot badge__dot--pulse"></span>
+                                                            <span class="badge__label">{status.to_string()}</span>
+                                                        </span>
+                                                    </div>
+                                                    <div class="card__body">
+                                                        <div class="home-page__meta-row flex-row gap-lg text-sm text-secondary">
+                                                            <span>{subtitle}</span>
+                                                            <span>{agent_count} agent(s)</span>
+                                                            <span>{elapsed}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div class="card__footer text-xs text-secondary">
+                                                        {id_str}
+                                                    </div>
+                                                </div>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                }.into_any()
+                            }}
+
+                            // ── History section ──
+                            <div class="section-header">
+                                <h2 class="section-header__title">"Previous Reviews"</h2>
+                            </div>
+
+                            {if history_runs.is_empty() {
+                                view! {
+                                    <div class="empty-state py-xl">
+                                        <p class="empty-state__message" style="margin: 0;">
+                                            "No previous reviews"
+                                        </p>
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! {
+                                    <div class="content-grid content-grid--cards">
+                                        {history_runs.into_iter().map(|run| {
+                                            let label = review_label(&run);
+                                            let subtitle = review_subtitle(&run);
+                                            let status = &run.status;
+                                            let badge_class = status_badge_class(status);
+                                            let agent_count = run.agent_sessions.len();
+                                            let elapsed = run.duration
+                                                .map(|d| format_elapsed(d.as_secs_f64()))
+                                                .map(|s| format!(" ({})", s))
+                                                .unwrap_or_default();
+                                            let pr_url = review_pr_url(&run);
+                                            let id_str = run.id.to_string();
+
+                                            view! {
+                                                <div class="card">
+                                                    <div class="card__header">
+                                                        <h3 class="card__title">{label.clone()}</h3>
+                                                        <span class=format!("badge {}", badge_class)>
+                                                            <span class="badge__dot"></span>
+                                                            <span class="badge__label">{status.to_string()}</span>
+                                                        </span>
+                                                    </div>
+                                                    <div class="card__body">
+                                                        <div class="home-page__meta-row flex-row gap-lg text-sm text-secondary">
+                                                            <span>{subtitle}</span>
+                                                            <span>{agent_count} agent(s)</span>
+                                                            {if !elapsed.is_empty() {
+                                                                view! { <span>{elapsed}</span> }.into_any()
+                                                            } else {
+                                                                view! { <span></span> }.into_any()
+                                                            }}
+                                                        </div>
+                                                    </div>
+                                                    <div class="card__footer flex-row justify-between items-center text-xs text-secondary">
+                                                        <span>{id_str}</span>
+                                                        {if let Some(url) = pr_url {
+                                                            view! {
+                                                                <a href=url target="_blank" rel="noopener noreferrer" class="btn btn--ghost btn--sm">
+                                                                    "Open PR"
+                                                                </a>
+                                                            }.into_any()
+                                                        } else {
+                                                            view! { <span></span> }.into_any()
+                                                        }}
+                                                    </div>
+                                                </div>
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                }.into_any()
+                            }}
+                        },
+                    )
+                }
+            }}
+        </div>
+    }
 }
