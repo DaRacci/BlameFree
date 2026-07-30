@@ -31,6 +31,13 @@ impl SqliteStore {
         let db_url = if path == ":memory:" {
             "sqlite::memory:".to_string()
         } else {
+            std::fs::create_dir_all(
+                std::path::Path::new(path)
+                    .parent()
+                    .unwrap_or_else(|| std::path::Path::new(".")),
+            )
+            .map_err(|e| Error::Connection(format!("failed to create database directory: {e}")))?;
+
             format!("sqlite://{path}?mode=rwc")
         };
 

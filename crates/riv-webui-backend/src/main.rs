@@ -24,8 +24,8 @@ mod static_assets;
 #[command(name = "riv-webui", about = "Web UI dashboard for review-harness")]
 pub struct CliArgs {
     /// Port to bind the HTTP server.
-    #[arg(long, default_value_t = 8080)]
-    pub port: u16,
+    #[arg(long)]
+    pub port: Option<u16>,
 
     /// Directory containing benchmark output (per-PR JSON files).
     #[arg(long, env = "OUTPUT_DIR", default_value = "output")]
@@ -93,12 +93,6 @@ async fn main() -> Result<()> {
     riv_shared::init_dotenv();
     riv_shared::init_logging(Some(resolve_log_path(args.log_file.as_deref()))).try_init()?;
 
-    info!(
-        "Starting riv-webui on port {} (output={})",
-        args.port,
-        args.output_dir.display(),
-    );
-
     let mut webui_config = config::load_config(args.config.as_deref());
     if webui_config.oauth.is_some() {
         info!(
@@ -107,8 +101,17 @@ async fn main() -> Result<()> {
         );
     }
 
+    if let Some(port) = args.port {
+        webui_config.server.port = port;
+    }
     webui_config.server.dataset_dir = args.dataset_dir;
     webui_config.server.benchmark_dir = args.benchmark_dir;
+
+    info!(
+        "Starting riv-webui on port {} (output={})",
+        webui_config.server.port,
+        args.output_dir.display(),
+    );
 
     let octocrab = match env::var("GITHUB_TOKEN") {
         Ok(token) => {

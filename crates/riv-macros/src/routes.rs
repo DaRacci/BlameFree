@@ -131,6 +131,25 @@ fn parse_placeholders(template: &str) -> (String, Vec<String>) {
                 continue;
             }
         }
+        if ch == '{' {
+            let mut name = String::new();
+            while let Some(&next) = chars.peek() {
+                if next == '}' {
+                    chars.next();
+                    break;
+                }
+                name.push(next);
+                chars.next();
+            }
+            if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                placeholders.push(name);
+                fmt.push_str("{}");
+                continue;
+            }
+            fmt.push('{');
+            fmt.push_str(&name);
+            continue;
+        }
         fmt.push(ch);
     }
 

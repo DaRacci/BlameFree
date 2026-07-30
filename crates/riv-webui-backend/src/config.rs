@@ -32,7 +32,7 @@ pub struct WebUiConfig {
 }
 
 /// Server binding configuration.
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
     #[serde(default = "default_host")]
     pub host: String,
@@ -73,6 +73,18 @@ pub struct OAuthConfig {
     /// OAuth scopes to request.
     #[serde(default = "default_scopes")]
     pub scopes: Vec<String>,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            host: default_host(),
+            port: default_port(),
+            dataset_dir: PathBuf::default(),
+            benchmark_dir: None,
+            store_dir: None,
+        }
+    }
 }
 
 fn default_host() -> String {
@@ -187,5 +199,12 @@ mod tests {
     fn test_config_load_from_file_nonexistent() {
         let result = load_from_file(Path::new("/nonexistent/path/config.toml"));
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_default_server_config() {
+        let cfg = WebUiConfig::default();
+        assert_eq!(cfg.server.host, "0.0.0.0");
+        assert_eq!(cfg.server.port, 8080);
     }
 }
