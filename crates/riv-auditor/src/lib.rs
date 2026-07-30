@@ -40,7 +40,7 @@ pub fn apply_severity_auditor(findings: &mut Vec<Finding>) {
             return;
         }
 
-        if finding.severity == Severity::Critical && num_agents >= 2 {
+        if finding.severity == Severity::Critical && num_agents >= 2_i64 {
             finding.severity_audited = false;
             finding.severity_audit_reason = Some(format!(
                 "protected_by_multi_agent_critical: {}_agents",
@@ -91,7 +91,7 @@ pub fn apply_severity_auditor(findings: &mut Vec<Finding>) {
 mod tests {
     use super::*;
 
-    fn make_finding(text: &str, severity: Severity, evidence: &str, num_agents: u64) -> Finding {
+    fn make_finding(text: &str, severity: Severity, evidence: &str, num_agents: i64) -> Finding {
         Finding {
             message: text.to_string(),
             severity: severity,

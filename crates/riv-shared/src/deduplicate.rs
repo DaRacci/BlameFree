@@ -80,14 +80,14 @@ pub fn semantic_dedup(findings: Vec<Finding>) -> Vec<Finding> {
                 .clone();
 
             // Combine agent counts
-            let total_agents: u64 = group
+            let total_agents: i64 = group
                 .iter()
                 .map(|f| f.cross_validated_by.unwrap_or(1))
                 .sum();
 
             best.cross_validated = true;
             best.cross_validated_by = Some(total_agents);
-            best.merged_from = Some(group.len() as u64);
+            best.merged_from = Some(group.len() as i64);
             merged.push(best);
         }
     }
@@ -119,7 +119,7 @@ pub fn semantic_dedup(findings: Vec<Finding>) -> Vec<Finding> {
                     .max_by(|&&a, &&b| ungrouped[a].message.len().cmp(&ungrouped[b].message.len()))
                     .unwrap();
                 let mut best_finding = ungrouped[best_idx].clone();
-                let total_agents: u64 = similar
+                let total_agents: i64 = similar
                     .iter()
                     .map(|&idx| ungrouped[idx].cross_validated_by.unwrap_or(1))
                     .sum();

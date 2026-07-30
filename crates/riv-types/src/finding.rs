@@ -120,7 +120,7 @@ pub struct Finding {
 
     /// Number of agents that flagged this finding.
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "num_agents")]
-    pub agent_count: Option<u64>,
+    pub agent_count: Option<i64>,
 
     /// Whether this finding was cross-validated by multiple agents/occurrences.
     #[serde(default)]
@@ -128,11 +128,11 @@ pub struct Finding {
 
     /// How many agents/occurrences cross-validated this finding.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cross_validated_by: Option<u64>,
+    pub cross_validated_by: Option<i64>,
 
     /// How many original findings were merged to produce this one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub merged_from: Option<u64>,
+    pub merged_from: Option<i64>,
 
     /// The judge's verdict for this finding, if evaluated.
     #[cfg_attr(

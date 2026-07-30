@@ -9,7 +9,7 @@ pub trait Storable: Sized + Serialize + DeserializeOwned + Send + Sync + 'static
     fn item_id(&self) -> &MagicTypeId;
 }
 
-/// Generic storage interface with `+ Send` futures (axum-compatible).
+/// Generic storage interface.
 pub trait Store: Send + Sync + Clone {
     fn save<'a, T: Storable + riv_types::stor::Save>(
         &'a self,

@@ -161,7 +161,7 @@ pub struct PullRequestReviewMetadata {
     pub repository: RemoteRepositoryMeta,
 
     /// Metadata about the PR.
-    #[cfg_attr(feature = "seaorm-storage", flattened(prefix = "pr"))]
+    #[cfg_attr(feature = "seaorm-storage", flattened(prefix = "pr_"))]
     pub meta: PrMeta,
 }
 
