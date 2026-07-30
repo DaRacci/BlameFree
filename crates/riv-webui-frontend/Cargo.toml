@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 console_error_panic_hook = { workspace = true }
 console_log = { workspace = true }
+getrandom = { workspace = true }
 riv-shared = { path = "../riv-shared" }
 riv-types = { path = "../riv-types" }
 riv-webui-shared = { path = "../riv-webui-shared" }

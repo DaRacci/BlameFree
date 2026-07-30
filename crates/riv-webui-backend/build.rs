@@ -26,7 +26,7 @@ fn build_frontend() -> Result<(), Box<dyn std::error::Error>> {
         return Err(format!(
             "Frontend build failed with exit code {}. \
              Fix frontend compilation errors before building the server. \
-             Run 'cd crates/riv-webui/frontend && cargo check' to see errors.",
+             Run 'cd crates/riv-webui-frontend && trunk build' to see errors.",
             status.code().unwrap_or(-1)
         )
         .into());

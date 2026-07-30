@@ -1,3 +1,7 @@
+// Activate getrandom wasm_js feature for wasm32-unknown-unknown target
+#[cfg(target_arch = "wasm32")]
+use getrandom as _;
+
 use riv_types::capabilities::ReasoningEffort;
 pub use riv_webui_shared::config::AppConfig;
 // Local response type — JSON-compatible with the old StartRunResponse format.

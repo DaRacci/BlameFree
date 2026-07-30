@@ -4224,6 +4224,7 @@ dependencies = [
  "console_error_panic_hook",
  "console_log",
  "futures",
+ "getrandom 0.4.3",
  "gloo-net 0.7.0",
  "gloo-timers",
  "insta",
