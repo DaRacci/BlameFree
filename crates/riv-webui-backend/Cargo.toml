@@ -15,7 +15,6 @@ default = [
   "exp16_adaptive_agents",
   "exp14_template_vars",
 ]
-embed-frontend = ["dep:rust-embed"]
 backend = ["riv-shared/backend"]
 oauth2 = ["dep:oauth2", "dep:reqwest"]
 exp14_template_vars = ["riv-harness/exp14_template_vars"]
@@ -36,7 +35,6 @@ riv-stor = { path = "../riv-stor" }
 oauth2 = { workspace = true, optional = true }
 octocrab = { workspace = true }
 reqwest = { workspace = true, optional = true }
-rust-embed = { workspace = true, optional = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -55,8 +53,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 mti = { workspace = true }
 leptos = { workspace = true, features = ["ssr"] }
 leptos_axum = { workspace = true }
-leptos_meta = { workspace = true, features = ["ssr"] }
-leptos_router = { workspace = true, features = ["ssr"] }
 riv-webui-app = { path = "../riv-webui-app", features = ["ssr"] }
 
 [dev-dependencies]

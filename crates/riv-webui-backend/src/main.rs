@@ -17,8 +17,6 @@ mod config;
 // mod harness;
 mod routes;
 mod server;
-#[cfg(feature = "embed-frontend")]
-mod static_assets;
 
 /// CLI arguments for the web UI dashboard server.
 #[derive(Debug, Parser)]

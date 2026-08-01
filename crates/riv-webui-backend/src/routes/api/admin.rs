@@ -4,14 +4,14 @@ use std::cmp::min;
 use std::convert::Infallible;
 use std::fs::{File, metadata};
 use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::path::Path;
 use std::time::Duration;
 
-use axum::Json;
 use axum::extract::State;
 use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use riv_stor::traits::Store;
-use riv_webui_shared::routes::{API_ADMIN_LOGS, API_ADMIN_LOGS_STREAM};
+use riv_webui_shared::routes::API_ADMIN_LOGS_STREAM;
 use tokio::sync::mpsc;
 use tokio::time::interval;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -24,36 +24,23 @@ use riv_webui_shared::admin::LogsResponse;
 const READBACK_LINES: usize = 500;
 
 routes_register! {
-  get API_ADMIN_LOGS => get_logs,
   get API_ADMIN_LOGS_STREAM => get_logs_stream,
 }
 
-/// Get return recent server console logs.
-///
-/// Reads the last [`READBACK_LINES`] lines from the server's log file.
-#[instrument(skip(state), name = API_ADMIN_LOGS_STREAM)]
-pub async fn get_logs<S>(State(state): State<AppState<S>>) -> Json<LogsResponse>
-where
-    S: Store + Send + Sync + Clone + 'static,
-{
-    let log_path = &state.log_file;
-
+pub fn load_logs_response(log_path: &Path) -> LogsResponse {
     match read_last_n_lines(log_path, READBACK_LINES) {
-        Ok(lines) => {
-            let text = lines.join("\n");
-            Json(LogsResponse {
-                logs: text,
-                available: true,
-                message: None,
-            })
-        }
+        Ok(lines) => LogsResponse {
+            logs: lines.join("\n"),
+            available: true,
+            message: None,
+        },
         Err(e) => {
             warn!("Failed to read log file {}: {e}", log_path.display());
-            Json(LogsResponse {
+            LogsResponse {
                 logs: String::new(),
                 available: false,
                 message: Some(format!("Error reading log file: {e}")),
-            })
+            }
         }
     }
 }

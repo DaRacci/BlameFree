@@ -1,44 +1,28 @@
-# riv-webui
+# riv-webui-backend
 
-Web UI dashboard server for the code review benchmark harness, built with [Axum].
+Axum backend for BlameFree web UI.
 
-- Serves a browser-based GUI with past run history, live agent monitoring via SSE, a benchmark launcher, and per-PR result viewer
-- Exposes REST API endpoints for run config, run history, live events, and run management
-- Serves the Leptos WASM frontend from `frontend/dist/`
+## Role
 
-## Key types
+- serves REST/auth endpoints
+- hosts Leptos SSR routes from `riv-webui-app`
+- serves generated browser assets from `target/site/`
 
-- [`CliArgs`](src/main.rs) — CLI flags: `--port`, `--output-dir`, `--dataset-dir`, `--harness-path`, `--static-dir`, `--models`
-- [`AppState`](src/server.rs) — Shared application state holding output dir, dataset dir, harness path, and static dir
-
-## CLI usage
+## Run
 
 ```bash
-cargo run -p riv-webui -- --port 8080
-
-# With custom paths
-cargo run -p riv-webui -- \
-  --port 3000 \
-  --output-dir /data/output \
-  --dataset-dir /data/datasets \
-  --harness-path ../target/release/riv-harness
+cargo run -p riv-webui-backend --bin riv-webui-backend -- --port 8080
 ```
 
-## Development with live reload
+## Development
 
-For a fast development loop:
+```bash
+cargo leptos watch
+```
 
-1. Start the backend server:
-   ```bash
-   cargo run -p riv-webui -- --port 8080
-   ```
+That command builds:
+- server binary from `riv-webui-backend`
+- WASM hydration bundle from `riv-webui-frontend`
+- shared app from `riv-webui-app`
 
-2. In another terminal, start trunk's dev server with hot-reload and proxy:
-   ```bash
-   cd crates/riv-webui/frontend
-   trunk serve --port 8081 --proxy-backend http://localhost:8080
-   ```
-
-3. Open **http://localhost:8081** in your browser — the frontend auto-reloads on source changes. API requests are proxied to the backend at :8080.
-
-When you're done, run `trunk build --release` to produce the final static bundle for production deployment.
+Generated assets land in `target/site/pkg/`.

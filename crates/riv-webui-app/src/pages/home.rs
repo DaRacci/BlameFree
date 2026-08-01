@@ -1,17 +1,13 @@
-use leptos::either::EitherOf3;
 use leptos::prelude::*;
 use lucide_leptos::TriangleAlert;
 use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
-use riv_webui_shared::routes::API_REVIEWS_LIST;
 
-use crate::signal_struct;
+#[server]
+async fn list_reviews_data() -> Result<Vec<Review>, ServerFnError> {
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
 
-signal_struct! {
-    struct HomeSignals {
-        loading: bool = true,
-        error: Option<String> = None,
-        reviews: Vec<Review> = Vec::new(),
-    }
+    (services.list_reviews)().await.map_err(ServerFnError::new)
 }
 
 fn review_label(r: &Review) -> String {
@@ -92,72 +88,228 @@ fn format_elapsed(secs: f64) -> String {
     format!("{:02}:{:02} elapsed", mins, secs_rem)
 }
 
+fn render_loading() -> AnyView {
+    view! {
+        <div class="mt-xl">
+            <div class="skeleton skeleton--card mb-lg" style="height: 180px;"></div>
+            <div class="skeleton skeleton--card" style="height: 300px;"></div>
+        </div>
+    }
+    .into_any()
+}
+
+fn render_error(message: String, set_refresh_key: WriteSignal<u64>) -> AnyView {
+    view! {
+        <div class="error-state" role="alert">
+            <div class="error-state__icon"><TriangleAlert size=24 /></div>
+            <h3 class="error-state__heading">"Failed to load reviews"</h3>
+            <p class="error-state__message">{format!("Something went wrong: {}", message)}</p>
+            <div class="error-state__action">
+                <button
+                    class="btn btn--primary"
+                    on:click=move |_| set_refresh_key.update(|n| *n += 1)
+                >
+                    "Retry"
+                </button>
+            </div>
+        </div>
+    }
+    .into_any()
+}
+
+fn render_reviews(reviews: Vec<Review>) -> AnyView {
+    let active_runs = reviews
+        .iter()
+        .filter(|r| matches!(r.status, ReviewStatus::Pending | ReviewStatus::Running))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let history_runs = reviews
+        .into_iter()
+        .filter(|r| {
+            matches!(
+                r.status,
+                ReviewStatus::Completed | ReviewStatus::Failed | ReviewStatus::Cancelled
+            )
+        })
+        .collect::<Vec<_>>();
+
+    view! {
+        <>
+            <div class="section-header">
+                <h2 class="section-header__title">
+                    <span class="active-runs-indicator"></span>
+                    "Active Reviews"
+                </h2>
+                {if !active_runs.is_empty() {
+                    view! {
+                        <span class="active-runs-count">
+                            {format!("{} running", active_runs.len())}
+                        </span>
+                    }.into_any()
+                } else {
+                    view! { <span></span> }.into_any()
+                }}
+            </div>
+
+            {if active_runs.is_empty() {
+                view! {
+                    <div class="empty-state py-xl">
+                        <p class="empty-state__message" style="margin: 0;">
+                            "No active reviews"
+                        </p>
+                    </div>
+                }.into_any()
+            } else {
+                view! {
+                    <div class="content-grid content-grid--cards">
+                        {active_runs.into_iter().map(|run| {
+                            let label = review_label(&run);
+                            let subtitle = review_subtitle(&run);
+                            let status = &run.status;
+                            let badge_class = status_badge_class(status);
+                            let agent_count = run.agent_sessions.len();
+                            let elapsed = run.duration
+                                .map(|d| format_elapsed(d.as_secs_f64()))
+                                .unwrap_or_else(|| "In progress".into());
+                            let id_str = run.id.to_string();
+                            view! {
+                                <div class="card card--active-run">
+                                    <div class="card__header">
+                                        <h3 class="card__title">{label}</h3>
+                                        <span class=format!("badge {}", badge_class)>
+                                            <span class="badge__dot badge__dot--pulse"></span>
+                                            <span class="badge__label">{status.to_string()}</span>
+                                        </span>
+                                    </div>
+                                    <div class="card__body">
+                                        <div class="home-page__meta-row flex-row gap-lg text-sm text-secondary">
+                                            <span>{subtitle}</span>
+                                            <span>{agent_count} " agent(s)"</span>
+                                            <span>{elapsed}</span>
+                                        </div>
+                                    </div>
+                                    <div class="card__footer text-xs text-secondary">
+                                        {id_str}
+                                    </div>
+                                </div>
+                            }
+                        }).collect::<Vec<_>>()}
+                    </div>
+                }.into_any()
+            }}
+
+            <div class="section-header">
+                <h2 class="section-header__title">"Previous Reviews"</h2>
+            </div>
+
+            {if history_runs.is_empty() {
+                view! {
+                    <div class="empty-state py-xl">
+                        <p class="empty-state__message" style="margin: 0;">
+                            "No previous reviews"
+                        </p>
+                    </div>
+                }.into_any()
+            } else {
+                view! {
+                    <div class="content-grid content-grid--cards">
+                        {history_runs.into_iter().map(|run| {
+                            let label = review_label(&run);
+                            let subtitle = review_subtitle(&run);
+                            let status = &run.status;
+                            let badge_class = status_badge_class(status);
+                            let agent_count = run.agent_sessions.len();
+                            let elapsed = run.duration
+                                .map(|d| format_elapsed(d.as_secs_f64()))
+                                .map(|s| format!(" ({})", s))
+                                .unwrap_or_default();
+                            let pr_url = review_pr_url(&run);
+                            let id_str = run.id.to_string();
+                            view! {
+                                <div class="card">
+                                    <div class="card__header">
+                                        <h3 class="card__title">{label.clone()}</h3>
+                                        <span class=format!("badge {}", badge_class)>
+                                            <span class="badge__dot"></span>
+                                            <span class="badge__label">{status.to_string()}</span>
+                                        </span>
+                                    </div>
+                                    <div class="card__body">
+                                        <div class="home-page__meta-row flex-row gap-lg text-sm text-secondary">
+                                            <span>{subtitle}</span>
+                                            <span>{agent_count} " agent(s)"</span>
+                                            {if !elapsed.is_empty() {
+                                                view! { <span>{elapsed}</span> }.into_any()
+                                            } else {
+                                                view! { <span></span> }.into_any()
+                                            }}
+                                        </div>
+                                    </div>
+                                    <div class="card__footer flex-row justify-between items-center text-xs text-secondary">
+                                        <span>{id_str}</span>
+                                        {if let Some(url) = pr_url {
+                                            view! {
+                                                <a
+                                                    href=url
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    class="btn btn--ghost btn--sm"
+                                                >
+                                                    "Open PR"
+                                                </a>
+                                            }.into_any()
+                                        } else {
+                                            view! { <span></span> }.into_any()
+                                        }}
+                                    </div>
+                                </div>
+                            }
+                        }).collect::<Vec<_>>()}
+                    </div>
+                }.into_any()
+            }}
+        </>
+    }
+    .into_any()
+}
+
 #[component]
 pub fn HomePage() -> impl IntoView {
-    let signals = HomeSignals::new();
+    let (refresh_key, set_refresh_key) = signal(0_u64);
+    let reviews = Resource::new(
+        move || refresh_key.get(),
+        move |_| async move { list_reviews_data().await },
+    );
 
-    let do_fetch = {
-        let set_loading = signals.set_loading;
-        let set_error = signals.set_error;
-        let set_reviews = signals.set_reviews;
-        move || {
-            set_loading.set(true);
-            set_error.set(None);
-            // Data fetch runs only in the browser after hydration.
-            #[cfg(target_arch = "wasm32")]
-            leptos::task::spawn_local(async move {
-                match crate::fetch_json::<Vec<Review>>(API_REVIEWS_LIST).await {
-                    Ok(data) => set_reviews.set(data),
-                    Err(e) => set_error.set(Some(e)),
-                }
-                set_loading.set(false);
-            });
-            // On server, immediately resolve loading so SSR renders empty state.
-            #[cfg(not(target_arch = "wasm32"))]
-            set_loading.set(false);
-        }
-    };
-
-    do_fetch();
-
-    // Poll every 10 s while any review is pending/running — browser only.
     #[cfg(target_arch = "wasm32")]
-    Effect::new(move || {
-        use gloo_timers::callback::Interval;
-        let any_active = signals
-            .reviews
-            .get()
-            .iter()
-            .any(|r| matches!(r.status, ReviewStatus::Pending | ReviewStatus::Running));
-        if any_active {
-            let f = do_fetch.clone();
-            let interval = Interval::new(10_000, move || f());
+    {
+        let reviews = reviews.clone();
+        Effect::new(move || {
+            use gloo_timers::callback::Interval;
+
+            let interval = Interval::new(10_000, {
+                let reviews = reviews.clone();
+                move || {
+                    let any_active = reviews
+                        .get()
+                        .and_then(Result::ok)
+                        .map(|items| {
+                            items.iter().any(|r| {
+                                matches!(r.status, ReviewStatus::Pending | ReviewStatus::Running)
+                            })
+                        })
+                        .unwrap_or(false);
+
+                    if any_active {
+                        set_refresh_key.update(|n| *n += 1);
+                    }
+                }
+            });
+
             interval.forget();
-        }
-    });
-
-    let active = move || {
-        signals
-            .reviews
-            .get()
-            .into_iter()
-            .filter(|r| matches!(r.status, ReviewStatus::Pending | ReviewStatus::Running))
-            .collect::<Vec<_>>()
-    };
-
-    let history = move || {
-        signals
-            .reviews
-            .get()
-            .into_iter()
-            .filter(|r| {
-                matches!(
-                    r.status,
-                    ReviewStatus::Completed | ReviewStatus::Failed | ReviewStatus::Cancelled
-                )
-            })
-            .collect::<Vec<_>>()
-    };
+        });
+    }
 
     view! {
         <div class="home-page">
@@ -165,174 +317,14 @@ pub fn HomePage() -> impl IntoView {
                 <h1 class="page-header__title">"Overview"</h1>
             </div>
 
-            {move || {
-                if signals.loading.get() {
-                    EitherOf3::A(
-                        view! {
-                            <div class="mt-xl">
-                                <div class="skeleton skeleton--card mb-lg" style="height: 180px;"></div>
-                                <div class="skeleton skeleton--card" style="height: 300px;"></div>
-                            </div>
-                        },
-                    )
-                } else if let Some(e) = signals.error.get() {
-                    EitherOf3::B(
-                        view! {
-                            <div class="error-state" role="alert">
-                                <div class="error-state__icon"><TriangleAlert size=24 /></div>
-                                <h3 class="error-state__heading">"Failed to load reviews"</h3>
-                                <p class="error-state__message">{format!("Something went wrong: {}", e)}</p>
-                                <div class="error-state__action">
-                                    <button class="btn btn--primary" on:click=move |_| do_fetch()>
-                                        "Retry"
-                                    </button>
-                                </div>
-                            </div>
-                        },
-                    )
-                } else {
-                    let active_runs = active();
-                    let history_runs = history();
-
-                    EitherOf3::C(
-                        view! {
-                            <div class="section-header">
-                                <h2 class="section-header__title">
-                                    <span class="active-runs-indicator"></span>
-                                    "Active Reviews"
-                                </h2>
-                                {if !active_runs.is_empty() {
-                                    view! {
-                                        <span class="active-runs-count">
-                                            {format!("{} running", active_runs.len())}
-                                        </span>
-                                    }.into_any()
-                                } else {
-                                    view! { <span></span> }.into_any()
-                                }}
-                            </div>
-
-                            {if active_runs.is_empty() {
-                                view! {
-                                    <div class="empty-state py-xl">
-                                        <p class="empty-state__message" style="margin: 0;">
-                                            "No active reviews"
-                                        </p>
-                                    </div>
-                                }.into_any()
-                            } else {
-                                view! {
-                                    <div class="content-grid content-grid--cards">
-                                        {active_runs.into_iter().map(|run| {
-                                            let label = review_label(&run);
-                                            let subtitle = review_subtitle(&run);
-                                            let status = &run.status;
-                                            let badge_class = status_badge_class(status);
-                                            let agent_count = run.agent_sessions.len();
-                                            let elapsed = run.duration
-                                                .map(|d| format_elapsed(d.as_secs_f64()))
-                                                .unwrap_or_else(|| "In progress".into());
-                                            let id_str = run.id.to_string();
-                                            view! {
-                                                <div class="card card--active-run">
-                                                    <div class="card__header">
-                                                        <h3 class="card__title">{label}</h3>
-                                                        <span class=format!("badge {}", badge_class)>
-                                                            <span class="badge__dot badge__dot--pulse"></span>
-                                                            <span class="badge__label">{status.to_string()}</span>
-                                                        </span>
-                                                    </div>
-                                                    <div class="card__body">
-                                                        <div class="home-page__meta-row flex-row gap-lg text-sm text-secondary">
-                                                            <span>{subtitle}</span>
-                                                            <span>{agent_count} " agent(s)"</span>
-                                                            <span>{elapsed}</span>
-                                                        </div>
-                                                    </div>
-                                                    <div class="card__footer text-xs text-secondary">
-                                                        {id_str}
-                                                    </div>
-                                                </div>
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </div>
-                                }.into_any()
-                            }}
-
-                            <div class="section-header">
-                                <h2 class="section-header__title">"Previous Reviews"</h2>
-                            </div>
-
-                            {if history_runs.is_empty() {
-                                view! {
-                                    <div class="empty-state py-xl">
-                                        <p class="empty-state__message" style="margin: 0;">
-                                            "No previous reviews"
-                                        </p>
-                                    </div>
-                                }.into_any()
-                            } else {
-                                view! {
-                                    <div class="content-grid content-grid--cards">
-                                        {history_runs.into_iter().map(|run| {
-                                            let label = review_label(&run);
-                                            let subtitle = review_subtitle(&run);
-                                            let status = &run.status;
-                                            let badge_class = status_badge_class(status);
-                                            let agent_count = run.agent_sessions.len();
-                                            let elapsed = run.duration
-                                                .map(|d| format_elapsed(d.as_secs_f64()))
-                                                .map(|s| format!(" ({})", s))
-                                                .unwrap_or_default();
-                                            let pr_url = review_pr_url(&run);
-                                            let id_str = run.id.to_string();
-                                            view! {
-                                                <div class="card">
-                                                    <div class="card__header">
-                                                        <h3 class="card__title">{label.clone()}</h3>
-                                                        <span class=format!("badge {}", badge_class)>
-                                                            <span class="badge__dot"></span>
-                                                            <span class="badge__label">{status.to_string()}</span>
-                                                        </span>
-                                                    </div>
-                                                    <div class="card__body">
-                                                        <div class="home-page__meta-row flex-row gap-lg text-sm text-secondary">
-                                                            <span>{subtitle}</span>
-                                                            <span>{agent_count} " agent(s)"</span>
-                                                            {if !elapsed.is_empty() {
-                                                                view! { <span>{elapsed}</span> }.into_any()
-                                                            } else {
-                                                                view! { <span></span> }.into_any()
-                                                            }}
-                                                        </div>
-                                                    </div>
-                                                    <div class="card__footer flex-row justify-between items-center text-xs text-secondary">
-                                                        <span>{id_str}</span>
-                                                        {if let Some(url) = pr_url {
-                                                            view! {
-                                                                <a
-                                                                    href=url
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    class="btn btn--ghost btn--sm"
-                                                                >
-                                                                    "Open PR"
-                                                                </a>
-                                                            }.into_any()
-                                                        } else {
-                                                            view! { <span></span> }.into_any()
-                                                        }}
-                                                    </div>
-                                                </div>
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </div>
-                                }.into_any()
-                            }}
-                        },
-                    )
-                }
-            }}
+            <Suspense fallback=render_loading>
+                {move || {
+                    reviews.get().map(|result| match result {
+                        Ok(items) => render_reviews(items),
+                        Err(err) => render_error(err.to_string(), set_refresh_key),
+                    })
+                }}
+            </Suspense>
         </div>
     }
 }

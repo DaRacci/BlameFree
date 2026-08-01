@@ -24,18 +24,25 @@ routes_register! {
   get API_REVIEWS_STREAM => stream_review,
 }
 
+pub async fn load_reviews<S>(state: &AppState<S>) -> Result<Vec<Review>, String>
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
+    state.store.list::<Review>(&()).await.map_err(|err| {
+        error!("Failed to list reviews: {}", err);
+        err.to_string()
+    })
+}
+
 #[instrument(skip(state), name = API_REVIEWS_LIST)]
 pub async fn list_reviews<S>(State(state): State<AppState<S>>) -> Response
 where
     S: Store + Send + Sync + Clone + 'static,
 {
-    state
-        .store
-        .list::<Review>(&())
+    load_reviews(&state)
         .await
         .map(|reviews| (StatusCode::OK, Json(reviews)).into_response())
-        .unwrap_or_else(|err| {
-            error!("Failed to list reviews: {}", err);
+        .unwrap_or_else(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(Vec::<Review>::new()),

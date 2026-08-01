@@ -75,7 +75,6 @@
                 cargo-nextest
                 cargo-sort
                 leptosfmt
-                trunk
                 wasm-bindgen-cli
               ]
               ++ buildInputs

@@ -2,58 +2,134 @@ use leptos::html;
 use leptos::prelude::*;
 use lucide_leptos::{ClipboardList, TriangleAlert};
 use riv_webui_shared::admin::LogsResponse;
-use riv_webui_shared::routes::API_ADMIN_LOGS;
+#[cfg(target_arch = "wasm32")]
 use riv_webui_shared::routes::API_ADMIN_LOGS_STREAM;
 
-// Browser-only imports: SSE, HTTP, and streaming — only compiled for wasm32.
 #[cfg(target_arch = "wasm32")]
-use {crate::sse, futures::StreamExt, gloo_net::http::Request};
+use {crate::sse, futures::StreamExt};
 
-/// Admin page — shows server logs and live SSE stream.
-///
-/// During SSR the page renders in "loading" state; actual log data and the
-/// SSE connection are set up client-side after WASM hydration.
+#[server]
+async fn read_admin_logs() -> Result<LogsResponse, ServerFnError> {
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    (services.read_admin_logs)()
+        .await
+        .map_err(ServerFnError::new)
+}
+
+fn status_class(status: &str) -> &'static str {
+    match status {
+        "connected" => "admin-status-dot admin-status-dot--connected",
+        "connecting" => "admin-status-dot admin-status-dot--connecting",
+        _ => "admin-status-dot admin-status-dot--disconnected",
+    }
+}
+
+fn status_label(status: &str) -> String {
+    if status == "connected" {
+        "Connected".to_string()
+    } else if status == "connecting" {
+        "Connecting...".to_string()
+    } else if status.starts_with("error:") {
+        status.to_string()
+    } else {
+        "Disconnected".to_string()
+    }
+}
+
+fn render_loading() -> AnyView {
+    view! {
+        <div class="admin-loading">
+            <span>"Loading logs..."</span>
+        </div>
+    }
+    .into_any()
+}
+
+fn render_error(error: String) -> AnyView {
+    view! {
+        <div class="admin-empty">
+            <div class="admin-empty__icon"><TriangleAlert size=24 /></div>
+            <div class="admin-empty__title">"Error"</div>
+            <div class="admin-empty__desc">{error}</div>
+        </div>
+    }
+    .into_any()
+}
+
+fn render_unavailable(message: Option<String>) -> AnyView {
+    view! {
+        <div class="admin-empty">
+            <div class="admin-empty__icon"><ClipboardList size=24 /></div>
+            <div class="admin-empty__title">"Log File Not Configured"</div>
+            <div class="admin-empty__desc">{message.unwrap_or_default()}</div>
+        </div>
+    }
+    .into_any()
+}
+
+fn render_log_view(
+    logs: String,
+    connection_status: String,
+    log_container_ref: NodeRef<html::Div>,
+) -> AnyView {
+    let line_count = logs.lines().count();
+    let status_label = status_label(&connection_status);
+    view! {
+        <div class="log-viewer">
+            <div class="log-viewer__toolbar">
+                <span class="log-viewer__toolbar-label">{format!("{} lines", line_count)}</span>
+                <span class=status_class(&connection_status) title=status_label.clone()></span>
+                <span class="log-viewer__status-text">{status_label}</span>
+            </div>
+            <div class="log-viewer__content" node_ref=log_container_ref>
+                <pre class="log-viewer__pre">{logs}</pre>
+            </div>
+        </div>
+    }
+    .into_any()
+}
+
 #[component]
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
 pub fn AdminPage() -> impl IntoView {
-    let (logs, set_logs) = signal::<String>(String::new());
+    let (logs, set_logs) = signal(String::new());
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal::<Option<String>>(None);
     let (available, set_available) = signal(true);
     let (status_msg, set_status_msg) = signal::<Option<String>>(None);
     let (connection_status, set_connection_status) = signal("connecting".to_string());
     let (live_line_count, set_live_line_count) = signal(0usize);
+    let initial_logs = Resource::new(|| (), |_| async { read_admin_logs().await });
+    let log_container_ref: NodeRef<html::Div> = NodeRef::new();
 
-    // Fetch initial log snapshot — browser only.
     #[cfg(target_arch = "wasm32")]
-    leptos::task::spawn_local(async move {
-        match Request::get(&API_ADMIN_LOGS).send().await {
-            Ok(resp) if resp.ok() => match resp.json::<LogsResponse>().await {
+    Effect::new(move || {
+        if !loading.get() {
+            return;
+        }
+
+        if let Some(result) = initial_logs.get() {
+            match result {
                 Ok(data) => {
                     set_available.set(data.available);
                     set_status_msg.set(data.message.clone());
                     if data.available {
                         let initial_count = data.logs.lines().count();
-                        set_logs.set(data.logs);
                         set_live_line_count.set(initial_count);
+                        set_logs.set(data.logs);
                     }
+                    set_loading.set(false);
                 }
-                Err(e) => {
-                    set_error.set(Some(format!("Failed to parse response: {e}")));
+                Err(err) => {
+                    set_error.set(Some(err.to_string()));
+                    set_loading.set(false);
                 }
-            },
-            Ok(resp) => {
-                let status = resp.status();
-                let text = resp.text().await.unwrap_or_default();
-                set_error.set(Some(format!("Server error ({status}): {text}")));
-            }
-            Err(e) => {
-                set_error.set(Some(format!("Network error: {e}")));
             }
         }
-        set_loading.set(false);
     });
 
-    // Connect SSE stream for live log lines — browser only.
     #[cfg(target_arch = "wasm32")]
     {
         let sse_logs = set_logs;
@@ -80,9 +156,6 @@ pub fn AdminPage() -> impl IntoView {
         });
     }
 
-    let log_container_ref: NodeRef<html::Div> = NodeRef::new();
-
-    // Auto-scroll to bottom when logs update — DOM manipulation, browser only.
     #[cfg(target_arch = "wasm32")]
     Effect::new(move || {
         let _ = logs.get();
@@ -93,29 +166,6 @@ pub fn AdminPage() -> impl IntoView {
             }
         }
     });
-
-    let status_class = move || {
-        let s = connection_status.get();
-        match s.as_str() {
-            "connected" => "admin-status-dot admin-status-dot--connected",
-            "connecting" => "admin-status-dot admin-status-dot--connecting",
-            _ => "admin-status-dot admin-status-dot--disconnected",
-        }
-    };
-
-    let status_label = move || {
-        let s = connection_status.get();
-        if s == "connected" {
-            "Connected"
-        } else if s == "connecting" {
-            "Connecting..."
-        } else if s.starts_with("error:") {
-            &s
-        } else {
-            "Disconnected"
-        }
-        .to_string()
-    };
 
     view! {
         <div class="admin-page">
@@ -129,55 +179,40 @@ pub fn AdminPage() -> impl IntoView {
                     <span class="admin-section__badge">"console"</span>
                 </div>
 
-                {move || {
-                    if loading.get() {
-                        return view! {
-                            <div class="admin-loading">
-                                <span>"Loading logs..."</span>
-                            </div>
-                        }.into_any();
-                    }
+                <Suspense fallback=render_loading>
+                    {move || {
+                        if !loading.get() {
+                            if let Some(err) = error.get() {
+                                return Some(render_error(err));
+                            }
 
-                    if let Some(ref err) = error.get() {
-                        return view! {
-                            <div class="admin-empty">
-                                <div class="admin-empty__icon"><TriangleAlert size=24 /></div>
-                                <div class="admin-empty__title">"Error"</div>
-                                <div class="admin-empty__desc">{err.clone()}</div>
-                            </div>
-                        }.into_any();
-                    }
+                            if !available.get() {
+                                return Some(render_unavailable(status_msg.get()));
+                            }
 
-                    if !available.get() {
-                        return view! {
-                            <div class="admin-empty">
-                                <div class="admin-empty__icon"><ClipboardList size=24 /></div>
-                                <div class="admin-empty__title">"Log File Not Configured"</div>
-                                <div class="admin-empty__desc">
-                                    {status_msg.get().unwrap_or_default()}
-                                </div>
-                            </div>
-                        }.into_any();
-                    }
+                            return Some(render_log_view(
+                                logs.get(),
+                                connection_status.get(),
+                                log_container_ref.clone(),
+                            ));
+                        }
 
-                    let line_count = logs.get().lines().count();
-                    let _conn_status = connection_status.get();
-
-                    view! {
-                        <div class="log-viewer">
-                            <div class="log-viewer__toolbar">
-                                <span class="log-viewer__toolbar-label">
-                                    {format!("{} lines", line_count)}
-                                </span>
-                                <span class={status_class} title={status_label()}></span>
-                                <span class="log-viewer__status-text">{status_label()}</span>
-                            </div>
-                            <div class="log-viewer__content" node_ref=log_container_ref>
-                                <pre class="log-viewer__pre">{logs.get()}</pre>
-                            </div>
-                        </div>
-                    }.into_any()
-                }}
+                        initial_logs.get().map(|result| match result {
+                            Ok(data) => {
+                                if data.available {
+                                    render_log_view(
+                                        data.logs,
+                                        "connecting".to_string(),
+                                        log_container_ref.clone(),
+                                    )
+                                } else {
+                                    render_unavailable(data.message)
+                                }
+                            }
+                            Err(err) => render_error(err.to_string()),
+                        })
+                    }}
+                </Suspense>
             </div>
         </div>
     }

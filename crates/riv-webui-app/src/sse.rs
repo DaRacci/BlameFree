@@ -2,7 +2,6 @@
 
 use futures::channel::mpsc;
 use leptos::prelude::{Set, WriteSignal};
-use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::MessageEvent;
 

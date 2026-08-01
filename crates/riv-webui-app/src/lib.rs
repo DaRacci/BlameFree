@@ -1,26 +1,33 @@
+use std::{pin::Pin, sync::Arc};
+
 use leptos::prelude::*;
 use leptos_meta::*;
 use leptos_router::components::{Route, Router, Routes};
 use leptos_router::hooks::use_location;
 use leptos_router::path;
 use lucide_leptos::{LayoutDashboard, Menu, Settings};
-use riv_webui_shared::auth::AuthUser;
+use riv_types::review::Review;
+#[cfg(target_arch = "wasm32")]
 use riv_webui_shared::routes::API_CONFIG;
+use riv_webui_shared::{admin::LogsResponse, auth::AuthUser};
 
 pub mod components;
 pub mod pages;
 
-/// SSE utilities — browser-only, compiled only for wasm32.
 #[cfg(target_arch = "wasm32")]
 pub mod sse;
 
-/// Re-export for pages that reference `crate::AppConfig`.
 pub use riv_webui_shared::config::AppConfig;
 
-/// Renders the full HTML shell around the app, for server-side rendering only.
-///
-/// Called from `riv-webui-backend` via `leptos_axum::leptos_routes`. The
-/// `HydrationScripts` component handles injecting the wasm bootstrap script.
+pub type AppServiceFuture<T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send>>;
+pub type AppServiceFn<T> = Arc<dyn Fn() -> AppServiceFuture<T> + Send + Sync>;
+
+#[derive(Clone)]
+pub struct AppServices {
+    pub list_reviews: AppServiceFn<Vec<Review>>,
+    pub read_admin_logs: AppServiceFn<LogsResponse>,
+}
+
 #[cfg(feature = "ssr")]
 pub fn shell(options: leptos::config::LeptosOptions) -> impl IntoView {
     let leptos_options = options.clone();
@@ -43,23 +50,18 @@ pub fn shell(options: leptos::config::LeptosOptions) -> impl IntoView {
     }
 }
 
-/// Minimal config shape used client-side to check whether OAuth is enabled.
+#[cfg(target_arch = "wasm32")]
 #[derive(serde::Deserialize)]
 struct ConfigResponse {
     oauth: Option<serde_json::Value>,
 }
 
-/// Auth context provided by [`App`] and consumed by [`Sidebar`].
 #[derive(Clone)]
 pub struct AuthContext {
     pub user: RwSignal<Option<AuthUser>>,
     pub auth_enabled: RwSignal<bool>,
 }
 
-/// Root application component — SSR-safe.
-///
-/// Auth state is populated client-side after hydration; during SSR the context
-/// holds default (unauthenticated) values.
 #[component]
 pub fn App() -> impl IntoView {
     provide_meta_context();
@@ -70,10 +72,10 @@ pub fn App() -> impl IntoView {
     };
     provide_context(auth_ctx.clone());
 
-    // Auth check: runs only in the browser, after WASM hydration.
     #[cfg(target_arch = "wasm32")]
     leptos::task::spawn_local(async move {
         use gloo_net::http::Request;
+
         let resp = Request::get(API_CONFIG).send().await;
         if let Ok(resp) = resp {
             if let Ok(config) = resp.json::<ConfigResponse>().await {
@@ -104,10 +106,9 @@ pub fn App() -> impl IntoView {
                 <Sidebar />
                 <main class="main-content">
                     <div class="content-container">
-                        <Routes fallback=|| view! { <div class="state-container"><h2>"404"</h2></div> }>
-                            <Route path=path!("/") view=|| view! { <HomePage /> } />
-                            <Route path=path!("/admin") view=|| view! { <AdminPage /> } />
-                            <Route path=path!("/*") view=|| view! { <FourZeroFourPage /> } />
+                        <Routes fallback=|| view! { <FourZeroFourPage /> }>
+                            <Route path=path!("/") view=HomePage />
+                            <Route path=path!("/admin") view=AdminPage />
                         </Routes>
                     </div>
                 </main>
@@ -120,7 +121,6 @@ const ICON_SIZE: usize = 18;
 
 #[component]
 fn Sidebar() -> impl IntoView {
-    // On server (SSR) default to expanded; on client read actual window width.
     #[cfg(target_arch = "wasm32")]
     let initial_collapsed = web_sys::window()
         .and_then(|w| w.inner_width().ok())
@@ -267,75 +267,4 @@ fn Sidebar() -> impl IntoView {
             </div>
         </nav>
     }
-}
-
-/// Generic JSON fetcher — compiled only for wasm32, runs after hydration.
-#[cfg(target_arch = "wasm32")]
-pub async fn fetch_json<T: serde::de::DeserializeOwned>(url: &str) -> Result<T, String> {
-    use gloo_net::http::Request;
-    let response = Request::get(url)
-        .send()
-        .await
-        .map_err(|e| format!("Network error: {}", e))?;
-
-    if !response.ok() {
-        return Err(format!("Server returned {}", response.status()));
-    }
-
-    response
-        .json::<T>()
-        .await
-        .map_err(|e| format!("Parse error: {}", e))
-}
-
-/// Declare a group of related signals as a struct with read/write pairs.
-///
-/// Each field `name: T = default` becomes `name: ReadSignal<T>` and
-/// `set_name: WriteSignal<T>`. Fields listed under `write_only { ... }`
-/// emit only `WriteSignal<T>`.
-#[macro_export]
-macro_rules! signal_struct {
-    (
-        $(#[$meta:meta])*
-        $vis:vis struct $name:ident {
-            $(
-                $field:ident : $ty:ty = $default:expr
-            ),* $(,)?
-        }
-        $(write_only {
-            $(
-                $wo_setter:ident : $wo_ty:ty = $wo_default:expr
-            ),* $(,)?
-        })?
-    ) => {
-        ::paste::paste! {
-            $(#[$meta])*
-            #[derive(Clone, Copy)]
-            $vis struct $name {
-                $(
-                    $field: ::leptos::prelude::ReadSignal<$ty>,
-                    [<set_ $field>]: ::leptos::prelude::WriteSignal<$ty>,
-                )*
-                $($(
-                    $wo_setter: ::leptos::prelude::WriteSignal<$wo_ty>,
-                )*)?
-            }
-
-            impl $name {
-                #[allow(unused_mut)]
-                fn new() -> Self {
-                    $(
-                        let ($field, [<set_ $field>]) = ::leptos::prelude::signal($default);
-                    )*
-                    $($(
-                        let (_, $wo_setter) = ::leptos::prelude::signal($wo_default);
-                    )*)?
-                    Self {
-                        $($field, [<set_ $field>],)*
-                        $($($wo_setter,)*)?
-                    }
-                }
-            }
-        }
-    };
 }

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use leptos::config::LeptosOptions;
+use leptos::context::provide_context;
 use leptos_axum::{LeptosRoutes, generate_route_list};
 use riv_stor::traits::Store;
 use tower_http::cors::CorsLayer;
@@ -76,6 +77,25 @@ pub async fn start(state: AppState<impl Store + 'static>) -> anyhow::Result<()> 
     let host = state.config.server.host.clone();
     let port = state.config.server.port;
 
+    let app_services = riv_webui_app::AppServices {
+        list_reviews: std::sync::Arc::new({
+            let state = state.clone();
+            move || {
+                let state = state.clone();
+                Box::pin(async move { crate::routes::api::reviews::load_reviews(&state).await })
+            }
+        }),
+        read_admin_logs: std::sync::Arc::new({
+            let log_file = state.log_file.clone();
+            move || {
+                let log_file = log_file.clone();
+                Box::pin(
+                    async move { Ok(crate::routes::api::admin::load_logs_response(&log_file)) },
+                )
+            }
+        }),
+    };
+
     let app = Router::new()
         .merge(crate::routes::auth::register_routes(&state))
         .merge(crate::routes::api::reviews::register_routes(&state))
@@ -83,10 +103,18 @@ pub async fn start(state: AppState<impl Store + 'static>) -> anyhow::Result<()> 
         .merge(crate::routes::api::admin::register_routes(&state))
         .merge(crate::routes::api::benchmark::register_routes(&state))
         .merge(crate::routes::api::discovery::register_routes(&state))
-        .leptos_routes(&state, routes, {
-            let options = leptos_options.clone();
-            move || riv_webui_app::shell(options.clone())
-        })
+        .leptos_routes_with_context(
+            &state,
+            routes,
+            {
+                let app_services = app_services.clone();
+                move || provide_context(app_services.clone())
+            },
+            {
+                let options = leptos_options.clone();
+                move || riv_webui_app::shell(options.clone())
+            },
+        )
         .fallback_service(ServeDir::new(&site_root))
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())

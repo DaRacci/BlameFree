@@ -1,44 +1,19 @@
 # riv-webui-frontend
 
-Leptos WASM frontend for the riv-webui dashboard — a client-side rendered SPA compiled to WebAssembly.
+Thin WASM hydration shim for BlameFree web UI.
 
-- Provides a dashboard overview, run detail view, live agent monitoring page, and new-run launcher
-- Communicates with the Axum backend via REST API and Server-Sent Events (SSE)
-- Built with [`Leptos`] 0.6 CSR mode, [`leptos_router`], and [`leptos_meta`]
+## Role
 
-## Key types
+- depends on `riv-webui-app` with `hydrate` feature
+- builds `cdylib`/`rlib` output for `cargo-leptos`
+- exports browser entrypoint that hydrates server-rendered HTML
 
-- `RunSummary`, `RunDetail`, `PrResult`, `AggregateMetrics` — API response types
-- `NewRunRequest`, `NewRunResponse` — Launch-new-run types
-- `AgentEvent` — SSE event type for live agent monitoring
+All application UI now lives in `crates/riv-webui-app`.
 
-## Building
+## Development
 
 ```bash
-# Build the WASM frontend (output goes to frontend/dist/)
-cd crates/riv-webui/frontend
-trunk build --release
-
-# Or for development with hot-reload (runs on port 8081)
-trunk serve --port 8081
+cargo leptos watch
 ```
 
-## Development workflow with live reload
-
-For a fast development loop:
-
-1. Start the backend server in one terminal:
-   ```bash
-   cd /path/to/review-harness
-   cargo run -p riv-webui -- --port 8080 --static-dir crates/riv-webui/frontend/dist
-   ```
-
-2. Start trunk's dev server with hot-reload and proxy:
-   ```bash
-   cd crates/riv-webui/frontend
-   trunk serve --port 8081 --proxy-backend http://localhost:8080
-   ```
-
-3. Open http://localhost:8081 in your browser — the frontend auto-reloads on file changes. API requests are proxied to the backend at :8080.
-
-When you're done, run `trunk build --release` from `crates/riv-webui/frontend/` to produce the final static bundle that the production server serves.
+`cargo-leptos` builds this crate for `wasm32-unknown-unknown` and writes browser assets to `target/site/pkg/`.
