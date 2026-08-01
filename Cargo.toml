@@ -109,16 +109,18 @@ bin-package = "riv-webui-backend"
 lib-package = "riv-webui-frontend"
 output-name = "blamefree"
 site-root = "target/site"
+site-pkg-dir = "pkg"
 style-file = "crates/riv-webui-frontend/css/styles.css"
 assets-dir = "crates/riv-webui-backend/assets"
 site-addr = "127.0.0.1:8080"
 reload-port = 8081
 browserquery = "defaults"
 bin-features = [
-  "embed-frontend",
   "oauth2",
   "exp16_adaptive_agents",
   "exp14_template_vars",
 ]
 bin-default-features = true
+lib-features = []
+lib-default-features = false
 front-target-dir = "CARGO_TARGET_DIR/crates/riv-webui-frontend"

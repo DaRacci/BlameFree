@@ -5,6 +5,7 @@ use std::{env, fs};
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
+use leptos::config::get_configuration;
 use octocrab::Octocrab;
 use riv_stor::store::sqlite::SqliteStore;
 use tracing::{info, warn};
@@ -142,7 +143,11 @@ async fn main() -> Result<()> {
             .map_err(|e| anyhow!("DB init: {e}"))?,
     );
 
+    let conf = get_configuration(None).expect("Failed to read leptos configuration");
+    let leptos_options = conf.leptos_options;
+
     let app_state = server::AppState::<SqliteStore>::new(
+        leptos_options,
         webui_config,
         octocrab,
         crate::auth::new_session_store(),
