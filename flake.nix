@@ -74,6 +74,7 @@
                 cargo-license
                 cargo-nextest
                 cargo-sort
+                dart-sass
                 leptosfmt
                 wasm-bindgen-cli
               ]
