@@ -57,8 +57,8 @@ async fn get_current_version(db: &DatabaseConnection) -> Result<i32, Error> {
 
 /// Run all pending migrations against the given database connection.
 ///
-/// Creates the `_schema_version` table if it does not exist, then applies
-/// any migration whose version is greater than the current schema version.
+/// Creates the `_schema_version` table if it does not exist,
+/// then applies any migration whose version is greater than the current schema version.
 ///
 /// This function is idempotent and safe to call multiple times.
 pub async fn run_migrations(db: &DatabaseConnection) -> Result<(), Error> {
@@ -92,17 +92,10 @@ async fn migrate_v1(db: &DatabaseConnection) -> Result<(), Error> {
         .await
         .map_err(|e| Error::Migration(format!("schema sync failed: {e}")))?;
 
-    // Enable foreign keys
     db.execute_unprepared("PRAGMA foreign_keys = ON;")
         .await
         .map_err(|e| Error::Migration(e.to_string()))?;
 
-    // Drop the old `judged_findings` table (empty, never populated, no longer an entity)
-    db.execute_unprepared("DROP TABLE IF EXISTS judged_findings;")
-        .await
-        .map_err(|e| Error::Migration(e.to_string()))?;
-
-    // Create indexes
     let indexes = [
         "CREATE INDEX IF NOT EXISTS idx_golden_comments_pr ON golden_comments(pr_result_id);",
         "CREATE INDEX IF NOT EXISTS idx_findings_pr ON findings(pr_result_id);",
@@ -135,7 +128,6 @@ mod tests {
         assert!(CURRENT_VERSION > 0, "CURRENT_VERSION must be positive");
     }
 
-    /// Smoke test: verify all migrations run against an in-memory database.
     #[tokio::test]
     async fn test_migration_runs_successfully() {
         let db: DatabaseConnection = sea_orm::Database::connect("sqlite::memory:")

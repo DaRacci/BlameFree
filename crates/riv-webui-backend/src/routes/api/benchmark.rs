@@ -8,6 +8,7 @@ routes_register! {
   get API_BENCHMARK_DATASETS => get_datasets
 }
 
+#[allow(unused_variables)]
 pub async fn get_datasets<S>(State(state): State<AppState<S>>) -> impl IntoResponse
 where
     S: Store + Send + Sync + Clone + 'static,

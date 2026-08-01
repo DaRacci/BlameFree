@@ -46,6 +46,7 @@ pub struct PrLogsEntry {
 
 /// Response from GET /api/runs/:id/logs/:pr_key/:role
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated]
 pub struct AgentLogResponse {
     /// Run ID.
     pub run_id: String,
@@ -65,6 +66,7 @@ pub struct AgentLogResponse {
 
 /// Response from GET /api/runs/:id/prs/:pr_key
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated]
 pub struct PrAgentsResponse {
     /// Run ID.
     pub run_id: String,
@@ -84,6 +86,7 @@ pub struct PrAgentsResponse {
 
 /// Per-agent availability entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated]
 pub struct PrAgentEntry {
     /// Role abbreviation.
     pub role: String,

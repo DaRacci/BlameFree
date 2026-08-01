@@ -10,16 +10,23 @@ default = ["sqlite"]
 sqlite = []
 
 [dependencies]
-chrono = { workspace = true }
 riv-types = { path = "../riv-types", features = ["seaorm-storage"] }
 mti = { workspace = true }
-sea-orm = { workspace = true, features = ["macros", "sqlx-sqlite", "runtime-tokio", "chrono", "entity-registry", "schema-sync"] }
+sea-orm = { workspace = true, features = [
+  "macros",
+  "sqlx-sqlite",
+  "runtime-tokio",
+  "chrono",
+  "entity-registry",
+  "schema-sync",
+] }
 serde = { workspace = true }
-serde_json = { workspace = true }
-tokio = { workspace = true }
 
 [dev-dependencies]
+chrono = { workspace = true }
+serde_json = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true }
 
 [lints]
 workspace = true

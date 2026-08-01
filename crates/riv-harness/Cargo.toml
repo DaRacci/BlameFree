@@ -27,7 +27,6 @@ riv-rules = { path = "../riv-rules" }
 riv-shared = { path = "../riv-shared" }
 riv-tools = { path = "../riv-tools" }
 riv-types = { path = "../riv-types" }
-futures = { workspace = true }
 mti = { workspace = true, features = ["serde"] }
 reqwest = { workspace = true, features = ["blocking"] }
 rig-core = { workspace = true }
@@ -39,7 +38,9 @@ tracing = { workspace = true }
 # Binary dependencies
 clap = { workspace = true, optional = true }
 dotenvy = { workspace = true, optional = true }
-tracing-subscriber = { workspace = true, features = ["env-filter"], optional = true }
+tracing-subscriber = { workspace = true, features = [
+  "env-filter",
+], optional = true }
 
 [dev-dependencies]
 insta = { workspace = true }

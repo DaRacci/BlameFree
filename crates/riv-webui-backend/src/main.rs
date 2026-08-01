@@ -6,14 +6,14 @@ use std::{env, fs};
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use octocrab::Octocrab;
-use riv_stor::store::SqliteStore;
+use riv_stor::store::sqlite::SqliteStore;
 use tracing::{info, warn};
 use tracing_subscriber::util::SubscriberInitExt;
 
 // mod api;
 mod auth;
 mod config;
-mod harness;
+// mod harness;
 mod routes;
 mod server;
 #[cfg(feature = "embed-frontend")]

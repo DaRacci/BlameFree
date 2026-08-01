@@ -5,7 +5,6 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::server::ActiveRun;
 use mti::prelude::MagicTypeId;
 use mti::prelude::{MagicTypeIdExt, V7};
 use rig_core::client::ProviderClient;
@@ -37,6 +36,7 @@ use tracing::{error, info, warn};
 
 /// Local benchmark configuration for harness execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated]
 pub struct BenchmarkConfig {
     pub model: String,
     pub max_findings: usize,
@@ -45,6 +45,7 @@ pub struct BenchmarkConfig {
 }
 
 /// Load a cached diff from the benchmark directory.
+#[deprecated]
 fn load_cached_diff(bench_dir: &Path, owner: &str, repo: &str, pr_number: u32) -> Option<String> {
     let diff_path = bench_dir
         .join("diffs")
@@ -56,6 +57,7 @@ fn load_cached_diff(bench_dir: &Path, owner: &str, repo: &str, pr_number: u32) -
 ///
 /// Handles: EvalConfig setup, dataset loading, per-PR evaluation via
 /// `pipeline::evaluate`, per-PR result files, SSE events, and summary.
+#[deprecated]
 pub async fn run_harness(
     run_id: &str,
     config: &BenchmarkConfig,
@@ -145,13 +147,13 @@ pub async fn run_harness(
             context,
             strategy: EvalStrategy::Panel,
             model: wrapped_model.clone(),
-            reasoning_effort: config.reasoning_effort,
+            reasoning_effort: None,
             client: client.clone(),
             cache: None,
             cost_tracker: cost_tracker.clone(),
             dashboard_tx: Some(webui_tx.clone()),
             agents,
-            max_findings: config.max_findings,
+            max_findings: 0,
             template_vars: None,
         };
 
@@ -187,23 +189,19 @@ pub async fn run_harness(
                     let _ = store.save::<PrResult>(last).await;
                 }
 
-                let n = results.len();
                 {
                     let mut runs = active_runs.write().await;
-                    if let Some(run) = runs.get_mut(&run_id.to_string().create_type_id::<V7>()) {
-                        // Progress tracking: n PRs completed
-                    }
+                    if let Some(_) = runs.get_mut(&run_id.to_string().create_type_id::<V7>()) {}
                 }
             }
             Err(e) => error!("PR '{}' evaluation failed: {e}", pr_entry.pr_title),
         }
     }
 
-    // --- Post-run: summary and notification ---
     {
         let mut runs = active_runs.write().await;
-        if let Some(run) = runs.get_mut(&run_id.to_string().create_type_id::<V7>()) {
-            // Run completed — will be removed from active_runs when result is on disk
+        if let Some(_) = runs.get_mut(&run_id.to_string().create_type_id::<V7>()) {
+            runs.remove(&run_id.to_string().create_type_id::<V7>());
         }
     }
 

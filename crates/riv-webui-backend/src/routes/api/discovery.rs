@@ -14,6 +14,7 @@ routes_register! {
 }
 
 #[instrument(skip(state), name = API_DISCOVERY_MODELS)]
+#[allow(unused_variables)]
 pub async fn get_models<S>(State(state): State<AppState<S>>) -> impl IntoResponse
 where
     S: Store + Send + Sync + Clone + 'static,
@@ -23,6 +24,7 @@ where
 }
 
 #[instrument(skip(state), name = API_DISCOVERY_CAPABILITIES, fields(model_slug = %model_slug))]
+#[allow(unused_variables)]
 pub async fn get_capabilities<S>(
     State(state): State<AppState<S>>,
     Path(model_slug): Path<String>,

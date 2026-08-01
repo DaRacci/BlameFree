@@ -1,23 +1,15 @@
 //! Axum server setup, shared state, and router.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use axum::Json;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
-use mti::prelude::MagicTypeId;
 use reqwest::header;
 use riv_stor::traits::Store;
-use riv_types::RunEvent;
-use riv_types::capabilities::ReasoningEffort;
-use rustls::pki_types::UnixTime;
-use strum::VariantArray;
-use tokio::sync::{RwLock, broadcast};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
@@ -27,19 +19,12 @@ use crate::config::WebUiConfig;
 #[cfg(feature = "embed-frontend")]
 use crate::static_assets::StaticAssets;
 
-async fn list_reasoning_efforts() -> Json<Vec<ReasoningEffort>> {
-    Json(ReasoningEffort::VARIANTS.to_vec())
-}
-
 /// Shared application state.
 #[derive(Clone)]
 pub struct AppState<S: Store + Send + Sync + Clone>
 where
     Self: Send + Sync,
 {
-    /// Active review sessions.
-    pub active_runs: Arc<RwLock<HashMap<MagicTypeId, ActiveRun>>>,
-
     /// Web UI configuration.
     pub config: WebUiConfig,
 
@@ -47,6 +32,7 @@ where
     pub session_store: SessionStore,
 
     /// Octocrab GitHub API client (authenticated via GITHUB_TOKEN env var).
+    #[allow(unused)]
     pub octocrab: octocrab::Octocrab,
 
     /// Path to the server log file.
@@ -54,16 +40,6 @@ where
 
     /// Store for data persistence.
     pub store: Arc<S>,
-}
-
-/// State for an actively running benchmark.
-#[derive(Clone)]
-pub struct ActiveRun {
-    /// When the run was started.
-    pub created_at: UnixTime,
-
-    /// Broadcast channel for SSE events.
-    pub tx: broadcast::Sender<RunEvent>,
 }
 
 impl<S: Store + Send + Sync + Clone> AppState<S> {
@@ -75,7 +51,6 @@ impl<S: Store + Send + Sync + Clone> AppState<S> {
         store: Arc<S>,
     ) -> Self {
         Self {
-            active_runs: Arc::new(RwLock::new(HashMap::new())),
             config,
             session_store,
             octocrab,
@@ -150,25 +125,6 @@ async fn static_or_index(State(_): State<AppState<impl Store>>, uri: Uri) -> Res
         format!("There was an error serving the {} or index.html. Please check the server logs for more information.", path),
     )
         .into_response()
-}
-
-/// Serve index.html from a disk directory.
-async fn serve_index_from_disk(static_dir: &Path) -> Response {
-    let index_path = static_dir.join("index.html");
-    match tokio::fs::read(&index_path).await {
-        Ok(data) => Response::builder()
-            .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-            .body(Body::from(data))
-            .unwrap(),
-        Err(_) => (
-            StatusCode::NOT_FOUND,
-            format!(
-                "Static directory '{}' not found or index.html missing. Build the frontend or set --static-dir.",
-                static_dir.display()
-            ),
-        )
-            .into_response(),
-    }
 }
 
 /// Determine MIME type from a file extension.

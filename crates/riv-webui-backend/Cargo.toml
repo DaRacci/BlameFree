@@ -9,8 +9,14 @@ name = "riv-webui"
 path = "src/main.rs"
 
 [features]
-default = ["backend", "oauth2", "exp16_adaptive_agents", "exp14_template_vars"]
-embed-frontend = []
+default = [
+  "backend",
+  "embed-frontend",
+  "oauth2",
+  "exp16_adaptive_agents",
+  "exp14_template_vars",
+]
+embed-frontend = ["dep:rust-embed"]
 backend = ["riv-shared/backend"]
 oauth2 = ["dep:oauth2", "dep:reqwest"]
 exp14_template_vars = ["riv-harness/exp14_template_vars"]
@@ -19,12 +25,10 @@ exp16_adaptive_agents = ["riv-harness/exp16_adaptive_agents"]
 [dependencies]
 anyhow = { workspace = true }
 axum = { workspace = true }
-chrono = { workspace = true }
 clap = { workspace = true }
 riv-agents = { path = "../riv-agents" }
 riv-benchmark = { path = "../riv-benchmark" }
 riv-types = { path = "../riv-types" }
-riv-cache = { path = "../riv-cache" }
 riv-harness = { path = "../riv-harness" }
 riv-reporting = { path = "../riv-reporting" }
 riv-shared = { path = "../riv-shared" }
@@ -32,10 +36,8 @@ riv-webui-shared = { path = "../riv-webui-shared" }
 riv-stor = { path = "../riv-stor" }
 oauth2 = { workspace = true, optional = true }
 octocrab = { workspace = true }
-regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
-rig-core = { workspace = true }
-rust-embed = { workspace = true }
+rust-embed = { workspace = true, optional = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

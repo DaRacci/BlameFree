@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use chrono::Utc;
 use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
-use riv_stor::store::SqliteStore;
+use riv_stor::store::sqlite::SqliteStore;
 use riv_stor::traits::Store;
 use riv_types::{
     agent::{
