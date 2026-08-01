@@ -74,6 +74,7 @@
                 cargo-license
                 cargo-nextest
                 cargo-sort
+                leptosfmt
                 trunk
                 wasm-bindgen-cli
               ]

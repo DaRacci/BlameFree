@@ -57,10 +57,11 @@ handlebars = "6.4.3"
 hmac = "0.13"
 include_dir = "0.7"
 insta = { version = "1", features = ["json", "ron"] }
-js-sys = "0.3"
+js-sys = "=0.3.98"
 leptos = "0.8"
 leptos_meta = "0.8"
 leptos_router = "0.8"
+leptos_axum = "0.8"
 linguist = "0.1"
 log = "0.4"
 lucide-leptos = "3.26"
@@ -98,6 +99,26 @@ trait-variant = "0.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
-wasm-bindgen = "0.2"
+wasm-bindgen = "=0.2.121"
 wasm-bindgen-futures = "0.4"
-web-sys = "0.3"
+web-sys = "=0.3.98"
+
+[[workspace.metadata.leptos]]
+name = "blamefree"
+bin-package = "riv-webui-backend"
+lib-package = "riv-webui-frontend"
+output-name = "blamefree"
+site-root = "target/site"
+style-file = "crates/riv-webui-frontend/css/styles.css"
+assets-dir = "crates/riv-webui-backend/assets"
+site-addr = "127.0.0.1:8080"
+reload-port = 8081
+browserquery = "defaults"
+bin-features = [
+  "embed-frontend",
+  "oauth2",
+  "exp16_adaptive_agents",
+  "exp14_template_vars",
+]
+bin-default-features = true
+front-target-dir = "CARGO_TARGET_DIR/crates/riv-webui-frontend"
