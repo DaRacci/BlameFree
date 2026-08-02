@@ -2,6 +2,8 @@ use leptos::prelude::*;
 use lucide_leptos::TriangleAlert;
 use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
 
+use crate::components::{format_elapsed, status_badge_class};
+
 #[server]
 async fn list_reviews_data() -> Result<Vec<Review>, ServerFnError> {
     let services = use_context::<crate::AppServices>()
@@ -69,23 +71,6 @@ fn review_pr_url(r: &Review) -> Option<String> {
         }
         _ => None,
     }
-}
-
-fn status_badge_class(status: &ReviewStatus) -> &'static str {
-    match status {
-        ReviewStatus::Running => "badge--warning",
-        ReviewStatus::Pending => "badge--neutral",
-        ReviewStatus::Completed => "badge--success",
-        ReviewStatus::Failed => "badge--danger",
-        ReviewStatus::Cancelled => "badge--neutral",
-    }
-}
-
-fn format_elapsed(secs: f64) -> String {
-    let total = secs as u64;
-    let mins = total / 60;
-    let secs_rem = total % 60;
-    format!("{:02}:{:02} elapsed", mins, secs_rem)
 }
 
 fn render_loading() -> AnyView {

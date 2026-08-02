@@ -2,6 +2,8 @@ use leptos::html;
 use leptos::prelude::*;
 use lucide_leptos::{ClipboardList, TriangleAlert};
 use riv_webui_shared::admin::LogsResponse;
+
+use crate::components::log_text::LogText;
 #[cfg(target_arch = "wasm32")]
 use riv_webui_shared::routes::API_ADMIN_LOGS_STREAM;
 
@@ -83,9 +85,7 @@ fn render_log_view(
                 <span class=status_class(&connection_status) title=status_label.clone()></span>
                 <span class="log-viewer__status-text">{status_label}</span>
             </div>
-            <div class="log-viewer__content" node_ref=log_container_ref>
-                <pre class="log-viewer__pre">{logs}</pre>
-            </div>
+            <LogText text=logs container_ref=log_container_ref />
         </div>
     }
     .into_any()
