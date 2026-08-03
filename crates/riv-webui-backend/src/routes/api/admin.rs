@@ -47,9 +47,9 @@ pub fn load_logs_response(log_path: &Path) -> LogsResponse {
 
 /// Get SSE stream of server console logs.
 ///
-/// On first connection, sends the last [`READBACK_LINES`] lines as a batch.
-/// Then polls the log file every second for new lines and streams them.
-/// Uses Server-Sent Events (SSE) for real-time log delivery.
+/// Frontend loads initial readback via regular request, so this SSE stream only
+/// emits newly appended log content. New bytes are sent as batched chunks to
+/// reduce browser re-render churn.
 #[instrument(skip(state), name = API_ADMIN_LOGS_STREAM)]
 pub async fn get_logs_stream<S>(State(state): State<AppState<S>>) -> impl IntoResponse
 where
@@ -59,20 +59,6 @@ where
     let (tx, rx) = mpsc::unbounded_channel::<Result<Event, Infallible>>();
 
     tokio::spawn(async move {
-        match read_last_n_lines(&log_path, READBACK_LINES) {
-            Ok(lines) => {
-                for line in &lines {
-                    if tx.send(Ok(Event::default().data(line.clone()))).is_err() {
-                        return; // client disconnected
-                    }
-                }
-            }
-            Err(e) => {
-                warn!("Failed to read initial log lines: {e}");
-                // Continue anyway so polling can pick up future writes
-            }
-        }
-
         let mut last_pos = match metadata(&log_path) {
             Ok(m) => m.len(),
             Err(_) => 0,
@@ -89,7 +75,12 @@ where
                 Err(_) => continue,
             };
 
-            if current_len <= last_pos {
+            if current_len < last_pos {
+                last_pos = current_len;
+                continue;
+            }
+
+            if current_len == last_pos {
                 continue; // no new data
             }
 
@@ -110,14 +101,9 @@ where
 
             last_pos = current_len;
 
-            let content = String::from_utf8_lossy(&buffer);
-            for line in content.lines() {
-                if tx
-                    .send(Ok(Event::default().data(line.to_string())))
-                    .is_err()
-                {
-                    return; // client disconnected
-                }
+            let content = String::from_utf8_lossy(&buffer).to_string();
+            if !content.is_empty() && tx.send(Ok(Event::default().data(content))).is_err() {
+                return; // client disconnected
             }
         }
     });

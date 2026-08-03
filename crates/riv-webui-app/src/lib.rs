@@ -32,6 +32,13 @@ pub mod sse;
 
 pub use riv_webui_shared::config::AppConfig;
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct LiveAgentInfo {
+    pub id: MagicTypeId,
+    pub name: String,
+    pub abbreviation: String,
+}
+
 pub type AppServiceFuture<T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send>>;
 pub type AppServiceFn<A, T> = Arc<dyn Fn(A) -> AppServiceFuture<T> + Send + Sync>;
 pub type AppReadFn<T> = AppServiceFn<(), T>;
@@ -50,6 +57,7 @@ pub struct AppServices {
     pub get_review: AppServiceFn<(MagicTypeId,), Review>,
     pub list_pr_results: AppServiceFn<(MagicTypeId,), Vec<PrResult>>,
     pub list_agent_logs: AppServiceFn<(MagicTypeId,), Vec<ReviewAgentLog>>,
+    pub list_live_review_agents: AppServiceFn<(MagicTypeId,), Vec<LiveAgentInfo>>,
     pub start_review: AppServiceFn<(String, String, Vec<String>, Option<ReasoningEffort>), Review>,
     pub start_benchmark: AppServiceFn<
         (

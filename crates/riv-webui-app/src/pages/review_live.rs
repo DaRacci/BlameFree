@@ -1,17 +1,27 @@
 use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
-use riv_types::review::{Review, ReviewMetadata};
+#[cfg(target_arch = "wasm32")]
+use riv_types::RunEvent;
+#[cfg(target_arch = "wasm32")]
+use riv_types::agent::AgentChunk;
+use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
+use std::collections::HashMap;
 
+use crate::LiveAgentInfo;
+#[cfg(target_arch = "wasm32")]
+use crate::components::format_elapsed;
 use crate::components::{
+    agent_pane::AgentPane,
     error_state::ErrorState,
-    format_elapsed,
     loading_state::{LoadingState, LoadingVariant},
-    log_viewer::LogViewer,
     metrics_card::MetricsCard,
     metrics_grid::MetricsGrid,
     page_header::PageHeader,
     status_badge::StatusBadge,
 };
+
+#[cfg(target_arch = "wasm32")]
+use {crate::sse, futures::StreamExt};
 
 #[server]
 async fn read_live_review_snapshot(review_id: String) -> Result<Review, ServerFnError> {
@@ -27,82 +37,245 @@ async fn read_live_review_snapshot(review_id: String) -> Result<Review, ServerFn
         .map_err(ServerFnError::new)
 }
 
+#[server]
+async fn read_live_review_agents(review_id: String) -> Result<Vec<LiveAgentInfo>, ServerFnError> {
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    let review_id = review_id
+        .parse::<mti::prelude::MagicTypeId>()
+        .map_err(|error| ServerFnError::new(format!("invalid review id: {error}")))?;
+
+    (services.list_live_review_agents)((review_id,))
+        .await
+        .map_err(ServerFnError::new)
+}
+
+#[derive(Clone, Default)]
+struct LiveAgentState {
+    response: String,
+    status: ReviewStatus,
+}
+
 #[component]
 pub fn ReviewLivePage() -> impl IntoView {
     let params = use_params_map();
+    let review_id = move || params.read().get("id").unwrap_or_default();
+
     let review = Resource::new(
-        move || params.read().get("id").unwrap_or_default(),
+        move || review_id(),
         |id| async move { read_live_review_snapshot(id).await },
     );
+    let agents = Resource::new(
+        move || review_id(),
+        |id| async move { read_live_review_agents(id).await },
+    );
+
+    #[cfg(target_arch = "wasm32")]
+    let (agent_states, set_agent_states) =
+        signal::<HashMap<String, LiveAgentState>>(HashMap::new());
+    #[cfg(not(target_arch = "wasm32"))]
+    let (agent_states, _set_agent_states) =
+        signal::<HashMap<String, LiveAgentState>>(HashMap::new());
+    #[cfg(target_arch = "wasm32")]
+    let (stream_status, set_stream_status) = signal::<ReviewStatus>(ReviewStatus::Pending);
+    #[cfg(not(target_arch = "wasm32"))]
+    let (stream_status, _set_stream_status) = signal::<ReviewStatus>(ReviewStatus::Pending);
+    #[cfg(target_arch = "wasm32")]
+    let (elapsed, set_elapsed) = signal(String::new());
+    #[cfg(not(target_arch = "wasm32"))]
+    let (elapsed, _set_elapsed) = signal(String::new());
+
+    #[cfg(target_arch = "wasm32")]
+    let id = review_id();
+
+    #[cfg(target_arch = "wasm32")]
+    leptos::task::spawn_local({
+        let set_agent_states = set_agent_states;
+        let set_stream_status = set_stream_status;
+        let set_elapsed = set_elapsed;
+        async move {
+            if id.is_empty() {
+                set_stream_status.update(|s| *s = ReviewStatus::Pending);
+                return;
+            }
+
+            let url = format!("/api/reviews/{id}/stream");
+            match sse::connect_sse(&url).await {
+                Ok(mut rx) => {
+                    set_stream_status.update(|s| *s = ReviewStatus::Running);
+
+                    let start = std::time::Instant::now();
+                    let mut last_elapsed_update = std::time::Instant::now();
+
+                    while let Some(raw) = rx.next().await {
+                        match serde_json::from_str::<RunEvent>(&raw) {
+                            Ok(event) => match event {
+                                RunEvent::AgentStarted { agent_id, .. } => {
+                                    let agent_key = agent_id.to_string();
+                                    set_agent_states.update(|states| {
+                                        states.entry(agent_key).or_default().status =
+                                            ReviewStatus::Running;
+                                    });
+                                }
+                                RunEvent::AgentChunk { chunk, .. } => {
+                                    let (agent_id, content) = match &chunk {
+                                        AgentChunk::Output { id, content, .. } => {
+                                            (id, content.as_str())
+                                        }
+                                        AgentChunk::Thinking { id, .. } => (id, ""),
+                                        AgentChunk::Tool { id, .. } => (id, ""),
+                                    };
+                                    let agent_key = agent_id.to_string();
+                                    if !content.is_empty() {
+                                        set_agent_states.update(|states| {
+                                            states
+                                                .entry(agent_key)
+                                                .or_default()
+                                                .response
+                                                .push_str(content);
+                                        });
+                                    }
+                                }
+                                RunEvent::AgentFinished { agent_id, .. } => {
+                                    let agent_key = agent_id.to_string();
+                                    set_agent_states.update(|states| {
+                                        states.entry(agent_key).or_default().status =
+                                            ReviewStatus::Completed;
+                                    });
+                                }
+                                RunEvent::ReviewStarted { .. } => {
+                                    set_stream_status.update(|s| *s = ReviewStatus::Running);
+                                }
+                                RunEvent::ReviewCompleted { .. } => {
+                                    set_stream_status.update(|s| *s = ReviewStatus::Completed);
+                                }
+                            },
+                            Err(e) => {
+                                log::warn!("Live SSE: failed to parse event: {e}");
+                            }
+                        }
+
+                        if last_elapsed_update.elapsed().as_secs() >= 1 {
+                            let secs = start.elapsed().as_secs_f64();
+                            let elapsed_text = format_elapsed(secs);
+                            set_elapsed.set(elapsed_text);
+                            last_elapsed_update = std::time::Instant::now();
+                        }
+                    }
+                    set_stream_status.update(|s| *s = ReviewStatus::Completed);
+                }
+                Err(e) => {
+                    log::error!("Live SSE connection failed: {e}");
+                    set_stream_status.update(|s| *s = ReviewStatus::Failed);
+                }
+            }
+        }
+    });
 
     view! {
         <Suspense fallback=move || view! {
-            <LoadingState
-                variant=LoadingVariant::SkeletonGrid {
-                    count: 4,
-                    grid_class: "content-grid--agent-panes",
-                    item_height: "200px",
-                }
-            />
+            <LoadingState variant=LoadingVariant::SkeletonGrid {
+                count: 4,
+                grid_class: "content-grid--agent-panes",
+                item_height: "200px",
+            } />
         }>
             {move || {
-                review.get().map(|result| match result {
-                    Ok(review) => render_live_snapshot(review),
-                    Err(err) => view! {
+                let review_result = review.get();
+                let agents_result = agents.get();
+                match (review_result, agents_result) {
+                    (Some(Ok(review)), Some(Ok(agent_list))) => {
+                        render_live_view(review, agent_list, agent_states, stream_status, elapsed)
+                    }
+                    (Some(Err(err)), _) | (_, Some(Err(err))) => view! {
                         <ErrorState
-                            heading="Failed to load live review snapshot"
+                            heading="Failed to load live review"
                             message=err.to_string()
                         />
                     }
                     .into_any(),
-                })
+                    _ => view! {
+                        <LoadingState variant=LoadingVariant::SkeletonGrid {
+                            count: 4,
+                            grid_class: "content-grid--agent-panes",
+                            item_height: "200px",
+                        } />
+                    }
+                    .into_any(),
+                }
             }}
         </Suspense>
     }
 }
 
-fn render_live_snapshot(review: Review) -> AnyView {
+fn render_live_view(
+    review: Review,
+    agent_list: Vec<LiveAgentInfo>,
+    agent_states: ReadSignal<HashMap<String, LiveAgentState>>,
+    stream_status: ReadSignal<ReviewStatus>,
+    elapsed: ReadSignal<String>,
+) -> AnyView {
     let title = format!("Live: {}", review_title(&review));
     let detail_path = format!("/reviews/{}", review.id);
-    let status = review.status.clone();
-    let duration = review
-        .duration
-        .map(|duration| format_elapsed(duration.as_secs_f64()))
-        .unwrap_or_else(|| "In progress".to_string());
-    let session_count = if !review.agent_sessions.is_empty() {
-        review.agent_sessions.len()
-    } else {
-        review
-            .analytics
-            .as_ref()
-            .map(|analytics| analytics.sessions.len())
-            .unwrap_or(0)
+    let status = move || stream_status.get();
+    let duration = move || {
+        let e = elapsed.get();
+        if e.is_empty() {
+            "In progress".to_string()
+        } else {
+            e
+        }
     };
-    let sessions = review.agent_sessions.clone();
+    let session_count = move || {
+        agent_states
+            .get()
+            .values()
+            .filter(|s| s.status == ReviewStatus::Completed)
+            .count()
+            .to_string()
+    };
 
     view! {
         <div class="live-view-page">
             <PageHeader title=title>
-                <StatusBadge status=status.clone() />
+                <StatusBadge status=status() />
                 <a href=detail_path class="btn btn--ghost btn--sm">"Back to Detail"</a>
             </PageHeader>
 
-            <div class="card mb-lg">
-                <div class="card__body">
-                    <p class="text-secondary">
-                        "SSE route exists server-side. Page still shows snapshot view until live pane wiring lands."
-                    </p>
-                </div>
-            </div>
-
             <MetricsGrid>
                 <MetricsCard value=review.id.to_string() label="Review ID" truncate=true />
-                <MetricsCard value=review.status.to_string() label="Status" />
-                <MetricsCard value=session_count.to_string() label="Agent Sessions" />
-                <MetricsCard value=duration label="Duration" />
+                <MetricsCard value=status().to_string() label="Status" />
+                <MetricsCard value=session_count() label="Agents Complete" />
+                <MetricsCard value=duration() label="Duration" />
             </MetricsGrid>
 
-            <LogViewer agent_sessions=sessions />
+            <div class="content-grid content-grid--agent-panes">
+                {move || {
+                    let states = agent_states.get();
+                    let agents = agent_list.clone();
+                    agents.into_iter().map(|agent| {
+                        let state = states.get(&agent.id.to_string()).cloned().unwrap_or_default();
+                        let status_signal = Signal::derive(move || state.status.clone());
+                        let response_signal = Signal::derive(move || {
+                            if state.response.is_empty() {
+                                None
+                            } else {
+                                Some(state.response.clone())
+                            }
+                        });
+                        let pr_signal = Signal::derive(move || None::<String>);
+                        view! {
+                            <AgentPane
+                                name=agent.name.clone()
+                                status=status_signal
+                                response=response_signal
+                                current_pr=pr_signal
+                            />
+                        }
+                    }).collect::<Vec<_>>()
+                }}
+            </div>
         </div>
     }
     .into_any()

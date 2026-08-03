@@ -50,6 +50,9 @@ where
     /// Broadcast channels keyed by review id for live events.
     pub review_channels: Arc<RwLock<HashMap<MagicTypeId, broadcast::Sender<RunEvent>>>>,
 
+    /// Selected live agents keyed by review id for SSE page bootstrap.
+    pub live_review_agents: Arc<RwLock<HashMap<MagicTypeId, Vec<riv_webui_app::LiveAgentInfo>>>>,
+
     /// Store for data persistence.
     pub store: Arc<S>,
 }
@@ -73,6 +76,7 @@ impl<S: Store + Send + Sync + Clone> AppState<S> {
             output_dir,
             active_reviews: Arc::new(RwLock::new(Vec::new())),
             review_channels: Arc::new(RwLock::new(HashMap::new())),
+            live_review_agents: Arc::new(RwLock::new(HashMap::new())),
             store,
         }
     }
@@ -187,6 +191,15 @@ where
             move |(review_id,)| {
                 let state = state.clone();
                 Box::pin(async move { crate::services::list_agent_logs(&state, &review_id).await })
+            }
+        }),
+        list_live_review_agents: Arc::new({
+            let state = state.clone();
+            move |(review_id,)| {
+                let state = state.clone();
+                Box::pin(async move {
+                    crate::services::list_live_review_agents(&state, &review_id).await
+                })
             }
         }),
         start_review: Arc::new({

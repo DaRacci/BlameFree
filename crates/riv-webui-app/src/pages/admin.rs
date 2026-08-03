@@ -138,14 +138,14 @@ pub fn AdminPage() -> impl IntoView {
         leptos::task::spawn_local(async move {
             match sse::connect_sse_with_status(&API_ADMIN_LOGS_STREAM, sse_conn).await {
                 Ok(mut rx) => {
-                    while let Some(line) = rx.next().await {
+                    while let Some(chunk) = rx.next().await {
                         sse_logs.update(|s| {
                             if !s.is_empty() {
                                 s.push('\n');
                             }
-                            s.push_str(&line);
+                            s.push_str(&chunk);
                         });
-                        sse_lines.update(|n| *n += 1);
+                        sse_lines.update(|n| *n += chunk.lines().count());
                     }
                     sse_conn.set("disconnected".into());
                 }

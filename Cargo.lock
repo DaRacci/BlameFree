@@ -4259,6 +4259,7 @@ dependencies = [
  "riv-types",
  "riv-webui-shared",
  "serde",
+ "serde_json",
  "wasm-bindgen",
  "web-sys",
 ]

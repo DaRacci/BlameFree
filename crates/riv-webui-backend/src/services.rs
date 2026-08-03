@@ -37,6 +37,7 @@ use riv_types::{
     },
     wrappers::Model,
 };
+use riv_webui_app::LiveAgentInfo;
 use riv_webui_shared::{
     config::{AgentInfo, DatasetInfo},
     review::ReviewAgentLog,
@@ -134,6 +135,20 @@ where
 
     logs.sort_by(|left, right| left.agent_id.to_string().cmp(&right.agent_id.to_string()));
     Ok(logs)
+}
+
+pub async fn list_live_review_agents<S>(
+    state: &AppState<S>,
+    review_id: &MagicTypeId,
+) -> Result<Vec<LiveAgentInfo>, String>
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
+    let live_review_agents = state.live_review_agents.read().await;
+    Ok(live_review_agents
+        .get(review_id)
+        .cloned()
+        .unwrap_or_default())
 }
 
 pub async fn list_repo_prs<S>(
@@ -361,6 +376,8 @@ where
         number: pr_number,
     };
 
+    let live_agents = resolve_live_agents(roles)?;
+
     let review = Review {
         id: review_id.clone(),
         agent_sessions: Vec::new(),
@@ -379,7 +396,7 @@ where
         .await
         .map_err(|error| format!("Failed to save running review: {error}"))?;
 
-    let dashboard_tx = register_live_review(state, &review_id).await;
+    let dashboard_tx = register_live_review(state, &review_id, live_agents).await;
     let task_state = state.clone();
     let task_model = model.to_string();
     let task_roles = roles.to_vec();
@@ -439,6 +456,7 @@ where
     }
 
     let review_id = new_review_id(BENCHMARK_REVIEW_ID_PREFIX);
+    let live_agents = resolve_live_agents(roles)?;
     let review = Review {
         id: review_id.clone(),
         agent_sessions: Vec::new(),
@@ -454,7 +472,7 @@ where
         .await
         .map_err(|error| format!("Failed to save running benchmark review: {error}"))?;
 
-    let dashboard_tx = register_live_review(state, &review_id).await;
+    let dashboard_tx = register_live_review(state, &review_id, live_agents).await;
     let task_state = state.clone();
     let task_model = model.to_string();
     let task_roles = roles.to_vec();
@@ -796,6 +814,7 @@ fn ensure_openrouter_configured() -> Result<(), String> {
 async fn register_live_review<S>(
     state: &AppState<S>,
     review_id: &MagicTypeId,
+    live_agents: Vec<LiveAgentInfo>,
 ) -> broadcast::Sender<RunEvent>
 where
     S: Store + Send + Sync + Clone + 'static,
@@ -811,6 +830,10 @@ where
         let mut channels = state.review_channels.write().await;
         channels.insert(review_id.clone(), tx.clone());
     }
+    {
+        let mut review_agents = state.live_review_agents.write().await;
+        review_agents.insert(review_id.clone(), live_agents);
+    }
     tx
 }
 
@@ -825,6 +848,10 @@ where
     {
         let mut channels = state.review_channels.write().await;
         channels.remove(review_id);
+    }
+    {
+        let mut review_agents = state.live_review_agents.write().await;
+        review_agents.remove(review_id);
     }
 }
 
@@ -886,10 +913,34 @@ where
 }
 
 fn resolve_agents(roles: &[String]) -> Result<&'static [&'static AgentEntry], String> {
+    Ok(Box::leak(resolve_agent_entries(roles)?.into_boxed_slice()))
+}
+
+fn resolve_live_agents(roles: &[String]) -> Result<Vec<LiveAgentInfo>, String> {
+    Ok(resolve_agent_entries(roles)?
+        .into_iter()
+        .map(|agent| LiveAgentInfo {
+            id: agent.agent_id.clone(),
+            name: agent.role_name.clone(),
+            abbreviation: agent.role_abbreviation.clone(),
+        })
+        .collect())
+}
+
+fn resolve_agent_entries(roles: &[String]) -> Result<Vec<&'static AgentEntry>, String> {
     let library = PromptLibrary::new().map_err(|error| error.to_string())?;
 
     let resolved = if roles.is_empty() {
-        library.agents()
+        let mut abbreviations = library
+            .abbreviations()
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        abbreviations.sort();
+        abbreviations
+            .into_iter()
+            .filter_map(|abbreviation| library.config(&abbreviation))
+            .collect::<Vec<_>>()
     } else {
         let mut agents = Vec::with_capacity(roles.len());
         let mut missing = Vec::new();
@@ -909,7 +960,7 @@ fn resolve_agents(roles: &[String]) -> Result<&'static [&'static AgentEntry], St
         return Err("No agents resolved from PromptLibrary".to_string());
     }
 
-    Ok(Box::leak(resolved.into_boxed_slice()))
+    Ok(resolved)
 }
 
 fn result_matches_review(result: &PrResult, review_id: &MagicTypeId, review_key: &str) -> bool {
