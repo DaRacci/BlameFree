@@ -21,6 +21,7 @@ leptos = { workspace = true }
 leptos_meta = { workspace = true }
 leptos_router = { workspace = true }
 lucide-leptos = { workspace = true, features = ["all-icons"] }
+serde = { workspace = true }
 riv-types = { path = "../riv-types" }
 riv-webui-shared = { path = "../riv-webui-shared" }
 

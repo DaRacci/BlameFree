@@ -82,8 +82,6 @@ pub fn RunTable(runs: Vec<Review>) -> impl IntoView {
                                         <span class="badge__label">{run.status.to_string()}</span>
                                     </span>
                                 </td>
-                                <td class="table__td">{0}</td>
-                                <td class="table__td table__td--mono">{format!("{:.3}", 0.0_f64)}</td>
                                 <td class="table__td table__td--mono">{cost_str}</td>
                                 <td class="table__td">
                                     <div class="flex-row gap-sm">

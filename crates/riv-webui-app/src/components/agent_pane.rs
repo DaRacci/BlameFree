@@ -8,14 +8,10 @@ use super::log_text::LogText;
 #[component]
 pub fn AgentPane(
     name: String,
-    status: impl Fn() -> ReviewStatus + Send + Sync + 'static,
-    response: impl Fn() -> Option<String> + Send + Sync + 'static,
-    current_pr: impl Fn() -> Option<String> + Send + Sync + 'static,
+    status: Signal<ReviewStatus>,
+    response: Signal<Option<String>>,
+    current_pr: Signal<Option<String>>,
 ) -> impl IntoView {
-    let status = Signal::derive(status);
-    let response = Signal::derive(response);
-    let current_pr = Signal::derive(current_pr);
-
     let pane_class = move || -> &'static str {
         match status.get() {
             ReviewStatus::Running => "agent-pane--running",

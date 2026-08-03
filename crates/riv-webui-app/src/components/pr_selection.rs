@@ -4,7 +4,9 @@ use super::checkbox_group::{CheckboxGroup, CheckboxOption};
 
 /// Trait for items that can be displayed in the PR selection list.
 pub trait PrItem {
-    /// Unique key used as the selection identifier. Use [`PrMeta::number`] when available.
+    /// Unique key used as the selection identifier.
+    ///
+    /// Keep this stable for one fetch cycle, but do not assume PR-number or title semantics.
     fn pr_key(&self) -> &str;
 
     /// Display label shown next to the checkbox.

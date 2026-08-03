@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
+use riv_types::review::{Review, ReviewMetadata};
 
 use super::status_badge::StatusBadge;
 

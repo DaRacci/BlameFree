@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use lucide_leptos::TriangleAlert;
 use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
 
+use crate::async_resource::{ReloadableResource, create_reloadable_resource};
 use crate::components::{format_elapsed, status_badge_class};
 
 #[server]
@@ -83,17 +84,14 @@ fn render_loading() -> AnyView {
     .into_any()
 }
 
-fn render_error(message: String, set_refresh_key: WriteSignal<u64>) -> AnyView {
+fn render_error(message: String, reviews: ReloadableResource<Vec<Review>>) -> AnyView {
     view! {
         <div class="error-state" role="alert">
             <div class="error-state__icon"><TriangleAlert size=24 /></div>
             <h3 class="error-state__heading">"Failed to load reviews"</h3>
             <p class="error-state__message">{format!("Something went wrong: {}", message)}</p>
             <div class="error-state__action">
-                <button
-                    class="btn btn--primary"
-                    on:click=move |_| set_refresh_key.update(|n| *n += 1)
-                >
+                <button class="btn btn--primary" on:click=move |_| reviews.refresh()>
                     "Retry"
                 </button>
             </div>
@@ -261,11 +259,9 @@ fn render_reviews(reviews: Vec<Review>) -> AnyView {
 
 #[component]
 pub fn HomePage() -> impl IntoView {
-    let (refresh_key, set_refresh_key) = signal(0_u64);
-    let reviews = Resource::new(
-        move || refresh_key.get(),
-        move |_| async move { list_reviews_data().await },
-    );
+    let reviews = create_reloadable_resource(move || async move {
+        list_reviews_data().await.map_err(|err| err.to_string())
+    });
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -277,8 +273,7 @@ pub fn HomePage() -> impl IntoView {
                 let reviews = reviews.clone();
                 move || {
                     let any_active = reviews
-                        .get()
-                        .and_then(Result::ok)
+                        .data()
                         .map(|items| {
                             items.iter().any(|r| {
                                 matches!(r.status, ReviewStatus::Pending | ReviewStatus::Running)
@@ -287,7 +282,7 @@ pub fn HomePage() -> impl IntoView {
                         .unwrap_or(false);
 
                     if any_active {
-                        set_refresh_key.update(|n| *n += 1);
+                        reviews.refresh();
                     }
                 }
             });
@@ -304,9 +299,12 @@ pub fn HomePage() -> impl IntoView {
 
             <Suspense fallback=render_loading>
                 {move || {
-                    reviews.get().map(|result| match result {
-                        Ok(items) => render_reviews(items),
-                        Err(err) => render_error(err.to_string(), set_refresh_key),
+                    reviews.resource.get().map(|result| {
+                        let retry = reviews.clone();
+                        match result {
+                            Ok(items) => render_reviews(items),
+                            Err(err) => render_error(err, retry),
+                        }
                     })
                 }}
             </Suspense>

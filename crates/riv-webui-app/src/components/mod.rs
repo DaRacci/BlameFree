@@ -11,6 +11,7 @@ pub mod form_section;
 pub mod loading_state;
 pub mod log_text;
 pub mod metrics_card;
+pub mod metrics_grid;
 pub mod page_header;
 pub mod pr_selection;
 pub mod progress_bar;

@@ -11,6 +11,7 @@ use riv_types::review::Review;
 use riv_webui_shared::routes::API_CONFIG;
 use riv_webui_shared::{admin::LogsResponse, auth::AuthUser};
 
+pub mod async_resource;
 pub mod components;
 pub mod pages;
 
