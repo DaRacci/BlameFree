@@ -61,6 +61,7 @@ where
         .map_err(|error| format!("Failed to list reviews: {error}"))?;
 
     for review in &mut reviews {
+        reconcile_review_state(state, review).await;
         hydrate_review_from_output(&state.output_dir, review);
     }
 
@@ -87,6 +88,7 @@ where
         .map_err(|error| format!("Failed to load review {review_id}: {error}"))?
         .ok_or_else(|| format!("Review {review_id} not found"))?;
 
+    reconcile_review_state(state, &mut review).await;
     hydrate_review_from_output(&state.output_dir, &mut review);
     Ok(review)
 }
@@ -341,6 +343,8 @@ pub async fn start_review<S>(
 where
     S: Store + Send + Sync + Clone + 'static,
 {
+    ensure_openrouter_configured()?;
+
     let (owner, repo, pr_number) =
         parse_github_url(url).map_err(|error| format!("Invalid GitHub PR URL: {error}"))?;
     let (pr_title, diff) = fetch_pr_diff(state, &owner, &repo, pr_number).await?;
@@ -379,9 +383,12 @@ where
     let task_state = state.clone();
     let task_model = model.to_string();
     let task_roles = roles.to_vec();
+    let failure_review = review.clone();
+    let failure_model = task_model.clone();
+    let failure_roles = task_roles.clone();
     tokio::spawn(async move {
         if let Err(error) = run_review_job(
-            task_state,
+            task_state.clone(),
             review_id,
             repository,
             pr_meta,
@@ -394,6 +401,7 @@ where
         .await
         {
             error!("Review launch failed: {}", error);
+            mark_review_failed(&task_state, &failure_review, &failure_model, &failure_roles).await;
         }
     });
 
@@ -411,6 +419,8 @@ pub async fn start_benchmark<S>(
 where
     S: Store + Send + Sync + Clone + 'static,
 {
+    ensure_openrouter_configured()?;
+
     if selected_pr_urls.is_empty() {
         return Err("Select at least one dataset PR".to_string());
     }
@@ -449,9 +459,12 @@ where
     let task_model = model.to_string();
     let task_roles = roles.to_vec();
     let task_dataset_id = dataset_id.to_string();
+    let failure_review = review.clone();
+    let failure_model = task_model.clone();
+    let failure_roles = task_roles.clone();
     tokio::spawn(async move {
         if let Err(error) = run_benchmark_job(
-            task_state,
+            task_state.clone(),
             review_id,
             task_dataset_id,
             selected_entries,
@@ -463,6 +476,7 @@ where
         .await
         {
             error!("Benchmark launch failed: {}", error);
+            mark_review_failed(&task_state, &failure_review, &failure_model, &failure_roles).await;
         }
     });
 
@@ -773,6 +787,12 @@ fn new_review_id(prefix: &str) -> MagicTypeId {
     format!("{prefix}-{stamp}").create_type_id::<V7>()
 }
 
+fn ensure_openrouter_configured() -> Result<(), String> {
+    openrouter::Client::from_env()
+        .map(|_| ())
+        .map_err(|error| format!("Failed to create OpenRouter client: {error}"))
+}
+
 async fn register_live_review<S>(
     state: &AppState<S>,
     review_id: &MagicTypeId,
@@ -805,6 +825,63 @@ where
     {
         let mut channels = state.review_channels.write().await;
         channels.remove(review_id);
+    }
+}
+
+async fn mark_review_failed<S>(state: &AppState<S>, review: &Review, model: &str, roles: &[String])
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
+    let mut failed_review = review.clone();
+    failed_review.status = ReviewStatus::Failed;
+
+    if let Err(error) = state.store.save::<Review>(&failed_review).await {
+        error!(
+            "Failed to save failed review state for {}: {}",
+            failed_review.id, error
+        );
+    }
+
+    let empty_analytics = AnalyticsSnapshot::default();
+    if let Err(error) = write_run_summary_file(
+        &state.output_dir.join(failed_review.id.to_string()),
+        &empty_analytics,
+        Duration::default(),
+        0,
+        0,
+        model,
+        roles,
+    ) {
+        warn!(
+            "Failed to write failed run summary for {}: {}",
+            failed_review.id, error
+        );
+    }
+
+    unregister_live_review(state, &failed_review.id).await;
+}
+
+async fn reconcile_review_state<S>(state: &AppState<S>, review: &mut Review)
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
+    if !matches!(review.status, ReviewStatus::Pending | ReviewStatus::Running) {
+        return;
+    }
+
+    let is_active = {
+        let active_reviews = state.active_reviews.read().await;
+        active_reviews.contains(&review.id)
+    };
+
+    if !is_active {
+        review.status = ReviewStatus::Failed;
+        if let Err(error) = state.store.save::<Review>(review).await {
+            warn!(
+                "Failed to reconcile stale review {} to failed state: {}",
+                review.id, error
+            );
+        }
     }
 }
 

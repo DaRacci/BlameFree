@@ -147,8 +147,9 @@ fn render_reviews(reviews: Vec<Review>) -> AnyView {
                                 .map(|d| format_elapsed(d.as_secs_f64()))
                                 .unwrap_or_else(|| "In progress".into());
                             let id_str = run.id.to_string();
+                            let detail_path = format!("/reviews/{}", run.id);
                             view! {
-                                <div class="card card--active-run">
+                                <a href=detail_path class="card card--active-run home-page__active-run-link">
                                     <div class="card__header">
                                         <h3 class="card__title">{label}</h3>
                                         <span class=format!("badge {}", badge_class)>
@@ -166,7 +167,7 @@ fn render_reviews(reviews: Vec<Review>) -> AnyView {
                                     <div class="card__footer text-xs text-secondary">
                                         {id_str}
                                     </div>
-                                </div>
+                                </a>
                             }
                         }).collect::<Vec<_>>()}
                     </div>
@@ -199,6 +200,16 @@ fn render_reviews(reviews: Vec<Review>) -> AnyView {
 pub fn HomePage() -> impl IntoView {
     let reviews = create_reloadable_resource(move || async move {
         list_reviews_data().await.map_err(|err| err.to_string())
+    });
+    let (cached_reviews, set_cached_reviews) = signal::<Option<Vec<Review>>>(None);
+
+    Effect::new({
+        let reviews = reviews.clone();
+        move || {
+            if let Some(Ok(items)) = reviews.resource.get() {
+                set_cached_reviews.set(Some(items));
+            }
+        }
     });
 
     #[cfg(target_arch = "wasm32")]
@@ -236,13 +247,24 @@ pub fn HomePage() -> impl IntoView {
                 <a href="/benchmarks/new" class="btn btn--ghost btn--sm">"New Benchmark"</a>
             </PageHeader>
 
-            <Suspense fallback=render_loading>
+            <Suspense fallback={
+                let cached_reviews = cached_reviews;
+                move || {
+                    cached_reviews
+                        .get()
+                        .map(render_reviews)
+                        .unwrap_or_else(render_loading)
+                }
+            }>
                 {move || {
                     reviews.resource.get().map(|result| {
                         let retry = reviews.clone();
+                        let cached = cached_reviews.get();
                         match result {
                             Ok(items) => render_reviews(items),
-                            Err(err) => render_error(err, retry),
+                            Err(err) => cached
+                                .map(render_reviews)
+                                .unwrap_or_else(|| render_error(err, retry)),
                         }
                     })
                 }}
