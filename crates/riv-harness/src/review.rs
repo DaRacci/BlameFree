@@ -7,8 +7,8 @@ use tracing::info;
 use crate::eval::EvalConfig;
 use crate::pipeline;
 
-/// Review a PR diff.
-pub async fn review_pr(diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> {
+/// Review a diff.
+pub async fn review_diff(diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> {
     info!(
         "Reviewing diff ({} bytes, {} sections) with {} agents, model={}",
         diff.raw.len(),

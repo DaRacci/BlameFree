@@ -67,7 +67,6 @@ pub fn load_golden_datasets(dataset_dir: &Path) -> Result<Vec<GoldenCommentEntry
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     #[test]
     fn test_load_golden_datasets_empty_dir() {

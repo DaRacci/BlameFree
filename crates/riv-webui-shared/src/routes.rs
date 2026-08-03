@@ -40,8 +40,4 @@ define_routes! {
 
     HOME,                       "/";
     ADMIN,                      "/admin";
-
-    REVIEWS_ID,                 "/reviews/{id}";
-    REVIEWS_ID_LOGS,            "/reviews/{id}/logs";
-    REVIEWS_ID_DETAILS,         "/reviews/{id}/details";
 }

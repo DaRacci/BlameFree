@@ -76,8 +76,7 @@ async fn run_review(args: ReviewArgs) -> Result<()> {
 
     let diff = Diff::new(diff_str);
     let config = review::build_review_config(&args)?;
-
-    let findings = review::review_pr(diff, &config).await?;
+    let findings = review::review_diff(diff, &config).await?;
 
     // Print findings to stderr (stdout reserved for structured output)
     if findings.is_empty() {
