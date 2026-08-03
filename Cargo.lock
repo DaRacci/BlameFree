@@ -4255,11 +4255,10 @@ dependencies = [
  "leptos_router",
  "log",
  "lucide-leptos",
- "riv-shared",
+ "mti",
  "riv-types",
  "riv-webui-shared",
  "serde",
- "serde_json",
  "wasm-bindgen",
  "web-sys",
 ]

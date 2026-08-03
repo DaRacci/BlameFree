@@ -5,14 +5,7 @@ use riv_types::{
 };
 use riv_webui_shared::config::{AgentInfo, DatasetInfo};
 
-use super::form_support::{
-    dataset_options, model_options, parse_reasoning_effort, reasoning_options, reasoning_value,
-};
-#[cfg(feature = "ssr")]
-use super::form_support::{
-    placeholder_dataset_prs, placeholder_datasets, placeholder_models,
-    placeholder_reasoning_efforts, placeholder_roles,
-};
+use super::form_support::{dataset_options, model_options, reasoning_options, reasoning_value};
 use crate::components::{
     error_state::ErrorState,
     form_page::FormPage,
@@ -22,6 +15,8 @@ use crate::components::{
     role_selector::RoleSelector,
     select_field::SelectField,
 };
+
+const BENCHMARK_LAUNCH_BLOCKED_REASON: &str = "Benchmark launch blocked for human review: `riv_harness::pipeline::run_linters()` is still `todo!()`, and `riv_benchmark::evaluate_findings()` is still `todo!()`.";
 
 #[server]
 async fn read_new_benchmark_bootstrap() -> Result<
@@ -33,36 +28,57 @@ async fn read_new_benchmark_bootstrap() -> Result<
     ),
     ServerFnError,
 > {
-    let models = placeholder_models();
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    let models = (services.list_models)(())
+        .await
+        .map_err(ServerFnError::new)?
+        .into_iter()
+        .map(|model| model.0)
+        .collect::<Vec<_>>();
     let default_model = models.first().cloned().unwrap_or_default();
-    Ok((
-        models,
-        placeholder_roles(),
-        placeholder_datasets(),
-        placeholder_reasoning_efforts(&default_model),
-    ))
+    let roles = (services.list_agents)(())
+        .await
+        .map_err(ServerFnError::new)?;
+    let datasets = (services.list_datasets)(())
+        .await
+        .map_err(ServerFnError::new)?;
+    let reasoning_levels = (services.list_reasoning_efforts)((default_model,))
+        .await
+        .map_err(ServerFnError::new)?;
+
+    Ok((models, roles, datasets, reasoning_levels))
 }
 
 #[server]
-async fn read_placeholder_dataset_prs(
-    dataset_id: String,
-) -> Result<Vec<GoldenCommentEntry>, ServerFnError> {
+async fn read_dataset_prs(dataset_id: String) -> Result<Vec<GoldenCommentEntry>, ServerFnError> {
     if dataset_id.trim().is_empty() {
         return Ok(Vec::new());
     }
 
-    Ok(placeholder_dataset_prs(dataset_id.trim()))
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    (services.list_dataset_prs)((dataset_id.trim().to_string(),))
+        .await
+        .map_err(ServerFnError::new)
 }
 
 #[server]
 async fn read_new_benchmark_reasoning_efforts(
     model: String,
 ) -> Result<Vec<ReasoningEffort>, ServerFnError> {
-    Ok(placeholder_reasoning_efforts(&model))
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    (services.list_reasoning_efforts)((model,))
+        .await
+        .map_err(ServerFnError::new)
 }
 
 #[server]
-async fn submit_new_benchmark_placeholder(
+async fn submit_new_benchmark(
     dataset_id: String,
     pr_urls: Vec<String>,
     model: String,
@@ -70,9 +86,7 @@ async fn submit_new_benchmark_placeholder(
     reasoning_effort: Option<ReasoningEffort>,
 ) -> Result<Review, ServerFnError> {
     let _ = (dataset_id, pr_urls, model, roles, reasoning_effort);
-    Err(ServerFnError::new(
-        "Placeholder: benchmark launch backend/service layer not implemented yet",
-    ))
+    Err(ServerFnError::new(BENCHMARK_LAUNCH_BLOCKED_REASON))
 }
 
 #[component]
@@ -125,6 +139,7 @@ fn NewBenchmarkForm(
         .map(reasoning_value)
         .unwrap_or("none")
         .to_string();
+    let launch_blocked = true;
 
     let (model, set_model) = signal(initial_model);
     let reasoning_levels = Resource::new(
@@ -157,7 +172,7 @@ fn NewBenchmarkForm(
         set_selected_prs.set(Vec::new());
 
         spawn_local(async move {
-            match read_placeholder_dataset_prs(dataset_id).await {
+            match read_dataset_prs(dataset_id).await {
                 Ok(prs) => {
                     let selected = prs.iter().map(|pr| pr.url.clone()).collect::<Vec<_>>();
                     set_selected_prs.set(selected);
@@ -172,7 +187,8 @@ fn NewBenchmarkForm(
     };
 
     let submit_disabled = move || {
-        dataset.get().trim().is_empty()
+        launch_blocked
+            || dataset.get().trim().is_empty()
             || model.get().trim().is_empty()
             || selected_roles.get().is_empty()
             || selected_prs.get().is_empty()
@@ -183,26 +199,31 @@ fn NewBenchmarkForm(
         set_submitting.set(true);
         set_submit_error.set(None);
 
+        if launch_blocked {
+            set_submit_error.set(Some(BENCHMARK_LAUNCH_BLOCKED_REASON.to_string()));
+            set_submitting.set(false);
+            return;
+        }
+
         let dataset_value = dataset.get_untracked();
         let model_value = model.get_untracked();
         let roles_value = selected_roles.get_untracked();
         let selected_pr_urls = selected_prs.get_untracked();
-        let reasoning_value = parse_reasoning_effort(&reasoning_effort.get_untracked());
+        let _reasoning_value = reasoning_effort.get_untracked();
 
         spawn_local(async move {
-            match submit_new_benchmark_placeholder(
+            match submit_new_benchmark(
                 dataset_value,
                 selected_pr_urls,
                 model_value,
                 roles_value,
-                reasoning_value,
+                None,
             )
             .await
             {
                 Ok(_) => {
                     set_submit_error.set(Some(
-                        "Placeholder launch returned unexpected success. Detail route still pending."
-                            .to_string(),
+                        "Unexpected success while launch path marked blocked.".to_string(),
                     ));
                 }
                 Err(err) => {
@@ -230,8 +251,9 @@ fn NewBenchmarkForm(
             <div class="card form-error-banner">
                 <div class="card__body">
                     <p class="text-secondary">
-                        "Placeholder bootstrap active. Real dataset/model discovery + launch path still pending."
+                        "Live model/dataset/agent discovery active. Benchmark launch blocked pending harness + benchmark fix."
                     </p>
+                    <p class="text-secondary text-sm">{BENCHMARK_LAUNCH_BLOCKED_REASON}</p>
                 </div>
             </div>
 
@@ -242,7 +264,7 @@ fn NewBenchmarkForm(
                     options=model_select_options
                     value=model
                     set_value=set_model
-                    helper="Default comes from riv_shared::DEFAULT_MODEL placeholder bootstrap."
+                    helper="Models come from OpenRouter discovery with fallback defaults."
                 />
                 <SelectField
                     id="benchmark-dataset"
@@ -250,7 +272,7 @@ fn NewBenchmarkForm(
                     options=dataset_select_options
                     value=dataset
                     set_value=set_dataset
-                    helper="Placeholder datasets stand in for future backend discovery."
+                    helper="Datasets come from server-side scan of configured dataset dir."
                 />
                 {move || {
                     let options = match reasoning_levels.get() {
@@ -264,7 +286,7 @@ fn NewBenchmarkForm(
                             options=options
                             value=reasoning_effort
                             set_value=set_reasoning_effort
-                            helper="Placeholder capability discovery currently returns all effort levels."
+                            helper="Shown only for reasoning-capable models."
                             include_none=true
                             loading=reasoning_levels.get().is_none()
                         />
@@ -293,7 +315,7 @@ fn NewBenchmarkForm(
                         {move || if prs_loading.get() { "Loading..." } else { "Load Dataset PRs" }}
                     </button>
                     <p class="form-field__helper">
-                        "Placeholder server fn returns sample dataset PR entries for selected dataset."
+                        "Loads PR entries from selected dataset directory on server."
                     </p>
                 </div>
                 {move || {
@@ -310,8 +332,8 @@ fn NewBenchmarkForm(
                 available_prs=available_prs
                 selected_prs=selected_prs
                 set_selected_prs=set_selected_prs
-                empty_message="Load placeholder dataset PRs to populate selection list."
-                helper_text="Placeholder flow selects all dataset PRs by default; uncheck rows to trim run scope."
+                empty_message="Load dataset PRs to populate selection list."
+                helper_text="All dataset PRs auto-select after load; uncheck rows to trim scope."
             />
         </FormPage>
     }

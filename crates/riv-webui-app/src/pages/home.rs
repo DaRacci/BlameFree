@@ -12,7 +12,9 @@ async fn list_reviews_data() -> Result<Vec<Review>, ServerFnError> {
     let services = use_context::<crate::AppServices>()
         .ok_or_else(|| ServerFnError::new("missing app services"))?;
 
-    (services.list_reviews)().await.map_err(ServerFnError::new)
+    (services.list_reviews)(())
+        .await
+        .map_err(ServerFnError::new)
 }
 
 fn review_label(r: &Review) -> String {

@@ -3,7 +3,7 @@
 pub mod admin;
 pub mod auth;
 pub mod config;
-// pub mod review; TODO: Remove completely
+pub mod review;
 pub mod routes;
 
 /// Deterministic HSL color from a role abbreviation — no hardcoded color map.

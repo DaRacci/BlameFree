@@ -15,7 +15,7 @@ async fn read_admin_logs() -> Result<LogsResponse, ServerFnError> {
     let services = use_context::<crate::AppServices>()
         .ok_or_else(|| ServerFnError::new("missing app services"))?;
 
-    (services.read_admin_logs)()
+    (services.read_admin_logs)(())
         .await
         .map_err(ServerFnError::new)
 }

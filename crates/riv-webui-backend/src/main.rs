@@ -7,16 +7,17 @@ use anyhow::{Result, anyhow};
 use clap::Parser;
 use leptos::config::get_configuration;
 use octocrab::Octocrab;
+use riv_agents::prompts::PromptLibrary;
+use riv_benchmark as _;
 use riv_stor::store::sqlite::SqliteStore;
 use tracing::{info, warn};
 use tracing_subscriber::util::SubscriberInitExt;
 
-// mod api;
 mod auth;
 mod config;
-// mod harness;
 mod routes;
 mod server;
+mod services;
 
 /// CLI arguments for the web UI dashboard server.
 #[derive(Debug, Parser)]
@@ -92,6 +93,8 @@ async fn main() -> Result<()> {
     riv_shared::init_dotenv();
     riv_shared::init_logging(Some(resolve_log_path(args.log_file.as_deref()))).try_init()?;
 
+    PromptLibrary::new().map_err(|e| anyhow!("Failed to initialize prompt library: {e}"))?;
+
     let mut webui_config = config::load_config(args.config.as_deref());
     if webui_config.oauth.is_some() {
         info!(
@@ -150,6 +153,7 @@ async fn main() -> Result<()> {
         octocrab,
         crate::auth::new_session_store(),
         resolve_log_path(args.log_file.as_deref()),
+        args.output_dir.clone(),
         store,
     );
 

@@ -20,11 +20,13 @@ async fn read_review_detail(review_id: String) -> Result<Review, ServerFnError> 
     let services = use_context::<crate::AppServices>()
         .ok_or_else(|| ServerFnError::new("missing app services"))?;
 
-    let reviews = (services.list_reviews)().await.map_err(ServerFnError::new)?;
-    reviews
-        .into_iter()
-        .find(|review| review.id.to_string() == review_id)
-        .ok_or_else(|| ServerFnError::new("review not found"))
+    let review_id = review_id
+        .parse::<mti::prelude::MagicTypeId>()
+        .map_err(|error| ServerFnError::new(format!("invalid review id: {error}")))?;
+
+    (services.get_review)((review_id,))
+        .await
+        .map_err(ServerFnError::new)
 }
 
 #[component]
@@ -137,7 +139,10 @@ fn review_title(review: &Review) -> String {
     match &review.metadata {
         ReviewMetadata::PullRequest(pr) if !pr.meta.title.is_empty() => pr.meta.title.clone(),
         ReviewMetadata::PullRequest(pr) => {
-            format!("{}/{} #{}", pr.repository.owner, pr.repository.name, pr.meta.number)
+            format!(
+                "{}/{} #{}",
+                pr.repository.owner, pr.repository.name, pr.meta.number
+            )
         }
         ReviewMetadata::Commit(commit) => format!("Commit {}", short_hash(&commit.commit_hash)),
         ReviewMetadata::Plain => review.id.to_string(),

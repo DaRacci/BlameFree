@@ -1,8 +1,11 @@
 use axum::{
+    Json,
     extract::{Path, State},
-    response::IntoResponse,
+    http::StatusCode,
+    response::{IntoResponse, Response},
 };
 use riv_stor::traits::Store;
+use riv_types::{capabilities::ReasoningEffort, wrappers::Model};
 use riv_webui_shared::routes::{API_DISCOVERY_CAPABILITIES, API_DISCOVERY_MODELS};
 use tracing::instrument;
 
@@ -14,24 +17,34 @@ routes_register! {
 }
 
 #[instrument(skip(state), name = API_DISCOVERY_MODELS)]
-#[allow(unused_variables)]
-pub async fn get_models<S>(State(state): State<AppState<S>>) -> impl IntoResponse
+pub async fn get_models<S>(State(state): State<AppState<S>>) -> Response
 where
     S: Store + Send + Sync + Clone + 'static,
 {
-    //TODO
-    axum::http::StatusCode::NOT_IMPLEMENTED
+    crate::services::list_models(&state)
+        .await
+        .map(|models| (StatusCode::OK, Json(models)).into_response())
+        .unwrap_or_else(|_| {
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(Vec::<Model>::new())).into_response()
+        })
 }
 
 #[instrument(skip(state), name = API_DISCOVERY_CAPABILITIES, fields(model_slug = %model_slug))]
-#[allow(unused_variables)]
 pub async fn get_capabilities<S>(
     State(state): State<AppState<S>>,
     Path(model_slug): Path<String>,
-) -> impl IntoResponse
+) -> Response
 where
     S: Store + Send + Sync + Clone + 'static,
 {
-    //TODO
-    axum::http::StatusCode::NOT_IMPLEMENTED
+    crate::services::list_reasoning_efforts(&state, &model_slug)
+        .await
+        .map(|capabilities| (StatusCode::OK, Json(capabilities)).into_response())
+        .unwrap_or_else(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(Vec::<ReasoningEffort>::new()),
+            )
+                .into_response()
+        })
 }

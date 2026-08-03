@@ -3,13 +3,7 @@ use leptos::task::spawn_local;
 use riv_types::{capabilities::ReasoningEffort, review::Review, vcs::pr::PrMeta};
 use riv_webui_shared::config::AgentInfo;
 
-use super::form_support::{
-    model_options, parse_reasoning_effort, pr_options, reasoning_options, reasoning_value,
-};
-#[cfg(feature = "ssr")]
-use super::form_support::{
-    placeholder_models, placeholder_reasoning_efforts, placeholder_repo_prs, placeholder_roles,
-};
+use super::form_support::{model_options, pr_options, reasoning_options, reasoning_value};
 use crate::components::{
     error_state::ErrorState,
     form_page::FormPage,
@@ -20,39 +14,59 @@ use crate::components::{
     text_field::TextField,
 };
 
+const REVIEW_LAUNCH_BLOCKED_REASON: &str = "Review launch blocked for human review: `riv_harness::pipeline::run_linters()` is still `todo!()`, so service-layer launch would panic at runtime.";
+
 #[server]
 async fn read_new_review_bootstrap()
 -> Result<(Vec<String>, Vec<AgentInfo>, Vec<ReasoningEffort>), ServerFnError> {
-    let models = placeholder_models();
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    let models = (services.list_models)(())
+        .await
+        .map_err(ServerFnError::new)?
+        .into_iter()
+        .map(|model| model.0)
+        .collect::<Vec<_>>();
     let default_model = models.first().cloned().unwrap_or_default();
-    Ok((
-        models,
-        placeholder_roles(),
-        placeholder_reasoning_efforts(&default_model),
-    ))
+    let roles = (services.list_agents)(())
+        .await
+        .map_err(ServerFnError::new)?;
+    let reasoning_levels = (services.list_reasoning_efforts)((default_model,))
+        .await
+        .map_err(ServerFnError::new)?;
+
+    Ok((models, roles, reasoning_levels))
 }
 
 #[server]
-async fn read_placeholder_repo_prs(
-    owner: String,
-    repo: String,
-) -> Result<Vec<PrMeta>, ServerFnError> {
+async fn read_repo_prs(owner: String, repo: String) -> Result<Vec<PrMeta>, ServerFnError> {
     if owner.trim().is_empty() || repo.trim().is_empty() {
         return Ok(Vec::new());
     }
 
-    Ok(placeholder_repo_prs(owner.trim(), repo.trim()))
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    (services.list_repo_prs)((owner.trim().to_string(), repo.trim().to_string()))
+        .await
+        .map_err(ServerFnError::new)
 }
 
 #[server]
 async fn read_new_review_reasoning_efforts(
     model: String,
 ) -> Result<Vec<ReasoningEffort>, ServerFnError> {
-    Ok(placeholder_reasoning_efforts(&model))
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    (services.list_reasoning_efforts)((model,))
+        .await
+        .map_err(ServerFnError::new)
 }
 
 #[server]
-async fn submit_new_review_placeholder(
+async fn submit_new_review(
     url: String,
     owner: String,
     repo: String,
@@ -62,9 +76,7 @@ async fn submit_new_review_placeholder(
     reasoning_effort: Option<ReasoningEffort>,
 ) -> Result<Review, ServerFnError> {
     let _ = (url, owner, repo, pr_number, model, roles, reasoning_effort);
-    Err(ServerFnError::new(
-        "Placeholder: review launch backend/service layer not implemented yet",
-    ))
+    Err(ServerFnError::new(REVIEW_LAUNCH_BLOCKED_REASON))
 }
 
 #[component]
@@ -111,6 +123,7 @@ fn NewReviewForm(
         .map(reasoning_value)
         .unwrap_or("none")
         .to_string();
+    let launch_blocked = true;
 
     let (owner, set_owner) = signal(String::new());
     let (repo, set_repo) = signal(String::new());
@@ -145,7 +158,7 @@ fn NewReviewForm(
         set_selected_pr_url.set(String::new());
 
         spawn_local(async move {
-            match read_placeholder_repo_prs(owner_value, repo_value).await {
+            match read_repo_prs(owner_value, repo_value).await {
                 Ok(prs) => {
                     if let Some(first) = prs.first() {
                         set_selected_pr_url.set(first.url.clone());
@@ -161,7 +174,8 @@ fn NewReviewForm(
     };
 
     let submit_disabled = move || {
-        owner.get().trim().is_empty()
+        launch_blocked
+            || owner.get().trim().is_empty()
             || repo.get().trim().is_empty()
             || model.get().trim().is_empty()
             || selected_roles.get().is_empty()
@@ -173,39 +187,43 @@ fn NewReviewForm(
         set_submitting.set(true);
         set_submit_error.set(None);
 
+        if launch_blocked {
+            set_submit_error.set(Some(REVIEW_LAUNCH_BLOCKED_REASON.to_string()));
+            set_submitting.set(false);
+            return;
+        }
+
         let owner_value = owner.get_untracked();
         let repo_value = repo.get_untracked();
         let model_value = model.get_untracked();
         let roles_value = selected_roles.get_untracked();
         let selected_url = selected_pr_url.get_untracked();
-        let reasoning_value = parse_reasoning_effort(&reasoning_effort.get_untracked());
         let selected_pr = available_prs
             .get_untracked()
             .into_iter()
             .find(|pr| pr.url == selected_url);
 
         let Some(pr) = selected_pr else {
-            set_submit_error.set(Some("Select placeholder PR first.".to_string()));
+            set_submit_error.set(Some("Select PR first.".to_string()));
             set_submitting.set(false);
             return;
         };
 
         spawn_local(async move {
-            match submit_new_review_placeholder(
+            match submit_new_review(
                 pr.url,
                 owner_value,
                 repo_value,
                 pr.number,
                 model_value,
                 roles_value,
-                reasoning_value,
+                None,
             )
             .await
             {
                 Ok(_) => {
                     set_submit_error.set(Some(
-                        "Placeholder launch returned unexpected success. Detail route still pending."
-                            .to_string(),
+                        "Unexpected success while launch path marked blocked.".to_string(),
                     ));
                 }
                 Err(err) => {
@@ -232,8 +250,9 @@ fn NewReviewForm(
             <div class="card form-error-banner">
                 <div class="card__body">
                     <p class="text-secondary">
-                        "Placeholder bootstrap active. Real backend discovery + launch path still pending."
+                        "Live model/agent/PR discovery active. Review launch blocked pending harness fix."
                     </p>
+                    <p class="text-secondary text-sm">{REVIEW_LAUNCH_BLOCKED_REASON}</p>
                 </div>
             </div>
 
@@ -241,7 +260,7 @@ fn NewReviewForm(
                 <TextField
                     id="review-owner"
                     label="Owner"
-                    helper="Git provider repo owner/org. Placeholder lookup uses this to generate mock PRs."
+                    helper="GitHub repo owner or org. Used for live open-PR lookup."
                     value=owner
                     set_value=set_owner
                     placeholder="example"
@@ -249,7 +268,7 @@ fn NewReviewForm(
                 <TextField
                     id="review-repo"
                     label="Repository"
-                    helper="Repository slug. Placeholder lookup uses this to generate mock PRs."
+                    helper="Repository slug. Used for live open-PR lookup."
                     value=repo
                     set_value=set_repo
                     placeholder="blamefree"
@@ -265,7 +284,7 @@ fn NewReviewForm(
                         {move || if prs_loading.get() { "Loading..." } else { "Load PRs" }}
                     </button>
                     <p class="form-field__helper">
-                        "Placeholder server fn returns sample PRs for entered repo."
+                        "Loads current open pull requests from GitHub for entered repo."
                     </p>
                 </div>
                 {move || {
@@ -289,7 +308,7 @@ fn NewReviewForm(
                             options=options
                             value=selected_pr_url
                             set_value=set_selected_pr_url
-                            helper="Pick one PR from placeholder lookup results."
+                            helper="Pick one PR from live lookup results."
                             loading=prs_loading.get()
                             disabled=disabled
                         />
@@ -305,7 +324,7 @@ fn NewReviewForm(
                     options=model_select_options
                     value=model
                     set_value=set_model
-                    helper="Default comes from riv_shared::DEFAULT_MODEL placeholder bootstrap."
+                    helper="Models come from OpenRouter discovery with fallback defaults."
                 />
                 {move || {
                     let options = match reasoning_levels.get() {
@@ -319,7 +338,7 @@ fn NewReviewForm(
                             options=options
                             value=reasoning_effort
                             set_value=set_reasoning_effort
-                            helper="Placeholder capability discovery currently returns all effort levels."
+                            helper="Shown only for reasoning-capable models."
                             include_none=true
                             loading=reasoning_levels.get().is_none()
                         />

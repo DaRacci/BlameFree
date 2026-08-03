@@ -1,95 +1,9 @@
-#[cfg(feature = "ssr")]
-use riv_shared::{DEFAULT_MODEL, DEFAULT_MODEL_PRO};
 use riv_types::{
     benchmark::golden::GoldenCommentEntry, capabilities::ReasoningEffort, vcs::pr::PrMeta,
 };
-#[cfg(feature = "ssr")]
-use riv_webui_shared::config::AgentInfo;
 use riv_webui_shared::config::DatasetInfo;
 
 use crate::components::{pr_selection::PrItem, select_field::SelectOption};
-
-#[cfg(feature = "ssr")]
-pub fn placeholder_models() -> Vec<String> {
-    vec![
-        DEFAULT_MODEL.to_string(),
-        DEFAULT_MODEL_PRO.to_string(),
-        "openai/gpt-5-mini".to_string(),
-    ]
-}
-
-#[cfg(feature = "ssr")]
-pub fn placeholder_roles() -> Vec<AgentInfo> {
-    vec![
-        AgentInfo {
-            name: "Security Analyst".to_string(),
-            abbreviation: "SA".to_string(),
-            incompatible_with_roles: Vec::new(),
-        },
-        AgentInfo {
-            name: "Correctness Analyst".to_string(),
-            abbreviation: "CA".to_string(),
-            incompatible_with_roles: Vec::new(),
-        },
-        AgentInfo {
-            name: "Performance Analyst".to_string(),
-            abbreviation: "PA".to_string(),
-            incompatible_with_roles: Vec::new(),
-        },
-    ]
-}
-
-#[cfg(feature = "ssr")]
-pub fn placeholder_datasets() -> Vec<DatasetInfo> {
-    vec![
-        DatasetInfo {
-            id: "placeholder-small".to_string(),
-            path: "datasets/placeholder-small".to_string(),
-            pr_count: 3,
-        },
-        DatasetInfo {
-            id: "placeholder-large".to_string(),
-            path: "datasets/placeholder-large".to_string(),
-            pr_count: 5,
-        },
-    ]
-}
-
-#[cfg(feature = "ssr")]
-pub fn placeholder_reasoning_efforts(_model: &str) -> Vec<ReasoningEffort> {
-    vec![
-        ReasoningEffort::Low,
-        ReasoningEffort::Medium,
-        ReasoningEffort::High,
-        ReasoningEffort::XHigh,
-        ReasoningEffort::Max,
-    ]
-}
-
-#[cfg(feature = "ssr")]
-pub fn placeholder_repo_prs(owner: &str, repo: &str) -> Vec<PrMeta> {
-    let base_url = format!("https://github.com/{owner}/{repo}/pull");
-    [101_u32, 102, 103]
-        .into_iter()
-        .map(|number| PrMeta {
-            title: format!("Placeholder PR #{number} for {owner}/{repo}"),
-            url: format!("{base_url}/{number}"),
-            number,
-        })
-        .collect()
-}
-
-#[cfg(feature = "ssr")]
-pub fn placeholder_dataset_prs(dataset_id: &str) -> Vec<GoldenCommentEntry> {
-    [201_u32, 202, 203]
-        .into_iter()
-        .map(|number| GoldenCommentEntry {
-            pr_title: format!("{dataset_id} placeholder PR #{number}"),
-            url: format!("https://github.com/example/{dataset_id}/pull/{number}"),
-            comments: Vec::new(),
-        })
-        .collect()
-}
 
 pub fn model_options(models: &[String]) -> Vec<SelectOption> {
     models
@@ -147,17 +61,6 @@ pub const fn reasoning_label(level: ReasoningEffort) -> &'static str {
         ReasoningEffort::High => "High",
         ReasoningEffort::XHigh => "X-High",
         ReasoningEffort::Max => "Max",
-    }
-}
-
-pub fn parse_reasoning_effort(value: &str) -> Option<ReasoningEffort> {
-    match value {
-        "low" => Some(ReasoningEffort::Low),
-        "medium" => Some(ReasoningEffort::Medium),
-        "high" => Some(ReasoningEffort::High),
-        "xhigh" => Some(ReasoningEffort::XHigh),
-        "max" => Some(ReasoningEffort::Max),
-        _ => None,
     }
 }
 

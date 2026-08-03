@@ -1,5 +1,0 @@
----
-source: crates/crb-webui-backend/src/api/config.rs
-expression: count_prs_in_dir(dir.path())
----
-0

@@ -6,10 +6,22 @@ use leptos_router::components::{Route, Router, Routes};
 use leptos_router::hooks::use_location;
 use leptos_router::path;
 use lucide_leptos::{LayoutDashboard, Menu, Settings};
-use riv_types::review::Review;
+use mti::prelude::MagicTypeId;
+use riv_types::{
+    benchmark::{golden::GoldenCommentEntry, result::PrResult},
+    capabilities::ReasoningEffort,
+    review::Review,
+    vcs::pr::PrMeta,
+    wrappers::Model,
+};
 #[cfg(target_arch = "wasm32")]
 use riv_webui_shared::routes::API_CONFIG;
-use riv_webui_shared::{admin::LogsResponse, auth::AuthUser};
+use riv_webui_shared::{
+    admin::LogsResponse,
+    auth::AuthUser,
+    config::{AgentInfo, DatasetInfo},
+    review::ReviewAgentLog,
+};
 
 pub mod async_resource;
 pub mod components;
@@ -21,12 +33,23 @@ pub mod sse;
 pub use riv_webui_shared::config::AppConfig;
 
 pub type AppServiceFuture<T> = Pin<Box<dyn Future<Output = Result<T, String>> + Send>>;
-pub type AppServiceFn<T> = Arc<dyn Fn() -> AppServiceFuture<T> + Send + Sync>;
+pub type AppServiceFn<A, T> = Arc<dyn Fn(A) -> AppServiceFuture<T> + Send + Sync>;
+pub type AppReadFn<T> = AppServiceFn<(), T>;
 
 #[derive(Clone)]
 pub struct AppServices {
-    pub list_reviews: AppServiceFn<Vec<Review>>,
-    pub read_admin_logs: AppServiceFn<LogsResponse>,
+    pub list_reviews: AppReadFn<Vec<Review>>,
+    pub read_admin_logs: AppReadFn<LogsResponse>,
+    pub list_repo_prs: AppServiceFn<(String, String), Vec<PrMeta>>,
+    pub fetch_pr_diff: AppServiceFn<(String, String, u32), (String, String)>,
+    pub list_datasets: AppReadFn<Vec<DatasetInfo>>,
+    pub list_dataset_prs: AppServiceFn<(String,), Vec<GoldenCommentEntry>>,
+    pub list_models: AppReadFn<Vec<Model>>,
+    pub list_reasoning_efforts: AppServiceFn<(String,), Vec<ReasoningEffort>>,
+    pub list_agents: AppReadFn<Vec<AgentInfo>>,
+    pub get_review: AppServiceFn<(MagicTypeId,), Review>,
+    pub list_pr_results: AppServiceFn<(MagicTypeId,), Vec<PrResult>>,
+    pub list_agent_logs: AppServiceFn<(MagicTypeId,), Vec<ReviewAgentLog>>,
 }
 
 #[cfg(feature = "ssr")]
@@ -54,7 +77,7 @@ pub fn shell(options: leptos::config::LeptosOptions) -> impl IntoView {
 #[cfg(target_arch = "wasm32")]
 #[derive(serde::Deserialize)]
 struct ConfigResponse {
-    oauth: Option<serde_json::Value>,
+    auth_enabled: bool,
 }
 
 #[derive(Clone)]
@@ -80,7 +103,7 @@ pub fn App() -> impl IntoView {
         let resp = Request::get(API_CONFIG).send().await;
         if let Ok(resp) = resp {
             if let Ok(config) = resp.json::<ConfigResponse>().await {
-                let enabled = config.oauth.is_some();
+                let enabled = config.auth_enabled;
                 auth_ctx.auth_enabled.set(enabled);
                 if enabled {
                     let user_resp = Request::get("/auth/me").send().await;
