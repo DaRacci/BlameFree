@@ -74,6 +74,7 @@ pub struct AppServices {
 #[cfg(feature = "ssr")]
 pub fn shell(options: leptos::config::LeptosOptions) -> impl IntoView {
     let leptos_options = options.clone();
+    provide_meta_context();
     view! {
         <!DOCTYPE html>
         <html lang="en">
@@ -107,8 +108,6 @@ pub struct AuthContext {
 
 #[component]
 pub fn App() -> impl IntoView {
-    provide_meta_context();
-
     let auth_ctx = AuthContext {
         user: RwSignal::new(None),
         auth_enabled: RwSignal::new(false),

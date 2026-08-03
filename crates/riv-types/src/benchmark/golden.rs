@@ -46,7 +46,8 @@ pub struct GoldenComment {
             on_delete = "Cascade"
         )
     )]
-    pub pr_result_id: MagicTypeId,
+    #[serde(default)]
+    pub pr_result_id: Option<MagicTypeId>,
 
     /// The expected comment text.
     pub comment: String,

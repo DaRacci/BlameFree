@@ -44,5 +44,13 @@
 .inline-block { display: inline-block; }
 .no-underline { text-decoration: none; }
 
+/* Text overflow utilities */
+.text-truncate {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Form section utilities */
 .form-section--flush { margin-bottom: 0; }

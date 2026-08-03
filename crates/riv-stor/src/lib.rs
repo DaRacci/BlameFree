@@ -49,7 +49,8 @@ use std::sync::LazyLock;
 impl Storable for GoldenComment {
     type Options = ();
     fn item_id(&self) -> &MagicTypeId {
-        &self.pr_result_id
+        static SENTINEL: LazyLock<MagicTypeId> = LazyLock::new(MagicTypeId::default);
+        self.pr_result_id.as_ref().unwrap_or(&SENTINEL)
     }
 }
 

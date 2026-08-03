@@ -165,7 +165,7 @@ fn render_reviews(reviews: Vec<Review>) -> AnyView {
                                         </div>
                                     </div>
                                     <div class="card__footer text-xs text-secondary">
-                                        {id_str}
+                                        <span class="text-truncate" title={id_str.clone()}>{id_str.clone()}</span>
                                     </div>
                                 </a>
                             }
@@ -247,14 +247,11 @@ pub fn HomePage() -> impl IntoView {
                 <a href="/benchmarks/new" class="btn btn--ghost btn--sm">"New Benchmark"</a>
             </PageHeader>
 
-            <Suspense fallback={
-                let cached_reviews = cached_reviews;
-                move || {
-                    cached_reviews
-                        .get()
-                        .map(render_reviews)
-                        .unwrap_or_else(render_loading)
-                }
+            <Transition fallback=move || {
+                cached_reviews
+                    .get()
+                    .map(render_reviews)
+                    .unwrap_or_else(render_loading)
             }>
                 {move || {
                     reviews.resource.get().map(|result| {
@@ -268,7 +265,7 @@ pub fn HomePage() -> impl IntoView {
                         }
                     })
                 }}
-            </Suspense>
+            </Transition>
         </div>
     }
 }

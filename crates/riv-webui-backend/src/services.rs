@@ -1183,7 +1183,7 @@ fn build_pr_result(
     let golden_comments = golden_comments
         .into_iter()
         .map(|mut comment| {
-            comment.pr_result_id = id.clone();
+            comment.pr_result_id = Some(id.clone());
             comment
         })
         .collect();

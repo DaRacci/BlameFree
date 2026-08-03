@@ -76,7 +76,7 @@ pub fn RunTable(runs: Vec<Review>) -> impl IntoView {
                             <tr class="table__row table__row--clickable" data-href=detail_path.clone()>
                                 <td class="table__td font-medium">
                                     <a href=detail_path.clone() style="color: var(--text-link, #58a6ff);">{label}</a>
-                                    <div class="text-secondary text-sm">{subtitle}</div>
+                                    <div class="text-secondary text-sm text-truncate" title=subtitle.clone()>{subtitle.clone()}</div>
                                 </td>
                                 <td class="table__td">
                                     <span class=format!("badge {}", badge_variant)>
