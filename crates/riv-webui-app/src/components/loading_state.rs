@@ -7,27 +7,22 @@ pub enum LoadingVariant {
     SkeletonCards,
 
     /// Skeleton grid (metrics, agent panes, or any card grid).
-    /// `count` controls number of items, `grid_class` selects grid CSS class.
-    SkeletonGrid,
+    SkeletonGrid {
+        count: usize,
+        grid_class: &'static str,
+        item_height: &'static str,
+    },
 
     /// A single skeleton text line wrapped in `form-loading`.
     FormSkeleton,
 
-    /// Plain text fallback, optionally with a label.
-    Text,
+    /// Plain text fallback.
+    Text(&'static str),
 }
 
 /// Loading placeholder.
 #[component]
-pub fn LoadingState(
-    variant: LoadingVariant,
-    #[prop(optional)] label: Option<&'static str>,
-    #[prop(optional)] count: Option<usize>,
-    // CSS grid class for `SkeletonGrid`, e.g. `"content-grid--metrics"` or `"content-grid--agent-panes"`
-    #[prop(optional)] grid_class: Option<&'static str>,
-    // Height for each skeleton item when `SkeletonGrid`
-    #[prop(optional)] item_height: Option<&'static str>,
-) -> impl IntoView {
+pub fn LoadingState(variant: LoadingVariant) -> impl IntoView {
     match variant {
         LoadingVariant::SkeletonCards => view! {
             <div class="mt-xl">
@@ -36,37 +31,33 @@ pub fn LoadingState(
             </div>
         }
         .into_any(),
-        LoadingVariant::SkeletonGrid => {
-            let count = count.unwrap_or(4).max(1);
-            let grid = grid_class.unwrap_or("content-grid--metrics");
-            let height = item_height.unwrap_or("80px");
-            view! {
-                <div class=format!("content-grid {}", grid)>
-                    {(0..count)
-                        .map(|_| {
-                            view! {
-                                <div class="skeleton skeleton--card" style=format!("height: {};", height)></div>
-                            }
-                        })
-                        .collect::<Vec<_>>()}
-                </div>
-            }
-            .into_any()
+        LoadingVariant::SkeletonGrid {
+            count,
+            grid_class,
+            item_height,
+        } => view! {
+            <div class=format!("content-grid {}", grid_class)>
+                {(0..count.max(1))
+                    .map(|_| {
+                        view! {
+                            <div class="skeleton skeleton--card" style=format!("height: {};", item_height)></div>
+                        }
+                    })
+                    .collect::<Vec<_>>()}
+            </div>
         }
+        .into_any(),
         LoadingVariant::FormSkeleton => view! {
             <div class="form-loading">
                 <div class="skeleton skeleton--text"></div>
             </div>
         }
         .into_any(),
-        LoadingVariant::Text => {
-            let text = label.unwrap_or("Loading...");
-            view! {
-                <div class="loading-state">
-                    <span class="text-secondary">{text}</span>
-                </div>
-            }
-            .into_any()
+        LoadingVariant::Text(text) => view! {
+            <div class="loading-state">
+                <span class="text-secondary">{text}</span>
+            </div>
         }
+        .into_any(),
     }
 }

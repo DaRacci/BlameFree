@@ -99,6 +99,10 @@ pub fn App() -> impl IntoView {
     use pages::admin::AdminPage;
     use pages::four_zero_four::FourZeroFourPage;
     use pages::home::HomePage;
+    use pages::new_benchmark::NewBenchmarkPage;
+    use pages::new_review::NewReviewPage;
+    use pages::review_detail::ReviewDetailPage;
+    use pages::review_live::ReviewLivePage;
 
     view! {
         <Html attr:lang="en" attr:dir="ltr" />
@@ -109,6 +113,10 @@ pub fn App() -> impl IntoView {
                     <div class="content-container">
                         <Routes fallback=|| view! { <FourZeroFourPage /> }>
                             <Route path=path!("/") view=HomePage />
+                            <Route path=path!("/reviews/new") view=NewReviewPage />
+                            <Route path=path!("/reviews/:id/live") view=ReviewLivePage />
+                            <Route path=path!("/reviews/:id") view=ReviewDetailPage />
+                            <Route path=path!("/benchmarks/new") view=NewBenchmarkPage />
                             <Route path=path!("/admin") view=AdminPage />
                         </Routes>
                     </div>

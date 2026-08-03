@@ -1,6 +1,11 @@
 pub mod admin;
+mod form_support;
 pub mod four_zero_four;
 pub mod home;
+pub mod new_benchmark;
+pub mod new_review;
+pub mod review_detail;
+pub mod review_live;
 // pub mod adhoc_review;
 // pub mod adhoc_runs;
 // pub mod live;

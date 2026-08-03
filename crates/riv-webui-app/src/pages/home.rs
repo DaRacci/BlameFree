@@ -3,7 +3,9 @@ use lucide_leptos::TriangleAlert;
 use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
 
 use crate::async_resource::{ReloadableResource, create_reloadable_resource};
-use crate::components::{format_elapsed, status_badge_class};
+use crate::components::{
+    format_elapsed, page_header::PageHeader, run_table::RunTable, status_badge_class,
+};
 
 #[server]
 async fn list_reviews_data() -> Result<Vec<Review>, ServerFnError> {
@@ -58,19 +60,6 @@ fn review_subtitle(r: &Review) -> String {
             hash.to_string()
         }
         ReviewMetadata::Plain => r.id.to_string(),
-    }
-}
-
-fn review_pr_url(r: &Review) -> Option<String> {
-    match &r.metadata {
-        ReviewMetadata::PullRequest(pr) => {
-            if pr.meta.url.is_empty() {
-                None
-            } else {
-                Some(pr.meta.url.clone())
-            }
-        }
-        _ => None,
     }
 }
 
@@ -196,60 +185,7 @@ fn render_reviews(reviews: Vec<Review>) -> AnyView {
                 }.into_any()
             } else {
                 view! {
-                    <div class="content-grid content-grid--cards">
-                        {history_runs.into_iter().map(|run| {
-                            let label = review_label(&run);
-                            let subtitle = review_subtitle(&run);
-                            let status = &run.status;
-                            let badge_class = status_badge_class(status);
-                            let agent_count = run.agent_sessions.len();
-                            let elapsed = run.duration
-                                .map(|d| format_elapsed(d.as_secs_f64()))
-                                .map(|s| format!(" ({})", s))
-                                .unwrap_or_default();
-                            let pr_url = review_pr_url(&run);
-                            let id_str = run.id.to_string();
-                            view! {
-                                <div class="card">
-                                    <div class="card__header">
-                                        <h3 class="card__title">{label.clone()}</h3>
-                                        <span class=format!("badge {}", badge_class)>
-                                            <span class="badge__dot"></span>
-                                            <span class="badge__label">{status.to_string()}</span>
-                                        </span>
-                                    </div>
-                                    <div class="card__body">
-                                        <div class="home-page__meta-row flex-row gap-lg text-sm text-secondary">
-                                            <span>{subtitle}</span>
-                                            <span>{agent_count} " agent(s)"</span>
-                                            {if !elapsed.is_empty() {
-                                                view! { <span>{elapsed}</span> }.into_any()
-                                            } else {
-                                                view! { <span></span> }.into_any()
-                                            }}
-                                        </div>
-                                    </div>
-                                    <div class="card__footer flex-row justify-between items-center text-xs text-secondary">
-                                        <span>{id_str}</span>
-                                        {if let Some(url) = pr_url {
-                                            view! {
-                                                <a
-                                                    href=url
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    class="btn btn--ghost btn--sm"
-                                                >
-                                                    "Open PR"
-                                                </a>
-                                            }.into_any()
-                                        } else {
-                                            view! { <span></span> }.into_any()
-                                        }}
-                                    </div>
-                                </div>
-                            }
-                        }).collect::<Vec<_>>()}
-                    </div>
+                    <RunTable runs=history_runs />
                 }.into_any()
             }}
         </>
@@ -293,9 +229,10 @@ pub fn HomePage() -> impl IntoView {
 
     view! {
         <div class="home-page">
-            <div class="page-header">
-                <h1 class="page-header__title">"Overview"</h1>
-            </div>
+            <PageHeader title="Overview">
+                <a href="/reviews/new" class="btn btn--primary btn--sm">"New Review"</a>
+                <a href="/benchmarks/new" class="btn btn--ghost btn--sm">"New Benchmark"</a>
+            </PageHeader>
 
             <Suspense fallback=render_loading>
                 {move || {

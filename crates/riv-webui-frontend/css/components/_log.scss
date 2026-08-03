@@ -1,0 +1,35 @@
+.log-viewer__content {
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: var(--spacing-md, 12px);
+  background: var(--bg-code, #0d1117);
+  border: 1px solid var(--border-default, #30363d);
+  border-radius: var(--radius-md, 6px);
+}
+
+.log-viewer__pre {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-sm, 14px);
+  line-height: 1.6;
+  color: var(--text-code, #c9d1d9);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.session-log-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md, 12px);
+}
+
+.session-log-viewer__summary {
+  cursor: pointer;
+}
+
+.session-log-viewer__meta {
+  margin: var(--spacing-xs, 4px) 0 0;
+  font-size: var(--text-sm, 14px);
+  color: var(--text-secondary, #8b949e);
+}

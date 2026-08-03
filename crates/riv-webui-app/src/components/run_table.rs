@@ -3,13 +3,13 @@ use std::cmp::Ordering;
 use leptos::either::{Either, EitherOf3};
 use leptos::prelude::*;
 use lucide_leptos::{ArrowDown, ArrowUp};
-use riv_types::review::{Review, ReviewStatus};
+use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
 
 use crate::components::status_badge_class;
 
 #[component]
 pub fn RunTable(runs: Vec<Review>) -> impl IntoView {
-    let (sort_column, set_sort_column) = signal::<SortColumn>(SortColumn::Date);
+    let (sort_column, set_sort_column) = signal::<SortColumn>(SortColumn::Name);
     let (sort_asc, set_sort_asc) = signal(true);
 
     let toggle_sort = move |col: SortColumn| {
@@ -25,14 +25,13 @@ pub fn RunTable(runs: Vec<Review>) -> impl IntoView {
         let mut runs = runs.clone();
         let asc = sort_asc.get();
         runs.sort_by(|a, b| match sort_column.get() {
-            SortColumn::Name => sort_by(&a.id, &b.id, asc),
+            SortColumn::Name => sort_by(review_label(a), review_label(b), asc),
             SortColumn::Status => sort_by(&a.status, &b.status, asc),
             SortColumn::Cost => {
                 let a_v = a.analytics.as_ref().map(|a| a.total_cost());
                 let b_v = b.analytics.as_ref().map(|a| a.total_cost());
                 sort_by(a_v, b_v, asc)
             }
-            SortColumn::Date => a.id.cmp(&b.id),
         });
         runs
     };
@@ -53,7 +52,7 @@ pub fn RunTable(runs: Vec<Review>) -> impl IntoView {
                 <thead>
                     <tr>
                         <th class="table__th table__th--sortable" on:click=move |_| toggle_sort(SortColumn::Name)>
-                            {move || view! { "Name " {sort_icon(SortColumn::Name)} }}
+                            {move || view! { "Review " {sort_icon(SortColumn::Name)} }}
                         </th>
                         <th class="table__th table__th--sortable" on:click=move |_| toggle_sort(SortColumn::Status)>
                             {move || view! { "Status " {sort_icon(SortColumn::Status)} }}
@@ -68,13 +67,16 @@ pub fn RunTable(runs: Vec<Review>) -> impl IntoView {
                     {move || sorted_runs().into_iter().map(|run| {
                         let badge_variant = status_badge_class(&run.status);
                         let cost_str = run.analytics.as_ref().map(|a| format!("${:.4}", a.total_cost())).unwrap_or_else(|| "-".into());
-                        let detail_path = format!("/runs/{}/", run.id);
-                        let live_path = format!("/runs/{}/live", run.id);
+                        let detail_path = format!("/reviews/{}", run.id);
+                        let live_path = format!("/reviews/{}/live", run.id);
+                        let label = review_label(&run);
+                        let subtitle = review_subtitle(&run);
 
                         view! {
                             <tr class="table__row table__row--clickable" data-href=detail_path.clone()>
                                 <td class="table__td font-medium">
-                                    <a href=detail_path.clone() style="color: var(--text-link, #58a6ff);">{run.id.to_string()}</a>
+                                    <a href=detail_path.clone() style="color: var(--text-link, #58a6ff);">{label}</a>
+                                    <div class="text-secondary text-sm">{subtitle}</div>
                                 </td>
                                 <td class="table__td">
                                     <span class=format!("badge {}", badge_variant)>
@@ -113,7 +115,37 @@ enum SortColumn {
     Name,
     Status,
     Cost,
-    Date,
+}
+
+fn review_label(review: &Review) -> String {
+    match &review.metadata {
+        ReviewMetadata::PullRequest(pr) if !pr.meta.title.is_empty() => pr.meta.title.clone(),
+        ReviewMetadata::PullRequest(pr) => {
+            format!(
+                "{}/{} #{}",
+                pr.repository.owner, pr.repository.name, pr.meta.number
+            )
+        }
+        ReviewMetadata::Commit(commit) => format!("Commit {}", short_hash(&commit.commit_hash)),
+        ReviewMetadata::Plain => review.id.to_string(),
+    }
+}
+
+fn short_hash(hash: &str) -> &str {
+    &hash[..hash.len().min(7)]
+}
+
+fn review_subtitle(review: &Review) -> String {
+    match &review.metadata {
+        ReviewMetadata::PullRequest(pr) => {
+            format!(
+                "{}/{} #{}",
+                pr.repository.owner, pr.repository.name, pr.meta.number
+            )
+        }
+        ReviewMetadata::Commit(commit) => commit.commit_hash.clone(),
+        ReviewMetadata::Plain => review.id.to_string(),
+    }
 }
 
 fn sort_by<T>(a: T, b: T, asc: bool) -> Ordering
