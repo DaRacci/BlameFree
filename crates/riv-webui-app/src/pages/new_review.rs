@@ -1,9 +1,12 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos_router::hooks::use_navigate;
 use riv_types::{capabilities::ReasoningEffort, review::Review, vcs::pr::PrMeta};
 use riv_webui_shared::config::AgentInfo;
 
-use super::form_support::{model_options, pr_options, reasoning_options, reasoning_value};
+use super::form_support::{
+    model_options, parse_reasoning_effort, pr_options, reasoning_options, reasoning_value,
+};
 use crate::components::{
     error_state::ErrorState,
     form_page::FormPage,
@@ -13,8 +16,6 @@ use crate::components::{
     select_field::SelectField,
     text_field::TextField,
 };
-
-const REVIEW_LAUNCH_BLOCKED_REASON: &str = "Review launch blocked for human review: `riv_harness::pipeline::run_linters()` is still `todo!()`, so service-layer launch would panic at runtime.";
 
 #[server]
 async fn read_new_review_bootstrap()
@@ -68,15 +69,19 @@ async fn read_new_review_reasoning_efforts(
 #[server]
 async fn submit_new_review(
     url: String,
-    owner: String,
-    repo: String,
-    pr_number: u32,
+    _owner: String,
+    _repo: String,
+    _pr_number: u32,
     model: String,
     roles: Vec<String>,
     reasoning_effort: Option<ReasoningEffort>,
 ) -> Result<Review, ServerFnError> {
-    let _ = (url, owner, repo, pr_number, model, roles, reasoning_effort);
-    Err(ServerFnError::new(REVIEW_LAUNCH_BLOCKED_REASON))
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    (services.start_review)((url, model, roles, reasoning_effort))
+        .await
+        .map_err(ServerFnError::new)
 }
 
 #[component]
@@ -114,6 +119,7 @@ fn NewReviewForm(
     roles: Vec<AgentInfo>,
     reasoning_levels: Vec<ReasoningEffort>,
 ) -> impl IntoView {
+    let navigate = use_navigate();
     let initial_model = models.first().cloned().unwrap_or_default();
     let default_reasoning = reasoning_levels
         .iter()
@@ -123,7 +129,6 @@ fn NewReviewForm(
         .map(reasoning_value)
         .unwrap_or("none")
         .to_string();
-    let launch_blocked = true;
 
     let (owner, set_owner) = signal(String::new());
     let (repo, set_repo) = signal(String::new());
@@ -174,8 +179,7 @@ fn NewReviewForm(
     };
 
     let submit_disabled = move || {
-        launch_blocked
-            || owner.get().trim().is_empty()
+        owner.get().trim().is_empty()
             || repo.get().trim().is_empty()
             || model.get().trim().is_empty()
             || selected_roles.get().is_empty()
@@ -187,21 +191,17 @@ fn NewReviewForm(
         set_submitting.set(true);
         set_submit_error.set(None);
 
-        if launch_blocked {
-            set_submit_error.set(Some(REVIEW_LAUNCH_BLOCKED_REASON.to_string()));
-            set_submitting.set(false);
-            return;
-        }
-
         let owner_value = owner.get_untracked();
         let repo_value = repo.get_untracked();
         let model_value = model.get_untracked();
         let roles_value = selected_roles.get_untracked();
         let selected_url = selected_pr_url.get_untracked();
+        let reasoning_value = parse_reasoning_effort(&reasoning_effort.get_untracked());
         let selected_pr = available_prs
             .get_untracked()
             .into_iter()
             .find(|pr| pr.url == selected_url);
+        let navigate = navigate.clone();
 
         let Some(pr) = selected_pr else {
             set_submit_error.set(Some("Select PR first.".to_string()));
@@ -217,14 +217,13 @@ fn NewReviewForm(
                 pr.number,
                 model_value,
                 roles_value,
-                None,
+                reasoning_value,
             )
             .await
             {
-                Ok(_) => {
-                    set_submit_error.set(Some(
-                        "Unexpected success while launch path marked blocked.".to_string(),
-                    ));
+                Ok(review) => {
+                    let path = format!("/reviews/{}", review.id);
+                    navigate(&path, Default::default());
                 }
                 Err(err) => {
                     set_submit_error.set(Some(err.to_string()));
@@ -250,9 +249,8 @@ fn NewReviewForm(
             <div class="card form-error-banner">
                 <div class="card__body">
                     <p class="text-secondary">
-                        "Live model/agent/PR discovery active. Review launch blocked pending harness fix."
+                        "Launch runs async. Detail page fills cost/duration from output files after completion."
                     </p>
-                    <p class="text-secondary text-sm">{REVIEW_LAUNCH_BLOCKED_REASON}</p>
                 </div>
             </div>
 

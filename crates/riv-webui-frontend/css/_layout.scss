@@ -146,6 +146,14 @@
   line-height: 1.3;
 }
 
+.metric-card__value--truncate {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .metric-card__delta {
   font-size: var(--text-xs);
   color: var(--text-secondary);

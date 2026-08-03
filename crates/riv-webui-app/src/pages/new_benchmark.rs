@@ -1,11 +1,14 @@
 use leptos::prelude::*;
 use leptos::task::spawn_local;
+use leptos_router::hooks::use_navigate;
 use riv_types::{
     benchmark::golden::GoldenCommentEntry, capabilities::ReasoningEffort, review::Review,
 };
 use riv_webui_shared::config::{AgentInfo, DatasetInfo};
 
-use super::form_support::{dataset_options, model_options, reasoning_options, reasoning_value};
+use super::form_support::{
+    dataset_options, model_options, parse_reasoning_effort, reasoning_options, reasoning_value,
+};
 use crate::components::{
     error_state::ErrorState,
     form_page::FormPage,
@@ -15,8 +18,6 @@ use crate::components::{
     role_selector::RoleSelector,
     select_field::SelectField,
 };
-
-const BENCHMARK_LAUNCH_BLOCKED_REASON: &str = "Benchmark launch blocked for human review: `riv_harness::pipeline::run_linters()` is still `todo!()`, and `riv_benchmark::evaluate_findings()` is still `todo!()`.";
 
 #[server]
 async fn read_new_benchmark_bootstrap() -> Result<
@@ -85,8 +86,12 @@ async fn submit_new_benchmark(
     roles: Vec<String>,
     reasoning_effort: Option<ReasoningEffort>,
 ) -> Result<Review, ServerFnError> {
-    let _ = (dataset_id, pr_urls, model, roles, reasoning_effort);
-    Err(ServerFnError::new(BENCHMARK_LAUNCH_BLOCKED_REASON))
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    (services.start_benchmark)((dataset_id, pr_urls, model, roles, reasoning_effort))
+        .await
+        .map_err(ServerFnError::new)
 }
 
 #[component]
@@ -126,6 +131,7 @@ fn NewBenchmarkForm(
     datasets: Vec<DatasetInfo>,
     reasoning_levels: Vec<ReasoningEffort>,
 ) -> impl IntoView {
+    let navigate = use_navigate();
     let initial_model = models.first().cloned().unwrap_or_default();
     let initial_dataset = datasets
         .first()
@@ -139,7 +145,6 @@ fn NewBenchmarkForm(
         .map(reasoning_value)
         .unwrap_or("none")
         .to_string();
-    let launch_blocked = true;
 
     let (model, set_model) = signal(initial_model);
     let reasoning_levels = Resource::new(
@@ -187,8 +192,7 @@ fn NewBenchmarkForm(
     };
 
     let submit_disabled = move || {
-        launch_blocked
-            || dataset.get().trim().is_empty()
+        dataset.get().trim().is_empty()
             || model.get().trim().is_empty()
             || selected_roles.get().is_empty()
             || selected_prs.get().is_empty()
@@ -199,17 +203,12 @@ fn NewBenchmarkForm(
         set_submitting.set(true);
         set_submit_error.set(None);
 
-        if launch_blocked {
-            set_submit_error.set(Some(BENCHMARK_LAUNCH_BLOCKED_REASON.to_string()));
-            set_submitting.set(false);
-            return;
-        }
-
         let dataset_value = dataset.get_untracked();
         let model_value = model.get_untracked();
         let roles_value = selected_roles.get_untracked();
         let selected_pr_urls = selected_prs.get_untracked();
-        let _reasoning_value = reasoning_effort.get_untracked();
+        let reasoning_value = parse_reasoning_effort(&reasoning_effort.get_untracked());
+        let navigate = navigate.clone();
 
         spawn_local(async move {
             match submit_new_benchmark(
@@ -217,14 +216,13 @@ fn NewBenchmarkForm(
                 selected_pr_urls,
                 model_value,
                 roles_value,
-                None,
+                reasoning_value,
             )
             .await
             {
-                Ok(_) => {
-                    set_submit_error.set(Some(
-                        "Unexpected success while launch path marked blocked.".to_string(),
-                    ));
+                Ok(review) => {
+                    let path = format!("/reviews/{}", review.id);
+                    navigate(&path, Default::default());
                 }
                 Err(err) => {
                     set_submit_error.set(Some(err.to_string()));
@@ -251,9 +249,8 @@ fn NewBenchmarkForm(
             <div class="card form-error-banner">
                 <div class="card__body">
                     <p class="text-secondary">
-                        "Live model/dataset/agent discovery active. Benchmark launch blocked pending harness + benchmark fix."
+                        "Launch runs async. Current benchmark flow stores raw findings; judge scoring follow-up still pending."
                     </p>
-                    <p class="text-secondary text-sm">{BENCHMARK_LAUNCH_BLOCKED_REASON}</p>
                 </div>
             </div>
 

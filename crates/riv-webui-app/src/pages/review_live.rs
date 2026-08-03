@@ -69,6 +69,15 @@ fn render_live_snapshot(review: Review) -> AnyView {
         .duration
         .map(|duration| format_elapsed(duration.as_secs_f64()))
         .unwrap_or_else(|| "In progress".to_string());
+    let session_count = if !review.agent_sessions.is_empty() {
+        review.agent_sessions.len()
+    } else {
+        review
+            .analytics
+            .as_ref()
+            .map(|analytics| analytics.sessions.len())
+            .unwrap_or(0)
+    };
     let sessions = review.agent_sessions.clone();
 
     view! {
@@ -81,15 +90,15 @@ fn render_live_snapshot(review: Review) -> AnyView {
             <div class="card mb-lg">
                 <div class="card__body">
                     <p class="text-secondary">
-                        "Live snapshot now loads direct review detail. SSE stream route exists server-side, page wiring still follow-up."
+                        "SSE route exists server-side. Page still shows snapshot view until live pane wiring lands."
                     </p>
                 </div>
             </div>
 
             <MetricsGrid>
-                <MetricsCard value=review.id.to_string() label="Review ID" />
+                <MetricsCard value=review.id.to_string() label="Review ID" truncate=true />
                 <MetricsCard value=review.status.to_string() label="Status" />
-                <MetricsCard value=review.agent_sessions.len().to_string() label="Agent Sessions" />
+                <MetricsCard value=session_count.to_string() label="Agent Sessions" />
                 <MetricsCard value=duration label="Duration" />
             </MetricsGrid>
 

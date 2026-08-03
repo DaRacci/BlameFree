@@ -1,6 +1,9 @@
 use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
-use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
+use riv_types::{
+    benchmark::result::PrResult,
+    review::{Review, ReviewMetadata, ReviewStatus},
+};
 
 use crate::components::{
     empty_state::EmptyState,
@@ -15,18 +18,28 @@ use crate::components::{
     status_badge::StatusBadge,
 };
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct ReviewDetailData {
+    review: Review,
+    pr_results: Vec<PrResult>,
+}
+
 #[server]
-async fn read_review_detail(review_id: String) -> Result<Review, ServerFnError> {
+async fn read_review_detail(review_id: String) -> Result<ReviewDetailData, ServerFnError> {
     let services = use_context::<crate::AppServices>()
         .ok_or_else(|| ServerFnError::new("missing app services"))?;
 
     let review_id = review_id
         .parse::<mti::prelude::MagicTypeId>()
         .map_err(|error| ServerFnError::new(format!("invalid review id: {error}")))?;
-
-    (services.get_review)((review_id,))
+    let review = (services.get_review)((review_id.clone(),))
         .await
-        .map_err(ServerFnError::new)
+        .map_err(ServerFnError::new)?;
+    let pr_results = (services.list_pr_results)((review_id,))
+        .await
+        .map_err(ServerFnError::new)?;
+
+    Ok(ReviewDetailData { review, pr_results })
 }
 
 #[component]
@@ -41,7 +54,7 @@ pub fn ReviewDetailPage() -> impl IntoView {
         <Suspense fallback=move || view! {
             <LoadingState
                 variant=LoadingVariant::SkeletonGrid {
-                    count: 4,
+                    count: 6,
                     grid_class: "content-grid--metrics",
                     item_height: "80px",
                 }
@@ -49,7 +62,7 @@ pub fn ReviewDetailPage() -> impl IntoView {
         }>
             {move || {
                 review.get().map(|result| match result {
-                    Ok(review) => render_review_detail(review),
+                    Ok(detail) => render_review_detail(detail),
                     Err(err) => view! {
                         <ErrorState
                             heading="Failed to load review detail"
@@ -63,7 +76,8 @@ pub fn ReviewDetailPage() -> impl IntoView {
     }
 }
 
-fn render_review_detail(review: Review) -> AnyView {
+fn render_review_detail(detail: ReviewDetailData) -> AnyView {
+    let ReviewDetailData { review, pr_results } = detail;
     let title = review_title(&review);
     let subtitle = review_subtitle(&review);
     let pr_url = review_pr_url(&review);
@@ -80,8 +94,32 @@ fn render_review_detail(review: Review) -> AnyView {
         .as_ref()
         .map(|analytics| format!("${:.4}", analytics.total_cost()))
         .unwrap_or_else(|| "-".to_string());
-    let session_count = review.agent_sessions.len().to_string();
+    let inferred_session_count = if !review.agent_sessions.is_empty() {
+        Some(review.agent_sessions.len())
+    } else {
+        review
+            .analytics
+            .as_ref()
+            .map(|analytics| analytics.sessions.len())
+    };
+    let session_count = inferred_session_count
+        .filter(|count| *count > 0)
+        .map(|count| count.to_string())
+        .unwrap_or_else(|| {
+            if pr_results.is_empty() {
+                "0".to_string()
+            } else {
+                "—".to_string()
+            }
+        });
+    let pr_result_count = pr_results.len().to_string();
+    let finding_count = pr_results
+        .iter()
+        .map(|result| result.findings.len())
+        .sum::<usize>()
+        .to_string();
     let sessions = review.agent_sessions.clone();
+    let missing_transcripts = sessions.is_empty() && !pr_results.is_empty();
 
     view! {
         <div class="run-detail-page">
@@ -115,16 +153,39 @@ fn render_review_detail(review: Review) -> AnyView {
             <p class="text-secondary mb-lg">{subtitle}</p>
 
             <MetricsGrid>
-                <MetricsCard value=review_id label="Review ID" />
+                <MetricsCard value=review_id label="Review ID" truncate=true />
                 <MetricsCard value=session_count label="Agent Sessions" />
                 <MetricsCard value=duration label="Duration" />
                 <MetricsCard value=total_cost label="Cost" />
+                <MetricsCard value=pr_result_count label="PR Results" />
+                <MetricsCard value=finding_count label="Findings" />
             </MetricsGrid>
+
+            {if missing_transcripts {
+                view! {
+                    <div class="card mb-lg">
+                        <div class="card__body">
+                            <p class="text-secondary">
+                                "This run has stored PR result files, but no persisted agent transcript turns. Imported/legacy benchmark runs commonly look like this."
+                            </p>
+                        </div>
+                    </div>
+                }
+                .into_any()
+            } else {
+                view! { <span></span> }.into_any()
+            }}
 
             <SectionHeader title="Agent Session Logs" />
             {if sessions.is_empty() {
                 view! {
-                    <EmptyState message="No agent sessions recorded yet." />
+                    <EmptyState
+                        message=if missing_transcripts {
+                            "No agent session transcripts stored for this run.".to_string()
+                        } else {
+                            "No agent sessions recorded yet.".to_string()
+                        }
+                    />
                 }
                 .into_any()
             } else {

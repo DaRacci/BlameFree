@@ -50,6 +50,17 @@ pub struct AppServices {
     pub get_review: AppServiceFn<(MagicTypeId,), Review>,
     pub list_pr_results: AppServiceFn<(MagicTypeId,), Vec<PrResult>>,
     pub list_agent_logs: AppServiceFn<(MagicTypeId,), Vec<ReviewAgentLog>>,
+    pub start_review: AppServiceFn<(String, String, Vec<String>, Option<ReasoningEffort>), Review>,
+    pub start_benchmark: AppServiceFn<
+        (
+            String,
+            Vec<String>,
+            String,
+            Vec<String>,
+            Option<ReasoningEffort>,
+        ),
+        Review,
+    >,
 }
 
 #[cfg(feature = "ssr")]

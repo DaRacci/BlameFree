@@ -15,19 +15,6 @@ use tracing::{error, info, warn};
 use crate::eval::EvalConfig;
 use crate::finding::post_process_findings;
 
-/// Send AgentStarted events for each configured agent.
-// pub async fn send_agent_started_events(config: &EvalConfig, identifier: &str) {
-//     if let Some(ref tx) = config.dashboard_tx {
-//         let pr_key = sanitize_filename(identifier);
-//         for entry in config.agents {
-//             let _ = tx.send(RunEvent::AgentStarted {
-//                 identifier: pr_key.clone(),
-//                 agent: entry.role_abbreviation.to_string(),
-//             });
-//         }
-//     }
-// }
-
 pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> {
     send_event!(
         config,
@@ -97,8 +84,7 @@ async fn run_linters(_config: &EvalConfig) -> Vec<Finding> {
     //     config.repo_root
     // );
 
-    // linter_findings
-    todo!()
+    Vec::new()
 }
 
 /// Run the configured agents on the given diff and return their findings along with any errors encountered during execution.

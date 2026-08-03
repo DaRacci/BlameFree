@@ -64,6 +64,17 @@ pub const fn reasoning_label(level: ReasoningEffort) -> &'static str {
     }
 }
 
+pub fn parse_reasoning_effort(value: &str) -> Option<ReasoningEffort> {
+    match value {
+        "low" => Some(ReasoningEffort::Low),
+        "medium" => Some(ReasoningEffort::Medium),
+        "high" => Some(ReasoningEffort::High),
+        "xhigh" => Some(ReasoningEffort::XHigh),
+        "max" => Some(ReasoningEffort::Max),
+        _ => None,
+    }
+}
+
 pub fn pr_number_from_url(url: &str) -> String {
     url.trim_end_matches('/')
         .rsplit('/')

@@ -189,6 +189,33 @@ where
                 Box::pin(async move { crate::services::list_agent_logs(&state, &review_id).await })
             }
         }),
+        start_review: Arc::new({
+            let state = state.clone();
+            move |(url, model, roles, reasoning_effort)| {
+                let state = state.clone();
+                Box::pin(async move {
+                    crate::services::start_review(&state, &url, &model, &roles, reasoning_effort)
+                        .await
+                })
+            }
+        }),
+        start_benchmark: Arc::new({
+            let state = state.clone();
+            move |(dataset_id, pr_urls, model, roles, reasoning_effort)| {
+                let state = state.clone();
+                Box::pin(async move {
+                    crate::services::start_benchmark(
+                        &state,
+                        &dataset_id,
+                        &pr_urls,
+                        &model,
+                        &roles,
+                        reasoning_effort,
+                    )
+                    .await
+                })
+            }
+        }),
     };
 
     let app = Router::new()

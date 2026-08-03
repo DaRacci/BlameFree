@@ -51,6 +51,7 @@ tower-http = { workspace = true, features = ["cors", "fs", "trace"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 mti = { workspace = true }
+rig-core = { workspace = true }
 leptos = { workspace = true, features = ["ssr"] }
 leptos_axum = { workspace = true }
 riv-webui-app = { path = "../riv-webui-app", features = ["ssr"] }
