@@ -1,4 +1,6 @@
 use leptos::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use leptos_router::hooks::use_navigate;
 use leptos_router::hooks::use_params_map;
 #[cfg(target_arch = "wasm32")]
 use riv_types::RunEvent;
@@ -51,6 +53,30 @@ async fn read_live_review_agents(review_id: String) -> Result<Vec<LiveAgentInfo>
         .map_err(ServerFnError::new)
 }
 
+#[cfg(target_arch = "wasm32")]
+async fn navigate_if_review_terminal(
+    review_id: &str,
+    navigate: &impl Fn(&str, leptos_router::NavigateOptions),
+) -> bool {
+    match read_live_review_snapshot(review_id.to_string()).await {
+        Ok(review)
+            if matches!(
+                review.status,
+                ReviewStatus::Completed | ReviewStatus::Failed | ReviewStatus::Cancelled
+            ) =>
+        {
+            let path = format!("/reviews/{review_id}");
+            navigate(&path, Default::default());
+            true
+        }
+        Ok(_) => false,
+        Err(error) => {
+            log::warn!("Live SSE: failed to refresh review snapshot: {error}");
+            false
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 struct LiveAgentState {
     response: String,
@@ -60,6 +86,8 @@ struct LiveAgentState {
 #[component]
 pub fn ReviewLivePage() -> impl IntoView {
     let params = use_params_map();
+    #[cfg(target_arch = "wasm32")]
+    let navigate = use_navigate();
     let review_id = move || params.read().get("id").unwrap_or_default();
 
     let review = Resource::new(
@@ -94,6 +122,7 @@ pub fn ReviewLivePage() -> impl IntoView {
         let set_agent_states = set_agent_states;
         let set_stream_status = set_stream_status;
         let set_elapsed = set_elapsed;
+        let navigate = navigate.clone();
         async move {
             if id.is_empty() {
                 set_stream_status.update(|s| *s = ReviewStatus::Pending);
@@ -149,6 +178,15 @@ pub fn ReviewLivePage() -> impl IntoView {
                                 }
                                 RunEvent::ReviewCompleted { .. } => {
                                     set_stream_status.update(|s| *s = ReviewStatus::Completed);
+                                    if navigate_if_review_terminal(&id, &navigate).await {
+                                        break;
+                                    }
+                                }
+                                RunEvent::ReviewFailed { .. } => {
+                                    set_stream_status.update(|s| *s = ReviewStatus::Failed);
+                                    if navigate_if_review_terminal(&id, &navigate).await {
+                                        break;
+                                    }
                                 }
                             },
                             Err(e) => {
@@ -163,7 +201,19 @@ pub fn ReviewLivePage() -> impl IntoView {
                             last_elapsed_update = std::time::Instant::now();
                         }
                     }
-                    set_stream_status.update(|s| *s = ReviewStatus::Completed);
+
+                    if !navigate_if_review_terminal(&id, &navigate).await {
+                        match read_live_review_snapshot(id.clone()).await {
+                            Ok(review) => {
+                                set_stream_status.update(|status| *status = review.status);
+                            }
+                            Err(error) => {
+                                log::warn!(
+                                    "Live SSE: failed to refresh review snapshot after stream end: {error}"
+                                );
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
                     log::error!("Live SSE connection failed: {e}");

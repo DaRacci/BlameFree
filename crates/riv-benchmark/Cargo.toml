@@ -16,16 +16,18 @@ path = "src/lib.rs"
 
 [features]
 deafult = ["riv-shared/backend"]
-binary = ["dep:clap", "dep:riv-harness", "dep:riv-rules", "dep:riv-tools", "dep:dotenvy","dep:serde", "dep:strum", "dep:tracing-subscriber"]
+binary = ["dep:clap", "dep:riv-rules", "dep:riv-tools", "dep:dotenvy","dep:serde", "dep:strum", "dep:tracing-subscriber"]
 
 [dependencies]
 anyhow = { workspace = true }
 riv-agents = { path = "../riv-agents" }
 riv-cache = { path = "../riv-cache" }
+riv-harness = { path = "../riv-harness" }
 riv-reporting = { path = "../riv-reporting" }
 riv-shared = { path = "../riv-shared" }
 riv-types = { path = "../riv-types" }
 mti = { workspace = true }
+reqwest = { workspace = true }
 rig-core = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
@@ -33,7 +35,6 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
 
 # Binary Dependencies
 clap = { workspace = true, optional = true }
-riv-harness = { path = "../riv-harness", optional = true }
 riv-rules = { path = "../riv-rules", optional = true }
 riv-tools = { path = "../riv-tools", optional = true }
 dotenvy = { workspace = true, optional = true }

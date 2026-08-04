@@ -452,5 +452,9 @@ fn handle_event(
         RunEvent::ReviewCompleted { .. } => {
             set_stat.update(|s| *s = ReviewStatus::Completed);
         }
+
+        RunEvent::ReviewFailed { .. } => {
+            set_stat.update(|s| *s = ReviewStatus::Failed);
+        }
     }
 }

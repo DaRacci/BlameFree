@@ -28,7 +28,6 @@ define_routes! {
 
     API_REVIEWS_LIST,           "/api/reviews";
     API_REVIEWS_DETAILS,        "/api/reviews/{id}/details";
-    API_REVIEWS_SUBMIT,         "/api/reviews/{id}/submit";
     API_REVIEWS_AGENTS,         "/api/reviews/{id}/agents";
     API_REVIEWS_LOGS,           "/api/reviews/{id}/logs/{agent}";
     API_REVIEWS_STREAM,         "/api/reviews/{id}/stream";

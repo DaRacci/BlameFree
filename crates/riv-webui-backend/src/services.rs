@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     collections::HashSet,
     env, fs,
     path::Path,
@@ -6,10 +7,11 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use futures::FutureExt;
 use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
 use rig_core::{client::ProviderClient, providers::openrouter};
 use riv_agents::{agent::AgentEntry, prompts::PromptLibrary};
-use riv_benchmark::{BENCHMARK_DIR, diffs, scaffold};
+use riv_benchmark::{BENCHMARK_DIR, run_benchmark};
 use riv_harness::{
     eval::{EvalConfig, EvalContext, EvalStrategy},
     model_capabilities::{available_models, supports_reasoning},
@@ -403,23 +405,28 @@ where
     let failure_review = review.clone();
     let failure_model = task_model.clone();
     let failure_roles = task_roles.clone();
+    let task_dashboard_tx = dashboard_tx.clone();
     tokio::spawn(async move {
-        if let Err(error) = run_review_job(
+        run_launch_job_with_recovery(
             task_state.clone(),
-            review_id,
-            repository,
-            pr_meta,
-            diff,
-            task_model,
-            task_roles,
-            reasoning_effort,
+            failure_review,
+            failure_model,
+            failure_roles,
             dashboard_tx,
+            "Review",
+            run_review_job(
+                task_state,
+                review_id,
+                repository,
+                pr_meta,
+                diff,
+                task_model,
+                task_roles,
+                reasoning_effort,
+                task_dashboard_tx,
+            ),
         )
-        .await
-        {
-            error!("Review launch failed: {}", error);
-            mark_review_failed(&task_state, &failure_review, &failure_model, &failure_roles).await;
-        }
+        .await;
     });
 
     Ok(review)
@@ -480,22 +487,27 @@ where
     let failure_review = review.clone();
     let failure_model = task_model.clone();
     let failure_roles = task_roles.clone();
+    let task_dashboard_tx = dashboard_tx.clone();
     tokio::spawn(async move {
-        if let Err(error) = run_benchmark_job(
+        run_launch_job_with_recovery(
             task_state.clone(),
-            review_id,
-            task_dataset_id,
-            selected_entries,
-            task_model,
-            task_roles,
-            reasoning_effort,
+            failure_review,
+            failure_model,
+            failure_roles,
             dashboard_tx,
+            "Benchmark",
+            run_benchmark_job(
+                task_state,
+                review_id,
+                task_dataset_id,
+                selected_entries,
+                task_model,
+                task_roles,
+                reasoning_effort,
+                task_dashboard_tx,
+            ),
         )
-        .await
-        {
-            error!("Benchmark launch failed: {}", error);
-            mark_review_failed(&task_state, &failure_review, &failure_model, &failure_roles).await;
-        }
+        .await;
     });
 
     Ok(review)
@@ -541,7 +553,7 @@ where
         client,
         cache: None,
         cost_tracker: cost_tracker.clone(),
-        dashboard_tx: Some(dashboard_tx),
+        dashboard_tx: Some(dashboard_tx.clone()),
         agents,
         max_findings: MAX_FINDINGS_PER_AGENT,
         template_vars: None,
@@ -596,6 +608,7 @@ where
                 &model,
                 &roles,
             )?;
+            Ok(())
         }
         Err(error) => {
             let review = Review {
@@ -614,14 +627,11 @@ where
                 .save::<Review>(&review)
                 .await
                 .map_err(|save_error| format!("Failed to save failed review: {save_error}"))?;
+            emit_terminal_review_event(&dashboard_tx, &review);
             write_run_summary_file(&run_dir, &analytics, duration, 0, 0, &model, &roles)?;
-            unregister_live_review(&state, &review_id).await;
-            return Err(format!("Review pipeline failed: {error}"));
+            Err(format!("Review pipeline failed: {error}"))
         }
     }
-
-    unregister_live_review(&state, &review_id).await;
-    Ok(())
 }
 
 async fn run_benchmark_job<S>(
@@ -655,116 +665,47 @@ where
             error
         );
     }
-    if let Err(error) = scaffold::run(&dataset_dir, &benchmark_dir) {
-        warn!(
-            "Benchmark scaffold failed; falling back to live diff fetch: {}",
-            error
-        );
-    }
-    if let Err(error) = diffs::run(&benchmark_dir) {
-        warn!(
-            "Benchmark diff extraction failed; falling back to live diff fetch: {}",
-            error
-        );
-    }
 
     let agents = resolve_agents(&roles)?;
     let client = Arc::new(
         openrouter::Client::from_env()
             .map_err(|error| format!("Failed to create OpenRouter client: {error}"))?,
     );
+    let benchmark = run_benchmark(
+        review_id.clone(),
+        &dataset_dir,
+        &benchmark_dir,
+        selected_entries,
+        Model(model.clone()),
+        agents,
+        reasoning_effort,
+        client,
+        Some(dashboard_tx.clone()),
+        run_dir.clone(),
+        MAX_FINDINGS_PER_AGENT,
+    )
+    .await?;
 
-    let mut aggregate_analytics = AnalyticsSnapshot::default();
-    let mut total_duration = Duration::default();
-    let mut total_findings = 0usize;
-    let mut completed_results = 0usize;
-
-    for entry in selected_entries {
-        let pr_started_at = Instant::now();
-        let (owner, repo, pr_number) = parse_github_url(&entry.url)
-            .map_err(|error| format!("Invalid dataset PR URL {}: {error}", entry.url))?;
-        let diff = match load_cached_benchmark_diff(&benchmark_dir, &owner, &repo, pr_number) {
-            Some(diff) if !diff.trim().is_empty() => diff,
-            _ => fetch_pr_diff(&state, &owner, &repo, pr_number)
-                .await
-                .map(|(_, diff)| diff)
-                .map_err(|error| format!("Failed to fetch diff for {}: {error}", entry.url))?,
-        };
-
-        let pr_meta = PrMeta {
-            title: entry.pr_title.clone(),
-            url: entry.url.clone(),
-            number: pr_number,
-        };
-        let repository = RemoteRepositoryMeta {
-            platform: VCSPlatform::GitHub,
-            owner,
-            name: repo,
-        };
-        let cost_tracker = Arc::new(AnalyticsTracker::new());
-        let config = EvalConfig {
-            review_id: review_id.clone(),
-            context: EvalContext {
-                repo_root: run_dir.clone(),
-                ruleset: None,
-                repository,
-                pull_request: Some(pr_meta.clone()),
+    for outcome in &benchmark.outcomes {
+        state
+            .store
+            .save::<PrResult>(&outcome.pr_result)
+            .await
+            .map_err(|error| format!("Failed to save benchmark PR result: {error}"))?;
+        write_pr_output_file(
+            &run_dir,
+            &outcome.pr_title,
+            &outcome.pr_url,
+            &outcome.pr_result,
+            &outcome.analytics,
+            Metrics {
+                duration_secs: outcome.duration.as_secs_f64(),
+                ..Metrics::default()
             },
-            strategy: EvalStrategy::Panel,
-            model: Model(model.clone()),
-            reasoning_effort,
-            client: client.clone(),
-            cache: None,
-            cost_tracker: cost_tracker.clone(),
-            dashboard_tx: Some(dashboard_tx.clone()),
-            agents,
-            max_findings: MAX_FINDINGS_PER_AGENT,
-            template_vars: None,
-        };
-
-        match review_diff(Diff::new(diff), &config).await {
-            Ok(findings) => {
-                let pr_duration = pr_started_at.elapsed();
-                let pr_analytics = cost_tracker.to_snapshot().await;
-                merge_analytics(&mut aggregate_analytics, &pr_analytics);
-                total_duration += pr_duration;
-
-                let pr_result_id = make_pr_result_id(&review_id, &entry.url, &entry.pr_title);
-                let pr_result = build_pr_result(
-                    pr_result_id,
-                    Some(review_id.clone()),
-                    entry.comments.clone(),
-                    findings,
-                );
-                total_findings += pr_result.findings.len();
-                completed_results += 1;
-
-                state
-                    .store
-                    .save::<PrResult>(&pr_result)
-                    .await
-                    .map_err(|error| format!("Failed to save benchmark PR result: {error}"))?;
-                write_pr_output_file(
-                    &run_dir,
-                    &entry.pr_title,
-                    &entry.url,
-                    &pr_result,
-                    &pr_analytics,
-                    Metrics {
-                        duration_secs: pr_duration.as_secs_f64(),
-                        ..Metrics::default()
-                    },
-                )?;
-            }
-            Err(error) => {
-                warn!(
-                    "Benchmark PR evaluation failed for {}: {}",
-                    entry.url, error
-                );
-            }
-        }
+        )?;
     }
 
+    let completed_results = benchmark.completed_results();
     let final_status = if completed_results > 0 {
         ReviewStatus::Completed
     } else {
@@ -773,8 +714,8 @@ where
     let review = Review {
         id: review_id.clone(),
         agent_sessions: Vec::new(),
-        analytics: Some(aggregate_analytics.clone()),
-        duration: Some(total_duration),
+        analytics: Some(benchmark.analytics.clone()),
+        duration: Some(benchmark.duration),
         status: final_status,
         metadata: ReviewMetadata::Plain,
     };
@@ -783,18 +724,101 @@ where
         .save::<Review>(&review)
         .await
         .map_err(|error| format!("Failed to save benchmark review: {error}"))?;
+    emit_terminal_review_event(&dashboard_tx, &review);
     write_run_summary_file(
         &run_dir,
-        &aggregate_analytics,
-        total_duration,
+        &benchmark.analytics,
+        benchmark.duration,
         completed_results,
-        total_findings,
+        benchmark.finding_count,
         &model,
         &roles,
     )?;
 
-    unregister_live_review(&state, &review_id).await;
     Ok(())
+}
+
+async fn run_launch_job_with_recovery<S, F>(
+    state: AppState<S>,
+    review: Review,
+    model: String,
+    roles: Vec<String>,
+    dashboard_tx: broadcast::Sender<RunEvent>,
+    job_kind: &'static str,
+    job: F,
+) where
+    S: Store + Send + Sync + Clone + 'static,
+    F: std::future::Future<Output = Result<(), String>> + Send,
+{
+    let review_id = review.id.clone();
+    let result = std::panic::AssertUnwindSafe(job).catch_unwind().await;
+
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => {
+            error!("{job_kind} launch failed: {error}");
+            ensure_terminal_review_state(&state, &review, &model, &roles, &dashboard_tx).await;
+        }
+        Err(payload) => {
+            let panic_message = panic_payload_message(payload);
+            error!("{job_kind} launch panicked: {panic_message}");
+            ensure_terminal_review_state(&state, &review, &model, &roles, &dashboard_tx).await;
+        }
+    }
+
+    unregister_live_review(&state, &review_id).await;
+}
+
+async fn ensure_terminal_review_state<S>(
+    state: &AppState<S>,
+    review: &Review,
+    model: &str,
+    roles: &[String],
+    dashboard_tx: &broadcast::Sender<RunEvent>,
+) where
+    S: Store + Send + Sync + Clone + 'static,
+{
+    match state.store.load::<Review>(&review.id).await {
+        Ok(Some(current_review)) if is_terminal_review_status(&current_review.status) => {}
+        Ok(Some(current_review)) => {
+            warn!(
+                "Review {} left in non-terminal state {} after background job exit; marking failed",
+                review.id, current_review.status
+            );
+            mark_review_failed(state, review, model, roles, dashboard_tx).await;
+        }
+        Ok(None) => {
+            warn!(
+                "Review {} missing after background job exit; writing failed fallback state",
+                review.id
+            );
+            mark_review_failed(state, review, model, roles, dashboard_tx).await;
+        }
+        Err(error) => {
+            warn!(
+                "Failed to reload review {} after background job exit: {}",
+                review.id, error
+            );
+            mark_review_failed(state, review, model, roles, dashboard_tx).await;
+        }
+    }
+}
+
+fn panic_payload_message(payload: Box<dyn Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else {
+        "unknown panic payload".to_string()
+    }
+}
+
+fn is_terminal_review_status(status: &ReviewStatus) -> bool {
+    matches!(
+        status,
+        ReviewStatus::Completed | ReviewStatus::Failed | ReviewStatus::Cancelled
+    )
 }
 
 fn new_review_id(prefix: &str) -> MagicTypeId {
@@ -855,8 +879,36 @@ where
     }
 }
 
-async fn mark_review_failed<S>(state: &AppState<S>, review: &Review, model: &str, roles: &[String])
-where
+fn terminal_review_event(review: &Review) -> RunEvent {
+    let analytics = review.analytics.clone().unwrap_or_default();
+    match review.status {
+        ReviewStatus::Completed => RunEvent::ReviewCompleted {
+            review_id: review.id.clone(),
+            analytics,
+        },
+        _ => RunEvent::ReviewFailed {
+            review_id: review.id.clone(),
+            analytics,
+        },
+    }
+}
+
+fn emit_terminal_review_event(dashboard_tx: &broadcast::Sender<RunEvent>, review: &Review) {
+    if let Err(error) = dashboard_tx.send(terminal_review_event(review)) {
+        warn!(
+            "Failed to emit terminal event for review {}: {}",
+            review.id, error
+        );
+    }
+}
+
+async fn mark_review_failed<S>(
+    state: &AppState<S>,
+    review: &Review,
+    model: &str,
+    roles: &[String],
+    dashboard_tx: &broadcast::Sender<RunEvent>,
+) where
     S: Store + Send + Sync + Clone + 'static,
 {
     let mut failed_review = review.clone();
@@ -868,6 +920,8 @@ where
             failed_review.id, error
         );
     }
+
+    emit_terminal_review_event(dashboard_tx, &failed_review);
 
     let empty_analytics = AnalyticsSnapshot::default();
     if let Err(error) = write_run_summary_file(
@@ -884,8 +938,6 @@ where
             failed_review.id, error
         );
     }
-
-    unregister_live_review(state, &failed_review.id).await;
 }
 
 async fn reconcile_review_state<S>(state: &AppState<S>, review: &mut Review)
@@ -1259,25 +1311,6 @@ fn write_run_summary_file(
         .map_err(|error| format!("Failed to serialize run summary: {error}"))?;
     fs::write(&summary_path, output)
         .map_err(|error| format!("Failed to write {}: {error}", summary_path.display()))
-}
-
-fn load_cached_benchmark_diff(
-    benchmark_dir: &Path,
-    owner: &str,
-    repo: &str,
-    pr_number: u32,
-) -> Option<String> {
-    let diff_path = benchmark_dir
-        .join("diffs")
-        .join(format!("{owner}_{repo}_{pr_number}.diff"));
-    fs::read_to_string(diff_path).ok()
-}
-
-fn make_pr_result_id(review_id: &MagicTypeId, pr_url: &str, pr_title: &str) -> MagicTypeId {
-    let key = parse_github_url(pr_url)
-        .map(|(owner, repo, number)| format!("{owner}-{repo}-{number}"))
-        .unwrap_or_else(|_| sanitize_filename(pr_title));
-    format!("{review_id}/{key}").create_type_id::<V7>()
 }
 
 fn result_file_stem(pr_title: &str, pr_url: &str) -> String {

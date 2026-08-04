@@ -7,14 +7,15 @@ use axum::{
     response::sse::{Event, KeepAlive, Sse},
     response::{IntoResponse, Response},
 };
+use futures::stream;
 use mti::prelude::MagicTypeId;
 use riv_stor::traits::Store;
-use riv_types::review::Review;
+use riv_types::{RunEvent, review::Review};
 use riv_webui_shared::{
     review::ReviewAgentLog,
     routes::{
         API_REVIEWS_AGENTS, API_REVIEWS_DETAILS, API_REVIEWS_LIST, API_REVIEWS_LOGS,
-        API_REVIEWS_STREAM, API_REVIEWS_SUBMIT,
+        API_REVIEWS_STREAM,
     },
 };
 use tokio_stream::{StreamExt, wrappers::BroadcastStream};
@@ -22,12 +23,9 @@ use tracing::{error, instrument, warn};
 
 use crate::{routes_register, server::AppState};
 
-const REVIEW_SUBMIT_BLOCKED_REASON: &str = "Review launch blocked for human review: route contract still expects review id before launch, and `riv_harness::pipeline::run_linters()` is still `todo!()`.";
-
 routes_register! {
   get API_REVIEWS_LIST => list_reviews,
   get API_REVIEWS_DETAILS => get_review,
-  post API_REVIEWS_SUBMIT => submit_review,
   get API_REVIEWS_LOGS => get_review_logs,
   get API_REVIEWS_AGENTS => get_review_agents,
   get API_REVIEWS_STREAM => stream_review,
@@ -83,25 +81,6 @@ where
             error!("Failed to get review {}: {}", review_id, err);
             (StatusCode::INTERNAL_SERVER_ERROR, Json(None::<Review>)).into_response()
         })
-}
-
-#[instrument(skip(state), name = API_REVIEWS_SUBMIT)]
-pub async fn submit_review<S>(
-    State(state): State<AppState<S>>,
-    Path(review_id): Path<MagicTypeId>,
-) -> Response
-where
-    S: Store + Send + Sync + Clone + 'static,
-{
-    let _ = state;
-    (
-        StatusCode::FAILED_DEPENDENCY,
-        Json(serde_json::json!({
-            "error": REVIEW_SUBMIT_BLOCKED_REASON,
-            "review_id": review_id.to_string(),
-        })),
-    )
-        .into_response()
 }
 
 #[instrument(skip(state), name = API_REVIEWS_LOGS)]
@@ -185,16 +164,9 @@ where
     };
 
     if !is_active {
-        return match state.store.load::<Review>(&review_id).await {
-            Ok(Some(_)) => (
-                StatusCode::CONFLICT,
-                Json(serde_json::json!({
-                    "error": "Review exists but is not running",
-                    "review_id": review_id.to_string(),
-                })),
-            )
-                .into_response(),
-            Ok(None) => (
+        return match crate::services::get_review(&state, &review_id).await {
+            Ok(review) => terminal_review_stream(review),
+            Err(error) if error.contains("not found") => (
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({
                     "error": "Review not found",
@@ -264,4 +236,44 @@ where
                 .text("keep-alive"),
         )
         .into_response()
+}
+
+fn terminal_review_stream(review: Review) -> Response {
+    let event = match review.status {
+        riv_types::review::ReviewStatus::Completed => RunEvent::ReviewCompleted {
+            review_id: review.id.clone(),
+            analytics: review.analytics.clone().unwrap_or_default(),
+        },
+        _ => RunEvent::ReviewFailed {
+            review_id: review.id.clone(),
+            analytics: review.analytics.clone().unwrap_or_default(),
+        },
+    };
+
+    match serde_json::to_string(&event) {
+        Ok(payload) => {
+            let stream = stream::iter([Ok::<Event, Infallible>(Event::default().data(payload))]);
+            Sse::new(stream)
+                .keep_alive(
+                    KeepAlive::new()
+                        .interval(Duration::from_secs(15))
+                        .text("keep-alive"),
+                )
+                .into_response()
+        }
+        Err(error) => {
+            error!(
+                "Failed to serialize terminal run event for {}: {}",
+                review.id, error
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Failed to serialize terminal review event",
+                    "review_id": review.id.to_string(),
+                })),
+            )
+                .into_response()
+        }
+    }
 }

@@ -73,8 +73,17 @@ pub enum RunEvent {
         agent_ids: Vec<MagicTypeId>,
     },
 
-    /// A [`crate::review::Review`] has finished running.
+    /// A [`crate::review::Review`] has finished running successfully.
     ReviewCompleted {
+        /// The [`crate::review::Review::id`] of this event.
+        review_id: MagicTypeId,
+
+        /// The snapshot of the final [`crate::cost::AnalyticsSnapshot`] for this review.
+        analytics: AnalyticsSnapshot,
+    },
+
+    /// A [`crate::review::Review`] has finished running unsuccessfully.
+    ReviewFailed {
         /// The [`crate::review::Review::id`] of this event.
         review_id: MagicTypeId,
 

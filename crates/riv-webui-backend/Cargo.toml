@@ -24,6 +24,7 @@ exp16_adaptive_agents = ["riv-harness/exp16_adaptive_agents"]
 anyhow = { workspace = true }
 axum = { workspace = true }
 clap = { workspace = true }
+futures = { workspace = true }
 riv-agents = { path = "../riv-agents" }
 riv-benchmark = { path = "../riv-benchmark" }
 riv-types = { path = "../riv-types" }

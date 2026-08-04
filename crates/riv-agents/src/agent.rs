@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::{Result, anyhow, bail};
-use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
+use mti::prelude::{MagicTypeId, NamespaceId, TypeIdPrefix, TypeIdSuffix};
 use serde::Deserialize;
 use serde_fields::SerdeField;
 
@@ -12,7 +12,7 @@ use crate::{AgentDetailsProvider, prompts::PromptLibrary};
 pub struct AgentEntry {
     /// Unique identifier for this agent.
     ///
-    /// This is not stable between instances and should not be used for any persistent storage.
+    /// Stable identifier derived from `role_abbreviation` for event/UI correlation.
     #[serde(default = "new_agent_id")]
     pub agent_id: MagicTypeId,
 
@@ -52,7 +52,14 @@ pub struct AgentEntry {
 }
 
 fn new_agent_id() -> MagicTypeId {
-    "agent".create_type_id::<V7>()
+    deterministic_agent_id("")
+}
+
+fn deterministic_agent_id(abbreviation: &str) -> MagicTypeId {
+    let normalized = abbreviation.trim().to_uppercase();
+    let prefix = TypeIdPrefix::try_from("agent").unwrap_or_default();
+    let suffix = TypeIdSuffix::new_v5(NamespaceId::OID, normalized.as_bytes());
+    MagicTypeId::new(prefix, suffix)
 }
 
 impl AgentEntry {
@@ -70,6 +77,8 @@ impl AgentEntry {
         if entry.role_abbreviation.is_empty() {
             bail!("Agent has empty `role_abbreviation`",);
         }
+
+        entry.agent_id = deterministic_agent_id(&entry.role_abbreviation);
 
         Ok(entry)
     }
@@ -107,6 +116,8 @@ fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
 
 #[cfg(test)]
 mod tests {
+    use mti::prelude::{MagicTypeIdExt, V7};
+
     use super::*;
 
     #[test]
@@ -145,6 +156,63 @@ body
 "#;
         let result = AgentEntry::new(content);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_deterministic_agent_id_from_abbreviation() {
+        let first = AgentEntry::new(
+            r#"---
+role_name: Test One
+role_abbreviation: test
+role_domain: testing
+---
+Body one
+"#,
+        )
+        .unwrap();
+        let second = AgentEntry::new(
+            r#"---
+role_name: Test Two
+role_abbreviation: TEST
+role_domain: testing
+---
+Body two
+"#,
+        )
+        .unwrap();
+        let third = AgentEntry::new(
+            r#"---
+role_name: Other
+role_abbreviation: OTHER
+role_domain: testing
+---
+Body three
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(first.agent_id, second.agent_id);
+        assert_ne!(first.agent_id, third.agent_id);
+    }
+
+    #[test]
+    fn test_frontmatter_agent_id_is_overridden() {
+        let supplied_id = "agent".create_type_id::<V7>();
+        let content = format!(
+            r#"---
+agent_id: {supplied_id}
+role_name: Test
+role_abbreviation: TEST
+role_domain: testing
+---
+Body content here
+"#
+        );
+
+        let entry = AgentEntry::new(&content).unwrap();
+
+        assert_ne!(entry.agent_id, supplied_id);
+        assert_eq!(entry.agent_id, deterministic_agent_id("TEST"));
     }
 
     #[test]

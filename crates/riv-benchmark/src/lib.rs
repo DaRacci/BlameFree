@@ -21,7 +21,10 @@ use rig_core::providers::openrouter;
 pub mod diffs;
 pub mod judge;
 pub mod pr;
+mod run;
 pub mod scaffold;
+
+pub use run::{BenchmarkPrOutcome, BenchmarkRunResult, run_benchmark};
 
 pub const BENCHMARK_DIR: &str = "benchmark";
 pub const BENCHMARK_DIFFS_SUBDIR: &str = "diffs";
