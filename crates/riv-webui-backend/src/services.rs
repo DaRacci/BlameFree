@@ -2,9 +2,8 @@ use std::{
     any::Any,
     collections::HashSet,
     env, fs,
-    path::Path,
     sync::Arc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use futures::FutureExt;
@@ -15,22 +14,19 @@ use riv_benchmark::{BENCHMARK_DIR, run_benchmark};
 use riv_harness::{
     eval::{EvalConfig, EvalContext, EvalStrategy},
     model_capabilities::{available_models, supports_reasoning},
-    paths::SUMMARY_FILE,
     review::review_diff,
 };
 use riv_reporting::{cost::AnalyticsTracker, golden::load_golden_datasets};
-use riv_shared::{diff::Diff, string::sanitize_filename, url::parse_github_url};
+use riv_shared::{diff::Diff, url::parse_github_url};
 use riv_stor::traits::Store;
 use riv_types::{
     RunEvent,
     agent::{AgentSession, AgentTurn, AgentTurnMessage, RoleMessage, ToolInvocation},
     benchmark::{
         golden::{GoldenComment, GoldenCommentEntry},
-        metrics::Metrics,
         result::PrResult,
     },
     capabilities::ReasoningEffort,
-    cost::{AnalyticsSnapshot, CacheUsage, SessionUsage},
     finding::Finding,
     review::{PullRequestReviewMetadata, Review, ReviewMetadata, ReviewStatus},
     vcs::{
@@ -65,7 +61,6 @@ where
 
     for review in &mut reviews {
         reconcile_review_state(state, review).await;
-        hydrate_review_from_output(&state.output_dir, review);
     }
 
     reviews.sort_by(|left, right| {
@@ -92,7 +87,6 @@ where
         .ok_or_else(|| format!("Review {review_id} not found"))?;
 
     reconcile_review_state(state, &mut review).await;
-    hydrate_review_from_output(&state.output_dir, &mut review);
     Ok(review)
 }
 
@@ -112,10 +106,6 @@ where
         .into_iter()
         .filter(|result| result_matches_review(result, review_id, &review_key))
         .collect::<Vec<_>>();
-
-    if results.is_empty() {
-        results = load_output_pr_results(&state.output_dir.join(review_key));
-    }
 
     results.sort_by(|left, right| left.id.to_string().cmp(&right.id.to_string()));
     Ok(results)
@@ -403,15 +393,11 @@ where
     let task_model = model.to_string();
     let task_roles = roles.to_vec();
     let failure_review = review.clone();
-    let failure_model = task_model.clone();
-    let failure_roles = task_roles.clone();
     let task_dashboard_tx = dashboard_tx.clone();
     tokio::spawn(async move {
         run_launch_job_with_recovery(
             task_state.clone(),
             failure_review,
-            failure_model,
-            failure_roles,
             dashboard_tx,
             "Review",
             run_review_job(
@@ -485,15 +471,11 @@ where
     let task_roles = roles.to_vec();
     let task_dataset_id = dataset_id.to_string();
     let failure_review = review.clone();
-    let failure_model = task_model.clone();
-    let failure_roles = task_roles.clone();
     let task_dashboard_tx = dashboard_tx.clone();
     tokio::spawn(async move {
         run_launch_job_with_recovery(
             task_state.clone(),
             failure_review,
-            failure_model,
-            failure_roles,
             dashboard_tx,
             "Benchmark",
             run_benchmark_job(
@@ -528,9 +510,6 @@ where
     S: Store + Send + Sync + Clone + 'static,
 {
     let started_at = Instant::now();
-    let run_dir = state.output_dir.join(review_id.to_string());
-    fs::create_dir_all(&run_dir)
-        .map_err(|error| format!("Failed to create output dir {}: {error}", run_dir.display()))?;
 
     let agents = resolve_agents(&roles)?;
     let client = Arc::new(
@@ -542,7 +521,7 @@ where
     let config = EvalConfig {
         review_id: review_id.clone(),
         context: EvalContext {
-            repo_root: run_dir.clone(),
+            repo_root: state.output_dir.clone(),
             ruleset: None,
             repository: repository.clone(),
             pull_request: Some(pr_meta.clone()),
@@ -571,17 +550,6 @@ where
                 .save::<PrResult>(&pr_result)
                 .await
                 .map_err(|error| format!("Failed to save PR result: {error}"))?;
-            write_pr_output_file(
-                &run_dir,
-                &pr_meta.title,
-                &pr_meta.url,
-                &pr_result,
-                &analytics,
-                Metrics {
-                    duration_secs: duration.as_secs_f64(),
-                    ..Metrics::default()
-                },
-            )?;
 
             let review = Review {
                 id: review_id.clone(),
@@ -599,15 +567,6 @@ where
                 .save::<Review>(&review)
                 .await
                 .map_err(|error| format!("Failed to save completed review: {error}"))?;
-            write_run_summary_file(
-                &run_dir,
-                &analytics,
-                duration,
-                1,
-                pr_result.findings.len(),
-                &model,
-                &roles,
-            )?;
             Ok(())
         }
         Err(error) => {
@@ -628,7 +587,6 @@ where
                 .await
                 .map_err(|save_error| format!("Failed to save failed review: {save_error}"))?;
             emit_terminal_review_event(&dashboard_tx, &review);
-            write_run_summary_file(&run_dir, &analytics, duration, 0, 0, &model, &roles)?;
             Err(format!("Review pipeline failed: {error}"))
         }
     }
@@ -647,10 +605,6 @@ async fn run_benchmark_job<S>(
 where
     S: Store + Send + Sync + Clone + 'static,
 {
-    let run_dir = state.output_dir.join(review_id.to_string());
-    fs::create_dir_all(&run_dir)
-        .map_err(|error| format!("Failed to create output dir {}: {error}", run_dir.display()))?;
-
     let dataset_dir = state.config.server.dataset_dir.join(&dataset_id);
     let benchmark_dir = state
         .config
@@ -681,7 +635,7 @@ where
         reasoning_effort,
         client,
         Some(dashboard_tx.clone()),
-        run_dir.clone(),
+        state.output_dir.clone(),
         MAX_FINDINGS_PER_AGENT,
     )
     .await?;
@@ -692,17 +646,6 @@ where
             .save::<PrResult>(&outcome.pr_result)
             .await
             .map_err(|error| format!("Failed to save benchmark PR result: {error}"))?;
-        write_pr_output_file(
-            &run_dir,
-            &outcome.pr_title,
-            &outcome.pr_url,
-            &outcome.pr_result,
-            &outcome.analytics,
-            Metrics {
-                duration_secs: outcome.duration.as_secs_f64(),
-                ..Metrics::default()
-            },
-        )?;
     }
 
     let completed_results = benchmark.completed_results();
@@ -725,15 +668,6 @@ where
         .await
         .map_err(|error| format!("Failed to save benchmark review: {error}"))?;
     emit_terminal_review_event(&dashboard_tx, &review);
-    write_run_summary_file(
-        &run_dir,
-        &benchmark.analytics,
-        benchmark.duration,
-        completed_results,
-        benchmark.finding_count,
-        &model,
-        &roles,
-    )?;
 
     Ok(())
 }
@@ -741,8 +675,6 @@ where
 async fn run_launch_job_with_recovery<S, F>(
     state: AppState<S>,
     review: Review,
-    model: String,
-    roles: Vec<String>,
     dashboard_tx: broadcast::Sender<RunEvent>,
     job_kind: &'static str,
     job: F,
@@ -757,12 +689,12 @@ async fn run_launch_job_with_recovery<S, F>(
         Ok(Ok(())) => {}
         Ok(Err(error)) => {
             error!("{job_kind} launch failed: {error}");
-            ensure_terminal_review_state(&state, &review, &model, &roles, &dashboard_tx).await;
+            ensure_terminal_review_state(&state, &review, &dashboard_tx).await;
         }
         Err(payload) => {
             let panic_message = panic_payload_message(payload);
             error!("{job_kind} launch panicked: {panic_message}");
-            ensure_terminal_review_state(&state, &review, &model, &roles, &dashboard_tx).await;
+            ensure_terminal_review_state(&state, &review, &dashboard_tx).await;
         }
     }
 
@@ -772,8 +704,6 @@ async fn run_launch_job_with_recovery<S, F>(
 async fn ensure_terminal_review_state<S>(
     state: &AppState<S>,
     review: &Review,
-    model: &str,
-    roles: &[String],
     dashboard_tx: &broadcast::Sender<RunEvent>,
 ) where
     S: Store + Send + Sync + Clone + 'static,
@@ -785,21 +715,21 @@ async fn ensure_terminal_review_state<S>(
                 "Review {} left in non-terminal state {} after background job exit; marking failed",
                 review.id, current_review.status
             );
-            mark_review_failed(state, review, model, roles, dashboard_tx).await;
+            mark_review_failed(state, review, dashboard_tx).await;
         }
         Ok(None) => {
             warn!(
                 "Review {} missing after background job exit; writing failed fallback state",
                 review.id
             );
-            mark_review_failed(state, review, model, roles, dashboard_tx).await;
+            mark_review_failed(state, review, dashboard_tx).await;
         }
         Err(error) => {
             warn!(
                 "Failed to reload review {} after background job exit: {}",
                 review.id, error
             );
-            mark_review_failed(state, review, model, roles, dashboard_tx).await;
+            mark_review_failed(state, review, dashboard_tx).await;
         }
     }
 }
@@ -905,8 +835,6 @@ fn emit_terminal_review_event(dashboard_tx: &broadcast::Sender<RunEvent>, review
 async fn mark_review_failed<S>(
     state: &AppState<S>,
     review: &Review,
-    model: &str,
-    roles: &[String],
     dashboard_tx: &broadcast::Sender<RunEvent>,
 ) where
     S: Store + Send + Sync + Clone + 'static,
@@ -922,22 +850,6 @@ async fn mark_review_failed<S>(
     }
 
     emit_terminal_review_event(dashboard_tx, &failed_review);
-
-    let empty_analytics = AnalyticsSnapshot::default();
-    if let Err(error) = write_run_summary_file(
-        &state.output_dir.join(failed_review.id.to_string()),
-        &empty_analytics,
-        Duration::default(),
-        0,
-        0,
-        model,
-        roles,
-    ) {
-        warn!(
-            "Failed to write failed run summary for {}: {}",
-            failed_review.id, error
-        );
-    }
 }
 
 async fn reconcile_review_state<S>(state: &AppState<S>, review: &mut Review)
@@ -1021,210 +933,6 @@ fn result_matches_review(result: &PrResult, review_id: &MagicTypeId, review_key:
         || result.id.to_string().starts_with(review_key)
 }
 
-fn hydrate_review_from_output(output_dir: &Path, review: &mut Review) {
-    let Some(summary) = load_output_review_summary(&output_dir.join(review.id.to_string())) else {
-        return;
-    };
-
-    if review.analytics.is_none() {
-        review.analytics = summary.analytics();
-    }
-    if review.duration.is_none() {
-        review.duration = summary.duration();
-    }
-}
-
-fn load_output_pr_results(run_dir: &Path) -> Vec<PrResult> {
-    let Ok(entries) = fs::read_dir(run_dir) else {
-        return Vec::new();
-    };
-
-    let mut results = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path
-            .extension()
-            .is_some_and(|extension| extension == "json")
-        {
-            continue;
-        }
-        if path.file_name().and_then(|name| name.to_str()) == Some(SUMMARY_FILE) {
-            continue;
-        }
-
-        let Ok(content) = fs::read_to_string(&path) else {
-            continue;
-        };
-        if let Ok(result) = serde_json::from_str::<PrResult>(&content) {
-            results.push(result);
-        }
-    }
-
-    results
-}
-
-#[derive(Default, Clone)]
-struct OutputRunSummary {
-    analytics: AnalyticsSnapshot,
-    duration_secs: f64,
-    result_count: usize,
-    finding_count: usize,
-    agent_session_count: usize,
-}
-
-impl OutputRunSummary {
-    fn has_data(&self) -> bool {
-        !self.analytics.sessions.is_empty()
-            || !self.analytics.cache_usage.is_empty()
-            || self.duration_secs > 0.0
-            || self.result_count > 0
-            || self.finding_count > 0
-            || self.agent_session_count > 0
-    }
-
-    fn analytics(&self) -> Option<AnalyticsSnapshot> {
-        if self.analytics.sessions.is_empty() && self.analytics.cache_usage.is_empty() {
-            None
-        } else {
-            Some(self.analytics.clone())
-        }
-    }
-
-    fn duration(&self) -> Option<Duration> {
-        if self.duration_secs > 0.0 {
-            Some(Duration::from_secs_f64(self.duration_secs))
-        } else {
-            None
-        }
-    }
-
-    fn with_fallback(mut self, fallback: Option<Self>) -> Self {
-        let Some(fallback) = fallback else {
-            return self;
-        };
-
-        if self.analytics.sessions.is_empty() && self.analytics.cache_usage.is_empty() {
-            self.analytics = fallback.analytics;
-        }
-        if self.duration_secs == 0.0 {
-            self.duration_secs = fallback.duration_secs;
-        }
-        if self.result_count == 0 {
-            self.result_count = fallback.result_count;
-        }
-        if self.finding_count == 0 {
-            self.finding_count = fallback.finding_count;
-        }
-        if self.agent_session_count == 0 {
-            self.agent_session_count = fallback.agent_session_count;
-        }
-
-        self
-    }
-}
-
-fn load_output_review_summary(run_dir: &Path) -> Option<OutputRunSummary> {
-    if !run_dir.is_dir() {
-        return None;
-    }
-
-    let scanned = scan_result_output_dir(run_dir);
-    let hydrated = scanned.with_fallback(read_run_summary_file(run_dir));
-    hydrated.has_data().then_some(hydrated)
-}
-
-fn read_run_summary_file(run_dir: &Path) -> Option<OutputRunSummary> {
-    let summary_path = run_dir.join(SUMMARY_FILE);
-    let content = fs::read_to_string(summary_path).ok()?;
-    let value = serde_json::from_str::<serde_json::Value>(&content).ok()?;
-
-    let mut summary = OutputRunSummary::default();
-    if let Some(duration) = json_f64(&value, &["duration_secs", "elapsed"]) {
-        summary.duration_secs = duration;
-    }
-    if let Some(result_count) = json_usize(&value, &["result_count", "total_prs"]) {
-        summary.result_count = result_count;
-    }
-    if let Some(finding_count) = json_usize(&value, &["finding_count", "total_findings"]) {
-        summary.finding_count = finding_count;
-    }
-    if let Some(agent_session_count) = json_usize(&value, &["agent_session_count", "session_count"])
-    {
-        summary.agent_session_count = agent_session_count;
-    }
-    if let Some(cost_value) = value.get("cost").or_else(|| value.get("analytics"))
-        && let Ok(analytics) = serde_json::from_value::<AnalyticsSnapshot>(cost_value.clone())
-    {
-        summary.analytics = analytics;
-    }
-
-    summary.has_data().then_some(summary)
-}
-
-fn scan_result_output_dir(run_dir: &Path) -> OutputRunSummary {
-    let Ok(entries) = fs::read_dir(run_dir) else {
-        return OutputRunSummary::default();
-    };
-
-    let mut summary = OutputRunSummary::default();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path
-            .extension()
-            .is_some_and(|extension| extension == "json")
-        {
-            continue;
-        }
-        if path.file_name().and_then(|name| name.to_str()) == Some(SUMMARY_FILE) {
-            continue;
-        }
-
-        let Ok(content) = fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) else {
-            continue;
-        };
-
-        summary.result_count += 1;
-        summary.finding_count += value
-            .get("findings")
-            .and_then(|findings| findings.as_array())
-            .map(Vec::len)
-            .unwrap_or(0);
-        if let Some(metrics) = value
-            .get("metrics")
-            .cloned()
-            .and_then(|metrics| serde_json::from_value::<Metrics>(metrics).ok())
-        {
-            summary.duration_secs += metrics.duration_secs;
-        }
-        if let Some(cost) = value
-            .get("cost")
-            .cloned()
-            .and_then(|cost| serde_json::from_value::<AnalyticsSnapshot>(cost).ok())
-        {
-            merge_analytics(&mut summary.analytics, &cost);
-        }
-        summary.agent_session_count += value
-            .get("agent_session_count")
-            .and_then(|count| count.as_u64())
-            .map(|count| count as usize)
-            .or_else(|| {
-                value
-                    .get("agent_sessions")
-                    .and_then(|sessions| sessions.as_array())
-                    .map(Vec::len)
-            })
-            .unwrap_or(0);
-    }
-
-    summary.agent_session_count = summary
-        .agent_session_count
-        .max(summary.analytics.sessions.len());
-    summary
-}
-
 fn build_pr_result(
     id: MagicTypeId,
     benchmark_id: Option<MagicTypeId>,
@@ -1253,111 +961,6 @@ fn build_pr_result(
         golden_comments,
         findings,
     }
-}
-
-fn write_pr_output_file(
-    run_dir: &Path,
-    pr_title: &str,
-    pr_url: &str,
-    result: &PrResult,
-    analytics: &AnalyticsSnapshot,
-    metrics: Metrics,
-) -> Result<(), String> {
-    fs::create_dir_all(run_dir)
-        .map_err(|error| format!("Failed to create output dir {}: {error}", run_dir.display()))?;
-
-    let filename = format!("{}.json", result_file_stem(pr_title, pr_url));
-    let output_path = run_dir.join(filename);
-    let payload = serde_json::json!({
-        "id": result.id,
-        "benchmark_id": result.benchmark_id,
-        "pr_title": pr_title,
-        "url": pr_url,
-        "golden_comments": result.golden_comments,
-        "findings": result.findings,
-        "metrics": metrics,
-        "cost": analytics,
-        "agent_session_count": analytics.sessions.len(),
-    });
-    let output = serde_json::to_string_pretty(&payload)
-        .map_err(|error| format!("Failed to serialize PR output: {error}"))?;
-    fs::write(&output_path, output)
-        .map_err(|error| format!("Failed to write {}: {error}", output_path.display()))
-}
-
-fn write_run_summary_file(
-    run_dir: &Path,
-    analytics: &AnalyticsSnapshot,
-    duration: Duration,
-    result_count: usize,
-    finding_count: usize,
-    model: &str,
-    roles: &[String],
-) -> Result<(), String> {
-    fs::create_dir_all(run_dir)
-        .map_err(|error| format!("Failed to create output dir {}: {error}", run_dir.display()))?;
-
-    let summary_path = run_dir.join(SUMMARY_FILE);
-    let payload = serde_json::json!({
-        "duration_secs": duration.as_secs_f64(),
-        "cost": analytics,
-        "result_count": result_count,
-        "finding_count": finding_count,
-        "agent_session_count": analytics.sessions.len(),
-        "model": model,
-        "roles": roles,
-    });
-    let output = serde_json::to_string_pretty(&payload)
-        .map_err(|error| format!("Failed to serialize run summary: {error}"))?;
-    fs::write(&summary_path, output)
-        .map_err(|error| format!("Failed to write {}: {error}", summary_path.display()))
-}
-
-fn result_file_stem(pr_title: &str, pr_url: &str) -> String {
-    parse_github_url(pr_url)
-        .map(|(owner, repo, number)| format!("{owner}_{repo}_{number}"))
-        .unwrap_or_else(|_| sanitize_filename(pr_title))
-}
-
-fn merge_analytics(target: &mut AnalyticsSnapshot, source: &AnalyticsSnapshot) {
-    for (session_id, usage) in &source.sessions {
-        let entry = target.sessions.entry(session_id.clone()).or_default();
-        merge_session_usage(entry, usage);
-    }
-    for (session_id, usage) in &source.cache_usage {
-        let entry = target.cache_usage.entry(session_id.clone()).or_default();
-        merge_cache_usage(entry, usage);
-    }
-}
-
-fn merge_session_usage(target: &mut SessionUsage, source: &SessionUsage) {
-    target.input_tokens += source.input_tokens;
-    target.output_tokens += source.output_tokens;
-    target.cached_input_tokens += source.cached_input_tokens;
-    target.cache_creation_input_tokens += source.cache_creation_input_tokens;
-    target.reasoning_tokens += source.reasoning_tokens;
-    target.tool_use_prompt_tokens += source.tool_use_prompt_tokens;
-    target.call_count += source.call_count;
-    target.tool_use_count += source.tool_use_count;
-}
-
-fn merge_cache_usage(target: &mut CacheUsage, source: &CacheUsage) {
-    target.cache_hits += source.cache_hits;
-    target.cache_misses += source.cache_misses;
-}
-
-fn json_usize(value: &serde_json::Value, keys: &[&str]) -> Option<usize> {
-    keys.iter().find_map(|key| {
-        value
-            .get(*key)
-            .and_then(|inner| inner.as_u64())
-            .map(|inner| inner as usize)
-    })
-}
-
-fn json_f64(value: &serde_json::Value, keys: &[&str]) -> Option<f64> {
-    keys.iter()
-        .find_map(|key| value.get(*key).and_then(serde_json::Value::as_f64))
 }
 
 fn build_review_agent_log(review_id: &MagicTypeId, session: &AgentSession) -> ReviewAgentLog {
@@ -1452,14 +1055,6 @@ mod tests {
     fn test_extract_pr_number() {
         assert_eq!(extract_pr_number("https://github.com/a/b/pull/42"), 42);
         assert_eq!(extract_pr_number("not-a-pr"), u32::MAX);
-    }
-
-    #[test]
-    fn test_result_file_stem_prefers_repo_pr() {
-        assert_eq!(
-            result_file_stem("ignored", "https://github.com/a/b/pull/42"),
-            "a_b_42"
-        );
     }
 
     #[test]

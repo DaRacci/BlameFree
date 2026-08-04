@@ -129,6 +129,9 @@ pub struct ProcessedField {
     /// True if the field has #[sea_orm(ignore)].
     pub is_ignored: bool,
 
+    /// True if the field has #[sea_orm(json)] — persisted as a compressed JSON blob.
+    pub is_json_blob: bool,
+
     /// True if the field is the primary key.
     pub is_primary_key: bool,
 
@@ -191,6 +194,10 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
     let mut rel_entries: Vec<(Ident, RelationKind)> = Vec::new();
     let mut has_explicit_id = false;
 
+    // JSON blob fields fold into a single compressed BLOB column named after the
+    // first json field; subsequent json fields emit no column of their own.
+    let mut json_col_emitted = false;
+
     let mut flatten_entries: Vec<(Ident, FlattenSpec)> = Vec::new();
     for pf in &processed {
         if pf.is_ignored {
@@ -251,6 +258,16 @@ pub fn derive_entity_model_impl(input: &DeriveInput) -> TokenStream {
                     });
                     rel_entries.push((pf.ident.clone(), kind.clone()));
                 }
+            }
+        } else if pf.is_json_blob {
+            // JSON blob group: emit one compressed BLOB column (named after the
+            // first json field); the rest fold into it and emit nothing.
+            if !json_col_emitted {
+                json_col_emitted = true;
+                scalar_fields.push(quote! {
+                    #[sea_orm(nullable, column_type = "Blob")]
+                    pub #field_ident: Option<Vec<u8>>
+                });
             }
         } else {
             if field_ident == "id" {
@@ -488,6 +505,17 @@ fn build_from_traits(
     let mut from_model_fields: Vec<TokenStream2> = Vec::new();
     let mut from_domain_fields: Vec<TokenStream2> = Vec::new();
 
+    // JSON blob fields (e.g. #[sea_orm(json)]). Multiple such fields fold into a
+    // single compressed blob column named after the first json field. The
+    // envelope type is derived from the struct name: `{StructName}RuntimeData`.
+    let json_field_idents: Vec<Ident> = processed
+        .iter()
+        .filter(|pf| pf.is_json_blob)
+        .map(|pf| pf.ident.clone())
+        .collect();
+    let has_json_fields = !json_field_idents.is_empty();
+    let json_envelope_ident = format_ident!("{}RuntimeData", struct_name);
+
     // Track which columns are set by flatten fields so scalar fields don't conflict
     let mut flatten_col_names: Vec<String> = Vec::new();
     for (_, spec) in &flatten_entries {
@@ -507,7 +535,7 @@ fn build_from_traits(
             pf.relation,
             Some(RelationKind::HasMany { .. }) | Some(RelationKind::HasOne { .. })
         );
-        let is_scalar = !pf.is_ignored && !is_pure_rel && pf.flatten.is_none();
+        let is_scalar = !pf.is_ignored && !pf.is_json_blob && !is_pure_rel && pf.flatten.is_none();
         let has_auto_increment = pf
             .passthrough
             .iter()
@@ -516,6 +544,11 @@ fn build_from_traits(
         let is_mtid = type_ends_with(&pf.ty, "MagicTypeId");
         let is_opt_mtid =
             get_option_inner(&pf.ty).is_some_and(|inner| type_ends_with(&inner, "MagicTypeId"));
+
+        if pf.is_json_blob {
+            // JSON blob fields are handled as a group after the scalar loop.
+            continue;
+        }
 
         if is_scalar {
             let model_expr = if has_auto_increment {
@@ -598,7 +631,7 @@ fn build_from_traits(
     });
     // Pure relation fields (HasMany/HasOne) are excluded from from_model_fields,
     // so the struct literal needs ..Default::default() to fill them.
-    let needs_default_tail = has_ignored_fields || has_pure_relations;
+    let needs_default_tail = has_ignored_fields || has_pure_relations || has_json_fields;
 
     let from_model_impl = if from_model_fields.is_empty() {
         quote! {}
@@ -611,7 +644,7 @@ fn build_from_traits(
         }
     } else {
         // Either all fields are populated from Model, or there are flatten fields that we populate via the bridge struct.
-        // If there are also ignored fields, use ..Default::default()
+        // If there are also ignored/json fields, use ..Default::default()
         let normal_fields: Vec<_> = from_model_fields.iter().cloned().collect();
         let default_tail = if needs_default_tail {
             quote! { ..Default::default() }
@@ -619,21 +652,63 @@ fn build_from_traits(
             quote! {}
         };
 
+        // JSON blob decode: hydrate the envelope's domain fields (analytics,
+        // duration, ...) from the compressed blob after building the defaulted
+        // struct.
+        let json_blob_binding = if has_json_fields {
+            let blob_col = &json_field_idents[0];
+            quote! { let __blob = m.#blob_col; }
+        } else {
+            quote! {}
+        };
+        let json_decode = if has_json_fields {
+            let envelope = &json_envelope_ident;
+            quote! {
+                if let Some(ref __blob) = __blob {
+                    <#envelope as crate::stor::JsonBlobEnvelope>::decode_into(__blob, &mut __domain);
+                }
+            }
+        } else {
+            quote! {}
+        };
+
         quote! {
             impl From<Model> for super::#struct_name {
                 fn from(m: Model) -> Self {
-                    Self {
+                    #json_blob_binding
+                    let mut __domain = Self {
                         #(#normal_fields,)*
                         #default_tail
-                    }
+                    };
+                    #json_decode
+                    __domain
                 }
             }
         }
     };
 
+    // JSON blob encode on save: fold domain fields into the envelope blob. The
+    // blob is computed before any field is moved out of `d`, so we can borrow it
+    // without a partial-move error.
+    let json_blob_binding_domain = if has_json_fields {
+        let envelope = &json_envelope_ident;
+        quote! {
+            let __analytics_blob = <#envelope as crate::stor::JsonBlobEnvelope>::encode(&d);
+        }
+    } else {
+        quote! {}
+    };
+    let json_domain_fields: Vec<TokenStream2> = if has_json_fields {
+        let blob_col = &json_field_idents[0];
+        vec![quote! { #blob_col: sea_orm::Set(__analytics_blob) }]
+    } else {
+        Vec::new()
+    };
+
     let final_from_domain_fields: Vec<TokenStream2> = from_domain_fields
         .into_iter()
         .chain(flatten_set_fields)
+        .chain(json_domain_fields)
         .collect();
 
     let from_domain_impl = if final_from_domain_fields.is_empty() && flatten_let_bindings.is_empty()
@@ -645,6 +720,7 @@ fn build_from_traits(
         quote! {
             impl From<super::#struct_name> for ActiveModel {
                 fn from(d: super::#struct_name) -> Self {
+                    #json_blob_binding_domain
                     #(#let_bindings)*
                     Self {
                         #(#set_fields,)*
@@ -851,9 +927,9 @@ fn build_load_children(
 }
 
 fn build_new_function(processed: &Vec<ProcessedField>, struct_name: &Ident) -> TokenStream2 {
-    // Skip generation if any field has #[sea_orm(ignore)]
+    // Skip generation if any field has #[sea_orm(ignore)] or #[sea_orm(json)]
     // we can't guess a reasonable default for arbitrary types.
-    if processed.iter().any(|pf| pf.is_ignored) {
+    if processed.iter().any(|pf| pf.is_ignored || pf.is_json_blob) {
         return quote! {};
     }
 
@@ -1115,6 +1191,7 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
     let ident = field.ident.clone().expect("named field");
     let ty = field.ty.clone();
     let mut is_ignored = false;
+    let mut is_json_blob = false;
     let mut is_primary_key = false;
     let mut auto_increment = false;
     let mut nullable = false;
@@ -1146,6 +1223,13 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
 
         if inner_lower.contains("ignore") {
             is_ignored = true;
+            continue;
+        }
+
+        // json attr: field is stored as a compressed JSON blob; swallow the attr
+        // so it isn't passed through as a SeaORM column attribute.
+        if inner_lower.trim() == "json" {
+            is_json_blob = true;
             continue;
         }
 
@@ -1195,6 +1279,7 @@ pub fn process_field(field: &syn::Field) -> ProcessedField {
         ident,
         ty,
         is_ignored,
+        is_json_blob,
         is_primary_key,
         auto_increment,
         nullable,

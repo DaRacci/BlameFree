@@ -170,3 +170,71 @@ impl Store for SqliteStore {
         crate::migration::run_migrations(&db).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::time::Duration;
+
+    use mti::prelude::MagicTypeIdExt;
+    use riv_types::cost::SessionUsage;
+    use riv_types::review::{ReviewMetadata, ReviewStatus};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn review_with_analytics_round_trips_through_store() {
+        let store = SqliteStore::new(":memory:").await.expect("store init");
+
+        let id: MagicTypeId = "riv-cli-123".create_type_id::<mti::prelude::V7>();
+        let session_id: MagicTypeId = "sess-a".create_type_id::<mti::prelude::V7>();
+        let review = Review {
+            id: id.clone(),
+            agent_sessions: Vec::new(),
+            analytics: Some(riv_types::cost::AnalyticsSnapshot {
+                sessions: HashMap::from([(
+                    session_id,
+                    SessionUsage {
+                        input_tokens: 100,
+                        output_tokens: 40,
+                        call_count: 3,
+                        ..Default::default()
+                    },
+                )]),
+                cache_usage: HashMap::new(),
+            }),
+            duration: Some(Duration::from_secs(42)),
+            status: ReviewStatus::Completed,
+            metadata: ReviewMetadata::Plain,
+        };
+
+        store.save::<Review>(&review).await.expect("save");
+
+        let loaded = store.load::<Review>(&id).await.expect("load");
+        let loaded = loaded.expect("review should exist");
+        assert_eq!(loaded.id, id);
+        assert_eq!(loaded.duration, Some(Duration::from_secs(42)));
+        let analytics = loaded.analytics.expect("analytics restored");
+        assert_eq!(analytics.sessions.len(), 1);
+        let usage = analytics.sessions.values().next().expect("one session");
+        assert_eq!(usage.input_tokens, 100);
+        assert_eq!(usage.call_count, 3);
+    }
+
+    #[tokio::test]
+    async fn review_without_analytics_round_trips_through_store() {
+        let store = SqliteStore::new(":memory:").await.expect("store init");
+        let id: MagicTypeId = "review-empty".create_type_id::<mti::prelude::V7>();
+        let review = Review {
+            id: id.clone(),
+            agent_sessions: Vec::new(),
+            analytics: None,
+            duration: None,
+            status: ReviewStatus::Running,
+            metadata: ReviewMetadata::Plain,
+        };
+        store.save::<Review>(&review).await.expect("save");
+        let loaded = store.load::<Review>(&id).await.expect("load");
+        assert_eq!(loaded.unwrap().status, ReviewStatus::Running);
+    }
+}

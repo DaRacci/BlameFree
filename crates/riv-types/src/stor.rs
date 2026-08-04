@@ -93,6 +93,144 @@ pub trait LoadChildren: Sized {
     ) -> Result<(), anyhow::Error>;
 }
 
+/// Serialize + zstd-compress a JSON-serializable value into a BLOB.
+#[cfg(feature = "seaorm-storage")]
+fn json_blob_encode(value: &impl serde::Serialize) -> Option<Vec<u8>> {
+    let json = serde_json::to_vec(value).ok()?;
+    zstd::encode_all(json.as_slice(), 3).ok()
+}
+
+/// Decompress + deserialize a BLOB into a JSON value.
+#[cfg(feature = "seaorm-storage")]
+fn json_blob_decode<T: serde::de::DeserializeOwned>(blob: &[u8]) -> Option<T> {
+    let json = zstd::decode_all(blob).ok()?;
+    serde_json::from_slice(&json).ok()
+}
+
+#[cfg(feature = "seaorm-storage")]
+impl JsonBlobEnvelope for crate::review::ReviewRuntimeData {
+    type Domain = crate::review::Review;
+
+    fn encode(domain: &Self::Domain) -> Option<Vec<u8>> {
+        let wrapper = Self {
+            analytics: domain.analytics.clone().unwrap_or_default(),
+            duration_nanos: domain
+                .duration
+                .as_ref()
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0),
+        };
+        if wrapper.analytics.sessions.is_empty()
+            && wrapper.analytics.cache_usage.is_empty()
+            && wrapper.duration_nanos == 0
+        {
+            return None;
+        }
+        json_blob_encode(&wrapper)
+    }
+
+    fn decode_into(blob: &[u8], domain: &mut Self::Domain) {
+        let Some(wrapper) = json_blob_decode::<Self>(blob) else {
+            return;
+        };
+        domain.analytics =
+            if wrapper.analytics.sessions.is_empty() && wrapper.analytics.cache_usage.is_empty() {
+                None
+            } else {
+                Some(wrapper.analytics)
+            };
+        if wrapper.duration_nanos > 0 {
+            domain.duration = Some(std::time::Duration::from_nanos(wrapper.duration_nanos));
+        }
+    }
+}
+
+/// Envelope for a `#[sea_orm(json)]` field group: a single zstd-compressed JSON
+/// blob stored in one BLOB column.
+///
+/// Implemented by the per-struct runtime wrapper (e.g. `ReviewRuntimeData`).
+/// The EntityModel macro calls `encode` when persisting a domain struct and
+/// `decode_into` when rehydrating one from the DB.
+#[cfg(feature = "seaorm-storage")]
+pub trait JsonBlobEnvelope: serde::Serialize + serde::de::DeserializeOwned {
+    /// The domain struct whose fields this envelope encodes.
+    type Domain;
+
+    /// Serialize a domain struct's JSON fields into a zstd-compressed blob,
+    /// or `None` when there is nothing to store.
+    fn encode(domain: &Self::Domain) -> Option<Vec<u8>>;
+
+    /// Rehydrate a domain struct's JSON fields from a stored blob.
+    fn decode_into(blob: &[u8], domain: &mut Self::Domain);
+}
+
+#[cfg(feature = "seaorm-storage")]
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::time::Duration;
+
+    use mti::prelude::MagicTypeIdExt;
+
+    use crate::cost::SessionUsage;
+    use crate::review::ReviewStatus;
+
+    use super::*;
+
+    fn make_id(s: &str) -> mti::prelude::MagicTypeId {
+        s.create_type_id::<mti::prelude::V7>()
+    }
+
+    #[test]
+    fn review_json_blob_round_trip() {
+        let session_id = make_id("sess-1");
+        let mut review = crate::review::Review {
+            id: make_id("rev-1"),
+            agent_sessions: Vec::new(),
+            analytics: Some(crate::cost::AnalyticsSnapshot {
+                sessions: HashMap::from([(
+                    session_id.clone(),
+                    SessionUsage {
+                        input_tokens: 100,
+                        output_tokens: 50,
+                        call_count: 2,
+                        ..Default::default()
+                    },
+                )]),
+                cache_usage: HashMap::new(),
+            }),
+            duration: Some(Duration::from_millis(1234)),
+            status: ReviewStatus::Completed,
+            metadata: crate::review::ReviewMetadata::Plain,
+        };
+
+        let blob = crate::review::ReviewRuntimeData::encode(&review).expect("blob should encode");
+
+        // Mutate domain to prove decode overwrites analytics/duration.
+        review.analytics = None;
+        review.duration = None;
+        crate::review::ReviewRuntimeData::decode_into(&blob, &mut review);
+
+        let analytics = review.analytics.expect("analytics restored");
+        assert_eq!(analytics.sessions[&session_id].input_tokens, 100);
+        assert_eq!(analytics.sessions[&session_id].call_count, 2);
+        assert_eq!(review.duration, Some(Duration::from_millis(1234)));
+    }
+
+    #[test]
+    fn review_json_blob_empty_encodes_none() {
+        let review = crate::review::Review {
+            id: make_id("rev-2"),
+            agent_sessions: Vec::new(),
+            analytics: None,
+            duration: None,
+            status: ReviewStatus::Running,
+            metadata: crate::review::ReviewMetadata::Plain,
+        };
+        assert!(crate::review::ReviewRuntimeData::encode(&review).is_none());
+    }
+}
+
 /// Depth control for recursive child loading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadDepth {

@@ -1,13 +1,20 @@
 use std::env;
+use std::path::PathBuf;
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use riv_agents::prompts::PromptLibrary;
 use riv_harness::config::ReviewArgs;
+use riv_harness::paths::OUTPUT_DIR_DEFAULT;
 use riv_harness::review;
 use riv_shared::diff::Diff;
-use tracing_subscriber::EnvFilter;
+use riv_stor::store::sqlite::SqliteStore;
+use riv_stor::traits::Store;
+use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
+use tracing::info;
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[derive(Debug, Clone, Parser)]
 pub enum Cli {
@@ -33,6 +40,8 @@ async fn main() -> Result<()> {
 
 /// Run the `review` subcommand.
 async fn run_review(args: ReviewArgs) -> Result<()> {
+    let started_at = Instant::now();
+
     // Obtain the diff from git
     let output = if let Some(ref commits) = args.commits {
         Command::new("git")
@@ -74,9 +83,17 @@ async fn run_review(args: ReviewArgs) -> Result<()> {
         }
     );
 
-    let diff = Diff::new(diff_str);
+    let review_id = riv_harness::cli_review_id();
     let config = review::build_review_config(&args)?;
-    let findings = review::review_diff(diff, &config).await?;
+    let findings = review::review_diff(Diff::new(diff_str), &config).await?;
+    let analytics = config.cost_tracker.to_snapshot().await;
+    let duration = started_at.elapsed();
+
+    // Persist the review to the same DB the webui uses, so CLI runs surface
+    // identically. Only the id prefix differs (`riv-cli`).
+    if let Err(error) = persist_cli_review(&review_id, &analytics, duration, &args).await {
+        eprintln!("Failed to persist review to DB: {error}");
+    }
 
     // Print findings to stderr (stdout reserved for structured output)
     if findings.is_empty() {
@@ -95,5 +112,35 @@ async fn run_review(args: ReviewArgs) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+/// Persist a CLI review to the sqlite store next to the output dir, mirroring
+/// the webui Review shape (analytics + duration via the compressed JSON blob).
+async fn persist_cli_review(
+    review_id: &mti::prelude::MagicTypeId,
+    analytics: &riv_types::cost::AnalyticsSnapshot,
+    duration: Duration,
+    _args: &ReviewArgs,
+) -> Result<()> {
+    let output_dir = env::var("OUTPUT_DIR").unwrap_or_else(|_| OUTPUT_DIR_DEFAULT.to_string());
+    let store_path = PathBuf::from(output_dir).join("riv-stor.db");
+    let store = SqliteStore::new(&store_path.to_string_lossy())
+        .await
+        .context("failed to init store")?;
+
+    let review = Review {
+        id: review_id.clone(),
+        agent_sessions: Vec::new(),
+        analytics: Some(analytics.clone()),
+        duration: Some(duration),
+        status: ReviewStatus::Completed,
+        metadata: ReviewMetadata::Plain,
+    };
+    store
+        .save::<Review>(&review)
+        .await
+        .context("failed to save review")?;
+    info!("Persisted review {} to {}", review_id, store_path.display());
     Ok(())
 }

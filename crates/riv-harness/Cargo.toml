@@ -12,7 +12,7 @@ required-features = ["binary"]
 
 [features]
 default = []
-binary = ["clap", "dotenvy", "tracing-subscriber", "riv-shared/backend"]
+binary = ["clap", "dotenvy", "tracing-subscriber", "riv-shared/backend", "riv-stor"]
 exp14_template_vars = ["riv-tools/exp14_template_vars"]
 exp16_adaptive_agents = ["riv-consensus/exp16_adaptive_agents"]
 
@@ -25,6 +25,7 @@ riv-consensus = { path = "../riv-consensus" }
 riv-reporting = { path = "../riv-reporting" }
 riv-rules = { path = "../riv-rules" }
 riv-shared = { path = "../riv-shared" }
+riv-stor = { path = "../riv-stor", optional = true }
 riv-tools = { path = "../riv-tools" }
 riv-types = { path = "../riv-types" }
 mti = { workspace = true, features = ["serde"] }

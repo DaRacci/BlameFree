@@ -4,13 +4,28 @@ use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};
 use strum::{Display, IntoStaticStr};
 
+use crate::cost::AnalyticsSnapshot;
+
 #[cfg(not(feature = "seaorm-storage"))]
 use crate::agent::AgentSession;
 #[cfg(feature = "seaorm-storage")]
 use crate::agent::{AgentSession, AgentSessionColumn, AgentSessionEntity};
-use crate::cost::AnalyticsSnapshot;
 use crate::vcs::pr::PrMeta;
 use crate::vcs::repository::{GitRepositoryMeta, RemoteRepositoryMeta};
+
+/// Runtime-only review data (analytics + duration) folded into a single
+/// zstd-compressed JSON blob stored in the `reviews.analytics` BLOB column.
+///
+/// `Review.analytics` and `Review.duration` are `#[sea_orm(json)]` fields; the
+/// EntityModel macro wraps them into this struct before persisting.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ReviewRuntimeData {
+    /// The analytics snapshot for the review.
+    pub analytics: AnalyticsSnapshot,
+
+    /// The duration of the review in nanoseconds.
+    pub duration_nanos: u64,
+}
 
 /// Represents a single LLM review session.
 #[cfg_attr(
@@ -36,14 +51,21 @@ pub struct Review {
     ///
     /// This will not be set until the review is [`ReviewStatus::Failed`],
     /// [`ReviewStatus::Completed`], or [`ReviewStatus::Cancelled`].
-    #[cfg_attr(feature = "seaorm-storage", sea_orm(ignore))]
+    ///
+    /// Stored as a single zstd-compressed JSON blob in the `analytics` column
+    /// (alongside [`Review::duration`]) via the EntityModel `#[sea_orm(json)]`
+    /// attribute. See [`ReviewRuntimeData`].
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(json))]
     pub analytics: Option<AnalyticsSnapshot>,
 
     /// The duration of the review.
     ///
     /// This will not be set until the review is [`ReviewStatus::Failed`],
     /// [`ReviewStatus::Completed`], or [`ReviewStatus::Cancelled`].
-    #[cfg_attr(feature = "seaorm-storage", sea_orm(ignore))]
+    ///
+    /// Persisted via the same compressed blob as [`Review::analytics`]; see
+    /// [`ReviewRuntimeData`].
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(json))]
     pub duration: Option<Duration>,
 
     /// The status of the review.

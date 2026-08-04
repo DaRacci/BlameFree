@@ -18,7 +18,8 @@ use riv_types::{
     review::ReviewEntity,
 };
 
-const CURRENT_VERSION: i32 = 1;
+#[allow(dead_code)]
+const CURRENT_VERSION: i32 = 2;
 
 /// Create the `_schema_version` tracking table if it does not exist.
 async fn create_schema_version_table(db: &DatabaseConnection) -> Result<(), Error> {
@@ -65,8 +66,11 @@ pub async fn run_migrations(db: &DatabaseConnection) -> Result<(), Error> {
     create_schema_version_table(db).await?;
 
     let current_version = get_current_version(db).await?;
-    if current_version < CURRENT_VERSION {
+    if current_version < 1 {
         migrate_v1(db).await?;
+    }
+    if current_version < 2 {
+        migrate_v2(db).await?;
     }
 
     Ok(())
@@ -112,6 +116,41 @@ async fn migrate_v1(db: &DatabaseConnection) -> Result<(), Error> {
 
     db.execute_unprepared(
         "INSERT INTO _schema_version (version, description) VALUES (1, 'initial schema via SchemaBuilder::sync()')",
+    )
+    .await
+    .map_err(|e| Error::Migration(format!("failed to record schema version: {e}")))?;
+
+    Ok(())
+}
+
+/// Add the `analytics` BLOB column to `reviews` to persist the compressed
+/// JSON blob (analytics + duration) that was previously only written to disk.
+///
+/// `SchemaBuilder::sync()` will not ALTER an existing table, so this is an
+/// explicit `ALTER TABLE`. Idempotency is guaranteed by the schema-version gate
+/// in `run_migrations` (this only runs when the store is below version 2).
+async fn migrate_v2(db: &DatabaseConnection) -> Result<(), Error> {
+    // On a fresh DB, migrate_v1's SchemaBuilder::sync() already creates the
+    // column (the entity now declares it). Only ALTER when it is missing so the
+    // migration is idempotent across fresh and pre-existing stores.
+    let has_column = db
+        .query_one_raw(sea_orm::Statement::from_string(
+            db.get_database_backend(),
+            "SELECT count(*) FROM pragma_table_info('reviews') WHERE name='analytics'".to_string(),
+        ))
+        .await
+        .map_err(|e| Error::Migration(format!("failed to inspect reviews columns: {e}")))?
+        .and_then(|r| r.try_get_by_index::<i32>(0).ok())
+        .unwrap_or(0)
+        > 0;
+    if !has_column {
+        db.execute_unprepared("ALTER TABLE reviews ADD COLUMN analytics BLOB")
+            .await
+            .map_err(|e| Error::Migration(format!("failed to add analytics column: {e}")))?;
+    }
+
+    db.execute_unprepared(
+        "INSERT INTO _schema_version (version, description) VALUES (2, 'add reviews.analytics BLOB for compressed JSON blob')",
     )
     .await
     .map_err(|e| Error::Migration(format!("failed to record schema version: {e}")))?;
@@ -170,6 +209,23 @@ mod tests {
                 .unwrap_or(0);
             assert_eq!(count, 1, "table '{name}' should exist after migration");
         }
+
+        // The reviews.analytics BLOB column must exist (added by migrate_v2).
+        let col_row = db
+            .query_one_raw(sea_orm::Statement::from_string(
+                db.get_database_backend(),
+                "SELECT count(*) FROM pragma_table_info('reviews') WHERE name='analytics'"
+                    .to_string(),
+            ))
+            .await
+            .expect("query should succeed");
+        let col_count: i32 = col_row
+            .and_then(|r| r.try_get_by_index::<i32>(0).ok())
+            .unwrap_or(0);
+        assert_eq!(
+            col_count, 1,
+            "reviews.analytics BLOB column should exist after migration"
+        );
 
         run_migrations(&db)
             .await
