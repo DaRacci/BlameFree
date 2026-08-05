@@ -1,9 +1,9 @@
+#![allow(unused_crate_dependencies)]
+
 //! Integration tests for riv-stor.
 //!
 //! Tests verify the full save/load round-trip for each domain type,
 //! multi-table cascade persistence, WAL journal mode, and FK cascade deletes.
-
-use std::collections::HashMap;
 
 use chrono::Utc;
 use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
@@ -110,13 +110,13 @@ async fn test_pr_result_with_golden_comments() {
 
     let gc1 = GoldenComment {
         id: None,
-        pr_result_id: id.clone(),
+        pr_result_id: Some(id.clone()),
         comment: "Expected comment 1".to_string(),
         severity: riv_types::severity::Severity::High,
     };
     let gc2 = GoldenComment {
         id: None,
-        pr_result_id: id.clone(),
+        pr_result_id: Some(id.clone()),
         comment: "Expected comment 2".to_string(),
         severity: riv_types::severity::Severity::Low,
     };
@@ -271,7 +271,7 @@ async fn test_pr_result_cascade_delete() {
     let id = make_id(40);
     let gc = GoldenComment {
         id: Some(401),
-        pr_result_id: id.clone(),
+        pr_result_id: Some(id.clone()),
         comment: "Cascade test comment".to_string(),
         severity: riv_types::severity::Severity::Medium,
     };

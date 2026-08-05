@@ -5,6 +5,8 @@
 
 use std::collections::HashMap;
 
+use riv_shared::DEFAULT_MAX_FINDINGS;
+
 /// Budget for agent tool calls during a single PR evaluation.
 #[derive(Debug, Clone)]
 pub struct ToolCallBudget {
@@ -23,7 +25,7 @@ impl Default for ToolCallBudget {
     fn default() -> Self {
         Self {
             max_total_calls: 50,
-            max_per_tool: 20,
+            max_per_tool: DEFAULT_MAX_FINDINGS,
             hard_stop: false,
         }
     }

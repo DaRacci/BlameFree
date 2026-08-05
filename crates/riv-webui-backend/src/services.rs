@@ -18,7 +18,7 @@ use riv_harness::{
     review::review_diff,
 };
 use riv_reporting::{cost::AnalyticsTracker, golden::load_golden_datasets};
-use riv_shared::{diff::Diff, url::parse_github_url};
+use riv_shared::{DEFAULT_MAX_FINDINGS, diff::Diff, url::parse_github_url};
 use riv_stor::traits::Store;
 use riv_types::{
     RunEvent,
@@ -46,7 +46,6 @@ use tracing::{error, warn};
 
 use crate::server::AppState;
 
-const MAX_FINDINGS_PER_AGENT: usize = 20;
 const REVIEW_ID_PREFIX: &str = "review";
 const BENCHMARK_REVIEW_ID_PREFIX: &str = "benchmark";
 
@@ -535,7 +534,7 @@ where
         cost_tracker: cost_tracker.clone(),
         dashboard_tx: Some(dashboard_tx.clone()),
         agents,
-        max_findings: MAX_FINDINGS_PER_AGENT,
+        max_findings: DEFAULT_MAX_FINDINGS,
         template_vars: None,
     };
 
@@ -637,7 +636,7 @@ where
         client,
         Some(dashboard_tx.clone()),
         std::env::temp_dir(),
-        MAX_FINDINGS_PER_AGENT,
+        DEFAULT_MAX_FINDINGS,
     )
     .await?;
 

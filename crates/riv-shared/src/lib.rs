@@ -10,19 +10,9 @@ pub mod pattern;
 pub mod string;
 pub mod url;
 
-/// Default model for ad-hoc and judge review tasks.
 pub const DEFAULT_MODEL: &str = "deepseek/deepseek-v4-flash";
-
-/// Default model for benchmark/harness reviews (often a larger model).
 pub const DEFAULT_MODEL_PRO: &str = "deepseek/deepseek-v4-pro";
-
-pub fn default_model() -> String {
-    DEFAULT_MODEL.to_string()
-}
-
-pub fn default_model_pro() -> String {
-    DEFAULT_MODEL_PRO.to_string()
-}
+pub const DEFAULT_MAX_FINDINGS: usize = 20;
 
 #[cfg(feature = "backend")]
 pub fn build_client() -> Result<rig_core::providers::openrouter::client::Client> {

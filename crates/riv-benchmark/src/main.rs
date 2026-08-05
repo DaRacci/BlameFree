@@ -116,8 +116,8 @@ enum Commands {
         // TODO: Const available agents
         roles: Option<String>,
 
-        /// Max findings per agent.
-        #[arg(long, env = "MAX_FINDINGS", default_value_t = 20)]
+        /// Maximum findings per agent.
+        #[arg(long, env = "MAX_FINDINGS", default_value_t = DEFAULT_MAX_FINDINGS.to_string())]
         max_findings: usize,
 
         /// PR filter pattern.

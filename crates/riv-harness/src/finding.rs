@@ -3,9 +3,7 @@ use std::collections::HashSet;
 use tracing::info;
 
 use riv_auditor::apply_severity_auditor;
-use riv_shared::deduplicate::semantic_dedup;
-
-const MAX_FINDINGS: usize = 20;
+use riv_shared::{DEFAULT_MAX_FINDINGS, deduplicate::semantic_dedup};
 
 /// Post-process findings through aggregator dedup and auditor severity checks.
 pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
@@ -16,7 +14,7 @@ pub fn post_process_findings(findings: &[Finding]) -> Vec<Finding> {
     let mut findings = semantic_dedup(findings.to_vec());
     apply_severity_auditor(&mut findings);
     let capped = {
-        let max = MAX_FINDINGS;
+        let max = DEFAULT_MAX_FINDINGS;
         if findings.len() > max {
             info!("capping {} findings to {} candidates", findings.len(), max);
             findings.into_iter().take(max).collect()
