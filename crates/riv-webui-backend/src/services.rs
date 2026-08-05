@@ -2,6 +2,7 @@ use std::{
     any::Any,
     collections::HashSet,
     env, fs,
+    path::PathBuf,
     sync::Arc,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
@@ -521,7 +522,7 @@ where
     let config = EvalConfig {
         review_id: review_id.clone(),
         context: EvalContext {
-            repo_root: state.output_dir.clone(),
+            repo_root: std::env::temp_dir(),
             ruleset: None,
             repository: repository.clone(),
             pull_request: Some(pr_meta.clone()),
@@ -611,7 +612,7 @@ where
         .server
         .benchmark_dir
         .clone()
-        .unwrap_or_else(|| state.output_dir.join(BENCHMARK_DIR));
+        .unwrap_or_else(|| PathBuf::from(BENCHMARK_DIR));
     if let Err(error) = fs::create_dir_all(&benchmark_dir) {
         warn!(
             "Failed to create benchmark dir {}: {}",
@@ -635,7 +636,7 @@ where
         reasoning_effort,
         client,
         Some(dashboard_tx.clone()),
-        state.output_dir.clone(),
+        std::env::temp_dir(),
         MAX_FINDINGS_PER_AGENT,
     )
     .await?;

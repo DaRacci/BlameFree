@@ -50,9 +50,9 @@ pub struct ServerConfig {
 
     /// Path for the riv-stor database file.
     ///
-    /// Defaults to `riv-stor.db` in the output directory.
-    #[serde(default)]
-    pub store_dir: Option<PathBuf>,
+    /// Defaults to `riv-stor.db` in the current working directory.
+    #[serde(default = "default_store_dir")]
+    pub store_dir: PathBuf,
 }
 
 /// OAuth authentication configuration.
@@ -82,9 +82,13 @@ impl Default for ServerConfig {
             port: default_port(),
             dataset_dir: PathBuf::default(),
             benchmark_dir: None,
-            store_dir: None,
+            store_dir: default_store_dir(),
         }
     }
+}
+
+fn default_store_dir() -> PathBuf {
+    PathBuf::from("riv-stor.db")
 }
 
 fn default_host() -> String {

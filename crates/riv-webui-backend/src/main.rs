@@ -27,10 +27,6 @@ pub struct CliArgs {
     #[arg(long)]
     pub port: Option<u16>,
 
-    /// Directory containing benchmark output (per-PR JSON files).
-    #[arg(long, env = "OUTPUT_DIR", default_value = "output")]
-    pub output_dir: PathBuf,
-
     /// Path to datasets directory.
     #[arg(long, env = "DATASET_DIR", default_value = "datasets")]
     pub dataset_dir: PathBuf,
@@ -43,7 +39,7 @@ pub struct CliArgs {
     #[arg(long, env = "LOG_FILE")]
     pub log_file: Option<PathBuf>,
 
-    /// Path to web UI config file (overrides env/search path).
+    /// Path to web UI config file
     #[arg(long)]
     pub config: Option<PathBuf>,
 }
@@ -56,7 +52,7 @@ fn resolve_log_path(custom: Option<&Path>) -> PathBuf {
         vec![
             Path::new("/var/log/riv/webui.log"),
             Path::new("/tmp/riv-webui.log"),
-            Path::new("./output/server.log"),
+            Path::new("./server.log"),
         ]
     });
 
@@ -79,7 +75,7 @@ fn resolve_log_path(custom: Option<&Path>) -> PathBuf {
         }
     }
 
-    Path::new("./output/server.log").to_path_buf()
+    Path::new("./server.log").to_path_buf()
 }
 
 #[tokio::main]
@@ -109,11 +105,7 @@ async fn main() -> Result<()> {
     webui_config.server.dataset_dir = args.dataset_dir;
     webui_config.server.benchmark_dir = args.benchmark_dir;
 
-    info!(
-        "Starting riv-webui on port {} (output={})",
-        webui_config.server.port,
-        args.output_dir.display(),
-    );
+    info!("Starting riv-webui on port {}", webui_config.server.port);
 
     let octocrab = match env::var("GITHUB_TOKEN") {
         Ok(token) => {
@@ -130,14 +122,7 @@ async fn main() -> Result<()> {
     };
 
     // Initialize the store
-    let default_store_path = args.output_dir.join("riv-stor.db");
-    let store_path = webui_config
-        .server
-        .store_dir
-        .clone()
-        .unwrap_or(default_store_path)
-        .to_string_lossy()
-        .to_string();
+    let store_path = webui_config.server.store_dir.to_string_lossy().to_string();
     let store = Arc::new(
         SqliteStore::new(&store_path)
             .await
@@ -153,7 +138,6 @@ async fn main() -> Result<()> {
         octocrab,
         crate::auth::new_session_store(),
         resolve_log_path(args.log_file.as_deref()),
-        args.output_dir.clone(),
         store,
     );
 

@@ -16,6 +16,9 @@
 /plans
 /repos
 /research
+/riv-stor.db
+/riv-stor.db-shm
+/riv-stor.db-wal
 /target
 /workspaces
 test-diffs/

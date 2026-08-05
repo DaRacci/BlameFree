@@ -16,10 +16,6 @@ pub const DEFAULT_MODEL: &str = "deepseek/deepseek-v4-flash";
 /// Default model for benchmark/harness reviews (often a larger model).
 pub const DEFAULT_MODEL_PRO: &str = "deepseek/deepseek-v4-pro";
 
-pub const OUTPUT_DIR: &str = "output";
-
-pub const OUTPUT_CACHE_DIR: &str = ".cache";
-
 pub fn default_model() -> String {
     DEFAULT_MODEL.to_string()
 }

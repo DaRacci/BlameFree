@@ -19,19 +19,19 @@ use riv_benchmark::judge::build_judge;
 use riv_benchmark::{
     BENCHMARK_DIFFS_SUBDIR, BENCHMARK_DIR, BENCHMARK_WORKTREE_SUBDIR, DATASETS_DIR, pr,
 };
+use riv_cache::paths::CACHE_DIR_NAME;
 use riv_harness::eval::EvalConfig;
 use riv_harness::eval::EvalStrategy;
-use riv_harness::paths::OUTPUT_DIR_DEFAULT;
 use riv_harness::{model_capabilities, pipeline};
 use riv_reporting::cost::AnalyticsTracker;
 use riv_reporting::golden::load_golden_datasets;
 use riv_reporting::history::append_run_history;
 use riv_rules::RULES_DIR;
 use riv_rules::RuleSet;
+use riv_shared::DEFAULT_MODEL;
 use riv_shared::diff::Diff;
 use riv_shared::string::sanitize_filename;
 use riv_shared::url::parse_github_url;
-use riv_shared::{DEFAULT_MODEL, OUTPUT_CACHE_DIR};
 use riv_stor::store::SqliteStore;
 use riv_stor::traits::{Storable, Store};
 use riv_tools::linters::LINTER_CONFIG_FILE;
@@ -80,15 +80,11 @@ enum Commands {
         dataset_dir: PathBuf,
     },
 
-    /// Remove worktrees, outputs, and optionally diffs from a benchmark directory.
+    /// Remove worktrees and optionally diffs from a benchmark directory.
     Clean {
         /// Benchmark directory (contains base-repos/, diffs/, worktrees/).
         #[arg(long, default_value = BENCHMARK_DIR)]
         benchmark_dir: PathBuf,
-
-        /// Also remove output directories.
-        #[arg(long, default_value_t = false)]
-        outputs: bool,
 
         /// Dry run: only print what would be removed.
         #[arg(long, default_value_t = false)]
@@ -156,10 +152,9 @@ fn main() -> Result<()> {
         }
         Commands::Clean {
             benchmark_dir,
-            outputs,
             dry_run,
         } => {
-            run_clean(&benchmark_dir, outputs, dry_run)?;
+            run_clean(&benchmark_dir, dry_run)?;
         }
         Commands::Run {
             model,
@@ -228,8 +223,8 @@ fn run_list(dataset_dir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-/// Remove worktrees, outputs, and optionally diffs from a benchmark directory.
-fn run_clean(benchmark_dir: &PathBuf, outputs: bool, dry_run: bool) -> Result<()> {
+/// Remove worktrees and optionally diffs from a benchmark directory.
+fn run_clean(benchmark_dir: &PathBuf, dry_run: bool) -> Result<()> {
     fn remove_worktrees(benchmark_dir: &Path, dry_run: bool) -> Result<()> {
         let worktrees_dir = benchmark_dir.join(BENCHMARK_WORKTREE_SUBDIR);
 
@@ -309,33 +304,8 @@ fn run_clean(benchmark_dir: &PathBuf, outputs: bool, dry_run: bool) -> Result<()
         Ok(())
     }
 
-    fn remove_outputs(benchmark_dir: &Path, dry_run: bool) -> Result<()> {
-        let outputs_dir = benchmark_dir.join(OUTPUT_DIR_DEFAULT);
-        if !outputs_dir.exists() {
-            info!("No outputs directory found at {}", outputs_dir.display());
-            return Ok(());
-        }
-
-        if dry_run {
-            info!(
-                "[DRY RUN] Would remove outputs directory: {}",
-                outputs_dir.display()
-            );
-            return Ok(());
-        }
-
-        fs::remove_dir_all(&outputs_dir)?;
-        info!("Removed outputs directory: {}", outputs_dir.display());
-
-        Ok(())
-    }
-
     remove_worktrees(&worktrees_dir, dry_run)?;
     remove_diffs(benchmark_dir, dry_run)?;
-
-    if outputs {
-        remove_outputs(benchmark_dir, dry_run)?;
-    }
 
     Ok(())
 }
@@ -344,22 +314,19 @@ fn run_clean(benchmark_dir: &PathBuf, outputs: bool, dry_run: bool) -> Result<()
 ///
 /// Attempts to read from environment variables, falling back to default constants if not set.
 ///
-/// Returns a tuple of (benchmark_dir, dataset_dir, output_dir, cache_dir, rules_dir).
-pub fn get_paths() -> Result<(PathBuf, PathBuf, PathBuf, PathBuf, PathBuf, PathBuf)> {
+/// Returns a tuple of (benchmark_dir, dataset_dir, cache_dir, rules_dir).
+pub fn get_paths() -> Result<(PathBuf, PathBuf, PathBuf, PathBuf, PathBuf)> {
     let cwd = env::current_dir().context("Failed to determine current working directory")?;
 
     let benchmark_dir = env::var("BENCHMARK_DIR").unwrap_or_else(|_| BENCHMARK_DIR.to_string());
     let dataset_dir = env::var("DATASET_DIR").unwrap_or_else(|_| DATASETS_DIR.to_string());
-    let output_dir = env::var("OUTPUT_DIR").unwrap_or_else(|_| OUTPUT_DIR_DEFAULT.to_string());
-    let cache_dir = env::var("CACHE_DIR")
-        .unwrap_or_else(|_| format!("{}/{}", output_dir, OUTPUT_CACHE_DIR.to_string()));
+    let cache_dir = env::var("CACHE_DIR").unwrap_or_else(|_| CACHE_DIR_NAME.to_string());
     let rules_dir = env::var("RULES_DIR").unwrap_or_else(|_| RULES_DIR.to_string());
     let linter_path = env::var("LINTERS_CONFIG").unwrap_or_else(|_| LINTER_CONFIG_FILE.to_string());
 
     Ok((
         PathBuf::from(benchmark_dir),
         PathBuf::from(dataset_dir),
-        PathBuf::from(output_dir),
         PathBuf::from(cache_dir),
         PathBuf::from(rules_dir),
         PathBuf::from(linter_path),
@@ -378,7 +345,7 @@ async fn run_benchmark(
     pr_filter: Option<String>,
     reasoning_effort: ReasoningEffort,
 ) -> Result<()> {
-    let (output_dir, dataset_dir, benchmark_dir, cache_dir, rules_dir, linter_path) = get_paths()?;
+    let (dataset_dir, benchmark_dir, cache_dir, rules_dir, linter_path) = get_paths()?;
 
     info!("Loading golden datasets from: {}", dataset_dir.display());
     let all_prs = load_golden_datasets(&dataset_dir)?;
@@ -397,18 +364,17 @@ async fn run_benchmark(
         info!("  Model:              {}", model);
         info!("  Judge model:        {}", judge_model);
         info!("  Dataset:            {}", dataset_dir.display());
-        info!("  Output:             {}", output_dir.display());
         return Ok(());
     }
 
     // Initialize riv-stor Store for persisting results
-    let store_path = output_dir.join("riv-stor.db");
+    let store_path = env::var("STORE_PATH").unwrap_or_else(|_| "riv-stor.db".to_string());
     let store: Arc<dyn Store + Send + Sync> = Arc::new(
-        SqliteStore::new(&store_path.to_string_lossy())
+        SqliteStore::new(&store_path)
             .await
             .context("failed to init store")?,
     );
-    info!("Store initialized at: {}", store_path.display());
+    info!("Store initialized at: {}", store_path);
 
     let prs_to_evaluate = if resume {
         let existing: HashSet<String> = {
@@ -419,17 +385,8 @@ async fn run_benchmark(
                     .map(|r| format!("{}.json", r.storable_id()))
                     .collect(),
                 Err(e) => {
-                    warn!("Store list failed, falling back to filesystem scan: {e}");
-                    // Fallback: scan output dir for existing json files
-                    if output_dir.exists() {
-                        fs::read_dir(&output_dir)?
-                            .filter_map(|e| e.ok())
-                            .filter(|e| e.path().extension().map_or(false, |ext| ext == "json"))
-                            .filter_map(|e| e.file_name().into_string().ok())
-                            .collect()
-                    } else {
-                        HashSet::new()
-                    }
+                    warn!("Store list failed; resume will not skip any PR: {e}");
+                    HashSet::new()
                 }
             }
         };
@@ -625,11 +582,7 @@ async fn run_benchmark(
         warn!("Failed to save Benchmark: {e}");
     }
 
-    info!(
-        "Done. {} PR(s) evaluated, results in {}",
-        results.len(),
-        output_dir.display()
-    );
+    info!("Done. {} PR(s) evaluated", results.len());
 
     Ok(())
 }
@@ -664,7 +617,7 @@ mod tests {
             if std::fs::create_dir_all(&worktrees_path).is_ok()
                 && std::fs::write(worktrees_path.join(".git"), "gitdir: /dummy").is_ok()
             {
-                let result = run_clean(&dir.path().to_path_buf(), false, true);
+                let result = run_clean(&dir.path().to_path_buf(), true);
                 assert!(result.is_ok());
                 assert!(dir.path().join("worktrees").exists());
             }
@@ -675,7 +628,7 @@ mod tests {
     fn test_run_clean_non_existent_dir() {
         if let Ok(dir) = tempfile::TempDir::new() {
             let nonexistent = dir.path().join("nonexistent");
-            let result = run_clean(&nonexistent, false, false);
+            let result = run_clean(&nonexistent, false);
             assert!(result.is_ok());
         }
     }

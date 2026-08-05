@@ -1,5 +1,4 @@
 use std::env;
-use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -7,7 +6,6 @@ use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use riv_agents::prompts::PromptLibrary;
 use riv_harness::config::ReviewArgs;
-use riv_harness::paths::OUTPUT_DIR_DEFAULT;
 use riv_harness::review;
 use riv_shared::diff::Diff;
 use riv_stor::store::sqlite::SqliteStore;
@@ -115,17 +113,18 @@ async fn run_review(args: ReviewArgs) -> Result<()> {
     Ok(())
 }
 
-/// Persist a CLI review to the sqlite store next to the output dir, mirroring
-/// the webui Review shape (analytics + duration via the compressed JSON blob).
+/// Persist a CLI review to the sqlite store.
+///
+/// The store lives at `riv-stor.db` in the current working directory,
+/// or can be overridden with the environment variable `STORE_PATH`.
 async fn persist_cli_review(
     review_id: &mti::prelude::MagicTypeId,
     analytics: &riv_types::cost::AnalyticsSnapshot,
     duration: Duration,
     _args: &ReviewArgs,
 ) -> Result<()> {
-    let output_dir = env::var("OUTPUT_DIR").unwrap_or_else(|_| OUTPUT_DIR_DEFAULT.to_string());
-    let store_path = PathBuf::from(output_dir).join("riv-stor.db");
-    let store = SqliteStore::new(&store_path.to_string_lossy())
+    let store_path = env::var("STORE_PATH").unwrap_or_else(|_| "riv-stor.db".to_string());
+    let store = SqliteStore::new(&store_path)
         .await
         .context("failed to init store")?;
 
@@ -141,6 +140,6 @@ async fn persist_cli_review(
         .save::<Review>(&review)
         .await
         .context("failed to save review")?;
-    info!("Persisted review {} to {}", review_id, store_path.display());
+    info!("Persisted review {} to {}", review_id, store_path);
     Ok(())
 }

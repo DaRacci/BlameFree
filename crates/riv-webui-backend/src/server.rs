@@ -41,9 +41,6 @@ where
     /// Path to the server log file.
     pub log_file: PathBuf,
 
-    /// Directory containing run output and store fallback locations.
-    pub output_dir: PathBuf,
-
     /// Active reviews tracked in-memory.
     pub active_reviews: Arc<RwLock<Vec<MagicTypeId>>>,
 
@@ -64,7 +61,6 @@ impl<S: Store + Send + Sync + Clone> AppState<S> {
         octocrab: octocrab::Octocrab,
         session_store: SessionStore,
         log_file: PathBuf,
-        output_dir: PathBuf,
         store: Arc<S>,
     ) -> Self {
         Self {
@@ -73,7 +69,6 @@ impl<S: Store + Send + Sync + Clone> AppState<S> {
             session_store,
             octocrab,
             log_file,
-            output_dir,
             active_reviews: Arc::new(RwLock::new(Vec::new())),
             review_channels: Arc::new(RwLock::new(HashMap::new())),
             live_review_agents: Arc::new(RwLock::new(HashMap::new())),
