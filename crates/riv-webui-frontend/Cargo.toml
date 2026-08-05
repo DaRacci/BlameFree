@@ -19,8 +19,5 @@ wasm-bindgen = { workspace = true }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true }
 
-[dev-dependencies]
-insta = { workspace = true }
-
 [lints]
 workspace = true
