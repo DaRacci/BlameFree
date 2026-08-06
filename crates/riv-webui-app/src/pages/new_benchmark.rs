@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
@@ -6,17 +8,15 @@ use riv_types::{
 };
 use riv_webui_shared::config::{AgentInfo, DatasetInfo};
 
-use super::form_support::{
-    dataset_options, model_options, parse_reasoning_effort, reasoning_options, reasoning_value,
-};
+use super::form_support::{dataset_radio_options, model_radio_options, reasoning_radio_options};
 use crate::components::{
     error_state::ErrorState,
     form_page::FormPage,
     form_section::FormSection,
     loading_state::{LoadingState, LoadingVariant},
     pr_selection::PrSelection,
+    radio_group::RadioGroup,
     role_selector::RoleSelector,
-    select_field::SelectField,
 };
 
 #[server]
@@ -142,8 +142,8 @@ fn NewBenchmarkForm(
         .find(|level| matches!(level, ReasoningEffort::Medium))
         .copied()
         .or_else(|| reasoning_levels.first().copied())
-        .map(reasoning_value)
-        .unwrap_or("none")
+        .map(|v| v.to_string())
+        .unwrap_or("none".to_string())
         .to_string();
 
     let (model, set_model) = signal(initial_model);
@@ -207,7 +207,7 @@ fn NewBenchmarkForm(
         let model_value = model.get_untracked();
         let roles_value = selected_roles.get_untracked();
         let selected_pr_urls = selected_prs.get_untracked();
-        let reasoning_value = parse_reasoning_effort(&reasoning_effort.get_untracked());
+        let reasoning_value = ReasoningEffort::from_str(&reasoning_effort.get_untracked()).ok();
         let navigate = navigate.clone();
 
         spawn_local(async move {
@@ -232,8 +232,8 @@ fn NewBenchmarkForm(
         });
     };
 
-    let model_select_options = model_options(&models);
-    let dataset_select_options = dataset_options(&datasets);
+    let model_radio_options = model_radio_options(&models);
+    let dataset_radio_options = dataset_radio_options(&datasets);
 
     view! {
         <FormPage
@@ -255,29 +255,29 @@ fn NewBenchmarkForm(
             </div>
 
             <FormSection title="Configuration">
-                <SelectField
+                <RadioGroup
                     id="benchmark-model"
                     label_text="Model"
-                    options=model_select_options
+                    options=model_radio_options
                     value=model
                     set_value=set_model
                     helper="Models come from OpenRouter discovery with fallback defaults."
                 />
-                <SelectField
+                <RadioGroup
                     id="benchmark-dataset"
                     label_text="Dataset"
-                    options=dataset_select_options
+                    options=dataset_radio_options
                     value=dataset
                     set_value=set_dataset
                     helper="Datasets come from server-side scan of configured dataset dir."
                 />
                 {move || {
                     let options = match reasoning_levels.get() {
-                        Some(Ok(levels)) => reasoning_options(&levels),
+                        Some(Ok(levels)) => reasoning_radio_options(&levels),
                         _ => Vec::new(),
                     };
                     view! {
-                        <SelectField
+                        <RadioGroup
                             id="benchmark-reasoning"
                             label_text="Reasoning Effort"
                             options=options

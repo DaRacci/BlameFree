@@ -260,3 +260,72 @@
   color: var(--accent-red);
   font-size: var(--text-sm);
 }
+
+/* Single-select radio list (styled like checkbox group) */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.radio-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.radio-label:hover {
+  border-color: var(--accent-blue);
+  background: var(--bg-surface-hover);
+}
+
+.radio-label--disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--border-muted, #21262d);
+}
+
+.radio-label--disabled:hover {
+  border-color: var(--border-muted, #21262d);
+  background: transparent;
+}
+
+.radio-label input[type="radio"] {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.radio-label--disabled input[type="radio"] {
+  cursor: not-allowed;
+}
+
+.radio-label input[type="radio"]:checked {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+.radio-label input[type="radio"]:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.radio-status {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  padding: var(--spacing-sm) 0;
+}

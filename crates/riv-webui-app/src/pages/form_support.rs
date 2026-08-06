@@ -2,77 +2,55 @@ use riv_types::{
     benchmark::golden::GoldenCommentEntry, capabilities::ReasoningEffort, vcs::pr::PrMeta,
 };
 use riv_webui_shared::config::DatasetInfo;
+use strum::EnumProperty;
 
-use crate::components::{pr_selection::PrItem, select_field::SelectOption};
+use crate::components::{pr_selection::PrItem, radio_group::RadioOption};
 
-pub fn model_options(models: &[String]) -> Vec<SelectOption> {
+pub fn model_radio_options(models: &[String]) -> Vec<RadioOption> {
     models
         .iter()
-        .map(|model| SelectOption {
-            value: model.clone(),
-            label: model.clone(),
+        .map(|m| RadioOption {
+            value: m.clone(),
+            label: m.clone(),
+            disabled: false,
+            tooltip: None,
         })
         .collect()
 }
 
-pub fn dataset_options(datasets: &[DatasetInfo]) -> Vec<SelectOption> {
+pub fn dataset_radio_options(datasets: &[DatasetInfo]) -> Vec<RadioOption> {
     datasets
         .iter()
-        .map(|dataset| SelectOption {
-            value: dataset.id.clone(),
-            label: format!("{} ({} PRs)", dataset.id, dataset.pr_count),
+        .map(|d| RadioOption {
+            value: d.id.clone(),
+            label: format!("{} ({} PRs)", d.id, d.pr_count),
+            disabled: false,
+            tooltip: None,
         })
         .collect()
 }
 
-pub fn pr_options(prs: &[PrMeta]) -> Vec<SelectOption> {
+pub fn pr_radio_options(prs: &[PrMeta]) -> Vec<RadioOption> {
     prs.iter()
-        .map(|pr| SelectOption {
-            value: pr.url.clone(),
-            label: format!("#{} — {}", pr.number, pr.title),
+        .map(|p| RadioOption {
+            value: p.url.clone(),
+            label: format!("#{} - {}", p.number, p.title),
+            disabled: false,
+            tooltip: None,
         })
         .collect()
 }
 
-pub fn reasoning_options(levels: &[ReasoningEffort]) -> Vec<SelectOption> {
+pub fn reasoning_radio_options(levels: &[ReasoningEffort]) -> Vec<RadioOption> {
     levels
         .iter()
-        .map(|level| SelectOption {
-            value: reasoning_value(*level).to_string(),
-            label: reasoning_label(*level).to_string(),
+        .map(|level| RadioOption {
+            value: level.to_string(),
+            label: level.get_str("Label").unwrap().to_string(),
+            disabled: false,
+            tooltip: None,
         })
         .collect()
-}
-
-pub const fn reasoning_value(level: ReasoningEffort) -> &'static str {
-    match level {
-        ReasoningEffort::Low => "low",
-        ReasoningEffort::Medium => "medium",
-        ReasoningEffort::High => "high",
-        ReasoningEffort::XHigh => "xhigh",
-        ReasoningEffort::Max => "max",
-    }
-}
-
-pub const fn reasoning_label(level: ReasoningEffort) -> &'static str {
-    match level {
-        ReasoningEffort::Low => "Low",
-        ReasoningEffort::Medium => "Medium",
-        ReasoningEffort::High => "High",
-        ReasoningEffort::XHigh => "X-High",
-        ReasoningEffort::Max => "Max",
-    }
-}
-
-pub fn parse_reasoning_effort(value: &str) -> Option<ReasoningEffort> {
-    match value {
-        "low" => Some(ReasoningEffort::Low),
-        "medium" => Some(ReasoningEffort::Medium),
-        "high" => Some(ReasoningEffort::High),
-        "xhigh" => Some(ReasoningEffort::XHigh),
-        "max" => Some(ReasoningEffort::Max),
-        _ => None,
-    }
 }
 
 pub fn pr_number_from_url(url: &str) -> String {
@@ -89,6 +67,6 @@ impl PrItem for GoldenCommentEntry {
     }
 
     fn pr_label(&self) -> String {
-        format!("#{} — {}", pr_number_from_url(&self.url), self.pr_title)
+        format!("#{} - {}", pr_number_from_url(&self.url), self.pr_title)
     }
 }

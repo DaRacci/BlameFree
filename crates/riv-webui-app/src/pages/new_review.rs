@@ -1,19 +1,19 @@
+use std::str::FromStr;
+
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 use riv_types::{capabilities::ReasoningEffort, review::Review, vcs::pr::PrMeta};
 use riv_webui_shared::config::AgentInfo;
 
-use super::form_support::{
-    model_options, parse_reasoning_effort, pr_options, reasoning_options, reasoning_value,
-};
+use super::form_support::{model_radio_options, pr_radio_options, reasoning_radio_options};
 use crate::components::{
     error_state::ErrorState,
     form_page::FormPage,
     form_section::FormSection,
     loading_state::{LoadingState, LoadingVariant},
+    radio_group::RadioGroup,
     role_selector::RoleSelector,
-    select_field::SelectField,
     text_field::TextField,
 };
 
@@ -126,8 +126,8 @@ fn NewReviewForm(
         .find(|level| matches!(level, ReasoningEffort::Medium))
         .copied()
         .or_else(|| reasoning_levels.first().copied())
-        .map(reasoning_value)
-        .unwrap_or("none")
+        .map(|v| v.to_string())
+        .unwrap_or("none".to_string())
         .to_string();
 
     let (owner, set_owner) = signal(String::new());
@@ -196,7 +196,7 @@ fn NewReviewForm(
         let model_value = model.get_untracked();
         let roles_value = selected_roles.get_untracked();
         let selected_url = selected_pr_url.get_untracked();
-        let reasoning_value = parse_reasoning_effort(&reasoning_effort.get_untracked());
+        let reasoning_value = ReasoningEffort::from_str(&reasoning_effort.get_untracked()).ok();
         let selected_pr = available_prs
             .get_untracked()
             .into_iter()
@@ -233,7 +233,7 @@ fn NewReviewForm(
         });
     };
 
-    let model_select_options = model_options(&models);
+    let model_radio_options = model_radio_options(&models);
 
     view! {
         <FormPage
@@ -297,10 +297,10 @@ fn NewReviewForm(
             <FormSection title="Review Target">
                 {move || {
                     let prs = available_prs.get();
-                    let options = pr_options(&prs);
+                    let options = pr_radio_options(&prs);
                     let disabled = prs_loading.get() || prs.is_empty();
                     view! {
-                        <SelectField
+                        <RadioGroup
                             id="review-pr"
                             label_text="Pull Request"
                             options=options
@@ -316,21 +316,21 @@ fn NewReviewForm(
             </FormSection>
 
             <FormSection title="Configuration">
-                <SelectField
+                <RadioGroup
                     id="review-model"
                     label_text="Model"
-                    options=model_select_options
+                    options=model_radio_options
                     value=model
                     set_value=set_model
                     helper="Models come from OpenRouter discovery with fallback defaults."
                 />
                 {move || {
                     let options = match reasoning_levels.get() {
-                        Some(Ok(levels)) => reasoning_options(&levels),
+                        Some(Ok(levels)) => reasoning_radio_options(&levels),
                         _ => Vec::new(),
                     };
                     view! {
-                        <SelectField
+                        <RadioGroup
                             id="review-reasoning"
                             label_text="Reasoning Effort"
                             options=options

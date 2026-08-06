@@ -2,30 +2,31 @@
 @use "tokens";
 
 // Reset & Base
-@use "reset";
 @use "base";
+@use "reset";
 
 // Layout System
 @use "layout";
 
 // Components
-@use "components/card";
-@use "components/button";
-@use "components/form";
 @use "components/badge";
-@use "components/table";
-@use "components/skeleton";
-@use "components/progress";
+@use "components/button";
+@use "components/card";
+@use "components/checkbox";
+@use "components/form";
+@use "components/log";
 @use "components/nav";
 @use "components/pr-list";
-@use "components/log";
+@use "components/progress";
+@use "components/skeleton";
+@use "components/table";
 
 // Utilities
 @use "utilities";
 
 // Pages
-@use "pages/home";
-@use "pages/run-detail";
-@use "pages/new-run";
-@use "pages/live-view";
 @use "pages/admin";
+@use "pages/home";
+@use "pages/live-view";
+@use "pages/new-run";
+@use "pages/run-detail";

@@ -4263,6 +4263,7 @@ dependencies = [
  "riv-webui-shared",
  "serde",
  "serde_json",
+ "strum",
  "wasm-bindgen",
  "web-sys",
 ]
