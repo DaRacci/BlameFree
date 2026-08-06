@@ -58,6 +58,11 @@ where
     let log_path = state.log_file.clone();
     let (tx, rx) = mpsc::unbounded_channel::<Result<Event, Infallible>>();
 
+    // Send an initial event so the client's EventSource transitions to OPEN
+    // immediately (the `onopen` handler fires) instead of appearing to hang
+    // in a "connecting" state until the first real log chunk arrives.
+    let _ = tx.send(Ok(Event::default().comment("connected")));
+
     tokio::spawn(async move {
         let mut last_pos = match metadata(&log_path) {
             Ok(m) => m.len(),

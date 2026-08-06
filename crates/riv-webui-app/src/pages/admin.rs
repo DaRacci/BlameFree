@@ -1,6 +1,6 @@
 use leptos::html;
 use leptos::prelude::*;
-use lucide_leptos::{ClipboardList, TriangleAlert};
+use lucide_leptos::{ArrowDownToLine, ClipboardList, TriangleAlert};
 use riv_webui_shared::admin::LogsResponse;
 
 use crate::components::log_text::LogText;
@@ -22,9 +22,9 @@ async fn read_admin_logs() -> Result<LogsResponse, ServerFnError> {
 
 fn status_class(status: &str) -> &'static str {
     match status {
-        "connected" => "admin-status-dot admin-status-dot--connected",
-        "connecting" => "admin-status-dot admin-status-dot--connecting",
-        _ => "admin-status-dot admin-status-dot--disconnected",
+        "connected" => "log-viewer__status-dot log-viewer__status-dot--connected",
+        "connecting" => "log-viewer__status-dot log-viewer__status-dot--connecting",
+        _ => "log-viewer__status-dot log-viewer__status-dot--disconnected",
     }
 }
 
@@ -75,15 +75,36 @@ fn render_log_view(
     logs: String,
     connection_status: String,
     log_container_ref: NodeRef<html::Div>,
+    follow: ReadSignal<bool>,
+    toggle_follow: Callback<()>,
 ) -> AnyView {
     let line_count = logs.lines().count();
     let status_label = status_label(&connection_status);
+    let follow_class = if follow.get() {
+        "log-viewer__follow-btn log-viewer__follow-btn--active"
+    } else {
+        "log-viewer__follow-btn"
+    };
     view! {
         <div class="log-viewer">
             <div class="log-viewer__toolbar">
                 <span class="log-viewer__toolbar-label">{format!("{} lines", line_count)}</span>
-                <span class=status_class(&connection_status) title=status_label.clone()></span>
-                <span class="log-viewer__status-text">{status_label}</span>
+                <span class="log-viewer__status">
+                    <span class=status_class(&connection_status) title=status_label.clone()></span>
+                    <span class="log-viewer__status-text">{status_label}</span>
+                </span>
+                <button
+                    class=follow_class
+                    title=if follow.get() {
+                        "Stop following the latest log output"
+                    } else {
+                        "Jump to the latest log output"
+                    }
+                    on:click=move |_| toggle_follow.run(())
+                >
+                    <ArrowDownToLine size=14 />
+                    {if follow.get() { "Following" } else { "Follow" }}
+                </button>
             </div>
             <LogText text=logs container_ref=log_container_ref />
         </div>
@@ -101,6 +122,8 @@ pub fn AdminPage() -> impl IntoView {
     let (status_msg, set_status_msg) = signal::<Option<String>>(None);
     let (connection_status, set_connection_status) = signal("connecting".to_string());
     let (live_line_count, set_live_line_count) = signal(0usize);
+    let (follow, set_follow) = signal(true);
+    let toggle_follow = Callback::new(move |_: ()| set_follow.update(|f| *f = !*f));
     let initial_logs = Resource::new(|| (), |_| async { read_admin_logs().await });
     let log_container_ref: NodeRef<html::Div> = NodeRef::new();
 
@@ -160,7 +183,7 @@ pub fn AdminPage() -> impl IntoView {
     Effect::new(move || {
         let _ = logs.get();
         let _ = live_line_count.get();
-        if !loading.get() {
+        if follow.get() && !loading.get() {
             if let Some(container) = log_container_ref.get() {
                 container.set_scroll_top(container.scroll_height());
             }
@@ -194,6 +217,8 @@ pub fn AdminPage() -> impl IntoView {
                                 logs.get(),
                                 connection_status.get(),
                                 log_container_ref.clone(),
+                                follow,
+                                toggle_follow,
                             ));
                         }
 
@@ -204,6 +229,8 @@ pub fn AdminPage() -> impl IntoView {
                                         data.logs,
                                         "connecting".to_string(),
                                         log_container_ref.clone(),
+                                        follow,
+                                        toggle_follow,
                                     )
                                 } else {
                                     render_unavailable(data.message)

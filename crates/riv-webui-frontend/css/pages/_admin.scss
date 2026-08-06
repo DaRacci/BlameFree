@@ -56,12 +56,71 @@
   padding: var(--spacing-sm, 8px) var(--spacing-md, 12px);
   background: var(--bg-surface, #161b22);
   border-bottom: 1px solid var(--border-default, #30363d);
+  gap: var(--spacing-sm, 8px);
+}
+
+.admin-page .log-viewer__status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs, 4px);
+  margin-left: auto;
+}
+
+.admin-page .log-viewer__follow-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs, 4px);
+  padding: 4px 10px;
+  margin-left: var(--spacing-xs, 4px);
+  font-size: var(--text-xs, 12px);
+  font-weight: var(--weight-medium, 500);
+  color: var(--text-secondary, #8b949e);
+  background: transparent;
+  border: 1px solid var(--border-muted, #21262d);
+  border-radius: var(--radius-full, 9999px);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.admin-page .log-viewer__follow-btn:hover {
+  color: var(--text-primary, #e6edf3);
+  border-color: var(--border-default, #30363d);
+}
+
+.admin-page .log-viewer__follow-btn--active {
+  color: var(--text-primary, #e6edf3);
+  background: var(--accent, #2f81f7);
+  border-color: var(--accent, #2f81f7);
 }
 
 .admin-page .log-viewer__toolbar-label {
   font-size: var(--text-sm, 14px);
   color: var(--text-secondary, #8b949e);
   font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.admin-page .log-viewer__status-text {
+  font-size: var(--text-xs, 12px);
+  color: var(--text-secondary, #8b949e);
+}
+
+.admin-page .log-viewer__status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full, 9999px);
+  flex-shrink: 0;
+}
+
+.admin-page .log-viewer__status-dot--connected {
+  background: var(--success, #2ea043);
+}
+
+.admin-page .log-viewer__status-dot--connecting {
+  background: var(--warning, #d29922);
+}
+
+.admin-page .log-viewer__status-dot--disconnected {
+  background: var(--danger, #f85149);
 }
 
 .admin-page .log-viewer__content {
