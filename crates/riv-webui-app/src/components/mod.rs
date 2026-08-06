@@ -23,6 +23,7 @@ pub mod role_selector;
 pub mod run_status_card;
 pub mod run_table;
 pub mod section_header;
+pub mod sidebar;
 pub mod status_badge;
 pub mod submit_button;
 pub mod text_field;
