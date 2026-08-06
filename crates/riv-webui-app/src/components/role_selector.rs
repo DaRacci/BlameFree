@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use leptos::prelude::*;
 use riv_webui_shared::config::AgentInfo;
 
@@ -16,6 +18,8 @@ pub fn RoleSelector(
     set_selected_roles: WriteSignal<Vec<String>>,
 ) -> impl IntoView {
     let role_infos = available_roles.clone();
+    let roles_for_select_all = role_infos.clone();
+    let select_all = Arc::new(move || maximal_roles(&roles_for_select_all));
     let options = Signal::derive(move || {
         let selected = selected_roles.get();
         role_infos
@@ -47,6 +51,7 @@ pub fn RoleSelector(
                 count_label=|checked: usize, total: usize| {
                     format!("{} / {} roles selected", checked, total)
                 }
+                select_all
             />
             <CheckboxGroup
                 options=options
@@ -55,6 +60,20 @@ pub fn RoleSelector(
             />
         </div>
     }
+}
+
+/// Greedily build a maximal compatible selection.
+/// Takes every role that can be enabled alongside the roles already chosen.
+///
+/// Used for Select All so that mutually-incompatible roles are never all selected at once.
+fn maximal_roles(role_infos: &[AgentInfo]) -> Vec<String> {
+    let mut selected: Vec<String> = Vec::new();
+    for info in role_infos {
+        if !is_role_disabled(&info.abbreviation, role_infos, &selected) {
+            selected.push(info.abbreviation.clone());
+        }
+    }
+    selected
 }
 
 fn is_role_disabled(role_abbr: &str, role_infos: &[AgentInfo], selected: &[String]) -> bool {

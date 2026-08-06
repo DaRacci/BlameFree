@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use leptos::prelude::*;
 
 use super::checkbox_group::CheckboxOption;
@@ -8,7 +10,7 @@ use super::checkbox_group::CheckboxOption;
 /// `options` / `selected` / `set_selected` signals, so they stay in sync.
 ///
 /// Renders a selected-count summary plus **Select All** and **Deselect All** buttons.
-/// Select All only selects the currently *enabled* options.
+/// Select All only selects the currently *enabled* options, unless a custom `select_all` callback is supplied.
 #[component]
 pub fn CheckboxSelectBar(
     /// Reactive signal for the available options.
@@ -23,6 +25,14 @@ pub fn CheckboxSelectBar(
     /// Formatting function for the count summary.
     #[prop(optional)]
     count_label: Option<fn(usize, usize) -> String>,
+
+    /// Optional callback returning the exact keys Select All should select.
+    ///
+    /// Defaults to every enabled option.
+    /// Provide this when some options are mutually incompatible and cannot all be selected at once,
+    /// so the caller can compute a consistent maximal selection.
+    #[prop(optional)]
+    select_all: Option<Arc<dyn Fn() -> Vec<String> + Send + Sync>>,
 ) -> impl IntoView {
     let total = move || options.get().len();
     let checked = move || selected.get().len();
@@ -33,18 +43,21 @@ pub fn CheckboxSelectBar(
     view! {
         <div class="checkbox-select-bar">
             <span class="checkbox-select-bar__count">
-                {count_fn(checked(), total())}
+                {move || count_fn(checked(), total())}
             </span>
             <button
                 type="button"
                 class="btn btn--ghost btn--sm"
                 on:click=move |_| {
-                    let all: Vec<String> = options
-                        .get()
-                        .into_iter()
-                        .filter(|opt| !opt.disabled)
-                        .map(|opt| opt.key)
-                        .collect();
+                    let all: Vec<String> = match &select_all {
+                        Some(f) => f(),
+                        None => options
+                            .get()
+                            .into_iter()
+                            .filter(|opt| !opt.disabled)
+                            .map(|opt| opt.key)
+                            .collect(),
+                    };
                     set_selected.set(all);
                 }
             >
