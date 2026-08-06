@@ -16,6 +16,7 @@ use crate::components::{
     role_selector::RoleSelector,
     text_field::TextField,
 };
+use crate::storage::{clear, persist_signal, restore, restore_signal};
 
 #[server]
 async fn read_new_review_bootstrap()
@@ -130,22 +131,31 @@ fn NewReviewForm(
         .unwrap_or("none".to_string())
         .to_string();
 
-    let (owner, set_owner) = signal(String::new());
-    let (repo, set_repo) = signal(String::new());
-    let (model, set_model) = signal(initial_model);
+    let (owner, set_owner) = signal(restore::<String>("review.owner").unwrap_or_default());
+    let (repo, set_repo) = signal(restore::<String>("review.repo").unwrap_or_default());
+    let (model, set_model) = signal(restore::<String>("review.model").unwrap_or(initial_model));
     let initial_reasoning_options = reasoning_radio_options(&reasoning_levels);
     let reasoning_levels = Resource::new(
         move || model.get(),
         |selected_model| async move { read_new_review_reasoning_efforts(selected_model).await },
     );
-    let (reasoning_effort, set_reasoning_effort) = signal(default_reasoning);
+    let (reasoning_effort, set_reasoning_effort) =
+        signal(restore::<String>("review.reasoning").unwrap_or(default_reasoning));
     let (reasoning_options, set_reasoning_options) = signal(initial_reasoning_options);
     Effect::new(move || {
         if let Some(Ok(levels)) = reasoning_levels.get() {
             set_reasoning_options.set(reasoning_radio_options(&levels));
         }
     });
-    let (selected_roles, set_selected_roles) = signal(Vec::<String>::new());
+    let (selected_roles, set_selected_roles) =
+        signal(restore::<Vec<String>>("review.roles").unwrap_or_default());
+    restore_signal("review.roles", set_selected_roles);
+
+    persist_signal("review.owner", owner);
+    persist_signal("review.repo", repo);
+    persist_signal("review.model", model);
+    persist_signal("review.reasoning", reasoning_effort);
+    persist_signal("review.roles", selected_roles);
     let (available_prs, set_available_prs) = signal(Vec::<PrMeta>::new());
     let (selected_pr_url, set_selected_pr_url) = signal(String::new());
     let (prs_loading, set_prs_loading) = signal(false);
@@ -229,6 +239,11 @@ fn NewReviewForm(
             .await
             {
                 Ok(review) => {
+                    clear("review.owner");
+                    clear("review.repo");
+                    clear("review.model");
+                    clear("review.reasoning");
+                    clear("review.roles");
                     let path = format!("/reviews/{}", review.id);
                     navigate(&path, Default::default());
                 }

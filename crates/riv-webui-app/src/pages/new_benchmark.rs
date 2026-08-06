@@ -18,6 +18,7 @@ use crate::components::{
     radio_group::RadioGroup,
     role_selector::RoleSelector,
 };
+use crate::storage::{clear, persist_signal, restore, restore_signal};
 
 #[server]
 async fn read_new_benchmark_bootstrap() -> Result<
@@ -146,21 +147,30 @@ fn NewBenchmarkForm(
         .unwrap_or("none".to_string())
         .to_string();
 
-    let (model, set_model) = signal(initial_model);
+    let (model, set_model) = signal(restore::<String>("benchmark.model").unwrap_or(initial_model));
     let initial_reasoning_options = reasoning_radio_options(&reasoning_levels);
     let reasoning_levels = Resource::new(
         move || model.get(),
         |selected_model| async move { read_new_benchmark_reasoning_efforts(selected_model).await },
     );
-    let (dataset, set_dataset) = signal(initial_dataset);
-    let (reasoning_effort, set_reasoning_effort) = signal(default_reasoning);
+    let (dataset, set_dataset) =
+        signal(restore::<String>("benchmark.dataset").unwrap_or(initial_dataset));
+    let (reasoning_effort, set_reasoning_effort) =
+        signal(restore::<String>("benchmark.reasoning").unwrap_or(default_reasoning));
     let (reasoning_options, set_reasoning_options) = signal(initial_reasoning_options);
     Effect::new(move || {
         if let Some(Ok(levels)) = reasoning_levels.get() {
             set_reasoning_options.set(reasoning_radio_options(&levels));
         }
     });
-    let (selected_roles, set_selected_roles) = signal(Vec::<String>::new());
+    let (selected_roles, set_selected_roles) =
+        signal(restore::<Vec<String>>("benchmark.roles").unwrap_or_default());
+    restore_signal("benchmark.roles", set_selected_roles);
+
+    persist_signal("benchmark.model", model);
+    persist_signal("benchmark.dataset", dataset);
+    persist_signal("benchmark.reasoning", reasoning_effort);
+    persist_signal("benchmark.roles", selected_roles);
     let (available_prs, set_available_prs) = signal(Vec::<GoldenCommentEntry>::new());
     let (selected_prs, set_selected_prs) = signal(Vec::<String>::new());
     let (prs_loading, set_prs_loading) = signal(false);
@@ -228,6 +238,10 @@ fn NewBenchmarkForm(
             .await
             {
                 Ok(review) => {
+                    clear("benchmark.model");
+                    clear("benchmark.dataset");
+                    clear("benchmark.reasoning");
+                    clear("benchmark.roles");
                     let path = format!("/reviews/{}", review.id);
                     navigate(&path, Default::default());
                 }

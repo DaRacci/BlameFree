@@ -26,6 +26,7 @@ use riv_webui_shared::{
 pub mod async_resource;
 pub mod components;
 pub mod pages;
+pub mod storage;
 
 #[cfg(target_arch = "wasm32")]
 pub mod sse;

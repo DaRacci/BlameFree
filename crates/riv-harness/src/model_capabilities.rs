@@ -1,14 +1,13 @@
 //! Model capability detection for reasoning/thinking support.
 //!
-//! Queries OpenRouter model API once, caches discovered model IDs plus reasoning-capable subset.
-//! Falls back to heuristic/default model list when API unreachable.
+//! Queries OpenRouter model API, caches discovered model IDs plus reasoning-capable subset.
+//! A periodic refresh may replace the cached state on success while keeping the previous state on transient failure.
 
 use rig_core::providers::openai::responses_api::ReasoningEffort;
-use riv_shared::{DEFAULT_MODEL, DEFAULT_MODEL_PRO};
 use riv_types::wrappers::{Model, WrappedData};
 use serde::Serialize;
-use std::collections::{BTreeSet, HashSet};
-use std::sync::OnceLock;
+use std::collections::HashSet;
+use std::sync::{LazyLock, RwLock};
 
 /// Configuration for model reasoning/thinking support.
 #[derive(Debug, Clone, Serialize)]
@@ -63,93 +62,28 @@ struct OpenRouterModel {
     reasoning: Option<serde_json::Value>,
 }
 
-/// Cache of reasoning-capable model IDs.
-static REASONING_MODEL_IDS: OnceLock<Option<HashSet<String>>> = OnceLock::new();
-
-/// Cache of all discovered model IDs.
-static AVAILABLE_MODEL_IDS: OnceLock<Option<Vec<String>>> = OnceLock::new();
-
-/// Whether cache fell back to heuristic matching.
-static USING_FALLBACK: OnceLock<bool> = OnceLock::new();
-
-fn normalize_model_ids<I>(ids: I) -> Vec<String>
-where
-    I: IntoIterator<Item = String>,
-{
-    let mut seen = BTreeSet::new();
-    for id in ids {
-        let trimmed = id.trim();
-        if !trimmed.is_empty() {
-            seen.insert(trimmed.to_string());
-        }
-    }
-
-    let mut ordered = vec![DEFAULT_MODEL.to_string(), DEFAULT_MODEL_PRO.to_string()];
-    ordered.extend(
-        seen.into_iter()
-            .filter(|id| id != DEFAULT_MODEL && id != DEFAULT_MODEL_PRO),
-    );
-    ordered
+/// Cached model discovery state.
+#[derive(Default)]
+struct ModelCacheState {
+    /// All discovered model IDs in display order.
+    available: Option<Vec<String>>,
+    /// IDs of models that support reasoning.
+    reasoning: Option<HashSet<String>>,
+    /// Error from the last failed discovery attempt, if the cache is empty.
+    last_error: Option<String>,
 }
 
-fn fallback_models() -> Vec<Model> {
-    normalize_model_ids([
-        DEFAULT_MODEL.to_string(),
-        DEFAULT_MODEL_PRO.to_string(),
-        "openai/gpt-5-mini".to_string(),
-    ])
-    .into_iter()
-    .map(Model)
-    .collect()
-}
+/// Global model capability cache.
+static CACHE: LazyLock<RwLock<ModelCacheState>> =
+    LazyLock::new(|| RwLock::new(ModelCacheState::default()));
 
-fn set_model_cache(result: Result<Vec<OpenRouterModel>, String>, info_suffix: &str) {
-    match result {
-        Ok(models) => {
-            let reasoning_ids: HashSet<String> = models
-                .iter()
-                .filter(|model| model.reasoning.is_some())
-                .map(|model| model.id.clone())
-                .collect();
-            let ordered_ids = normalize_model_ids(models.into_iter().map(|model| model.id));
-
-            tracing::info!(
-                count = ordered_ids.len(),
-                reasoning_count = reasoning_ids.len(),
-                "OpenRouter models API: discovered usable models{}",
-                info_suffix
-            );
-
-            let _ = AVAILABLE_MODEL_IDS.set(Some(ordered_ids));
-            let _ = REASONING_MODEL_IDS.set(Some(reasoning_ids));
-            let _ = USING_FALLBACK.set(false);
-        }
-        Err(error) => {
-            tracing::warn!(
-                "OpenRouter model API unreachable ({}); using fallback heuristic/model list",
-                error
-            );
-            let _ = AVAILABLE_MODEL_IDS.set(None);
-            let _ = REASONING_MODEL_IDS.set(None);
-            let _ = USING_FALLBACK.set(true);
-        }
-    }
-}
-
-/// Warm caches by querying OpenRouter model API.
-pub async fn warm_model_cache() {
-    if AVAILABLE_MODEL_IDS.get().is_some() && REASONING_MODEL_IDS.get().is_some() {
-        return;
-    }
-
-    set_model_cache(fetch_models_async().await, "");
-}
-
-async fn fetch_models_async() -> Result<Vec<OpenRouterModel>, String> {
+/// Fetch models from OpenRouter, returning the discovered list plus reasoning-capable subset.
+async fn fetch_models() -> Result<(Vec<String>, HashSet<String>), String> {
     let client = reqwest::Client::new();
-    // When an API key is available, query the authenticated `/models/user`
-    // endpoint so guardrail/provider restrictions narrow the discovered set.
-    // Otherwise fall back to the public `/models` endpoint.
+    // When an API key is available, query the authenticated `/models/user` endpoint so
+    // guardrail/provider restrictions narrow the discovered set. Some key types (e.g. project
+    // keys) are not authorized for this endpoint and return 401; degrade to the public `/models`
+    // catalog in that case so the full, live list is still usable.
     let request = match std::env::var("OPENROUTER_API_KEY").ok() {
         Some(key) => client
             .get("https://openrouter.ai/api/v1/models/user")
@@ -157,6 +91,24 @@ async fn fetch_models_async() -> Result<Vec<OpenRouterModel>, String> {
         None => client.get("https://openrouter.ai/api/v1/models"),
     };
 
+    match fetch_models_from(request).await {
+        Ok(models) => Ok(categorize(models)),
+        Err(error) if error.starts_with("API returned 401") => {
+            tracing::warn!(
+                "OpenRouter authenticated models endpoint rejected the key ({error}); \
+                 degrading to public /models catalog"
+            );
+            let public = client.get("https://openrouter.ai/api/v1/models");
+            let models = fetch_models_from(public).await?;
+            Ok(categorize(models))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+async fn fetch_models_from(
+    request: reqwest::RequestBuilder,
+) -> Result<Vec<OpenRouterModel>, String> {
     let response = request
         .send()
         .await
@@ -173,29 +125,117 @@ async fn fetch_models_async() -> Result<Vec<OpenRouterModel>, String> {
         .map_err(|error| format!("Failed to parse response: {error}"))
 }
 
-/// Return cached usable models, or fallback defaults if discovery unavailable.
-pub fn available_models() -> Vec<Model> {
-    match AVAILABLE_MODEL_IDS.get() {
-        Some(Some(ids)) if !ids.is_empty() => ids.iter().cloned().map(Model).collect(),
-        _ => fallback_models(),
+/// Split discovered models into ordered IDs and reasoning-capable subset.
+fn categorize(models: Vec<OpenRouterModel>) -> (Vec<String>, HashSet<String>) {
+    let reasoning_ids: HashSet<String> = models
+        .iter()
+        .filter(|model| model.reasoning.is_some())
+        .map(|model| model.id.clone())
+        .collect();
+
+    let mut seen = std::collections::BTreeSet::new();
+    for model in &models {
+        let trimmed = model.id.trim();
+        if !trimmed.is_empty() {
+            seen.insert(trimmed.to_string());
+        }
+    }
+    let ordered: Vec<String> = seen.into_iter().collect();
+
+    (ordered, reasoning_ids)
+}
+
+/// Apply a successful discovery result to the cache.
+fn apply_success(ordered: Vec<String>, reasoning: HashSet<String>) {
+    let mut cache = CACHE.write().expect("model cache poisoned");
+    cache.available = Some(ordered);
+    cache.reasoning = Some(reasoning);
+    cache.last_error = None;
+}
+
+/// Record a discovery failure, clearing the cache so callers surface the error.
+fn record_error(error: String) {
+    let mut cache = CACHE.write().expect("model cache poisoned");
+    cache.available = None;
+    cache.reasoning = None;
+    cache.last_error = Some(error);
+}
+
+/// Warm caches by querying OpenRouter model API.
+///
+/// On failure the cache is cleared so [`available_models`] surfaces the error.
+pub async fn warm_model_cache() {
+    match fetch_models().await {
+        Ok((ordered, reasoning)) => {
+            apply_success(ordered, reasoning);
+            log_discovery_info();
+        }
+        Err(error) => {
+            record_error(error.clone());
+            tracing::warn!("OpenRouter model API unavailable ({error}).");
+        }
+    }
+}
+
+/// Refresh the model cache, treating failures as transient.
+///
+/// On success the cache is replaced.
+/// On failure the previous state is kept and only the error is logged.
+pub async fn refresh_model_cache() -> Result<(), String> {
+    match fetch_models().await {
+        Ok((ordered, reasoning)) => {
+            apply_success(ordered, reasoning);
+            log_discovery_info();
+            Ok(())
+        }
+        Err(error) => {
+            tracing::warn!("OpenRouter model refresh failed ({error}).");
+            Err(error)
+        }
+    }
+}
+
+fn log_discovery_info() {
+    let cache = CACHE.read().expect("model cache poisoned");
+    if let Some(ids) = &cache.available {
+        tracing::info!(
+            count = ids.len(),
+            reasoning_count = cache.reasoning.as_ref().map_or(0, HashSet::len),
+            "OpenRouter models API: discovered usable models"
+        );
+    }
+}
+
+/// Return cached usable models, or an error describing why discovery failed.
+pub fn available_models() -> Result<Vec<Model>, String> {
+    let cache = CACHE.read().expect("model cache poisoned");
+    match &cache.available {
+        Some(ids) if !ids.is_empty() => Ok(ids.iter().cloned().map(Model).collect()),
+        _ => Err(cache
+            .last_error
+            .clone()
+            .unwrap_or_else(|| "Model discovery has not run yet".to_string())),
     }
 }
 
 /// Check whether model supports reasoning.
+///
+/// Falls back to a lightweight heuristic only for capability detection if discovery data is absent.
 pub fn supports_reasoning(model: &Model) -> bool {
-    match REASONING_MODEL_IDS.get() {
-        Some(Some(ids)) => {
+    let cache = CACHE.read().expect("model cache poisoned");
+    match &cache.reasoning {
+        Some(ids) => {
             ids.contains(model.get())
                 || ids
                     .iter()
                     .any(|id| model.get().ends_with(id) || id.ends_with(model.get()))
         }
-        _ => fallback_is_reasoning_model(model),
+        None => heuristic_is_reasoning_model(model),
     }
 }
 
-/// Heuristic fallback for reasoning-capable model IDs.
-fn fallback_is_reasoning_model(model: &Model) -> bool {
+/// Heuristic for reasoning-capable model IDs.
+fn heuristic_is_reasoning_model(model: &Model) -> bool {
     let model_lower = model.get().to_lowercase();
     model_lower.contains("deepseek")
         || model_lower.starts_with("o1")
@@ -237,9 +277,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_available_models_fallback_contains_default_first() {
-        let models = fallback_models();
-        assert_eq!(models[0].get(), DEFAULT_MODEL);
+    fn test_available_models_errors_without_discovery() {
+        // The global cache may have been populated by other tests
+        // just confirm the error path for an empty cache is exercised via the lock default.
+        let cache = CACHE.read().unwrap();
+        if cache.available.is_none() {
+            assert!(available_models().is_err());
+        }
     }
 
     #[test]
