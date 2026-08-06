@@ -146,8 +146,19 @@ pub async fn warm_model_cache() {
 }
 
 async fn fetch_models_async() -> Result<Vec<OpenRouterModel>, String> {
-    let url = "https://openrouter.ai/api/v1/models";
-    let response = reqwest::get(url)
+    let client = reqwest::Client::new();
+    // When an API key is available, query the authenticated `/models/user`
+    // endpoint so guardrail/provider restrictions narrow the discovered set.
+    // Otherwise fall back to the public `/models` endpoint.
+    let request = match std::env::var("OPENROUTER_API_KEY").ok() {
+        Some(key) => client
+            .get("https://openrouter.ai/api/v1/models/user")
+            .bearer_auth(key),
+        None => client.get("https://openrouter.ai/api/v1/models"),
+    };
+
+    let response = request
+        .send()
         .await
         .map_err(|error| format!("HTTP request failed: {error}"))?;
 
@@ -158,30 +169,6 @@ async fn fetch_models_async() -> Result<Vec<OpenRouterModel>, String> {
     response
         .json::<OpenRouterModelsResponse>()
         .await
-        .map(|body| body.data)
-        .map_err(|error| format!("Failed to parse response: {error}"))
-}
-
-/// Warm caches synchronously via blocking HTTP call.
-pub fn warm_model_cache_blocking() {
-    if AVAILABLE_MODEL_IDS.get().is_some() && REASONING_MODEL_IDS.get().is_some() {
-        return;
-    }
-
-    set_model_cache(fetch_models_blocking(), " (blocking)");
-}
-
-fn fetch_models_blocking() -> Result<Vec<OpenRouterModel>, String> {
-    let url = "https://openrouter.ai/api/v1/models";
-    let response =
-        reqwest::blocking::get(url).map_err(|error| format!("HTTP request failed: {error}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!("API returned {}", response.status()));
-    }
-
-    response
-        .json::<OpenRouterModelsResponse>()
         .map(|body| body.data)
         .map_err(|error| format!("Failed to parse response: {error}"))
 }
