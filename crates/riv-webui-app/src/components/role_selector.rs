@@ -2,11 +2,12 @@ use leptos::prelude::*;
 use riv_webui_shared::config::AgentInfo;
 
 use super::checkbox_group::{CheckboxGroup, CheckboxOption};
+use super::checkbox_select_bar::CheckboxSelectBar;
 
 /// Role checkbox group with incompatibility-matrix policy.
 ///
-/// Thin wrapper over `CheckboxGroup`.
-/// Derives reactive `CheckboxOption` vec from the static `available_roles` + reactive `selected_roles`,
+/// Thin wrapper over [`CheckboxGroup`].
+/// Derives reactive [`CheckboxOption`] vec from the static `available_roles` + reactive `selected_roles`,
 /// applying the incompatibility disable + tooltip logic.
 #[component]
 pub fn RoleSelector(
@@ -38,7 +39,21 @@ pub fn RoleSelector(
     });
 
     view! {
-        <CheckboxGroup options=options selected=selected_roles set_selected=set_selected_roles />
+        <div class="role-selector">
+            <CheckboxSelectBar
+                options=options
+                selected=selected_roles
+                set_selected=set_selected_roles
+                count_label=|checked: usize, total: usize| {
+                    format!("{} / {} roles selected", checked, total)
+                }
+            />
+            <CheckboxGroup
+                options=options
+                selected=selected_roles
+                set_selected=set_selected_roles
+            />
+        </div>
     }
 }
 

@@ -4,6 +4,7 @@ use riv_types::review::ReviewStatus;
 
 pub mod agent_pane;
 pub mod checkbox_group;
+pub mod checkbox_select_bar;
 pub mod empty_state;
 pub mod error_state;
 pub mod form_page;

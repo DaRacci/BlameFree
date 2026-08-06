@@ -1,0 +1,11 @@
+.checkbox-select-bar {
+  margin-bottom: var(--spacing-sm);
+  display: flex;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+
+.checkbox-select-bar__count {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}

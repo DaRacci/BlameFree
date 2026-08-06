@@ -12,14 +12,15 @@ pub struct CheckboxOption {
 /// Generic checkbox group primitive.
 ///
 /// Drives the shared row rendering (label + checkbox, checked/disabled state, tooltip).
-/// `RoleSelector` and `PrSelection` are thin wrappers over this with their specific policies.
-///
-/// `options` is a reactive signal so callers can recompute disabled/tooltip state
-/// based on the current selection (e.g. incompatibility matrix in `RoleSelector`).
 #[component]
 pub fn CheckboxGroup(
+    /// Reactive signal so callers can recompute disabled/tooltip state based on the current selection.
     options: Signal<Vec<CheckboxOption>>,
+
+    /// Reactive signal for the currently selected keys.
     selected: ReadSignal<Vec<String>>,
+
+    /// Write-signal to update the selected keys.
     set_selected: WriteSignal<Vec<String>>,
 ) -> impl IntoView {
     view! {
