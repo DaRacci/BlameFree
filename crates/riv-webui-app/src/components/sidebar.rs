@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use leptos::{component, view};
 use leptos_router::hooks::use_location;
-use lucide_leptos::{LayoutDashboard, Menu, Settings};
+use lucide_leptos::{LayoutDashboard, Menu, Settings, X};
 
 use crate::AuthContext;
 
@@ -38,11 +38,13 @@ pub fn Sidebar() -> impl IntoView {
 
     let loc = use_location();
     let is_active = move |path: &'static str| -> &'static str {
-        if loc.pathname.get().starts_with(path) {
-            "sidebar__item--active"
+        let p = loc.pathname.get();
+        let active = if path == "/" {
+            p == "/"
         } else {
-            ""
-        }
+            p.starts_with(path)
+        };
+        if active { "sidebar__item--active" } else { "" }
     };
 
     let auth_ctx = use_context::<AuthContext>();
@@ -61,7 +63,13 @@ pub fn Sidebar() -> impl IntoView {
             aria-label="Toggle navigation menu"
             on:click=toggle_mobile
         >
-            <Menu size=24 />
+            {move || {
+                if mobile_open.get() {
+                    view! { <X size=24 /> }.into_any()
+                } else {
+                    view! { <Menu size=24 /> }.into_any()
+                }
+            }}
         </button>
 
         {move || {

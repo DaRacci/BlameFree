@@ -295,8 +295,52 @@
     z-index: 1100;
   }
 
+  /* Dock the toggle as onto the sidebar as a close button so it does not overlap the header */
+  .sidebar__hamburger:has(~ nav.sidebar--mobile-open) {
+    left: calc(280px - 52px);
+  }
+
   /* Hide collapse toggle in sidebar header on mobile */
   .sidebar__header .sidebar__toggle {
     display: none;
   }
+}
+
+/* Sidebar auth block */
+.sidebar__auth {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-top: 1px solid var(--border-muted);
+}
+
+.sidebar__user {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding-bottom: var(--spacing-md);
+}
+
+.sidebar__avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  object-fit: cover;
+}
+
+.sidebar__username {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar__login,
+.sidebar__logout {
+  font-size: var(--text-sm);
+  display: block;
+}
+
+.sidebar--collapsed .sidebar__auth {
+  display: none;
 }
