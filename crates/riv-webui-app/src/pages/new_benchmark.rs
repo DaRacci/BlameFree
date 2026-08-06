@@ -155,7 +155,7 @@ fn NewBenchmarkForm(
     let (dataset, set_dataset) = signal(initial_dataset);
     let (reasoning_effort, set_reasoning_effort) = signal(default_reasoning);
     let (reasoning_options, set_reasoning_options) = signal(initial_reasoning_options);
-    create_effect(move |_| {
+    Effect::new(move || {
         if let Some(Ok(levels)) = reasoning_levels.get() {
             set_reasoning_options.set(reasoning_radio_options(&levels));
         }
