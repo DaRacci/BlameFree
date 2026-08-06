@@ -99,7 +99,7 @@ pub fn NewBenchmarkPage() -> impl IntoView {
     let bootstrap = Resource::new(|| (), |_| async { read_new_benchmark_bootstrap().await });
 
     view! {
-        <Suspense fallback=move || view! { <LoadingState variant=LoadingVariant::SkeletonCards /> }>
+        <Transition fallback=move || view! { <LoadingState variant=LoadingVariant::SkeletonCards /> }>
             {move || {
                 bootstrap.get().map(|result| match result {
                     Ok((models, roles, datasets, reasoning_levels)) => view! {
@@ -120,7 +120,7 @@ pub fn NewBenchmarkPage() -> impl IntoView {
                     .into_any(),
                 })
             }}
-        </Suspense>
+        </Transition>
     }
 }
 
