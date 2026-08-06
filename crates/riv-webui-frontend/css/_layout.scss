@@ -1,3 +1,5 @@
+@use "sizing";
+
 .app-shell {
   display: flex;
   min-height: 100vh;
@@ -5,17 +7,17 @@
 
 .main-content {
   flex: 1;
-  margin-left: 240px;
+  margin-left: sizing.$sidebar-width;
   min-height: 100vh;
   transition: margin-left var(--transition-normal);
 }
 
 .app-shell:has(.sidebar--collapsed) .main-content {
-  margin-left: 64px;
+  margin-left: sizing.$sidebar-width-collapsed;
 }
 
 .content-container {
-  max-width: 1400px;
+  max-width: sizing.$content-max;
   margin: 0 auto;
   padding: var(--spacing-2xl);
 }
@@ -27,12 +29,12 @@
 }
 
 .content-grid--metrics {
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(var(--grid-metric-min), 1fr));
   margin-bottom: var(--spacing-xl);
 }
 
 .content-grid--cards {
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--grid-card-min), 1fr));
 }
 
 .content-grid--agent-panes {
@@ -40,7 +42,7 @@
 }
 
 .content-grid--form {
-  max-width: 720px;
+  max-width: sizing.$content-narrow;
 }
 
 /* Loading, error, empty state containers */
@@ -51,7 +53,7 @@
   justify-content: center;
   padding: var(--spacing-3xl);
   text-align: center;
-  min-height: 300px;
+  min-height: var(--state-min-height);
 }
 
 .error-state {
@@ -63,7 +65,7 @@
 }
 
 .error-state__icon {
-  font-size: 48px;
+  font-size: var(--icon-xl);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -79,7 +81,7 @@
 .error-state__message {
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  max-width: 400px;
+  max-width: sizing.$content-copy;
   text-align: center;
   margin-bottom: var(--spacing-xl);
 }
@@ -97,7 +99,7 @@
 }
 
 .empty-state__icon {
-  font-size: 48px;
+  font-size: var(--icon-xl);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -113,7 +115,7 @@
 .empty-state__message {
   font-size: var(--text-sm);
   color: var(--text-secondary);
-  max-width: 400px;
+  max-width: sizing.$content-copy;
   text-align: center;
   margin-bottom: var(--spacing-xl);
 }
@@ -178,8 +180,8 @@
   border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  min-height: 200px;
-  max-height: 350px;
+  min-height: var(--agent-pane-min-h);
+  max-height: var(--agent-pane-max-h);
   overflow: hidden;
   transition: border-color var(--transition-normal);
 }
@@ -256,7 +258,7 @@
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: var(--letter-spacing-caps);
   padding-bottom: var(--spacing-md);
   margin-bottom: var(--spacing-xl);
   border-bottom: 1px solid var(--border-muted);
@@ -308,13 +310,13 @@
 .search-bar__icon {
   position: absolute;
   left: var(--spacing-sm);
-  font-size: 14px;
+  font-size: var(--search-icon-size);
   color: var(--text-tertiary);
   pointer-events: none;
 }
 
 .search-bar__input {
-  padding-left: 32px !important;
+  padding-left: var(--spacing-2xl) !important;
 }
 
 .section-header {
@@ -379,26 +381,26 @@
 .sparkline {
   display: flex;
   align-items: flex-end;
-  gap: 2px;
-  height: 30px;
+  gap: var(--sparkline-gap);
+  height: var(--sparkline-h);
 }
 
 .sparkline__bar {
-  width: 6px;
+  width: var(--sparkline-bar-w);
   background: var(--accent-blue);
-  border-radius: 2px 2px 0 0;
+  border-radius: var(--sparkline-bar-radius) var(--sparkline-bar-radius) 0 0;
   transition: height var(--transition-fast);
 }
 
 /* Responsive */
 /* Tablet: collapsed by default */
-@media (min-width: 768px) and (max-width: 1199px) {
+@media (min-width: sizing.$breakpoint-tablet-min) and (max-width: sizing.$breakpoint-tablet-max) {
   .content-grid--agent-panes {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: sizing.$breakpoint-mobile) {
   .app-shell:has(.sidebar--collapsed) .main-content,
   .main-content {
     margin-left: 0;

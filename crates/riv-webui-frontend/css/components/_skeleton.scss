@@ -30,35 +30,35 @@
 }
 
 .skeleton--text {
-  height: 14px;
+  height: var(--skeleton-text);
   width: 100%;
   margin-bottom: var(--spacing-sm);
 }
 
 .skeleton--heading {
-  height: 24px;
+  height: var(--skeleton-heading);
   width: 40%;
   margin-bottom: var(--spacing-md);
 }
 
 .skeleton--card {
-  height: 120px;
+  height: var(--skeleton-card);
   width: 100%;
 }
 
 .skeleton--metric {
-  height: 80px;
-  width: 200px;
+  height: var(--skeleton-metric);
+  width: var(--skeleton-metric-w);
 }
 
 .skeleton--avatar {
-  height: 24px;
-  width: 24px;
+  height: var(--skeleton-avatar);
+  width: var(--skeleton-avatar);
   border-radius: 50%;
 }
 
 .skeleton--table-row {
-  height: 32px;
+  height: var(--skeleton-row);
   width: 100%;
   margin-bottom: var(--spacing-xs);
 }

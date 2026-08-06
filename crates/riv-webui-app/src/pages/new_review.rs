@@ -133,11 +133,18 @@ fn NewReviewForm(
     let (owner, set_owner) = signal(String::new());
     let (repo, set_repo) = signal(String::new());
     let (model, set_model) = signal(initial_model);
+    let initial_reasoning_options = reasoning_radio_options(&reasoning_levels);
     let reasoning_levels = Resource::new(
         move || model.get(),
         |selected_model| async move { read_new_review_reasoning_efforts(selected_model).await },
     );
     let (reasoning_effort, set_reasoning_effort) = signal(default_reasoning);
+    let (reasoning_options, set_reasoning_options) = signal(initial_reasoning_options);
+    create_effect(move |_| {
+        if let Some(Ok(levels)) = reasoning_levels.get() {
+            set_reasoning_options.set(reasoning_radio_options(&levels));
+        }
+    });
     let (selected_roles, set_selected_roles) = signal(Vec::<String>::new());
     let (available_prs, set_available_prs) = signal(Vec::<PrMeta>::new());
     let (selected_pr_url, set_selected_pr_url) = signal(String::new());
@@ -325,10 +332,7 @@ fn NewReviewForm(
                     helper="Models come from OpenRouter discovery with fallback defaults."
                 />
                 {move || {
-                    let options = match reasoning_levels.get() {
-                        Some(Ok(levels)) => reasoning_radio_options(&levels),
-                        _ => Vec::new(),
-                    };
+                    let options = reasoning_options.get();
                     view! {
                         <RadioGroup
                             id="review-reasoning"

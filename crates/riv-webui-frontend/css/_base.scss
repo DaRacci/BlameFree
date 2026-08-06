@@ -72,14 +72,14 @@ a:hover, .link:hover {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
+  outline: var(--focus-outline) solid var(--accent-blue);
+  outline-offset: var(--focus-outline);
 }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
 }
 
 ::-webkit-scrollbar-track {

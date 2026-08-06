@@ -50,8 +50,12 @@ pub fn RadioGroup(
             <label class="form-field__label" for=id>{label_text}</label>
             <div class="radio-group">
                 {move || {
-                    if loading {
+                    if loading && options.is_empty() {
                         return view! { <p class="radio-status">"Loading..."</p> }.into_any();
+                    }
+                    let mut rendered = Vec::new();
+                    if loading {
+                        rendered.push(view! { <p class="radio-status">"Loading..."</p> }.into_any());
                     }
                     let mut opts = Vec::new();
                     if include_none {
@@ -64,7 +68,7 @@ pub fn RadioGroup(
                     }
                     opts.extend(options.clone());
                     let sel = value.get();
-                    opts.into_iter().map(|opt| {
+                    rendered.extend(opts.into_iter().map(|opt| {
                         let is_checked = sel == opt.value;
                         let is_disabled = opt.disabled || disabled;
                         let label_class = if is_disabled {
@@ -92,7 +96,11 @@ pub fn RadioGroup(
                                 <span title=tooltip>{label}</span>
                             </label>
                         }.into_any()
-                    }).collect::<Vec<_>>().into_any()
+                    }));
+                    view! {
+                        {rendered}
+                    }
+                    .into_any()
                 }}
             </div>
             {move || helper.map(|h| view! { <p class="form-field__helper">{h}</p> })}

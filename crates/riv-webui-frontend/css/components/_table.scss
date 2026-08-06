@@ -38,7 +38,7 @@
   letter-spacing: 0.05em;
   padding: var(--spacing-sm) var(--spacing-md);
   text-align: left;
-  border-bottom: 2px solid var(--border-default);
+  border-bottom: var(--border-strong) solid var(--border-default);
   white-space: nowrap;
   user-select: none;
   background: var(--bg-surface);

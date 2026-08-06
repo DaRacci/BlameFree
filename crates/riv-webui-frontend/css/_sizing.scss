@@ -1,0 +1,23 @@
+// SCSS-side sizing variables.
+//
+// These duplicate a subset of the CSS custom properties declared in
+// _tokens.scss for cases where CSS var() cannot be used:
+//   - @media queries (evaluated at parse time)
+//   - calculations passed to functions that do not resolve var() (e.g.
+//     gradient stop offsets, keyframe translations, offset positions)
+//
+// Keep the two definitions in sync.
+
+$sidebar-width: 240px;
+$sidebar-width-collapsed: 64px;
+$sidebar-width-mobile: 280px;
+$content-max: 1400px;
+$content-narrow: 720px;
+$content-copy: 400px;
+$content-copy-lg: 480px;
+
+// Breakpoints. These mirror the canonical values in _tokens.scss and must be
+// kept in sync with the CSS custom properties when they change.
+$breakpoint-mobile: 767px;
+$breakpoint-tablet-min: 768px;
+$breakpoint-tablet-max: 1199px;

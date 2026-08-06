@@ -31,8 +31,8 @@
 /* Pulsing green dot next to section title */
 .active-runs-indicator {
   display: inline-block;
-  width: 10px;
-  height: 10px;
+  width: var(--dot-md);
+  height: var(--dot-md);
   border-radius: 50%;
   background: var(--accent-green);
   margin-right: var(--spacing-sm);
@@ -130,7 +130,7 @@
 }
 
 .home-page__recent-row {
-  border-left: 3px solid transparent;
+  border-left: var(--sidebar-active-indicator) solid transparent;
   transition: border-color var(--transition-fast);
 }
 
@@ -146,15 +146,6 @@
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-}
-
-.badge--info .badge__dot {
-  background: var(--accent-blue);
-}
-
-.badge--info {
-  border-color: var(--accent-blue);
-  color: var(--accent-blue);
 }
 
 .home-page__filters {

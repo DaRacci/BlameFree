@@ -10,6 +10,7 @@
   --accent-orange: #f0883e;
   --accent-red: #f85149;
   --accent-purple: #bc8cff;
+  --accent-yellow: #d29922;
 
   --text-primary: #c9d1d9;
   --text-secondary: #8b949e;
@@ -67,4 +68,74 @@
   --z-modal: 300;
   --z-tooltip: 400;
   --z-toast: 500;
+
+  /* Layout & sizing */
+  --sidebar-width: 240px;
+  --sidebar-width-collapsed: 64px;
+  --sidebar-width-mobile: 280px;
+  --sidebar-header-height: 56px;
+  --sidebar-nav-gap: 2px;
+  --sidebar-active-indicator: 3px;
+  --sidebar-icon-size: 18px;
+  --avatar-size: 24px;
+  --sidebar-close-gap: 4px;
+
+  --content-max: 1400px;
+  --content-narrow: 720px;
+  --content-copy: 400px;
+  --content-copy-lg: 480px;
+
+  --control-size-sm: 32px;
+  --control-size-lg: 40px;
+  --icon-sm: 18px;
+  --icon-lg: 22px;
+  --icon-xl: 48px;
+
+  --dot-sm: 8px;
+  --dot-md: 10px;
+
+  --slider-thumb: 18px;
+  --slider-track: 6px;
+
+  --progress-track: 8px;
+
+  --scrollbar-size: 8px;
+
+  --skeleton-text: 14px;
+  --skeleton-heading: 24px;
+  --skeleton-avatar: 24px;
+  --skeleton-row: 32px;
+  --skeleton-card: 120px;
+  --skeleton-metric: 80px;
+  --skeleton-metric-w: 200px;
+
+  --sparkline-h: 30px;
+  --sparkline-bar-w: 6px;
+  --sparkline-gap: 2px;
+  --sparkline-bar-radius: 2px;
+
+  --grid-metric-min: 200px;
+  --grid-card-min: 340px;
+
+  --state-min-height: 300px;
+  --agent-pane-min-h: 200px;
+  --agent-pane-max-h: 350px;
+
+  --search-icon-size: 14px;
+  --letter-spacing-caps: 0.5px;
+
+  --focus-ring: 3px;
+  --focus-outline: 2px;
+  --border-strong: 2px;
 }
+
+/*
+ * Breakpoints as SCSS variables (not CSS custom properties) because
+ * @media queries are evaluated at parse time and cannot resolve var().
+ *
+ * Defined alongside the sizing vars in _sizing.scss and kept in sync;
+ * these are the canonical breakpoint values for the whole stylesheet.
+ */
+$breakpoint-mobile: 767px;
+$breakpoint-tablet-min: 768px;
+$breakpoint-tablet-max: 1199px;

@@ -17,7 +17,7 @@
 }
 
 .btn:focus-visible {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 30%, transparent);
+  box-shadow: 0 0 0 var(--focus-ring) color-mix(in srgb, var(--accent-blue) 30%, transparent);
   outline: none;
 }
 

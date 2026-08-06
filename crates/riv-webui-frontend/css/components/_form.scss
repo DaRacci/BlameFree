@@ -1,6 +1,6 @@
 /* Form page wrapper */
 .form-page {
-  max-width: 720px;
+  max-width: var(--content-narrow);
 }
 
 .form-field {
@@ -56,7 +56,7 @@
 .input:focus {
   outline: none;
   border-color: var(--accent-blue);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 20%, transparent);
+  box-shadow: 0 0 0 var(--focus-ring) color-mix(in srgb, var(--accent-blue) 20%, transparent);
 }
 
 .input:disabled {
@@ -78,20 +78,20 @@
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%238b949e'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 10px center;
-  padding-right: 32px;
+  background-position: right var(--spacing-sm) center;
+  padding-right: var(--spacing-2xl);
   cursor: pointer;
 }
 
 .select--sm {
   font-size: var(--text-xs);
   padding: var(--spacing-xs) var(--spacing-sm);
-  padding-right: 24px;
-  background-position: right 6px center;
+  padding-right: var(--spacing-xl);
+  background-position: right var(--spacing-xs) center;
 }
 
 .textarea {
-  min-height: 80px;
+  min-height: var(--skeleton-metric);
   resize: vertical;
   line-height: 1.5;
 }
@@ -100,7 +100,7 @@
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 6px;
+  height: var(--slider-track);
   background: var(--border-muted);
   border-radius: var(--radius-full);
   outline: none;
@@ -108,39 +108,39 @@
 }
 
 .slider::-webkit-slider-runnable-track {
-  height: 6px;
+  height: var(--slider-track);
   border-radius: var(--radius-full);
   background: var(--border-muted);
 }
 
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
+  width: var(--slider-thumb);
+  height: var(--slider-thumb);
   background: var(--accent-blue);
   border-radius: 50%;
-  border: 2px solid var(--text-inverse);
+  border: var(--border-strong) solid var(--text-inverse);
   cursor: pointer;
-  margin-top: -6px;
+  margin-top: calc((var(--slider-track) - var(--slider-thumb)) / 2);
   transition: box-shadow var(--transition-fast);
 }
 
 .slider::-webkit-slider-thumb:hover {
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 30%, transparent);
+  box-shadow: 0 0 0 var(--focus-ring) color-mix(in srgb, var(--accent-blue) 30%, transparent);
 }
 
 .slider::-moz-range-track {
-  height: 6px;
+  height: var(--slider-track);
   border-radius: var(--radius-full);
   background: var(--border-muted);
 }
 
 .slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: var(--slider-thumb);
+  height: var(--slider-thumb);
   background: var(--accent-blue);
   border-radius: 50%;
-  border: 2px solid var(--text-inverse);
+  border: var(--border-strong) solid var(--text-inverse);
   cursor: pointer;
 }
 
@@ -155,7 +155,7 @@
 }
 
 .slider-field__value {
-  min-width: 28px;
+  min-width: var(--spacing-2xl);
   text-align: center;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
@@ -185,18 +185,18 @@
 .checkbox-label--disabled {
   opacity: 0.45;
   cursor: not-allowed;
-  border-color: var(--border-muted, #21262d);
+  border-color: var(--border-muted);
 }
 
 .checkbox-label--disabled:hover {
-  border-color: var(--border-muted, #21262d);
+  border-color: var(--border-muted);
   background: transparent;
 }
 
 .checkbox-label input[type="checkbox"] {
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: var(--spacing-lg);
+  height: var(--spacing-lg);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   background: transparent;
@@ -218,8 +218,8 @@
 }
 
 .checkbox-label input[type="checkbox"]:focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
+  outline: var(--focus-outline) solid var(--accent-blue);
+  outline-offset: var(--focus-outline);
 }
 
 .checkbox-group {
@@ -238,7 +238,7 @@
 }
 
 .form-loading .skeleton--text {
-  width: 200px;
+  width: var(--skeleton-metric-w);
 }
 
 /* Submit button area */
@@ -295,18 +295,18 @@
 .radio-label--disabled {
   opacity: 0.45;
   cursor: not-allowed;
-  border-color: var(--border-muted, #21262d);
+  border-color: var(--border-muted);
 }
 
 .radio-label--disabled:hover {
-  border-color: var(--border-muted, #21262d);
+  border-color: var(--border-muted);
   background: transparent;
 }
 
 .radio-label input[type="radio"] {
   appearance: none;
-  width: 16px;
-  height: 16px;
+  width: var(--spacing-lg);
+  height: var(--spacing-lg);
   border: 1px solid var(--border-default);
   border-radius: 50%;
   background: transparent;
@@ -325,8 +325,8 @@
 }
 
 .radio-label input[type="radio"]:focus-visible {
-  outline: 2px solid var(--accent-blue);
-  outline-offset: 2px;
+  outline: var(--focus-outline) solid var(--accent-blue);
+  outline-offset: var(--focus-outline);
 }
 
 .radio-status {

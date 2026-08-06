@@ -1,8 +1,10 @@
+@use "../sizing";
+
 .sidebar {
   position: fixed;
   top: 0;
   left: 0;
-  width: 240px;
+  width: var(--sidebar-width);
   height: 100vh;
   background: var(--bg-surface);
   border-right: 1px solid var(--border-default);
@@ -16,7 +18,7 @@
 }
 
 .sidebar--collapsed {
-  width: 64px;
+  width: var(--sidebar-width-collapsed);
 }
 
 .sidebar__header {
@@ -25,18 +27,18 @@
   gap: var(--spacing-md);
   padding: var(--spacing-lg);
   border-bottom: 1px solid var(--border-muted);
-  min-height: 56px;
+  min-height: var(--sidebar-header-height);
 }
 
 .sidebar__toggle {
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: var(--control-size-sm);
+  height: var(--control-size-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-md);
-  font-size: 18px;
+  font-size: var(--icon-sm);
   transition: background var(--transition-fast);
 }
 
@@ -58,7 +60,7 @@
   padding: var(--spacing-sm);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--sidebar-nav-gap);
 }
 
 .sidebar__item {
@@ -88,16 +90,16 @@
   content: "";
   position: absolute;
   left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
+  top: var(--spacing-sm);
+  bottom: var(--spacing-sm);
+  width: var(--sidebar-active-indicator);
   background: var(--accent-blue);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
 .sidebar__icon {
-  font-size: 18px;
-  width: 24px;
+  font-size: var(--sidebar-icon-size);
+  width: var(--avatar-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -126,14 +128,14 @@
 .sidebar__hamburger {
   display: none;
   position: fixed;
-  top: 12px;
-  left: 12px;
+  top: var(--spacing-md);
+  left: var(--spacing-md);
   z-index: var(--z-overlay);
-  width: 40px;
-  height: 40px;
+  width: var(--control-size-lg);
+  height: var(--control-size-lg);
   align-items: center;
   justify-content: center;
-  font-size: 22px;
+  font-size: var(--icon-lg);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   border: 1px solid var(--border-default);
@@ -189,7 +191,7 @@
 .sidebar--collapsed .sidebar__item:hover::after {
   content: attr(data-tooltip);
   position: absolute;
-  left: 64px;
+  left: var(--sidebar-width-collapsed);
   top: 50%;
   transform: translateY(-50%);
   background: var(--bg-surface-raised);
@@ -207,9 +209,9 @@
 }
 
 /* Tablet: collapsed (icons-only) by default, toggle can expand */
-@media (min-width: 768px) and (max-width: 1199px) {
+@media (min-width: sizing.$breakpoint-tablet-min) and (max-width: sizing.$breakpoint-tablet-max) {
   .sidebar {
-    width: 64px;
+    width: var(--sidebar-width-collapsed);
   }
   .sidebar .sidebar__brand,
   .sidebar .sidebar__label,
@@ -232,7 +234,7 @@
   }
 
   .sidebar:not(.sidebar--collapsed) {
-    width: 240px;
+    width: var(--sidebar-width);
   }
   .sidebar:not(.sidebar--collapsed) .sidebar__brand,
   .sidebar:not(.sidebar--collapsed) .sidebar__label,
@@ -256,14 +258,14 @@
 }
 
 /* Mobile: sidebar slides in/out, hamburger visible */
-@media (max-width: 767px) {
+@media (max-width: sizing.$breakpoint-mobile) {
   .sidebar {
     transform: translateX(-100%);
-    width: 280px;
+    width: var(--sidebar-width-mobile);
   }
   .sidebar--mobile-open {
     transform: translateX(0);
-    z-index: 1000;
+    z-index: var(--z-toast);
   }
   .sidebar--mobile-open .sidebar__brand,
   .sidebar--mobile-open .sidebar__label,
@@ -292,12 +294,12 @@
   /* Show hamburger button on mobile */
   .sidebar__hamburger {
     display: flex;
-    z-index: 1100;
+    z-index: var(--z-toast);
   }
 
   /* Dock the toggle as onto the sidebar as a close button so it does not overlap the header */
   .sidebar__hamburger:has(~ nav.sidebar--mobile-open) {
-    left: calc(280px - 52px);
+    left: calc(var(--sidebar-width-mobile) - var(--spacing-xl) - var(--sidebar-close-gap));
   }
 
   /* Hide collapse toggle in sidebar header on mobile */
@@ -320,8 +322,8 @@
 }
 
 .sidebar__avatar {
-  width: 24px;
-  height: 24px;
+  width: var(--avatar-size);
+  height: var(--avatar-size);
   border-radius: var(--radius-full);
   overflow: hidden;
   object-fit: cover;

@@ -17,8 +17,8 @@
 }
 
 .badge__dot {
-  width: 8px;
-  height: 8px;
+  width: var(--dot-sm);
+  height: var(--dot-sm);
   border-radius: 50%;
   display: inline-block;
 }
@@ -69,8 +69,8 @@
 }
 
 .badge-dot {
-  width: 10px;
-  height: 10px;
+  width: var(--dot-md);
+  height: var(--dot-md);
   border-radius: 50%;
   display: inline-block;
 }

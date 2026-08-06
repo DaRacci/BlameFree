@@ -147,12 +147,19 @@ fn NewBenchmarkForm(
         .to_string();
 
     let (model, set_model) = signal(initial_model);
+    let initial_reasoning_options = reasoning_radio_options(&reasoning_levels);
     let reasoning_levels = Resource::new(
         move || model.get(),
         |selected_model| async move { read_new_benchmark_reasoning_efforts(selected_model).await },
     );
     let (dataset, set_dataset) = signal(initial_dataset);
     let (reasoning_effort, set_reasoning_effort) = signal(default_reasoning);
+    let (reasoning_options, set_reasoning_options) = signal(initial_reasoning_options);
+    create_effect(move |_| {
+        if let Some(Ok(levels)) = reasoning_levels.get() {
+            set_reasoning_options.set(reasoning_radio_options(&levels));
+        }
+    });
     let (selected_roles, set_selected_roles) = signal(Vec::<String>::new());
     let (available_prs, set_available_prs) = signal(Vec::<GoldenCommentEntry>::new());
     let (selected_prs, set_selected_prs) = signal(Vec::<String>::new());
@@ -272,10 +279,7 @@ fn NewBenchmarkForm(
                     helper="Datasets come from server-side scan of configured dataset dir."
                 />
                 {move || {
-                    let options = match reasoning_levels.get() {
-                        Some(Ok(levels)) => reasoning_radio_options(&levels),
-                        _ => Vec::new(),
-                    };
+                    let options = reasoning_options.get();
                     view! {
                         <RadioGroup
                             id="benchmark-reasoning"
