@@ -130,7 +130,8 @@ enum Commands {
     },
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     riv_shared::init_dotenv();
     riv_shared::init_logging(None).try_init()?;
 
@@ -166,10 +167,7 @@ fn main() -> Result<()> {
             pr_filter,
             reasoning_effort,
         } => {
-            let rt = tokio::runtime::Runtime::new()?;
-
-            // Pre-warm model capabilities cache
-            model_capabilities::warm_model_cache_blocking();
+            model_capabilities::warm_model_cache().await;
 
             let roles = roles.unwrap_or_else(|| {
                 riv_agents::prompts::PromptLibrary::get_instance()
@@ -177,7 +175,7 @@ fn main() -> Result<()> {
                     .join(",")
             });
 
-            rt.block_on(run_benchmark(
+            run_benchmark(
                 model,
                 judge_model,
                 dry_run,
@@ -186,7 +184,8 @@ fn main() -> Result<()> {
                 max_findings,
                 pr_filter,
                 reasoning_effort,
-            ))?;
+            )
+            .await?;
         }
     }
 
