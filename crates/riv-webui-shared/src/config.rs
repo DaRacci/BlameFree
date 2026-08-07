@@ -77,18 +77,54 @@ pub struct PrEntry {
     pub pr_number: u32,
 }
 
-/// A single model entry from the OpenRouter catalog.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// A single model entry in the OpenRouter catalog.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AvailableModel {
     /// Stable model identifier.
     pub id: String,
 
     /// Whether the model supports reasoning/thinking.
     pub reasoning: bool,
+
+    /// Human-readable model name.
+    #[serde(default)]
+    pub name: Option<String>,
+
+    /// Short description of the model.
+    #[serde(default)]
+    pub description: Option<String>,
+
+    /// Maximum context window in tokens.
+    #[serde(default)]
+    pub context_length: Option<u64>,
+
+    /// Input/output modality summary.
+    #[serde(default)]
+    pub modality: Option<String>,
+
+    /// Price per prompt token in USD.
+    #[serde(default)]
+    pub prompt_price: Option<f64>,
+
+    /// Price per completion token in USD.
+    #[serde(default)]
+    pub completion_price: Option<f64>,
+
+    /// Whether the model supports tool/function calling.
+    #[serde(default)]
+    pub supports_tools: bool,
+
+    /// Whether the model supports structured outputs.
+    #[serde(default)]
+    pub supports_structured_outputs: bool,
+
+    /// Whether the model supports web search.
+    #[serde(default)]
+    pub supports_web_search: bool,
 }
 
 /// A server-side paginated slice of the OpenRouter model catalog.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatalogPage {
     /// Models on this page.
     pub models: Vec<AvailableModel>,

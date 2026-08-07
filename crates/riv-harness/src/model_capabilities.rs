@@ -58,17 +58,66 @@ struct OpenRouterModelsResponse {
 #[derive(Clone, serde::Deserialize)]
 struct OpenRouterModel {
     id: String,
+    name: Option<String>,
+    description: Option<String>,
+    context_length: Option<u64>,
+    architecture: Option<OpenRouterArchitecture>,
+    pricing: Option<OpenRouterPricing>,
+    supported_parameters: Option<Vec<String>>,
     /// If `Some`, model supports reasoning.
     reasoning: Option<serde_json::Value>,
+}
+
+/// Input/output modality description from OpenRouter.
+#[derive(Clone, serde::Deserialize)]
+struct OpenRouterArchitecture {
+    modality: Option<String>,
+    input_modalities: Option<Vec<String>>,
+    output_modalities: Option<Vec<String>>,
+}
+
+/// Per-token pricing (as decimal strings, e.g. "0.0000005").
+#[derive(Clone, serde::Deserialize)]
+struct OpenRouterPricing {
+    prompt: Option<String>,
+    completion: Option<String>,
+}
+
+/// Displayable capability metadata for a model in the catalog.
+///
+/// Only the stable identifier is persisted to the allowlist; the rest of this
+/// metadata is derived from the live OpenRouter response at runtime.
+#[derive(Debug, Clone)]
+pub struct ModelInfo {
+    pub id: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub context_length: Option<u64>,
+    pub modality: Option<String>,
+    pub input_modalities: Vec<String>,
+    pub output_modalities: Vec<String>,
+    /// Price per prompt token in USD (None when not published/usable).
+    pub prompt_price: Option<f64>,
+    /// Price per completion token in USD (None when not published/usable).
+    pub completion_price: Option<f64>,
+    pub supports_tools: bool,
+    pub supports_structured_outputs: bool,
+    pub supports_web_search: bool,
+    /// Whether the model supports reasoning/thinking.
+    pub reasoning: bool,
+    /// Whether reasoning is mandatory for this model.
+    pub reasoning_mandatory: Option<bool>,
 }
 
 /// Cached model discovery state.
 #[derive(Default)]
 struct ModelCacheState {
-    /// All discovered model IDs in display order.
+    /// All discovered models in display order.
     available: Option<Vec<String>>,
     /// IDs of models that support reasoning.
     reasoning: Option<HashSet<String>>,
+    /// Full capability metadata keyed by display order.
+    details: Option<Vec<ModelInfo>>,
     /// Error from the last failed discovery attempt, if the cache is empty.
     last_error: Option<String>,
 }
@@ -76,18 +125,6 @@ struct ModelCacheState {
 /// Global model capability cache.
 static CACHE: LazyLock<RwLock<ModelCacheState>> =
     LazyLock::new(|| RwLock::new(ModelCacheState::default()));
-
-/// Fetch models from OpenRouter, returning the discovered list plus reasoning-capable subset.
-///
-/// Always queries the public `GET /api/v1/models` catalog (which includes the `reasoning`
-/// field). This is the candidate pool an admin curates into the allowlist; it is not itself
-/// the set of runnable models.
-async fn fetch_models() -> Result<(Vec<String>, HashSet<String>), String> {
-    let client = reqwest::Client::new();
-    let request = client.get("https://openrouter.ai/api/v1/models");
-    let models = fetch_models_from(request).await?;
-    Ok(categorize(models))
-}
 
 async fn fetch_models_from(
     request: reqwest::RequestBuilder,
@@ -108,40 +145,97 @@ async fn fetch_models_from(
         .map_err(|error| format!("Failed to parse response: {error}"))
 }
 
-/// Split discovered models into ordered IDs and reasoning-capable subset.
-fn categorize(models: Vec<OpenRouterModel>) -> (Vec<String>, HashSet<String>) {
-    let reasoning_ids: HashSet<String> = models
-        .iter()
-        .filter(|model| model.reasoning.is_some())
-        .map(|model| model.id.clone())
-        .collect();
+/// Fetch models from OpenRouter, returning the discovered models.
+///
+/// Always queries the public `GET /api/v1/models` catalog (which includes the `reasoning`
+/// field). This is the candidate pool an admin curates into the allowlist; it is not itself
+/// the set of runnable models.
+async fn fetch_models() -> Result<Vec<OpenRouterModel>, String> {
+    let client = reqwest::Client::new();
+    let request = client.get("https://openrouter.ai/api/v1/models");
+    fetch_models_from(request).await
+}
 
+/// Parse `supported_parameters` into a set of capability flags.
+fn parse_capabilities(supported: Option<&Vec<String>>) -> (bool, bool, bool) {
+    let Some(list) = supported else {
+        return (false, false, false);
+    };
+    let has = |needle: &str| list.iter().any(|p| p == needle);
+    (
+        has("tools"),
+        has("structured_outputs"),
+        has("web_search_options") || has("web_search"),
+    )
+}
+
+/// Parse a decimal pricing string (e.g. "0.0000005") into a USD per-token value.
+fn parse_price(raw: Option<&String>) -> Option<f64> {
+    raw.and_then(|s| s.parse::<f64>().ok())
+        .filter(|p| *p >= 0.0)
+}
+
+/// Convert raw OpenRouter entries into ordered display metadata.
+fn build_details(models: Vec<OpenRouterModel>) -> Vec<ModelInfo> {
+    let mut details: Vec<ModelInfo> = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
-    for model in &models {
-        let trimmed = model.id.trim();
-        if !trimmed.is_empty() {
-            seen.insert(trimmed.to_string());
+    for model in models {
+        let id = model.id.trim().to_string();
+        if id.is_empty() || !seen.insert(id.clone()) {
+            continue;
         }
+        let (tools, structured, web_search) =
+            parse_capabilities(model.supported_parameters.as_ref());
+        let modality = model.architecture.as_ref().and_then(|a| a.modality.clone());
+        let input_modalities = model
+            .architecture
+            .as_ref()
+            .and_then(|a| a.input_modalities.clone())
+            .unwrap_or_default();
+        let output_modalities = model
+            .architecture
+            .as_ref()
+            .and_then(|a| a.output_modalities.clone())
+            .unwrap_or_default();
+        let reasoning_mandatory = model
+            .reasoning
+            .as_ref()
+            .and_then(|r| r.get("mandatory").and_then(|v| v.as_bool()));
+        let reasoning = model.reasoning.is_some();
+        let pricing = model.pricing.as_ref();
+        details.push(ModelInfo {
+            id,
+            name: model.name,
+            description: model.description,
+            context_length: model.context_length,
+            modality,
+            input_modalities,
+            output_modalities,
+            prompt_price: pricing.and_then(|p| parse_price(p.prompt.as_ref())),
+            completion_price: pricing.and_then(|p| parse_price(p.completion.as_ref())),
+            supports_tools: tools,
+            supports_structured_outputs: structured,
+            supports_web_search: web_search,
+            reasoning,
+            reasoning_mandatory,
+        });
     }
-    let ordered: Vec<String> = seen.into_iter().collect();
-
-    (ordered, reasoning_ids)
+    details
 }
 
 /// Apply a successful discovery result to the cache.
-fn apply_success(ordered: Vec<String>, reasoning: HashSet<String>) {
+fn apply_success(details: Vec<ModelInfo>) {
     let mut cache = CACHE.write().expect("model cache poisoned");
-    cache.available = Some(ordered);
-    cache.reasoning = Some(reasoning);
+    cache.available = Some(details.iter().map(|d| d.id.clone()).collect());
+    cache.reasoning = Some(
+        details
+            .iter()
+            .filter(|d| d.reasoning)
+            .map(|d| d.id.clone())
+            .collect(),
+    );
+    cache.details = Some(details);
     cache.last_error = None;
-}
-
-/// Record a discovery failure, clearing the cache so callers surface the error.
-fn record_error(error: String) {
-    let mut cache = CACHE.write().expect("model cache poisoned");
-    cache.available = None;
-    cache.reasoning = None;
-    cache.last_error = Some(error);
 }
 
 /// Warm caches by querying OpenRouter model API.
@@ -149,8 +243,8 @@ fn record_error(error: String) {
 /// On failure the cache is cleared so [`available_models`] surfaces the error.
 pub async fn warm_model_cache() {
     match fetch_models().await {
-        Ok((ordered, reasoning)) => {
-            apply_success(ordered, reasoning);
+        Ok(models) => {
+            apply_success(build_details(models));
             log_discovery_info();
         }
         Err(error) => {
@@ -166,8 +260,8 @@ pub async fn warm_model_cache() {
 /// On failure the previous state is kept and only the error is logged.
 pub async fn refresh_model_cache() -> Result<(), String> {
     match fetch_models().await {
-        Ok((ordered, reasoning)) => {
-            apply_success(ordered, reasoning);
+        Ok(models) => {
+            apply_success(build_details(models));
             log_discovery_info();
             Ok(())
         }
@@ -180,9 +274,9 @@ pub async fn refresh_model_cache() -> Result<(), String> {
 
 fn log_discovery_info() {
     let cache = CACHE.read().expect("model cache poisoned");
-    if let Some(ids) = &cache.available {
+    if let Some(details) = &cache.details {
         tracing::info!(
-            count = ids.len(),
+            count = details.len(),
             reasoning_count = cache.reasoning.as_ref().map_or(0, HashSet::len),
             "OpenRouter models API: discovered usable models"
         );
@@ -199,6 +293,27 @@ pub fn available_models() -> Result<Vec<Model>, String> {
             .clone()
             .unwrap_or_else(|| "Model discovery has not run yet".to_string())),
     }
+}
+
+/// Return the full cached capability metadata for the catalog, or an error describing
+/// why discovery failed.
+pub fn catalog_details() -> Result<Vec<ModelInfo>, String> {
+    let cache = CACHE.read().expect("model cache poisoned");
+    match &cache.details {
+        Some(details) if !details.is_empty() => Ok(details.clone()),
+        _ => Err(cache
+            .last_error
+            .clone()
+            .unwrap_or_else(|| "Model discovery has not run yet".to_string())),
+    }
+}
+
+/// Record a discovery failure, clearing the cache so callers surface the error.
+fn record_error(error: String) {
+    let mut cache = CACHE.write().expect("model cache poisoned");
+    cache.available = None;
+    cache.reasoning = None;
+    cache.last_error = Some(error);
 }
 
 /// Check whether model supports reasoning.

@@ -15,7 +15,7 @@ use riv_agents::{agent::AgentEntry, prompts::PromptLibrary};
 use riv_benchmark::{BENCHMARK_DIR, run_benchmark};
 use riv_harness::{
     eval::{EvalConfig, EvalContext, EvalStrategy},
-    model_capabilities::{available_models, supports_reasoning},
+    model_capabilities::{catalog_details, supports_reasoning},
     review::review_diff,
 };
 use riv_reporting::{cost::AnalyticsTracker, golden::load_golden_datasets};
@@ -370,7 +370,7 @@ where
 {
     let page = page.max(1);
     let per_page = per_page.clamp(1, 100);
-    let all = available_models()?;
+    let all = catalog_details()?;
     let total = all.len();
     let start = (page - 1) * per_page;
     let models = all
@@ -378,8 +378,17 @@ where
         .skip(start)
         .take(per_page)
         .map(|m| riv_webui_shared::config::AvailableModel {
-            reasoning: supports_reasoning(&m),
-            id: m.0,
+            id: m.id,
+            reasoning: m.reasoning,
+            name: m.name,
+            description: m.description,
+            context_length: m.context_length,
+            modality: m.modality,
+            prompt_price: m.prompt_price,
+            completion_price: m.completion_price,
+            supports_tools: m.supports_tools,
+            supports_structured_outputs: m.supports_structured_outputs,
+            supports_web_search: m.supports_web_search,
         })
         .collect();
     Ok(riv_webui_shared::config::CatalogPage {

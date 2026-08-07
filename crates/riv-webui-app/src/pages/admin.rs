@@ -414,26 +414,82 @@ pub fn ModelsSection() -> impl IntoView {
                                                             let checked_id = id.clone();
                                                             let click_id = id.clone();
                                                             let display_id = id.clone();
+                                                            let name = m.name.clone();
+                                                            let description = m.description.clone();
+                                                            let context = m.context_length;
+                                                            let modality = m.modality.clone();
+                                                            let prompt_price = m.prompt_price;
+                                                            let completion_price = m.completion_price;
+                                                            let supports_tools = m.supports_tools;
+                                                            let supports_structured = m.supports_structured_outputs;
+                                                            let supports_web_search = m.supports_web_search;
                                                             view! {
-                                                                <label class="admin-model-card">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        prop:checked=move || selected.get().contains(&checked_id)
-                                                                        on:click=move |_| {
-                                                                            set_selected.update(|s| {
-                                                                                if let Some(pos) = s.iter().position(|k| k == &click_id) {
-                                                                                    s.remove(pos);
-                                                                                } else {
-                                                                                    s.push(click_id.clone());
-                                                                                }
-                                                                            });
-                                                                        }
-                                                                    />
-                                                                    <span class="admin-model-card__id">{display_id}</span>
-                                                                    {reasoning.then(|| {
-                                                                        view! { <span class="admin-model-card__badge">"reasoning"</span> }
-                                                                    })}
-                                                                </label>
+                                                                <div class="admin-model-card admin-model-card--has-popover">
+                                                                    <label class="admin-model-card__row">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            prop:checked=move || selected.get().contains(&checked_id)
+                                                                            on:click=move |_| {
+                                                                                set_selected.update(|s| {
+                                                                                    if let Some(pos) = s.iter().position(|k| k == &click_id) {
+                                                                                        s.remove(pos);
+                                                                                    } else {
+                                                                                        s.push(click_id.clone());
+                                                                                    }
+                                                                                });
+                                                                            }
+                                                                        />
+                                                                        <span class="admin-model-card__id">{display_id}</span>
+                                                                        {reasoning.then(|| {
+                                                                            view! { <span class="admin-model-card__badge">"reasoning"</span> }
+                                                                        })}
+                                                                    </label>
+                                                                    <div class="admin-model-popover" role="tooltip">
+                                                                        <div class="admin-model-popover__head">
+                                                                            <span class="admin-model-popover__name">
+                                                                                {name.clone().unwrap_or_else(|| id.clone())}
+                                                                            </span>
+                                                                            {reasoning.then(|| {
+                                                                                view! { <span class="admin-model-popover__tag">"reasoning"</span> }
+                                                                            })}
+                                                                        </div>
+                                                                        <div class="admin-model-popover__id">{id.clone()}</div>
+                                                                        {description.clone().map(|d| {
+                                                                            view! { <p class="admin-model-popover__desc">{d}</p> }
+                                                                        })}
+                                                                        <dl class="admin-model-popover__specs">
+                                                                            {modality.clone().map(|m| {
+                                                                                view! { <div class="admin-model-popover__spec"><dt>"Modality"</dt><dd>{m}</dd></div> }
+                                                                            })}
+                                                                            {context.map(|c| {
+                                                                                view! { <div class="admin-model-popover__spec"><dt>"Context"</dt><dd>{format!("{}", c)}</dd></div> }
+                                                                            })}
+                                                                            {prompt_price.map(|p| {
+                                                                                view! { <div class="admin-model-popover__spec"><dt>"Input"</dt><dd>{"$"} {format!("{:.6}", p)}</dd></div> }
+                                                                            })}
+                                                                            {completion_price.map(|p| {
+                                                                                view! { <div class="admin-model-popover__spec"><dt>"Output"</dt><dd>{"$"} {format!("{:.6}", p)}</dd></div> }
+                                                                            })}
+                                                                        </dl>
+                                                                        <div class="admin-model-popover__caps">
+                                                                            {if supports_tools {
+                                                                                view! { <span class="admin-model-popover__cap">"tools"</span> }.into_any()
+                                                                            } else {
+                                                                                view! {}.into_any()
+                                                                            }}
+                                                                            {if supports_structured {
+                                                                                view! { <span class="admin-model-popover__cap">"structured outputs"</span> }.into_any()
+                                                                            } else {
+                                                                                view! {}.into_any()
+                                                                            }}
+                                                                            {if supports_web_search {
+                                                                                view! { <span class="admin-model-popover__cap">"web search"</span> }.into_any()
+                                                                            } else {
+                                                                                view! {}.into_any()
+                                                                            }}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
                                                             }
                                                         }).collect::<Vec<_>>()}
                                                     </div>
