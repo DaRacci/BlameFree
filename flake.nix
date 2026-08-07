@@ -76,6 +76,7 @@
                 cargo-sort
                 dart-sass
                 leptosfmt
+                sea-orm-cli
                 wasm-bindgen-cli
               ]
               ++ buildInputs
