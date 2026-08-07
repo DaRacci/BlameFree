@@ -5,7 +5,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use riv_stor::traits::Store;
-use riv_types::{capabilities::ReasoningEffort, wrappers::Model};
+use riv_types::capabilities::ReasoningEffort;
 use riv_webui_shared::routes::{API_DISCOVERY_CAPABILITIES, API_DISCOVERY_MODELS};
 use tracing::instrument;
 
@@ -24,8 +24,12 @@ where
     crate::services::list_models(&state)
         .await
         .map(|models| (StatusCode::OK, Json(models)).into_response())
-        .unwrap_or_else(|_| {
-            (StatusCode::INTERNAL_SERVER_ERROR, Json(Vec::<Model>::new())).into_response()
+        .unwrap_or_else(|error| {
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": error })),
+            )
+                .into_response()
         })
 }
 

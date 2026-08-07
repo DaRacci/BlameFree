@@ -85,6 +85,30 @@ impl<S: Store + Send + Sync + Clone + 'static> axum::extract::FromRef<AppState<S
     }
 }
 
+/// Spawn a background task that periodically refreshes the model cache.
+///
+/// Runs on the tokio runtime for the lifetime of the server.
+fn spawn_model_refresh() {
+    use std::time::Duration;
+    use tokio::time::interval;
+    use tracing::warn;
+
+    const REFRESH_SECS: Duration = Duration::from_mins(10);
+
+    tokio::spawn(async move {
+        let mut ticker = interval(REFRESH_SECS);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // Skip the immediate tick: the cache is warmed once at startup in main().
+        ticker.tick().await;
+        loop {
+            ticker.tick().await;
+            if let Err(error) = riv_harness::model_capabilities::refresh_model_cache().await {
+                warn!("model cache refresh failed: {error}");
+            }
+        }
+    });
+}
+
 pub async fn start<S>(state: AppState<S>) -> anyhow::Result<()>
 where
     S: Store + Send + Sync + Clone + 'static,
@@ -94,6 +118,8 @@ where
     let site_root = leptos_options.site_root.to_string();
     let host = state.config.server.host.clone();
     let port = state.config.server.port;
+
+    spawn_model_refresh();
 
     let app_services = riv_webui_app::AppServices {
         list_reviews: Arc::new({

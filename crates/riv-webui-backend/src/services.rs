@@ -293,7 +293,7 @@ pub async fn list_models<S>(_state: &AppState<S>) -> Result<Vec<Model>, String>
 where
     S: Store + Send + Sync + Clone + 'static,
 {
-    Ok(available_models())
+    available_models()
 }
 
 pub async fn list_reasoning_efforts<S>(

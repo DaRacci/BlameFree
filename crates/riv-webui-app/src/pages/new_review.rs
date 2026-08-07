@@ -344,7 +344,7 @@ fn NewReviewForm(
                     options=model_radio_options
                     value=model
                     set_value=set_model
-                    helper="Models come from OpenRouter discovery with fallback defaults."
+                    helper="Models come from OpenRouter discovery."
                 />
                 {move || {
                     let options = reasoning_options.get();
