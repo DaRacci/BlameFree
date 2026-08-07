@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use riv_agents::{build_agent, send_event, stream_agent_with_agent};
 use riv_consensus::adaptive::get_agents_for_diff;
 use riv_shared::diff::{self, Diff};
@@ -38,11 +38,12 @@ pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding
     report(config).await;
 
     if let Some(errors) = errors {
+        let message = errors.to_string();
         error!(
-            "Encountered {} error(s) during review\n{}",
-            errors.len(),
-            errors
+            "Encountered {} error(s) during review\n{message}",
+            errors.len()
         );
+        return Err(anyhow!(message));
     }
 
     send_event!(

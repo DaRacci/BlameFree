@@ -90,5 +90,8 @@ pub enum RunEvent {
 
         /// The snapshot of the final [`crate::cost::AnalyticsSnapshot`] for this review.
         analytics: AnalyticsSnapshot,
+
+        /// A human-readable failure reason, if known.
+        error_message: Option<String>,
     },
 }

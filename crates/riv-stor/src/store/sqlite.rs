@@ -208,6 +208,7 @@ mod tests {
                 cache_usage: HashMap::new(),
             }),
             duration: Some(Duration::from_secs(42)),
+            error_message: None,
             status: ReviewStatus::Completed,
             metadata: ReviewMetadata::Plain,
         };
@@ -234,6 +235,7 @@ mod tests {
             agent_sessions: Vec::new(),
             analytics: None,
             duration: None,
+            error_message: None,
             status: ReviewStatus::Running,
             metadata: ReviewMetadata::Plain,
         };

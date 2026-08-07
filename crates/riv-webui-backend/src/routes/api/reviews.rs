@@ -247,6 +247,7 @@ fn terminal_review_stream(review: Review) -> Response {
         _ => RunEvent::ReviewFailed {
             review_id: review.id.clone(),
             analytics: review.analytics.clone().unwrap_or_default(),
+            error_message: review.error_message.clone(),
         },
     };
 

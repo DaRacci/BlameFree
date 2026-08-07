@@ -133,6 +133,7 @@ async fn persist_cli_review(
         agent_sessions: Vec::new(),
         analytics: Some(analytics.clone()),
         duration: Some(duration),
+        error_message: None,
         status: ReviewStatus::Completed,
         metadata: ReviewMetadata::Plain,
     };

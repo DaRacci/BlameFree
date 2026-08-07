@@ -62,6 +62,7 @@ async fn test_review_round_trip() {
         agent_sessions: Vec::new(),
         analytics: None,
         duration: None,
+        error_message: None,
         status: ReviewStatus::Running,
         metadata: riv_types::review::ReviewMetadata::Plain,
     };

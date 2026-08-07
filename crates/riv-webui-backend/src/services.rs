@@ -538,6 +538,7 @@ where
         agent_sessions: Vec::new(),
         analytics: None,
         duration: None,
+        error_message: None,
         status: ReviewStatus::Running,
         metadata: ReviewMetadata::PullRequest(PullRequestReviewMetadata {
             repository: repository.clone(),
@@ -623,6 +624,7 @@ where
         agent_sessions: Vec::new(),
         analytics: None,
         duration: None,
+        error_message: None,
         status: ReviewStatus::Running,
         metadata: ReviewMetadata::Plain,
     };
@@ -735,6 +737,7 @@ where
                 agent_sessions: Vec::new(),
                 analytics: Some(analytics.clone()),
                 duration: Some(duration),
+                error_message: None,
                 status: ReviewStatus::Completed,
                 metadata: ReviewMetadata::PullRequest(PullRequestReviewMetadata {
                     repository,
@@ -749,17 +752,19 @@ where
             Ok(())
         }
         Err(error) => {
+            let full_message = format!("{error:#}");
             warn!(
                 "Review {} failed after {:.1}s: {}",
                 review_id,
                 duration.as_secs_f32(),
-                error
+                full_message
             );
             let review = Review {
                 id: review_id.clone(),
                 agent_sessions: Vec::new(),
                 analytics: Some(analytics.clone()),
                 duration: Some(duration),
+                error_message: Some(full_message.clone()),
                 status: ReviewStatus::Failed,
                 metadata: ReviewMetadata::PullRequest(PullRequestReviewMetadata {
                     repository,
@@ -772,7 +777,7 @@ where
                 .await
                 .map_err(|save_error| format!("Failed to save failed review: {save_error}"))?;
             emit_terminal_review_event(&dashboard_tx, &review);
-            Err(format!("Review pipeline failed: {error}"))
+            Err(format!("Review pipeline failed: {full_message}"))
         }
     }
 }
@@ -855,6 +860,11 @@ where
         agent_sessions: Vec::new(),
         analytics: Some(benchmark.analytics.clone()),
         duration: Some(benchmark.duration),
+        error_message: if final_status == ReviewStatus::Failed {
+            Some("Benchmark finished with no completed PR results".to_string())
+        } else {
+            None
+        },
         status: final_status,
         metadata: ReviewMetadata::Plain,
     };
@@ -886,12 +896,19 @@ async fn run_launch_job_with_recovery<S, F>(
         Ok(Ok(())) => {}
         Ok(Err(error)) => {
             error!("{job_kind} launch failed: {error}");
-            ensure_terminal_review_state(&state, &review, &dashboard_tx).await;
+            ensure_terminal_review_state(&state, &review, &dashboard_tx, Some(error.to_string()))
+                .await;
         }
         Err(payload) => {
             let panic_message = panic_payload_message(payload);
             error!("{job_kind} launch panicked: {panic_message}");
-            ensure_terminal_review_state(&state, &review, &dashboard_tx).await;
+            ensure_terminal_review_state(
+                &state,
+                &review,
+                &dashboard_tx,
+                Some(format!("{job_kind} launch panicked: {panic_message}")),
+            )
+            .await;
         }
     }
 
@@ -902,6 +919,7 @@ async fn ensure_terminal_review_state<S>(
     state: &AppState<S>,
     review: &Review,
     dashboard_tx: &broadcast::Sender<RunEvent>,
+    error_message: Option<String>,
 ) where
     S: Store + Send + Sync + Clone + 'static,
 {
@@ -912,21 +930,21 @@ async fn ensure_terminal_review_state<S>(
                 "Review {} left in non-terminal state {} after background job exit; marking failed",
                 review.id, current_review.status
             );
-            mark_review_failed(state, review, dashboard_tx).await;
+            mark_review_failed(state, review, dashboard_tx, error_message).await;
         }
         Ok(None) => {
             warn!(
                 "Review {} missing after background job exit; writing failed fallback state",
                 review.id
             );
-            mark_review_failed(state, review, dashboard_tx).await;
+            mark_review_failed(state, review, dashboard_tx, error_message).await;
         }
         Err(error) => {
             warn!(
                 "Failed to reload review {} after background job exit: {}",
                 review.id, error
             );
-            mark_review_failed(state, review, dashboard_tx).await;
+            mark_review_failed(state, review, dashboard_tx, error_message).await;
         }
     }
 }
@@ -1026,6 +1044,7 @@ fn terminal_review_event(review: &Review) -> RunEvent {
         _ => RunEvent::ReviewFailed {
             review_id: review.id.clone(),
             analytics,
+            error_message: review.error_message.clone(),
         },
     }
 }
@@ -1043,11 +1062,15 @@ async fn mark_review_failed<S>(
     state: &AppState<S>,
     review: &Review,
     dashboard_tx: &broadcast::Sender<RunEvent>,
+    error_message: Option<String>,
 ) where
     S: Store + Send + Sync + Clone + 'static,
 {
     let mut failed_review = review.clone();
     failed_review.status = ReviewStatus::Failed;
+    if failed_review.error_message.is_none() {
+        failed_review.error_message = error_message;
+    }
 
     if let Err(error) = state.store.save::<Review>(&failed_review).await {
         error!(
@@ -1074,6 +1097,10 @@ where
 
     if !is_active {
         review.status = ReviewStatus::Failed;
+        review.error_message = Some(
+            "Review was not active on the server at the time it was loaded; marked failed"
+                .to_string(),
+        );
         if let Err(error) = state.store.save::<Review>(review).await {
             warn!(
                 "Failed to reconcile stale review {} to failed state: {}",

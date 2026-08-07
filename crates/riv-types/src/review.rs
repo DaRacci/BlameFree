@@ -25,6 +25,9 @@ pub struct ReviewRuntimeData {
 
     /// The duration of the review in nanoseconds.
     pub duration_nanos: u64,
+
+    /// The failure reason, if the review finished unsuccessfully.
+    pub error_message: Option<String>,
 }
 
 /// Represents a single LLM review session.
@@ -51,10 +54,6 @@ pub struct Review {
     ///
     /// This will not be set until the review is [`ReviewStatus::Failed`],
     /// [`ReviewStatus::Completed`], or [`ReviewStatus::Cancelled`].
-    ///
-    /// Stored as a single zstd-compressed JSON blob in the `analytics` column
-    /// (alongside [`Review::duration`]) via the EntityModel `#[sea_orm(json)]`
-    /// attribute. See [`ReviewRuntimeData`].
     #[cfg_attr(feature = "seaorm-storage", sea_orm(json))]
     pub analytics: Option<AnalyticsSnapshot>,
 
@@ -62,11 +61,12 @@ pub struct Review {
     ///
     /// This will not be set until the review is [`ReviewStatus::Failed`],
     /// [`ReviewStatus::Completed`], or [`ReviewStatus::Cancelled`].
-    ///
-    /// Persisted via the same compressed blob as [`Review::analytics`]; see
-    /// [`ReviewRuntimeData`].
     #[cfg_attr(feature = "seaorm-storage", sea_orm(json))]
     pub duration: Option<Duration>,
+
+    /// A human-readable failure reason, set only when the review finished with [`ReviewStatus::Failed`].
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(json))]
+    pub error_message: Option<String>,
 
     /// The status of the review.
     pub status: ReviewStatus,

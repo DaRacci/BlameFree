@@ -119,10 +119,12 @@ impl JsonBlobEnvelope for crate::review::ReviewRuntimeData {
                 .as_ref()
                 .map(|d| d.as_nanos() as u64)
                 .unwrap_or(0),
+            error_message: domain.error_message.clone(),
         };
         if wrapper.analytics.sessions.is_empty()
             && wrapper.analytics.cache_usage.is_empty()
             && wrapper.duration_nanos == 0
+            && wrapper.error_message.is_none()
         {
             return None;
         }
@@ -142,6 +144,7 @@ impl JsonBlobEnvelope for crate::review::ReviewRuntimeData {
         if wrapper.duration_nanos > 0 {
             domain.duration = Some(std::time::Duration::from_nanos(wrapper.duration_nanos));
         }
+        domain.error_message = wrapper.error_message;
     }
 }
 
@@ -200,6 +203,7 @@ mod tests {
                 cache_usage: HashMap::new(),
             }),
             duration: Some(Duration::from_millis(1234)),
+            error_message: None,
             status: ReviewStatus::Completed,
             metadata: crate::review::ReviewMetadata::Plain,
         };
@@ -224,6 +228,7 @@ mod tests {
             agent_sessions: Vec::new(),
             analytics: None,
             duration: None,
+            error_message: None,
             status: ReviewStatus::Running,
             metadata: crate::review::ReviewMetadata::Plain,
         };

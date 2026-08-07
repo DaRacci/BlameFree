@@ -152,6 +152,23 @@ fn render_review_detail(detail: ReviewDetailData) -> AnyView {
 
             <p class="text-secondary mb-lg">{subtitle}</p>
 
+            {if matches!(review.status, ReviewStatus::Failed)
+                && review.error_message.as_deref().is_some_and(|s| !s.is_empty())
+            {
+                let message = review.error_message.clone().unwrap_or_default();
+                view! {
+                    <div class="card card--danger mb-lg">
+                        <div class="card__body">
+                            <p class="text-error font-medium">"Review failed"</p>
+                            <p class="text-secondary text-sm mt-sm">{message}</p>
+                        </div>
+                    </div>
+                }
+                .into_any()
+            } else {
+                view! { <span></span> }.into_any()
+            }}
+
             <MetricsGrid>
                 <MetricsCard value=review_id label="Review ID" truncate=true />
                 <MetricsCard value=session_count label="Agent Sessions" />

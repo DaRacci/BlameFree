@@ -38,6 +38,7 @@ mod tests {
             agent_sessions: Vec::new(),
             analytics: None,
             duration: None,
+            error_message: None,
             status: ReviewStatus::Completed,
             metadata: ReviewMetadata::Plain,
         };
@@ -58,6 +59,7 @@ mod tests {
             agent_sessions: Vec::new(),
             analytics: None,
             duration: None,
+            error_message: None,
             status: ReviewStatus::Completed,
             metadata: ReviewMetadata::Plain,
         };
@@ -66,6 +68,7 @@ mod tests {
             agent_sessions: Vec::new(),
             analytics: None,
             duration: None,
+            error_message: None,
             status: ReviewStatus::Completed,
             metadata: ReviewMetadata::Plain,
         };
@@ -88,6 +91,7 @@ mod tests {
             agent_sessions: Vec::new(),
             analytics: None,
             duration: None,
+            error_message: None,
             status: ReviewStatus::Completed,
             metadata: ReviewMetadata::Plain,
         };

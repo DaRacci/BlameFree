@@ -21,15 +21,15 @@ where
     }
 
     pub fn data(&self) -> Option<T> {
-        self.resource.get().and_then(Result::ok)
+        self.resource.try_get().flatten().and_then(Result::ok)
     }
 
     pub fn error(&self) -> Option<String> {
-        self.resource.get().and_then(Result::err)
+        self.resource.try_get().flatten().and_then(Result::err)
     }
 
     pub fn loading(&self) -> bool {
-        self.resource.get().is_none()
+        self.resource.try_get().flatten().is_none()
     }
 }
 
