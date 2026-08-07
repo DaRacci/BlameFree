@@ -35,7 +35,7 @@ gloo-timers = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-web-sys = { workspace = true, features = ["Element", "EventSource", "HtmlElement", "MessageEvent", "Storage", "Window"] }
+web-sys = { workspace = true, features = ["DomRect", "Element", "EventSource", "HtmlElement", "MessageEvent", "Storage", "Window"] }
 wasm-bindgen = { workspace = true }
 
 [lints]

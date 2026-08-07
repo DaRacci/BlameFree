@@ -4,9 +4,11 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_router::hooks::use_navigate;
 use riv_types::{capabilities::ReasoningEffort, review::Review, vcs::pr::PrMeta};
-use riv_webui_shared::config::AgentInfo;
+use riv_webui_shared::config::{AgentInfo, AvailableModel};
 
-use super::form_support::{model_radio_options, pr_radio_options, reasoning_radio_options};
+use super::form_support::{
+    allowlisted_model_radio_options, pr_radio_options, reasoning_radio_options,
+};
 use crate::components::{
     error_state::ErrorState,
     form_page::FormPage,
@@ -20,17 +22,14 @@ use crate::storage::{clear, persist_signal, restore, restore_signal};
 
 #[server]
 async fn read_new_review_bootstrap()
--> Result<(Vec<String>, Vec<AgentInfo>, Vec<ReasoningEffort>), ServerFnError> {
+-> Result<(Vec<AvailableModel>, Vec<AgentInfo>, Vec<ReasoningEffort>), ServerFnError> {
     let services = use_context::<crate::AppServices>()
         .ok_or_else(|| ServerFnError::new("missing app services"))?;
 
-    let models = (services.list_models)(())
+    let models = (services.list_allowlisted_models)(())
         .await
-        .map_err(ServerFnError::new)?
-        .into_iter()
-        .map(|model| model.0)
-        .collect::<Vec<_>>();
-    let default_model = models.first().cloned().unwrap_or_default();
+        .map_err(ServerFnError::new)?;
+    let default_model = models.first().map(|m| m.id.clone()).unwrap_or_default();
     let roles = (services.list_agents)(())
         .await
         .map_err(ServerFnError::new)?;
@@ -116,12 +115,12 @@ pub fn NewReviewPage() -> impl IntoView {
 
 #[component]
 fn NewReviewForm(
-    models: Vec<String>,
+    models: Vec<AvailableModel>,
     roles: Vec<AgentInfo>,
     reasoning_levels: Vec<ReasoningEffort>,
 ) -> impl IntoView {
     let navigate = use_navigate();
-    let initial_model = models.first().cloned().unwrap_or_default();
+    let initial_model = models.first().map(|m| m.id.clone()).unwrap_or_default();
     let default_reasoning = reasoning_levels
         .iter()
         .find(|level| matches!(level, ReasoningEffort::Medium))
@@ -255,7 +254,7 @@ fn NewReviewForm(
         });
     };
 
-    let model_radio_options = model_radio_options(&models);
+    let model_radio_options = allowlisted_model_radio_options(&models);
 
     view! {
         <FormPage

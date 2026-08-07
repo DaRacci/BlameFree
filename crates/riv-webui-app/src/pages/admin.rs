@@ -7,6 +7,7 @@ use riv_webui_shared::config::{AvailableModel, CatalogPage};
 
 use crate::components::empty_state::EmptyState;
 use crate::components::log_text::LogText;
+use crate::components::model_popover::ModelPopover;
 #[cfg(target_arch = "wasm32")]
 use riv_webui_shared::routes::API_ADMIN_LOGS_STREAM;
 
@@ -47,11 +48,15 @@ async fn save_allowed_models(ids: Vec<String>) -> Result<Vec<String>, ServerFnEr
 }
 
 #[server]
-async fn read_model_catalog(page: usize, per_page: usize) -> Result<CatalogPage, ServerFnError> {
+async fn read_model_catalog(
+    page: usize,
+    per_page: usize,
+    query: String,
+) -> Result<CatalogPage, ServerFnError> {
     let services = use_context::<crate::AppServices>()
         .ok_or_else(|| ServerFnError::new("missing app services"))?;
 
-    (services.list_model_catalog)((page, per_page))
+    (services.list_model_catalog)((page, per_page, query))
         .await
         .map_err(ServerFnError::new)
 }
@@ -286,6 +291,7 @@ pub fn ModelsSection() -> impl IntoView {
     let (selected, set_selected) = signal::<Vec<String>>(Vec::new());
     let (catalog, set_catalog) = signal::<Vec<AvailableModel>>(Vec::new());
     let (page, set_page) = signal(1usize);
+    let (query, set_query) = signal(String::new());
     let (total, set_total) = signal(0usize);
     let (loading, set_loading) = signal(true);
     let (saving, set_saving) = signal(false);
@@ -294,8 +300,8 @@ pub fn ModelsSection() -> impl IntoView {
 
     let load_allowlist = Resource::new(|| (), |_| async { read_allowed_models().await });
     let catalog_page = Resource::new(
-        move || page.get(),
-        move |p| async move { read_model_catalog(p, CATALOG_PER_PAGE).await },
+        move || (page.get(), query.get()),
+        move |(p, q)| async move { read_model_catalog(p, CATALOG_PER_PAGE, q).await },
     );
     let total_pages = move || total.get().div_ceil(CATALOG_PER_PAGE).max(1);
 
@@ -367,6 +373,19 @@ pub fn ModelsSection() -> impl IntoView {
                     } else {
                         view! {
                             <div class="admin-models">
+                                <div class="admin-models__searchbar">
+                                    <input
+                                        type="search"
+                                        class="input"
+                                        placeholder="Search models by name, id, or capability..."
+                                        prop:value=query
+                                        on:input=move |ev| {
+                                            let v = event_target_value(&ev);
+                                            set_page.set(1);
+                                            set_query.set(v);
+                                        }
+                                    />
+                                </div>
                                 <div class="admin-models__toolbar">
                                     <span class="admin-models__count">
                                         {move || format!("{} enabled / {} total", selected_count(), total.get())}
@@ -414,81 +433,29 @@ pub fn ModelsSection() -> impl IntoView {
                                                             let checked_id = id.clone();
                                                             let click_id = id.clone();
                                                             let display_id = id.clone();
-                                                            let name = m.name.clone();
-                                                            let description = m.description.clone();
-                                                            let context = m.context_length;
-                                                            let modality = m.modality.clone();
-                                                            let prompt_price = m.prompt_price;
-                                                            let completion_price = m.completion_price;
-                                                            let supports_tools = m.supports_tools;
-                                                            let supports_structured = m.supports_structured_outputs;
-                                                            let supports_web_search = m.supports_web_search;
                                                             view! {
-                                                                <div class="admin-model-card admin-model-card--has-popover">
-                                                                    <label class="admin-model-card__row">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            prop:checked=move || selected.get().contains(&checked_id)
-                                                                            on:click=move |_| {
-                                                                                set_selected.update(|s| {
-                                                                                    if let Some(pos) = s.iter().position(|k| k == &click_id) {
-                                                                                        s.remove(pos);
-                                                                                    } else {
-                                                                                        s.push(click_id.clone());
-                                                                                    }
-                                                                                });
-                                                                            }
-                                                                        />
-                                                                        <span class="admin-model-card__id">{display_id}</span>
-                                                                        {reasoning.then(|| {
-                                                                            view! { <span class="admin-model-card__badge">"reasoning"</span> }
-                                                                        })}
-                                                                    </label>
-                                                                    <div class="admin-model-popover" role="tooltip">
-                                                                        <div class="admin-model-popover__head">
-                                                                            <span class="admin-model-popover__name">
-                                                                                {name.clone().unwrap_or_else(|| id.clone())}
-                                                                            </span>
+                                                                <div class="admin-model-card">
+                                                                    <ModelPopover model=m>
+                                                                        <label class="admin-model-card__row">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                prop:checked=move || selected.get().contains(&checked_id)
+                                                                                on:click=move |_| {
+                                                                                    set_selected.update(|s| {
+                                                                                        if let Some(pos) = s.iter().position(|k| k == &click_id) {
+                                                                                            s.remove(pos);
+                                                                                        } else {
+                                                                                            s.push(click_id.clone());
+                                                                                        }
+                                                                                    });
+                                                                                }
+                                                                            />
+                                                                            <span class="admin-model-card__id">{display_id}</span>
                                                                             {reasoning.then(|| {
-                                                                                view! { <span class="admin-model-popover__tag">"reasoning"</span> }
+                                                                                view! { <span class="admin-model-card__badge">"reasoning"</span> }
                                                                             })}
-                                                                        </div>
-                                                                        <div class="admin-model-popover__id">{id.clone()}</div>
-                                                                        {description.clone().map(|d| {
-                                                                            view! { <p class="admin-model-popover__desc">{d}</p> }
-                                                                        })}
-                                                                        <dl class="admin-model-popover__specs">
-                                                                            {modality.clone().map(|m| {
-                                                                                view! { <div class="admin-model-popover__spec"><dt>"Modality"</dt><dd>{m}</dd></div> }
-                                                                            })}
-                                                                            {context.map(|c| {
-                                                                                view! { <div class="admin-model-popover__spec"><dt>"Context"</dt><dd>{format!("{}", c)}</dd></div> }
-                                                                            })}
-                                                                            {prompt_price.map(|p| {
-                                                                                view! { <div class="admin-model-popover__spec"><dt>"Input"</dt><dd>{"$"} {format!("{:.6}", p)}</dd></div> }
-                                                                            })}
-                                                                            {completion_price.map(|p| {
-                                                                                view! { <div class="admin-model-popover__spec"><dt>"Output"</dt><dd>{"$"} {format!("{:.6}", p)}</dd></div> }
-                                                                            })}
-                                                                        </dl>
-                                                                        <div class="admin-model-popover__caps">
-                                                                            {if supports_tools {
-                                                                                view! { <span class="admin-model-popover__cap">"tools"</span> }.into_any()
-                                                                            } else {
-                                                                                view! {}.into_any()
-                                                                            }}
-                                                                            {if supports_structured {
-                                                                                view! { <span class="admin-model-popover__cap">"structured outputs"</span> }.into_any()
-                                                                            } else {
-                                                                                view! {}.into_any()
-                                                                            }}
-                                                                            {if supports_web_search {
-                                                                                view! { <span class="admin-model-popover__cap">"web search"</span> }.into_any()
-                                                                            } else {
-                                                                                view! {}.into_any()
-                                                                            }}
-                                                                        </div>
-                                                                    </div>
+                                                                        </label>
+                                                                    </ModelPopover>
                                                                 </div>
                                                             }
                                                         }).collect::<Vec<_>>()}

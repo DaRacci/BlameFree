@@ -40,6 +40,7 @@ routes_register! {
 pub(crate) struct CatalogQuery {
     page: Option<usize>,
     per_page: Option<usize>,
+    query: Option<String>,
 }
 
 /// GET the current model allowlist.
@@ -85,7 +86,7 @@ where
         .per_page
         .unwrap_or(CATALOG_DEFAULT_PER_PAGE)
         .clamp(1, CATALOG_MAX_PER_PAGE);
-    let catalog = list_model_catalog(&state, page, per_page)
+    let catalog = list_model_catalog(&state, page, per_page, query.query.as_deref().unwrap_or(""))
         .await
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(catalog))

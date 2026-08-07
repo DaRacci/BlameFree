@@ -1,0 +1,36 @@
+.popover {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + var(--spacing-sm));
+  transform: translateX(-50%);
+  z-index: 20;
+  width: 280px;
+  max-width: 85vw;
+  padding: var(--spacing-md);
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--transition-fast),
+    visibility var(--transition-fast);
+  pointer-events: none;
+}
+
+.popover-host {
+  position: relative;
+}
+
+.popover-host:hover .popover,
+.popover-host:focus-within .popover {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Flip below the host when it sits near the top of the viewport. */
+.popover-host--flip .popover {
+  top: calc(100% + var(--spacing-sm));
+  bottom: auto;
+}

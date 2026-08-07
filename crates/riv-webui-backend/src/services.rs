@@ -318,6 +318,43 @@ where
     Ok(allowed.into_iter().map(|m| m.id).collect())
 }
 
+/// Read the allowlist as full `AvailableModel` metadata.
+pub async fn list_allowlisted_models<S>(
+    state: &AppState<S>,
+) -> Result<Vec<riv_webui_shared::config::AvailableModel>, String>
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
+    let allowed = state
+        .store
+        .list::<AllowedModel>(&())
+        .await
+        .map_err(|e| e.to_string())?;
+    let ids: Vec<String> = allowed.into_iter().map(|m| m.id).collect();
+    let catalog = catalog_details()?;
+    Ok(ids
+        .into_iter()
+        .filter_map(|id| {
+            catalog
+                .iter()
+                .find(|m| m.id == id)
+                .map(|m| riv_webui_shared::config::AvailableModel {
+                    id: m.id.clone(),
+                    reasoning: m.reasoning,
+                    name: m.name.clone(),
+                    description: m.description.clone(),
+                    context_length: m.context_length,
+                    modality: m.modality.clone(),
+                    prompt_price: m.prompt_price,
+                    completion_price: m.completion_price,
+                    supports_tools: m.supports_tools,
+                    supports_structured_outputs: m.supports_structured_outputs,
+                    supports_web_search: m.supports_web_search,
+                })
+        })
+        .collect())
+}
+
 /// Replace the entire model allowlist.
 ///
 /// The client sends the complete desired set each save.
@@ -364,16 +401,35 @@ pub async fn list_model_catalog<S>(
     _state: &AppState<S>,
     page: usize,
     per_page: usize,
+    query: &str,
 ) -> Result<riv_webui_shared::config::CatalogPage, String>
 where
     S: Store + Send + Sync + Clone + 'static,
 {
     let page = page.max(1);
     let per_page = per_page.clamp(1, 100);
+    let query = query.trim().to_lowercase();
     let all = catalog_details()?;
-    let total = all.len();
+    let filtered: Vec<_> = all
+        .into_iter()
+        .filter(|m| {
+            if query.is_empty() {
+                return true;
+            }
+            let haystack = format!(
+                "{} {} {} {}",
+                m.id,
+                m.name.as_deref().unwrap_or(""),
+                m.description.as_deref().unwrap_or(""),
+                m.modality.as_deref().unwrap_or("")
+            )
+            .to_lowercase();
+            haystack.contains(&query)
+        })
+        .collect();
+    let total = filtered.len();
     let start = (page - 1) * per_page;
-    let models = all
+    let models = filtered
         .into_iter()
         .skip(start)
         .take(per_page)

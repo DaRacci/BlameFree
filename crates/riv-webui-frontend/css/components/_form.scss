@@ -266,11 +266,19 @@
   font-size: var(--text-sm);
 }
 
-/* Single-select radio list (styled like checkbox group) */
 .radio-group {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
+}
+
+.radio-group .popover-host {
+  position: relative;
+  display: block;
+}
+
+.radio-group .popover-host .radio-label {
+  width: 100%;
 }
 
 .radio-label {

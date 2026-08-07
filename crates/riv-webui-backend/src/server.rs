@@ -145,6 +145,13 @@ where
                 Box::pin(async move { crate::services::list_allowed_models(&state).await })
             }
         }),
+        list_allowlisted_models: Arc::new({
+            let state = state.clone();
+            move |()| {
+                let state = state.clone();
+                Box::pin(async move { crate::services::list_allowlisted_models(&state).await })
+            }
+        }),
         set_allowed_models: Arc::new({
             let state = state.clone();
             move |ids| {
@@ -154,10 +161,10 @@ where
         }),
         list_model_catalog: Arc::new({
             let state = state.clone();
-            move |(page, per_page)| {
+            move |(page, per_page, query)| {
                 let state = state.clone();
                 Box::pin(async move {
-                    crate::services::list_model_catalog(&state, page, per_page).await
+                    crate::services::list_model_catalog(&state, page, per_page, &query).await
                 })
             }
         }),

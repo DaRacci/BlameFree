@@ -1,19 +1,22 @@
 use riv_types::{
     benchmark::golden::GoldenCommentEntry, capabilities::ReasoningEffort, vcs::pr::PrMeta,
 };
-use riv_webui_shared::config::DatasetInfo;
+use riv_webui_shared::config::{AvailableModel, DatasetInfo};
 use strum::EnumProperty;
 
 use crate::components::{pr_selection::PrItem, radio_group::RadioOption};
 
-pub fn model_radio_options(models: &[String]) -> Vec<RadioOption> {
+/// Build model radio options from allowlisted model metadata, enabling the
+/// hover popover in the form selector.
+pub fn allowlisted_model_radio_options(models: &[AvailableModel]) -> Vec<RadioOption> {
     models
         .iter()
         .map(|m| RadioOption {
-            value: m.clone(),
-            label: m.clone(),
+            value: m.id.clone(),
+            label: m.id.clone(),
             disabled: false,
             tooltip: None,
+            model: Some(m.clone()),
         })
         .collect()
 }
@@ -26,6 +29,7 @@ pub fn dataset_radio_options(datasets: &[DatasetInfo]) -> Vec<RadioOption> {
             label: format!("{} ({} PRs)", d.id, d.pr_count),
             disabled: false,
             tooltip: None,
+            model: None,
         })
         .collect()
 }
@@ -37,6 +41,7 @@ pub fn pr_radio_options(prs: &[PrMeta]) -> Vec<RadioOption> {
             label: format!("#{} - {}", p.number, p.title),
             disabled: false,
             tooltip: None,
+            model: None,
         })
         .collect()
 }
@@ -49,6 +54,7 @@ pub fn reasoning_radio_options(levels: &[ReasoningEffort]) -> Vec<RadioOption> {
             label: level.get_str("Label").unwrap().to_string(),
             disabled: false,
             tooltip: None,
+            model: None,
         })
         .collect()
 }

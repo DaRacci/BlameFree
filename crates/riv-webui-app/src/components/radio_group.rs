@@ -1,4 +1,7 @@
 use leptos::prelude::*;
+use riv_webui_shared::config::AvailableModel;
+
+use crate::components::model_popover::ModelPopover;
 
 /// A single option in a radio group.
 #[derive(Debug, Clone)]
@@ -7,6 +10,8 @@ pub struct RadioOption {
     pub label: String,
     pub disabled: bool,
     pub tooltip: Option<String>,
+    /// Optional model metadata used to render a hover popover for this option.
+    pub model: Option<AvailableModel>,
 }
 
 /// Generic single-select radio list.
@@ -64,6 +69,7 @@ pub fn RadioGroup(
                             label: "None".to_string(),
                             disabled,
                             tooltip: None,
+                            model: None,
                         });
                     }
                     opts.extend(options.clone());
@@ -79,7 +85,8 @@ pub fn RadioGroup(
                         let tooltip = opt.tooltip.clone().unwrap_or_default();
                         let opt_value = opt.value.clone();
                         let label = opt.label.clone();
-                        view! {
+                        let model = opt.model.clone();
+                        let row = view! {
                             <label class=label_class>
                                 <input
                                     type="radio"
@@ -95,7 +102,17 @@ pub fn RadioGroup(
                                 />
                                 <span title=tooltip>{label}</span>
                             </label>
-                        }.into_any()
+                        };
+                        if let Some(m) = model {
+                            view! {
+                                <ModelPopover model=m>
+                                    {row}
+                                </ModelPopover>
+                            }
+                            .into_any()
+                        } else {
+                            row.into_any()
+                        }
                     }));
                     view! {
                         {rendered}

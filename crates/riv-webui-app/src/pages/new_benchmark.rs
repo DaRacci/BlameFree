@@ -6,9 +6,11 @@ use leptos_router::hooks::use_navigate;
 use riv_types::{
     benchmark::golden::GoldenCommentEntry, capabilities::ReasoningEffort, review::Review,
 };
-use riv_webui_shared::config::{AgentInfo, DatasetInfo};
+use riv_webui_shared::config::{AgentInfo, AvailableModel, DatasetInfo};
 
-use super::form_support::{dataset_radio_options, model_radio_options, reasoning_radio_options};
+use super::form_support::{
+    allowlisted_model_radio_options, dataset_radio_options, reasoning_radio_options,
+};
 use crate::components::{
     error_state::ErrorState,
     form_page::FormPage,
@@ -23,7 +25,7 @@ use crate::storage::{clear, persist_signal, restore, restore_signal};
 #[server]
 async fn read_new_benchmark_bootstrap() -> Result<
     (
-        Vec<String>,
+        Vec<AvailableModel>,
         Vec<AgentInfo>,
         Vec<DatasetInfo>,
         Vec<ReasoningEffort>,
@@ -33,13 +35,10 @@ async fn read_new_benchmark_bootstrap() -> Result<
     let services = use_context::<crate::AppServices>()
         .ok_or_else(|| ServerFnError::new("missing app services"))?;
 
-    let models = (services.list_models)(())
+    let models = (services.list_allowlisted_models)(())
         .await
-        .map_err(ServerFnError::new)?
-        .into_iter()
-        .map(|model| model.0)
-        .collect::<Vec<_>>();
-    let default_model = models.first().cloned().unwrap_or_default();
+        .map_err(ServerFnError::new)?;
+    let default_model = models.first().map(|m| m.id.clone()).unwrap_or_default();
     let roles = (services.list_agents)(())
         .await
         .map_err(ServerFnError::new)?;
@@ -127,13 +126,13 @@ pub fn NewBenchmarkPage() -> impl IntoView {
 
 #[component]
 fn NewBenchmarkForm(
-    models: Vec<String>,
+    models: Vec<AvailableModel>,
     roles: Vec<AgentInfo>,
     datasets: Vec<DatasetInfo>,
     reasoning_levels: Vec<ReasoningEffort>,
 ) -> impl IntoView {
     let navigate = use_navigate();
-    let initial_model = models.first().cloned().unwrap_or_default();
+    let initial_model = models.first().map(|m| m.id.clone()).unwrap_or_default();
     let initial_dataset = datasets
         .first()
         .map(|dataset| dataset.id.clone())
@@ -253,7 +252,7 @@ fn NewBenchmarkForm(
         });
     };
 
-    let model_radio_options = model_radio_options(&models);
+    let model_radio_options = allowlisted_model_radio_options(&models);
     let dataset_radio_options = dataset_radio_options(&datasets);
 
     view! {
