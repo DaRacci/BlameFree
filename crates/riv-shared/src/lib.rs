@@ -48,8 +48,17 @@ pub fn init_logging(
     use tracing_subscriber::filter::EnvFilter;
     use tracing_subscriber::layer::SubscriberExt;
 
-    let env_layer = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let stderr_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stderr);
+    let env_layer = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,sea_orm=warn,sqlx=warn"));
+
+    let stderr_span_events = tracing_subscriber::fmt::format::FmtSpan::ENTER
+        | tracing_subscriber::fmt::format::FmtSpan::EXIT;
+
+    let stderr_layer = tracing_subscriber::fmt::layer()
+        .with_span_events(stderr_span_events)
+        .with_target(false)
+        .with_thread_ids(true)
+        .with_writer(std::io::stderr);
 
     let subscriber = tracing_subscriber::registry()
         .with(env_layer)
@@ -60,6 +69,12 @@ pub fn init_logging(
             let _ = std::fs::create_dir_all(parent);
         }
         let file_layer = tracing_subscriber::fmt::layer()
+            .with_span_events(
+                tracing_subscriber::fmt::format::FmtSpan::NEW
+                    | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
+            )
+            .with_target(false)
+            .with_thread_ids(true)
             .with_writer(move || {
                 OpenOptions::new()
                     .create(true)

@@ -46,7 +46,7 @@ use riv_webui_shared::{
 };
 use sea_orm::{EntityTrait, TransactionTrait};
 use tokio::sync::broadcast;
-use tracing::{error, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::server::AppState;
 
@@ -516,6 +516,10 @@ where
     let (pr_title, diff) = fetch_pr_diff(state, &owner, &repo, pr_number).await?;
 
     let review_id = new_review_id(REVIEW_ID_PREFIX);
+    info!(
+        "Starting review {} for {}#{}/{} ({model})",
+        review_id, owner, repo, pr_number
+    );
     let repository = RemoteRepositoryMeta {
         platform: VCSPlatform::GitHub,
         owner,
@@ -608,6 +612,11 @@ where
     }
 
     let review_id = new_review_id(BENCHMARK_REVIEW_ID_PREFIX);
+    info!(
+        "Starting benchmark {} over {} PRs from dataset {dataset_id} ({model})",
+        review_id,
+        selected_entries.len()
+    );
     let live_agents = resolve_live_agents(roles)?;
     let review = Review {
         id: review_id.clone(),
@@ -654,6 +663,11 @@ where
     Ok(review)
 }
 
+#[tracing::instrument(
+    name = "service.review_job",
+    skip_all,
+    fields(review_id = %review_id, model = %model),
+)]
 async fn run_review_job<S>(
     state: AppState<S>,
     review_id: MagicTypeId,
@@ -703,6 +717,12 @@ where
 
     match result {
         Ok(findings) => {
+            info!(
+                "Review {} completed in {:.1}s with {} findings",
+                review_id,
+                duration.as_secs_f32(),
+                findings.len()
+            );
             let pr_result = build_pr_result(review_id.clone(), None, Vec::new(), findings);
             state
                 .store
@@ -729,6 +749,12 @@ where
             Ok(())
         }
         Err(error) => {
+            warn!(
+                "Review {} failed after {:.1}s: {}",
+                review_id,
+                duration.as_secs_f32(),
+                error
+            );
             let review = Review {
                 id: review_id.clone(),
                 agent_sessions: Vec::new(),
@@ -751,6 +777,11 @@ where
     }
 }
 
+#[tracing::instrument(
+    name = "service.benchmark_job",
+    skip_all,
+    fields(review_id = %review_id, dataset_id = %dataset_id, model = %model),
+)]
 async fn run_benchmark_job<S>(
     state: AppState<S>,
     review_id: MagicTypeId,
@@ -813,6 +844,12 @@ where
     } else {
         ReviewStatus::Failed
     };
+    info!(
+        "Benchmark {} finished in {:.1}s ({completed_results}/{} PRs {final_status:?})",
+        review_id,
+        benchmark.duration.as_secs_f32(),
+        benchmark.outcomes.len()
+    );
     let review = Review {
         id: review_id.clone(),
         agent_sessions: Vec::new(),
@@ -831,6 +868,7 @@ where
     Ok(())
 }
 
+#[tracing::instrument(name = "service.launch_recovery", skip_all, fields(review_id = %review.id, kind = job_kind))]
 async fn run_launch_job_with_recovery<S, F>(
     state: AppState<S>,
     review: Review,
@@ -947,6 +985,11 @@ where
         let mut review_agents = state.live_review_agents.write().await;
         review_agents.insert(review_id.clone(), live_agents);
     }
+    debug!(
+        "Registered live review {} (active reviews: {})",
+        review_id,
+        state.active_reviews.read().await.len()
+    );
     tx
 }
 
@@ -966,6 +1009,11 @@ where
         let mut review_agents = state.live_review_agents.write().await;
         review_agents.remove(review_id);
     }
+    debug!(
+        "Unregistered live review {} (active reviews: {})",
+        review_id,
+        state.active_reviews.read().await.len()
+    );
 }
 
 fn terminal_review_event(review: &Review) -> RunEvent {

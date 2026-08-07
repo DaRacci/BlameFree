@@ -15,6 +15,7 @@ use tracing::{error, info, warn};
 use crate::eval::EvalConfig;
 use crate::finding::post_process_findings;
 
+#[tracing::instrument(name = "harness.pipeline.evaluate", skip_all, fields(review_id = %config.review_id, agent_count = config.agents.len()))]
 pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> {
     send_event!(
         config,

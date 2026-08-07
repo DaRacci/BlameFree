@@ -8,6 +8,12 @@ use crate::eval::EvalConfig;
 use crate::pipeline;
 
 /// Review a diff.
+#[tracing::instrument(name = "harness.review_diff", skip_all, fields(
+    bytes = diff.raw.len(),
+    sections = diff.sections.len(),
+    agent_count = config.agents.len(),
+    model = %config.model.get(),
+))]
 pub async fn review_diff(diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> {
     info!(
         "Reviewing diff ({} bytes, {} sections) with {} agents, model={}",

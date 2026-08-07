@@ -58,7 +58,7 @@ where
         })
 }
 
-#[instrument(skip(state), name = API_REVIEWS_DETAILS)]
+#[instrument(skip(state), name = API_REVIEWS_DETAILS, fields(review_id = %review_id))]
 pub async fn get_review<S>(
     State(state): State<AppState<S>>,
     Path(review_id): Path<MagicTypeId>,
@@ -83,7 +83,7 @@ where
         })
 }
 
-#[instrument(skip(state), name = API_REVIEWS_LOGS)]
+#[instrument(skip(state), name = API_REVIEWS_LOGS, fields(review_id = %review_id, agent_id = %agent_id))]
 pub async fn get_review_logs<S>(
     State(state): State<AppState<S>>,
     Path((review_id, agent_id)): Path<(MagicTypeId, MagicTypeId)>,
@@ -118,7 +118,7 @@ where
 }
 
 /// Returns list of agent IDs participating in review.
-#[instrument(skip(state), name = API_REVIEWS_AGENTS)]
+#[instrument(skip(state), name = API_REVIEWS_AGENTS, fields(review_id = %review_id))]
 pub async fn get_review_agents<S>(
     State(state): State<AppState<S>>,
     Path(review_id): Path<MagicTypeId>,
@@ -150,7 +150,7 @@ where
 }
 
 /// Stream running review events over SSE.
-#[instrument(skip(state), name = API_REVIEWS_STREAM)]
+#[instrument(skip(state), name = API_REVIEWS_STREAM, fields(review_id = %review_id))]
 pub async fn stream_review<S>(
     State(state): State<AppState<S>>,
     Path(review_id): Path<MagicTypeId>,

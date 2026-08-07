@@ -4,7 +4,12 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use std::net::SocketAddr;
+
 use axum::Router;
+use axum::extract::{Request, connect_info::ConnectInfo};
+use axum::middleware::{Next, from_fn};
+use axum::response::Response;
 use leptos::config::LeptosOptions;
 use leptos::context::provide_context;
 use leptos_axum::{LeptosRoutes, generate_route_list};
@@ -14,7 +19,6 @@ use riv_types::RunEvent;
 use tokio::sync::{RwLock, broadcast};
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
-use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::auth::SessionStore;
@@ -107,6 +111,36 @@ fn spawn_model_refresh() {
             }
         }
     });
+}
+
+/// Middleware that logs each non-404 request.
+async fn log_requests(request: Request, next: Next) -> Response {
+    let peer_addr = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|connect_info| connect_info.0.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let start = std::time::Instant::now();
+    let method = request.method().clone();
+    let uri = request.uri().clone();
+
+    let response = next.run(request).await;
+
+    if response.status() == axum::http::StatusCode::NOT_FOUND {
+        return response;
+    }
+
+    let latency = start.elapsed();
+    info!(
+        peer_addr = %peer_addr,
+        method = %method,
+        uri = %uri,
+        status = response.status().as_u16(),
+        latency = ?latency,
+        "request finished"
+    );
+    response
 }
 
 pub async fn start<S>(state: AppState<S>) -> anyhow::Result<()>
@@ -302,7 +336,7 @@ where
             },
         )
         .fallback_service(ServeDir::new(&site_root))
-        .layer(TraceLayer::new_for_http())
+        .layer(from_fn(log_requests))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -310,7 +344,11 @@ where
     info!("Listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }
