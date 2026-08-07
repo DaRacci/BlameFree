@@ -76,3 +76,29 @@ pub struct PrEntry {
     /// PR number.
     pub pr_number: u32,
 }
+
+/// A single model entry from the OpenRouter catalog.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AvailableModel {
+    /// Stable model identifier.
+    pub id: String,
+
+    /// Whether the model supports reasoning/thinking.
+    pub reasoning: bool,
+}
+
+/// A server-side paginated slice of the OpenRouter model catalog.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CatalogPage {
+    /// Models on this page.
+    pub models: Vec<AvailableModel>,
+
+    /// Total number of models in the catalog.
+    pub total: usize,
+
+    /// Current page (1-based).
+    pub page: usize,
+
+    /// Requested page size.
+    pub per_page: usize,
+}

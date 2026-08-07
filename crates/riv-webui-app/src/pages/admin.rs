@@ -1,8 +1,11 @@
 use leptos::html;
 use leptos::prelude::*;
+use leptos::task::spawn_local;
 use lucide_leptos::{ArrowDownToLine, ClipboardList, TriangleAlert};
 use riv_webui_shared::admin::LogsResponse;
+use riv_webui_shared::config::{AvailableModel, CatalogPage};
 
+use crate::components::empty_state::EmptyState;
 use crate::components::log_text::LogText;
 #[cfg(target_arch = "wasm32")]
 use riv_webui_shared::routes::API_ADMIN_LOGS_STREAM;
@@ -10,12 +13,45 @@ use riv_webui_shared::routes::API_ADMIN_LOGS_STREAM;
 #[cfg(target_arch = "wasm32")]
 use {crate::sse, futures::StreamExt};
 
+/// Catalog page size for the admin model picker (server-side pagination).
+const CATALOG_PER_PAGE: usize = 20;
+
 #[server]
 async fn read_admin_logs() -> Result<LogsResponse, ServerFnError> {
     let services = use_context::<crate::AppServices>()
         .ok_or_else(|| ServerFnError::new("missing app services"))?;
 
     (services.read_admin_logs)(())
+        .await
+        .map_err(ServerFnError::new)
+}
+
+#[server]
+async fn read_allowed_models() -> Result<Vec<String>, ServerFnError> {
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    (services.list_allowed_models)(())
+        .await
+        .map_err(ServerFnError::new)
+}
+
+#[server]
+async fn save_allowed_models(ids: Vec<String>) -> Result<Vec<String>, ServerFnError> {
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    (services.set_allowed_models)(ids)
+        .await
+        .map_err(ServerFnError::new)
+}
+
+#[server]
+async fn read_model_catalog(page: usize, per_page: usize) -> Result<CatalogPage, ServerFnError> {
+    let services = use_context::<crate::AppServices>()
+        .ok_or_else(|| ServerFnError::new("missing app services"))?;
+
+    (services.list_model_catalog)((page, per_page))
         .await
         .map_err(ServerFnError::new)
 }
@@ -43,7 +79,7 @@ fn status_label(status: &str) -> String {
 fn render_loading() -> AnyView {
     view! {
         <div class="admin-loading">
-            <span>"Loading logs..."</span>
+            <span>"Loading..."</span>
         </div>
     }
     .into_any()
@@ -112,9 +148,10 @@ fn render_log_view(
     .into_any()
 }
 
+/// Server console logs section (unchanged behavior, extracted for reuse).
 #[component]
 #[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
-pub fn AdminPage() -> impl IntoView {
+pub fn LogsSection() -> impl IntoView {
     let (logs, set_logs) = signal(String::new());
     let (loading, set_loading) = signal(true);
     let (error, set_error) = signal::<Option<String>>(None);
@@ -191,56 +228,258 @@ pub fn AdminPage() -> impl IntoView {
     });
 
     view! {
+        <div class="admin-section">
+            <div class="admin-section__header">
+                <h2 class="admin-section__title">"Server Logs"</h2>
+                <span class="admin-section__badge">"console"</span>
+            </div>
+
+            <Suspense fallback=render_loading>
+                {move || {
+                    if !loading.get() {
+                        if let Some(err) = error.get() {
+                            return Some(render_error(err));
+                        }
+
+                        if !available.get() {
+                            return Some(render_unavailable(status_msg.get()));
+                        }
+
+                        return Some(render_log_view(
+                            logs.get(),
+                            connection_status.get(),
+                            log_container_ref.clone(),
+                            follow,
+                            toggle_follow,
+                        ));
+                    }
+
+                    initial_logs.get().map(|result| match result {
+                        Ok(data) => {
+                            if data.available {
+                                render_log_view(
+                                    data.logs,
+                                    "connecting".to_string(),
+                                    log_container_ref.clone(),
+                                    follow,
+                                    toggle_follow,
+                                )
+                            } else {
+                                render_unavailable(data.message)
+                            }
+                        }
+                        Err(err) => render_error(err.to_string()),
+                    })
+                }}
+            </Suspense>
+        </div>
+    }
+}
+
+/// Admin model allowlist picker.
+///
+/// Loads the current allowlist plus a server-side paginated slice of the live
+/// OpenRouter catalog. Checkboxes toggle allowlist membership; Save replaces the
+/// whole allowlist. Prev/Next re-fetch the server-side page.
+#[component]
+pub fn ModelsSection() -> impl IntoView {
+    let (selected, set_selected) = signal::<Vec<String>>(Vec::new());
+    let (catalog, set_catalog) = signal::<Vec<AvailableModel>>(Vec::new());
+    let (page, set_page) = signal(1usize);
+    let (total, set_total) = signal(0usize);
+    let (loading, set_loading) = signal(true);
+    let (saving, set_saving) = signal(false);
+    let (error, set_error) = signal::<Option<String>>(None);
+    let (status, set_status) = signal::<Option<String>>(None);
+
+    let load_allowlist = Resource::new(|| (), |_| async { read_allowed_models().await });
+    let catalog_page = Resource::new(
+        move || page.get(),
+        move |p| async move { read_model_catalog(p, CATALOG_PER_PAGE).await },
+    );
+    let total_pages = move || total.get().div_ceil(CATALOG_PER_PAGE).max(1);
+
+    // Apply the loaded allowlist once available.
+    Effect::new(move || {
+        if let Some(result) = load_allowlist.get() {
+            match result {
+                Ok(ids) => {
+                    set_selected.set(ids);
+                }
+                Err(err) => set_error.set(Some(err.to_string())),
+            }
+        }
+    });
+
+    // Reflect the server-side catalog page into local state.
+    Effect::new(move || {
+        if let Some(result) = catalog_page.get() {
+            match result {
+                Ok(resp) => {
+                    set_catalog.set(resp.models);
+                    set_total.set(resp.total);
+                    set_error.set(None);
+                    set_loading.set(false);
+                }
+                Err(err) => {
+                    set_error.set(Some(err.to_string()));
+                    set_loading.set(false);
+                }
+            }
+        }
+    });
+
+    let save = move |_| {
+        set_saving.set(true);
+        set_status.set(None);
+        let ids = selected.get_untracked();
+        spawn_local(async move {
+            match save_allowed_models(ids).await {
+                Ok(ids) => {
+                    set_selected.set(ids);
+                    set_status.set(Some("Allowlist saved.".to_string()));
+                }
+                Err(err) => {
+                    set_status.set(Some(format!("Save failed: {err}")));
+                }
+            }
+            set_saving.set(false);
+        });
+    };
+
+    let selected_count = move || selected.get().len();
+
+    view! {
+        <div class="admin-section">
+            <div class="admin-section__header">
+                <h2 class="admin-section__title">"Models"</h2>
+                <span class="admin-section__badge">"allowlist"</span>
+            </div>
+
+            <div class="admin-section__body">
+                <p class="text-secondary">
+                    "Enable the models reviewers may use. Changes take effect immediately; review and benchmark forms only show enabled models."
+                </p>
+
+                {move || {
+                    if let Some(err) = error.get() {
+                        render_error(err)
+                    } else {
+                        view! {
+                            <div class="admin-models">
+                                <div class="admin-models__toolbar">
+                                    <span class="admin-models__count">
+                                        {move || format!("{} enabled / {} total", selected_count(), total.get())}
+                                    </span>
+                                    <span class="admin-models__pager">
+                                        <button
+                                            type="button"
+                                            class="btn btn--secondary"
+                                            disabled=move || loading.get() || page.get() <= 1
+                                            on:click=move |_| set_page.update(|p| *p = p.saturating_sub(1).max(1))
+                                        >
+                                            "Prev"
+                                        </button>
+                                        <span class="admin-models__page">
+                                            {move || format!("Page {} / {}", page.get(), total_pages())}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            class="btn btn--secondary"
+                                            disabled=move || loading.get() || (page.get() >= total_pages())
+                                            on:click=move |_| set_page.update(|p| *p += 1)
+                                        >
+                                            "Next"
+                                        </button>
+                                    </span>
+                                </div>
+
+                                <Suspense fallback=render_loading>
+                                    {move || {
+                                        if loading.get() {
+                                            render_loading()
+                                        } else {
+                                            let models = catalog.get();
+                                            if models.is_empty() {
+                                                view! {
+                                                    <EmptyState message="No models in the catalog. Check the OpenRouter API connection." />
+                                                }
+                                                .into_any()
+                                            } else {
+                                                view! {
+                                                    <div class="admin-models__grid">
+                                                        {models.into_iter().map(|m| {
+                                                            let id = m.id.clone();
+                                                            let reasoning = m.reasoning;
+                                                            let checked_id = id.clone();
+                                                            let click_id = id.clone();
+                                                            let display_id = id.clone();
+                                                            view! {
+                                                                <label class="admin-model-card">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        prop:checked=move || selected.get().contains(&checked_id)
+                                                                        on:click=move |_| {
+                                                                            set_selected.update(|s| {
+                                                                                if let Some(pos) = s.iter().position(|k| k == &click_id) {
+                                                                                    s.remove(pos);
+                                                                                } else {
+                                                                                    s.push(click_id.clone());
+                                                                                }
+                                                                            });
+                                                                        }
+                                                                    />
+                                                                    <span class="admin-model-card__id">{display_id}</span>
+                                                                    {reasoning.then(|| {
+                                                                        view! { <span class="admin-model-card__badge">"reasoning"</span> }
+                                                                    })}
+                                                                </label>
+                                                            }
+                                                        }).collect::<Vec<_>>()}
+                                                    </div>
+                                                }
+                                                .into_any()
+                                            }
+                                        }
+                                    }}
+                                </Suspense>
+
+                                <div class="admin-models__footer">
+                                    {move || {
+                                        status.get().map(|msg| {
+                                            view! { <p class="admin-models__status">{msg}</p> }
+                                        })
+                                    }}
+                                    <button
+                                        type="button"
+                                        class="btn btn--primary"
+                                        disabled=move || saving.get()
+                                        on:click=save
+                                    >
+                                        {move || if saving.get() { "Saving..." } else { "Save Allowlist" }}
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                        .into_any()
+                    }
+                }}
+            </div>
+        </div>
+    }
+}
+
+#[component]
+#[cfg_attr(not(target_arch = "wasm32"), allow(unused_variables))]
+pub fn AdminPage() -> impl IntoView {
+    view! {
         <div class="admin-page">
             <div class="page-header">
                 <h1 class="page-header__title">"Admin"</h1>
             </div>
 
-            <div class="admin-section">
-                <div class="admin-section__header">
-                    <h2 class="admin-section__title">"Server Logs"</h2>
-                    <span class="admin-section__badge">"console"</span>
-                </div>
-
-                <Suspense fallback=render_loading>
-                    {move || {
-                        if !loading.get() {
-                            if let Some(err) = error.get() {
-                                return Some(render_error(err));
-                            }
-
-                            if !available.get() {
-                                return Some(render_unavailable(status_msg.get()));
-                            }
-
-                            return Some(render_log_view(
-                                logs.get(),
-                                connection_status.get(),
-                                log_container_ref.clone(),
-                                follow,
-                                toggle_follow,
-                            ));
-                        }
-
-                        initial_logs.get().map(|result| match result {
-                            Ok(data) => {
-                                if data.available {
-                                    render_log_view(
-                                        data.logs,
-                                        "connecting".to_string(),
-                                        log_container_ref.clone(),
-                                        follow,
-                                        toggle_follow,
-                                    )
-                                } else {
-                                    render_unavailable(data.message)
-                                }
-                            }
-                            Err(err) => render_error(err.to_string()),
-                        })
-                    }}
-                </Suspense>
-            </div>
+            <LogsSection />
+            <ModelsSection />
         </div>
     }
 }

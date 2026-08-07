@@ -25,6 +25,8 @@ define_routes! {
 
     API_ADMIN_LOGS,             "/api/admin/logs";
     API_ADMIN_LOGS_STREAM,      "/api/admin/logs/stream";
+    API_ADMIN_MODELS,           "/api/admin/models";
+    API_ADMIN_MODELS_CATALOG,   "/api/admin/models/catalog";
 
     API_REVIEWS_LIST,           "/api/reviews";
     API_REVIEWS_DETAILS,        "/api/reviews/{id}/details";

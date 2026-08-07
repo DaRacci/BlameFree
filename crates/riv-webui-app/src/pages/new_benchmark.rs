@@ -276,14 +276,31 @@ fn NewBenchmarkForm(
             </div>
 
             <FormSection title="Configuration">
-                <RadioGroup
-                    id="benchmark-model"
-                    label_text="Model"
-                    options=model_radio_options
-                    value=model
-                    set_value=set_model
-                    helper="Models come from OpenRouter discovery."
-                />
+                {move || {
+                    if models.is_empty() {
+                        view! {
+                            <div class="form-field">
+                                <label class="form-field__label">"Model"</label>
+                                <p class="radio-status">
+                                    "No models configured. Add models in Admin > Models to enable benchmarks."
+                                </p>
+                            </div>
+                        }
+                        .into_any()
+                    } else {
+                        view! {
+                            <RadioGroup
+                                id="benchmark-model"
+                                label_text="Model"
+                                options=model_radio_options.clone()
+                                value=model
+                                set_value=set_model
+                                helper="All Available models."
+                            />
+                        }
+                        .into_any()
+                    }
+                }}
                 <RadioGroup
                     id="benchmark-dataset"
                     label_text="Dataset"

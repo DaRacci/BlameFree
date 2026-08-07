@@ -17,6 +17,7 @@ use riv_types::{
     benchmark::{golden::GoldenComment, result::PrResult, standalone::Benchmark},
     cost::AnalyticsSnapshot,
     review::Review,
+    settings::AllowedModel,
 };
 
 // ---------------------------------------------------------------------------
@@ -64,6 +65,18 @@ impl Storable for AgentSession {
 impl Storable for AnalyticsSnapshot {
     type Options = ();
     fn item_id(&self) -> &MagicTypeId {
+        static SENTINEL: LazyLock<MagicTypeId> = LazyLock::new(MagicTypeId::default);
+        &SENTINEL
+    }
+}
+
+impl Storable for AllowedModel {
+    type Options = ();
+    fn item_id(&self) -> &MagicTypeId {
+        // String PK → static sentinel. `Storable::item_id` is unused anywhere in
+        // the codebase (only the trait def + per-type impls exist), so a sentinel
+        // is safe. Reads go through `Store::list` -> `T::load_all`, which ignores
+        // `item_id`.
         static SENTINEL: LazyLock<MagicTypeId> = LazyLock::new(MagicTypeId::default);
         &SENTINEL
     }

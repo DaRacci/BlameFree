@@ -138,6 +138,29 @@ where
                 )
             }
         }),
+        list_allowed_models: Arc::new({
+            let state = state.clone();
+            move |()| {
+                let state = state.clone();
+                Box::pin(async move { crate::services::list_allowed_models(&state).await })
+            }
+        }),
+        set_allowed_models: Arc::new({
+            let state = state.clone();
+            move |ids| {
+                let state = state.clone();
+                Box::pin(async move { crate::services::set_allowed_models(&state, ids).await })
+            }
+        }),
+        list_model_catalog: Arc::new({
+            let state = state.clone();
+            move |(page, per_page)| {
+                let state = state.clone();
+                Box::pin(async move {
+                    crate::services::list_model_catalog(&state, page, per_page).await
+                })
+            }
+        }),
         list_repo_prs: Arc::new({
             let state = state.clone();
             move |(owner, repo)| {

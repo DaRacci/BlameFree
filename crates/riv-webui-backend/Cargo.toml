@@ -23,6 +23,7 @@ exp16_adaptive_agents = ["riv-harness/exp16_adaptive_agents"]
 [dependencies]
 anyhow = { workspace = true }
 axum = { workspace = true }
+chrono = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 riv-agents = { path = "../riv-agents" }
@@ -33,6 +34,7 @@ riv-reporting = { path = "../riv-reporting" }
 riv-shared = { path = "../riv-shared" }
 riv-webui-shared = { path = "../riv-webui-shared" }
 riv-stor = { path = "../riv-stor" }
+sea-orm = { workspace = true, features = ["sqlx-sqlite", "runtime-tokio"] }
 oauth2 = { workspace = true, optional = true }
 octocrab = { workspace = true }
 reqwest = { workspace = true, optional = true }

@@ -32,6 +32,11 @@ pub trait Store: Send + Sync + Clone {
     ) -> impl Future<Output = Result<bool, Error>> + Send;
 
     fn migrate(&self) -> impl Future<Output = Result<(), Error>> + Send;
+
+    /// Access the underlying SeaORM database connection for low-level operations
+    /// (e.g. transactional replace-all for the admin model allowlist). The
+    /// connection is cheaply cloneable (Arc-backed pool).
+    fn connection(&self) -> sea_orm::DatabaseConnection;
 }
 
 #[cfg(test)]
@@ -76,6 +81,11 @@ mod tests {
         }
         async fn migrate(&self) -> Result<(), Error> {
             Ok(())
+        }
+        fn connection(&self) -> sea_orm::DatabaseConnection {
+            // Not exercised by tests; `assert_send_sync::<DummyStore>()` only
+            // checks the Send+Sync bound.
+            unreachable!("DummyStore has no database connection")
         }
     }
 

@@ -7,11 +7,13 @@ use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 use std::time::Duration;
 
-use axum::extract::State;
+use axum::Json;
+use axum::extract::{Query, State};
 use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use riv_stor::traits::Store;
-use riv_webui_shared::routes::API_ADMIN_LOGS_STREAM;
+use riv_webui_shared::config::CatalogPage;
+use riv_webui_shared::routes::{API_ADMIN_LOGS_STREAM, API_ADMIN_MODELS, API_ADMIN_MODELS_CATALOG};
 use tokio::sync::mpsc;
 use tokio::time::interval;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -19,12 +21,74 @@ use tracing::{instrument, warn};
 
 use crate::routes_register;
 use crate::server::AppState;
+use crate::services::{list_allowed_models, list_model_catalog, set_allowed_models};
 use riv_webui_shared::admin::LogsResponse;
 
 const READBACK_LINES: usize = 500;
+const CATALOG_DEFAULT_PER_PAGE: usize = 20;
+const CATALOG_MAX_PER_PAGE: usize = 100;
 
 routes_register! {
   get API_ADMIN_LOGS_STREAM => get_logs_stream,
+  get API_ADMIN_MODELS => get_models,
+  put API_ADMIN_MODELS => put_models,
+  get API_ADMIN_MODELS_CATALOG => get_models_catalog,
+}
+
+/// Query params for the admin model catalog endpoint.
+#[derive(serde::Deserialize)]
+pub(crate) struct CatalogQuery {
+    page: Option<usize>,
+    per_page: Option<usize>,
+}
+
+/// GET the current model allowlist.
+pub async fn get_models<S>(
+    State(state): State<AppState<S>>,
+) -> Result<Json<Vec<String>>, (axum::http::StatusCode, String)>
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
+    let ids = list_allowed_models(&state)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(Json(ids))
+}
+
+/// Replace the entire model allowlist (replace-all semantics).
+///
+/// The client sends the complete desired allowlist; the handler deletes existing
+/// rows and inserts the sent set atomically.
+pub async fn put_models<S>(
+    State(state): State<AppState<S>>,
+    Json(ids): Json<Vec<String>>,
+) -> Result<Json<Vec<String>>, (axum::http::StatusCode, String)>
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
+    let ids = set_allowed_models(&state, ids)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(Json(ids))
+}
+
+/// GET a server-side paginated slice of the live model catalog.
+pub async fn get_models_catalog<S>(
+    State(state): State<AppState<S>>,
+    Query(query): Query<CatalogQuery>,
+) -> Result<Json<CatalogPage>, (axum::http::StatusCode, String)>
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
+    let page = query.page.unwrap_or(1).max(1);
+    let per_page = query
+        .per_page
+        .unwrap_or(CATALOG_DEFAULT_PER_PAGE)
+        .clamp(1, CATALOG_MAX_PER_PAGE);
+    let catalog = list_model_catalog(&state, page, per_page)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(Json(catalog))
 }
 
 pub fn load_logs_response(log_path: &Path) -> LogsResponse {

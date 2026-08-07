@@ -78,32 +78,15 @@ static CACHE: LazyLock<RwLock<ModelCacheState>> =
     LazyLock::new(|| RwLock::new(ModelCacheState::default()));
 
 /// Fetch models from OpenRouter, returning the discovered list plus reasoning-capable subset.
+///
+/// Always queries the public `GET /api/v1/models` catalog (which includes the `reasoning`
+/// field). This is the candidate pool an admin curates into the allowlist; it is not itself
+/// the set of runnable models.
 async fn fetch_models() -> Result<(Vec<String>, HashSet<String>), String> {
     let client = reqwest::Client::new();
-    // When an API key is available, query the authenticated `/models/user` endpoint so
-    // guardrail/provider restrictions narrow the discovered set. Some key types (e.g. project
-    // keys) are not authorized for this endpoint and return 401; degrade to the public `/models`
-    // catalog in that case so the full, live list is still usable.
-    let request = match std::env::var("OPENROUTER_API_KEY").ok() {
-        Some(key) => client
-            .get("https://openrouter.ai/api/v1/models/user")
-            .bearer_auth(key),
-        None => client.get("https://openrouter.ai/api/v1/models"),
-    };
-
-    match fetch_models_from(request).await {
-        Ok(models) => Ok(categorize(models)),
-        Err(error) if error.starts_with("API returned 401") => {
-            tracing::warn!(
-                "OpenRouter authenticated models endpoint rejected the key ({error}); \
-                 degrading to public /models catalog"
-            );
-            let public = client.get("https://openrouter.ai/api/v1/models");
-            let models = fetch_models_from(public).await?;
-            Ok(categorize(models))
-        }
-        Err(error) => Err(error),
-    }
+    let request = client.get("https://openrouter.ai/api/v1/models");
+    let models = fetch_models_from(request).await?;
+    Ok(categorize(models))
 }
 
 async fn fetch_models_from(

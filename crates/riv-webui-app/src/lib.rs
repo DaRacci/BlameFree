@@ -19,7 +19,7 @@ use riv_webui_shared::routes::API_CONFIG;
 use riv_webui_shared::{
     admin::LogsResponse,
     auth::AuthUser,
-    config::{AgentInfo, DatasetInfo},
+    config::{AgentInfo, CatalogPage, DatasetInfo},
     review::ReviewAgentLog,
 };
 
@@ -50,6 +50,9 @@ pub type AppReadFn<T> = AppServiceFn<(), T>;
 pub struct AppServices {
     pub list_reviews: AppReadFn<Vec<Review>>,
     pub read_admin_logs: AppReadFn<LogsResponse>,
+    pub list_allowed_models: AppReadFn<Vec<String>>,
+    pub set_allowed_models: AppServiceFn<Vec<String>, Vec<String>>,
+    pub list_model_catalog: AppServiceFn<(usize, usize), CatalogPage>,
     pub list_repo_prs: AppServiceFn<(String, String), Vec<PrMeta>>,
     pub fetch_pr_diff: AppServiceFn<(String, String, u32), (String, String)>,
     pub list_datasets: AppReadFn<Vec<DatasetInfo>>,

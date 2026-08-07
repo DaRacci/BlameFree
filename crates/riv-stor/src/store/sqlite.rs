@@ -169,6 +169,10 @@ impl Store for SqliteStore {
         let db = self.db.clone();
         crate::migration::run_migrations(&db).await
     }
+
+    fn connection(&self) -> sea_orm::DatabaseConnection {
+        self.db.as_ref().clone()
+    }
 }
 
 #[cfg(test)]
@@ -236,5 +240,23 @@ mod tests {
         store.save::<Review>(&review).await.expect("save");
         let loaded = store.load::<Review>(&id).await.expect("load");
         assert_eq!(loaded.unwrap().status, ReviewStatus::Running);
+    }
+
+    #[tokio::test]
+    async fn allowed_model_round_trips_through_store() {
+        use chrono::Utc;
+        use riv_types::settings::AllowedModel;
+
+        let store = SqliteStore::new(":memory:").await.expect("store init");
+        let model = AllowedModel {
+            id: "deepseek/deepseek-v4-flash".to_string(),
+            created_at: Utc::now().naive_utc(),
+        };
+
+        store.save::<AllowedModel>(&model).await.expect("save");
+
+        let listed = store.list::<AllowedModel>(&()).await.expect("list");
+        assert_eq!(listed.len(), 1, "exactly one allowed model persisted");
+        assert_eq!(listed[0].id, "deepseek/deepseek-v4-flash");
     }
 }

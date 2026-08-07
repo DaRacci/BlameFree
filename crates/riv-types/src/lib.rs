@@ -8,6 +8,7 @@ pub mod errors;
 pub mod finding;
 pub mod flatten;
 pub mod review;
+pub mod settings;
 pub mod severity;
 pub mod stor;
 pub mod vcs;

@@ -7,6 +7,7 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
+use chrono::Utc;
 use futures::FutureExt;
 use mti::prelude::{MagicTypeId, MagicTypeIdExt, V7};
 use rig_core::{client::ProviderClient, providers::openrouter};
@@ -30,6 +31,8 @@ use riv_types::{
     capabilities::ReasoningEffort,
     finding::Finding,
     review::{PullRequestReviewMetadata, Review, ReviewMetadata, ReviewStatus},
+    settings::{AllowedModel, AllowedModelEntity},
+    stor::Save,
     vcs::{
         pr::PrMeta,
         repository::{RemoteRepositoryMeta, VCSPlatform},
@@ -41,6 +44,7 @@ use riv_webui_shared::{
     config::{AgentInfo, DatasetInfo},
     review::ReviewAgentLog,
 };
+use sea_orm::{EntityTrait, TransactionTrait};
 use tokio::sync::broadcast;
 use tracing::{error, warn};
 
@@ -289,11 +293,101 @@ where
     Ok(prs)
 }
 
-pub async fn list_models<S>(_state: &AppState<S>) -> Result<Vec<Model>, String>
+pub async fn list_models<S>(state: &AppState<S>) -> Result<Vec<Model>, String>
 where
     S: Store + Send + Sync + Clone + 'static,
 {
-    available_models()
+    let allowed = state
+        .store
+        .list::<AllowedModel>(&())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(allowed.into_iter().map(|m| Model(m.id)).collect())
+}
+
+/// Read the full model allowlist as plain identifiers.
+pub async fn list_allowed_models<S>(state: &AppState<S>) -> Result<Vec<String>, String>
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
+    let allowed = state
+        .store
+        .list::<AllowedModel>(&())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(allowed.into_iter().map(|m| m.id).collect())
+}
+
+/// Replace the entire model allowlist.
+///
+/// The client sends the complete desired set each save.
+/// Existing rows are cleared and the sent identifiers inserted in a single transaction.
+pub async fn set_allowed_models<S>(
+    state: &AppState<S>,
+    ids: Vec<String>,
+) -> Result<Vec<String>, String>
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
+    let ids: Vec<String> = ids
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let db = state.store.connection();
+
+    AllowedModelEntity::delete_many()
+        .exec(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let now = Utc::now().naive_utc();
+    for id in &ids {
+        AllowedModel {
+            id: id.clone(),
+            created_at: now,
+        }
+        .save(&db)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(ids)
+}
+
+/// Return a server-side paginated slice of the live OpenRouter catalog.
+///
+/// This is the candidate pool the admin model picker curates from — it is NOT the
+/// set of runnable models (that is the allowlist via [`list_models`]). Page is
+/// 1-based; `per_page` is clamped to `[1, 100]`.
+pub async fn list_model_catalog<S>(
+    _state: &AppState<S>,
+    page: usize,
+    per_page: usize,
+) -> Result<riv_webui_shared::config::CatalogPage, String>
+where
+    S: Store + Send + Sync + Clone + 'static,
+{
+    let page = page.max(1);
+    let per_page = per_page.clamp(1, 100);
+    let all = available_models()?;
+    let total = all.len();
+    let start = (page - 1) * per_page;
+    let models = all
+        .into_iter()
+        .skip(start)
+        .take(per_page)
+        .map(|m| riv_webui_shared::config::AvailableModel {
+            reasoning: supports_reasoning(&m),
+            id: m.0,
+        })
+        .collect();
+    Ok(riv_webui_shared::config::CatalogPage {
+        models,
+        total,
+        page,
+        per_page,
+    })
 }
 
 pub async fn list_reasoning_efforts<S>(
