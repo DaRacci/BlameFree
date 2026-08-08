@@ -53,7 +53,17 @@ pub fn init_logging(
     use tracing_subscriber::layer::SubscriberExt;
 
     let env_layer = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,sea_orm=warn,sqlx=warn"));
+        .unwrap_or_else(|_| EnvFilter::new("info,sea_orm=warn,sqlx=warn"))
+        // Suppress rig's LLM telemetry: its streaming spans record the same
+        // `gen_ai.*` fields on every chunk, which the fmt layer accumulates,
+        // producing enormous log lines. Disabled unconditionally so it cannot
+        // be re-enabled by a broad `RUST_LOG=trace`.
+        .add_directive("rig::agent_chat=off".parse().expect("valid directive"))
+        .add_directive("rig::streaming=off".parse().expect("valid directive"))
+        .add_directive("rig::completions=off".parse().expect("valid directive"))
+        .add_directive("rig::embedding=off".parse().expect("valid directive"))
+        .add_directive("rig::transcription=off".parse().expect("valid directive"))
+        .add_directive("rig_core=off".parse().expect("valid directive"));
 
     let span_events = if env_layer.max_level_hint() == Some(LevelFilter::TRACE) {
         FmtSpan::ACTIVE
