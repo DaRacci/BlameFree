@@ -1,6 +1,8 @@
 #[cfg(feature = "backend")]
 use anyhow::Result;
 #[cfg(feature = "backend")]
+use tracing::level_filters::LevelFilter;
+#[cfg(feature = "backend")]
 use tracing_subscriber::fmt::format::FmtSpan;
 
 pub mod deduplicate;
@@ -53,8 +55,14 @@ pub fn init_logging(
     let env_layer = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info,sea_orm=warn,sqlx=warn"));
 
+    let span_events = if env_layer.max_level_hint() == Some(LevelFilter::TRACE) {
+        FmtSpan::ACTIVE
+    } else {
+        FmtSpan::NONE
+    };
+
     let stderr_layer = tracing_subscriber::fmt::layer()
-        .with_span_events(FmtSpan::ACTIVE)
+        .with_span_events(span_events.clone())
         .with_target(false)
         .with_thread_ids(true)
         .with_writer(std::io::stderr);
@@ -68,7 +76,7 @@ pub fn init_logging(
             let _ = std::fs::create_dir_all(parent);
         }
         let file_layer = tracing_subscriber::fmt::layer()
-            .with_span_events(FmtSpan::ACTIVE)
+            .with_span_events(span_events)
             .with_target(false)
             .with_thread_ids(true)
             .with_writer(move || {
