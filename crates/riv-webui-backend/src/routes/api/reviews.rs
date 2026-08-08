@@ -41,7 +41,6 @@ where
     })
 }
 
-#[instrument(skip(state), name = API_REVIEWS_LIST)]
 pub async fn list_reviews<S>(State(state): State<AppState<S>>) -> Response
 where
     S: Store + Send + Sync + Clone + 'static,

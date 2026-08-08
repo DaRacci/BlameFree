@@ -1,5 +1,7 @@
 #[cfg(feature = "backend")]
 use anyhow::Result;
+#[cfg(feature = "backend")]
+use tracing_subscriber::fmt::format::FmtSpan;
 
 pub mod deduplicate;
 pub mod diff;
@@ -51,11 +53,8 @@ pub fn init_logging(
     let env_layer = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info,sea_orm=warn,sqlx=warn"));
 
-    let stderr_span_events = tracing_subscriber::fmt::format::FmtSpan::ENTER
-        | tracing_subscriber::fmt::format::FmtSpan::EXIT;
-
     let stderr_layer = tracing_subscriber::fmt::layer()
-        .with_span_events(stderr_span_events)
+        .with_span_events(FmtSpan::ACTIVE)
         .with_target(false)
         .with_thread_ids(true)
         .with_writer(std::io::stderr);
@@ -69,10 +68,7 @@ pub fn init_logging(
             let _ = std::fs::create_dir_all(parent);
         }
         let file_layer = tracing_subscriber::fmt::layer()
-            .with_span_events(
-                tracing_subscriber::fmt::format::FmtSpan::NEW
-                    | tracing_subscriber::fmt::format::FmtSpan::CLOSE,
-            )
+            .with_span_events(FmtSpan::ACTIVE)
             .with_target(false)
             .with_thread_ids(true)
             .with_writer(move || {

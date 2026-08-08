@@ -44,7 +44,7 @@ use riv_webui_shared::{
     config::{AgentInfo, DatasetInfo},
     review::ReviewAgentLog,
 };
-use sea_orm::{EntityTrait, TransactionTrait};
+use sea_orm::EntityTrait;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 

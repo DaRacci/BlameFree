@@ -19,6 +19,7 @@ use riv_types::RunEvent;
 use tokio::sync::{RwLock, broadcast};
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
+use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::auth::SessionStore;
@@ -138,7 +139,7 @@ async fn log_requests(request: Request, next: Next) -> Response {
         uri = %uri,
         status = response.status().as_u16(),
         latency = ?latency,
-        "request finished"
+        "http request"
     );
     response
 }
@@ -337,6 +338,23 @@ where
         )
         .fallback_service(ServeDir::new(&site_root))
         .layer(from_fn(log_requests))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &Request| {
+                    tracing::trace_span!(
+                        "http-request",
+                        method = %request.method(),
+                        uri = %request.uri(),
+                        version = ?request.version(),
+                    )
+                })
+                .on_response(
+                    |response: &Response, latency: std::time::Duration, span: &tracing::Span| {
+                        span.record("status", &response.status().as_u16());
+                        span.record("latency_ms", &latency.as_millis());
+                    },
+                ),
+        )
         .layer(CorsLayer::permissive())
         .with_state(state);
 

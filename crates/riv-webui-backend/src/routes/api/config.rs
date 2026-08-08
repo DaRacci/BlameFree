@@ -14,7 +14,6 @@ routes_register! {
   get API_CONFIG => get_config,
 }
 
-#[instrument(skip(state), name = API_CONFIG)]
 pub async fn get_config<S>(State(state): State<AppState<S>>) -> impl IntoResponse
 where
     S: Store + Send + Sync + Clone + 'static,

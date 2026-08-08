@@ -58,6 +58,7 @@ pub fn restore_signal<T: Serialize + DeserializeOwned + Clone + Send + Sync + 's
     });
 }
 
+#[allow(unused_variables)]
 fn load(key: &str) -> Option<String> {
     cfg_select! {
       target_arch = "wasm32" => {

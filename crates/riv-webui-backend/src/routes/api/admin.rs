@@ -112,9 +112,9 @@ pub fn load_logs_response(log_path: &Path) -> LogsResponse {
 
 /// Get SSE stream of server console logs.
 ///
-/// Frontend loads initial readback via regular request, so this SSE stream only
-/// emits newly appended log content. New bytes are sent as batched chunks to
-/// reduce browser re-render churn.
+/// Frontend loads initial readback via regular request,
+/// so this SSE stream only emits newly appended log content.
+/// New bytes are sent as batched chunks to reduce browser re-render churn.
 #[instrument(skip(state), name = API_ADMIN_LOGS_STREAM)]
 pub async fn get_logs_stream<S>(State(state): State<AppState<S>>) -> impl IntoResponse
 where
@@ -123,9 +123,7 @@ where
     let log_path = state.log_file.clone();
     let (tx, rx) = mpsc::unbounded_channel::<Result<Event, Infallible>>();
 
-    // Send an initial event so the client's EventSource transitions to OPEN
-    // immediately (the `onopen` handler fires) instead of appearing to hang
-    // in a "connecting" state until the first real log chunk arrives.
+    // Send an initial event so the client's EventSource transitions to OPEN immediately
     let _ = tx.send(Ok(Event::default().comment("connected")));
 
     tokio::spawn(async move {
@@ -154,7 +152,6 @@ where
                 continue; // no new data
             }
 
-            // Read bytes from last known position to current end
             let mut file = match File::open(&log_path) {
                 Ok(f) => f,
                 Err(_) => continue,

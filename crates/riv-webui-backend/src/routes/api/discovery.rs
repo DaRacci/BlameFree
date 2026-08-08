@@ -16,7 +16,6 @@ routes_register! {
   get API_DISCOVERY_CAPABILITIES => get_capabilities,
 }
 
-#[instrument(skip(state), name = API_DISCOVERY_MODELS)]
 pub async fn get_models<S>(State(state): State<AppState<S>>) -> Response
 where
     S: Store + Send + Sync + Clone + 'static,
