@@ -163,6 +163,8 @@ where
         active_reviews.contains(&review_id)
     };
 
+    // If the review has already reached a terminal state in the DB, emit the terminal event immediately.
+    // This closes the race where the review fails/completes before a late subscriber registers on the broadcast channel.
     if !is_active {
         return match crate::services::get_review(&state, &review_id).await {
             Ok(review) => terminal_review_stream(review),

@@ -289,7 +289,7 @@ pub fn LogsSection() -> impl IntoView {
 #[component]
 pub fn ModelsSection() -> impl IntoView {
     let (selected, set_selected) = signal::<Vec<String>>(Vec::new());
-    let (catalog, set_catalog) = signal::<Vec<AvailableModel>>(Vec::new());
+    let (_, set_catalog) = signal::<Vec<AvailableModel>>(Vec::new());
     let (page, set_page) = signal(1usize);
     let (query, set_query) = signal(String::new());
     let (total, set_total) = signal(0usize);
@@ -413,56 +413,58 @@ pub fn ModelsSection() -> impl IntoView {
                                     </span>
                                 </div>
 
-                                <Suspense fallback=render_loading>
+                                <Suspense fallback=move || render_loading()>
                                     {move || {
-                                        if loading.get() {
-                                            render_loading()
-                                        } else {
-                                            let models = catalog.get();
-                                            if models.is_empty() {
-                                                view! {
-                                                    <EmptyState message="No models in the catalog. Check the OpenRouter API connection." />
+                                        match catalog_page.get() {
+                                            Some(Ok(resp)) => {
+                                                let models = resp.models;
+                                                if models.is_empty() {
+                                                    view! {
+                                                        <EmptyState message="No models in the catalog. Check the OpenRouter API connection." />
+                                                    }
+                                                    .into_any()
+                                                } else {
+                                                    view! {
+                                                        <div class="admin-models__grid">
+                                                            {models.into_iter().map(|m| {
+                                                                let id = m.id.clone();
+                                                                let reasoning = m.reasoning;
+                                                                let checked_id = id.clone();
+                                                                let click_id = id.clone();
+                                                                let display_id = id.clone();
+                                                                view! {
+                                                                    <div class="admin-model-card">
+                                                                        <ModelPopover model=m>
+                                                                            <label class="admin-model-card__row">
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    prop:checked=move || selected.get().contains(&checked_id)
+                                                                                    on:click=move |_| {
+                                                                                        set_selected.update(|s| {
+                                                                                            if let Some(pos) = s.iter().position(|k| k == &click_id) {
+                                                                                                s.remove(pos);
+                                                                                            } else {
+                                                                                                s.push(click_id.clone());
+                                                                                            }
+                                                                                        });
+                                                                                    }
+                                                                                />
+                                                                                <span class="admin-model-card__id">{display_id}</span>
+                                                                                {reasoning.then(|| {
+                                                                                    view! { <span class="admin-model-card__badge">"reasoning"</span> }
+                                                                                })}
+                                                                            </label>
+                                                                        </ModelPopover>
+                                                                    </div>
+                                                                }
+                                                            }).collect::<Vec<_>>()}
+                                                        </div>
+                                                    }
+                                                    .into_any()
                                                 }
-                                                .into_any()
-                                            } else {
-                                                view! {
-                                                    <div class="admin-models__grid">
-                                                        {models.into_iter().map(|m| {
-                                                            let id = m.id.clone();
-                                                            let reasoning = m.reasoning;
-                                                            let checked_id = id.clone();
-                                                            let click_id = id.clone();
-                                                            let display_id = id.clone();
-                                                            view! {
-                                                                <div class="admin-model-card">
-                                                                    <ModelPopover model=m>
-                                                                        <label class="admin-model-card__row">
-                                                                            <input
-                                                                                type="checkbox"
-                                                                                prop:checked=move || selected.get().contains(&checked_id)
-                                                                                on:click=move |_| {
-                                                                                    set_selected.update(|s| {
-                                                                                        if let Some(pos) = s.iter().position(|k| k == &click_id) {
-                                                                                            s.remove(pos);
-                                                                                        } else {
-                                                                                            s.push(click_id.clone());
-                                                                                        }
-                                                                                    });
-                                                                                }
-                                                                            />
-                                                                            <span class="admin-model-card__id">{display_id}</span>
-                                                                            {reasoning.then(|| {
-                                                                                view! { <span class="admin-model-card__badge">"reasoning"</span> }
-                                                                            })}
-                                                                        </label>
-                                                                    </ModelPopover>
-                                                                </div>
-                                                            }
-                                                        }).collect::<Vec<_>>()}
-                                                    </div>
-                                                }
-                                                .into_any()
                                             }
+                                            Some(Err(err)) => render_error(err.to_string()),
+                                            None => render_loading(),
                                         }
                                     }}
                                 </Suspense>

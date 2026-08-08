@@ -129,6 +129,25 @@ pub fn ReviewLivePage() -> impl IntoView {
                 return;
             }
 
+            let poll_id = id.clone();
+            let poll_navigate = navigate.clone();
+            let terminal = std::rc::Rc::new(std::cell::Cell::new(false));
+            let poll_terminal = terminal.clone();
+            let poll_interval = gloo_timers::callback::Interval::new(2_000, move || {
+                if poll_terminal.get() {
+                    return;
+                }
+                let poll_id = poll_id.clone();
+                let poll_navigate = poll_navigate.clone();
+                let poll_terminal = poll_terminal.clone();
+                leptos::task::spawn_local(async move {
+                    if navigate_if_review_terminal(&poll_id, &poll_navigate).await {
+                        poll_terminal.set(true);
+                    }
+                });
+            });
+            poll_interval.forget();
+
             let url = format!("/api/reviews/{id}/stream");
             match sse::connect_sse(&url).await {
                 Ok(mut rx) => {

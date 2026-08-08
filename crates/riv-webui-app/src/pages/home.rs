@@ -249,7 +249,7 @@ pub fn HomePage() -> impl IntoView {
 
             <Transition fallback=move || {
                 cached_reviews
-                    .get()
+                    .get_untracked()
                     .map(render_reviews)
                     .unwrap_or_else(render_loading)
             }>
