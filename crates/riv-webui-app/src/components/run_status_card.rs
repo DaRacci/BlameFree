@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use riv_types::review::{Review, ReviewMetadata};
 
-use super::status_badge::StatusBadge;
+use crate::components::state::status_badge::StatusBadge;
 
 fn short_hash(hash: &str) -> &str {
     &hash[..hash.len().min(7)]

@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use lucide_leptos::{Check, Circle, CirclePlay, X};
 use riv_types::review::ReviewStatus;
 
-use super::log_text::LogText;
+use crate::components::logs::log_text::LogText;
 
 #[component]
 pub fn AgentPane(

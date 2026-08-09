@@ -14,12 +14,13 @@ use crate::LiveAgentInfo;
 use crate::components::format_elapsed;
 use crate::components::{
     agent_pane::AgentPane,
-    error_state::ErrorState,
-    loading_state::{LoadingState, LoadingVariant},
-    metrics_card::MetricsCard,
-    metrics_grid::MetricsGrid,
-    page_header::PageHeader,
-    status_badge::StatusBadge,
+    layout::page_header::PageHeader,
+    metrics::{metrics_card::MetricsCard, metrics_grid::MetricsGrid},
+    state::{
+        error_state::ErrorState,
+        loading_state::{LoadingState, LoadingVariant},
+        status_badge::StatusBadge,
+    },
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -86,8 +87,6 @@ struct LiveAgentState {
 #[component]
 pub fn ReviewLivePage() -> impl IntoView {
     let params = use_params_map();
-    #[cfg(target_arch = "wasm32")]
-    let navigate = use_navigate();
     let review_id = move || params.read().get("id").unwrap_or_default();
 
     let review = Resource::new(
@@ -99,148 +98,142 @@ pub fn ReviewLivePage() -> impl IntoView {
         |id| async move { read_live_review_agents(id).await },
     );
 
-    #[cfg(target_arch = "wasm32")]
+    #[allow(unused_variables)]
     let (agent_states, set_agent_states) =
         signal::<HashMap<String, LiveAgentState>>(HashMap::new());
-    #[cfg(not(target_arch = "wasm32"))]
-    let (agent_states, _set_agent_states) =
-        signal::<HashMap<String, LiveAgentState>>(HashMap::new());
-    #[cfg(target_arch = "wasm32")]
+    #[allow(unused_variables)]
     let (stream_status, set_stream_status) = signal::<ReviewStatus>(ReviewStatus::Pending);
-    #[cfg(not(target_arch = "wasm32"))]
-    let (stream_status, _set_stream_status) = signal::<ReviewStatus>(ReviewStatus::Pending);
-    #[cfg(target_arch = "wasm32")]
+    #[allow(unused_variables)]
     let (elapsed, set_elapsed) = signal(String::new());
-    #[cfg(not(target_arch = "wasm32"))]
-    let (elapsed, _set_elapsed) = signal(String::new());
 
     #[cfg(target_arch = "wasm32")]
-    let id = review_id();
-
-    #[cfg(target_arch = "wasm32")]
-    leptos::task::spawn_local({
-        let set_agent_states = set_agent_states;
-        let set_stream_status = set_stream_status;
-        let set_elapsed = set_elapsed;
-        let navigate = navigate.clone();
-        async move {
-            if id.is_empty() {
-                set_stream_status.update(|s| *s = ReviewStatus::Pending);
-                return;
-            }
-
-            let poll_id = id.clone();
-            let poll_navigate = navigate.clone();
-            let terminal = std::rc::Rc::new(std::cell::Cell::new(false));
-            let poll_terminal = terminal.clone();
-            let poll_interval = gloo_timers::callback::Interval::new(2_000, move || {
-                if poll_terminal.get() {
+    {
+        let navigate = use_navigate();
+        let id = review_id();
+        leptos::task::spawn_local({
+            let set_agent_states = set_agent_states;
+            let set_stream_status = set_stream_status;
+            let set_elapsed = set_elapsed;
+            let navigate = navigate.clone();
+            async move {
+                if id.is_empty() {
+                    set_stream_status.update(|s| *s = ReviewStatus::Pending);
                     return;
                 }
-                let poll_id = poll_id.clone();
-                let poll_navigate = poll_navigate.clone();
-                let poll_terminal = poll_terminal.clone();
-                leptos::task::spawn_local(async move {
-                    if navigate_if_review_terminal(&poll_id, &poll_navigate).await {
-                        poll_terminal.set(true);
+
+                let poll_id = id.clone();
+                let poll_navigate = navigate.clone();
+                let terminal = std::rc::Rc::new(std::cell::Cell::new(false));
+                let poll_terminal = terminal.clone();
+                let poll_interval = gloo_timers::callback::Interval::new(2_000, move || {
+                    if poll_terminal.get() {
+                        return;
                     }
+                    let poll_id = poll_id.clone();
+                    let poll_navigate = poll_navigate.clone();
+                    let poll_terminal = poll_terminal.clone();
+                    leptos::task::spawn_local(async move {
+                        if navigate_if_review_terminal(&poll_id, &poll_navigate).await {
+                            poll_terminal.set(true);
+                        }
+                    });
                 });
-            });
-            poll_interval.forget();
+                poll_interval.forget();
 
-            let url = format!("/api/reviews/{id}/stream");
-            match sse::connect_sse(&url).await {
-                Ok(mut rx) => {
-                    set_stream_status.update(|s| *s = ReviewStatus::Running);
+                let url = format!("/api/reviews/{id}/stream");
+                match sse::connect_sse(&url).await {
+                    Ok(mut rx) => {
+                        set_stream_status.update(|s| *s = ReviewStatus::Running);
 
-                    let start = std::time::Instant::now();
-                    let mut last_elapsed_update = std::time::Instant::now();
+                        let start = std::time::Instant::now();
+                        let mut last_elapsed_update = std::time::Instant::now();
 
-                    while let Some(raw) = rx.next().await {
-                        match serde_json::from_str::<RunEvent>(&raw) {
-                            Ok(event) => match event {
-                                RunEvent::AgentStarted { agent_id, .. } => {
-                                    let agent_key = agent_id.to_string();
-                                    set_agent_states.update(|states| {
-                                        states.entry(agent_key).or_default().status =
-                                            ReviewStatus::Running;
-                                    });
-                                }
-                                RunEvent::AgentChunk { chunk, .. } => {
-                                    let (agent_id, content) = match &chunk {
-                                        AgentChunk::Output { id, content, .. } => {
-                                            (id, content.as_str())
-                                        }
-                                        AgentChunk::Thinking { id, .. } => (id, ""),
-                                        AgentChunk::Tool { id, .. } => (id, ""),
-                                    };
-                                    let agent_key = agent_id.to_string();
-                                    if !content.is_empty() {
+                        while let Some(raw) = rx.next().await {
+                            match serde_json::from_str::<RunEvent>(&raw) {
+                                Ok(event) => match event {
+                                    RunEvent::AgentStarted { agent_id, .. } => {
+                                        let agent_key = agent_id.to_string();
                                         set_agent_states.update(|states| {
-                                            states
-                                                .entry(agent_key)
-                                                .or_default()
-                                                .response
-                                                .push_str(content);
+                                            states.entry(agent_key).or_default().status =
+                                                ReviewStatus::Running;
                                         });
                                     }
-                                }
-                                RunEvent::AgentFinished { agent_id, .. } => {
-                                    let agent_key = agent_id.to_string();
-                                    set_agent_states.update(|states| {
-                                        states.entry(agent_key).or_default().status =
-                                            ReviewStatus::Completed;
-                                    });
-                                }
-                                RunEvent::ReviewStarted { .. } => {
-                                    set_stream_status.update(|s| *s = ReviewStatus::Running);
-                                }
-                                RunEvent::ReviewCompleted { .. } => {
-                                    set_stream_status.update(|s| *s = ReviewStatus::Completed);
-                                    if navigate_if_review_terminal(&id, &navigate).await {
-                                        break;
+                                    RunEvent::AgentChunk { chunk, .. } => {
+                                        let (agent_id, content) = match &chunk {
+                                            AgentChunk::Output { id, content, .. } => {
+                                                (id, content.as_str())
+                                            }
+                                            AgentChunk::Thinking { id, .. } => (id, ""),
+                                            AgentChunk::Tool { id, .. } => (id, ""),
+                                        };
+                                        let agent_key = agent_id.to_string();
+                                        if !content.is_empty() {
+                                            set_agent_states.update(|states| {
+                                                states
+                                                    .entry(agent_key)
+                                                    .or_default()
+                                                    .response
+                                                    .push_str(content);
+                                            });
+                                        }
                                     }
-                                }
-                                RunEvent::ReviewFailed { .. } => {
-                                    set_stream_status.update(|s| *s = ReviewStatus::Failed);
-                                    if navigate_if_review_terminal(&id, &navigate).await {
-                                        break;
+                                    RunEvent::AgentFinished { agent_id, .. } => {
+                                        let agent_key = agent_id.to_string();
+                                        set_agent_states.update(|states| {
+                                            states.entry(agent_key).or_default().status =
+                                                ReviewStatus::Completed;
+                                        });
                                     }
+                                    RunEvent::ReviewStarted { .. } => {
+                                        set_stream_status.update(|s| *s = ReviewStatus::Running);
+                                    }
+                                    RunEvent::ReviewCompleted { .. } => {
+                                        set_stream_status.update(|s| *s = ReviewStatus::Completed);
+                                        if navigate_if_review_terminal(&id, &navigate).await {
+                                            break;
+                                        }
+                                    }
+                                    RunEvent::ReviewFailed { .. } => {
+                                        set_stream_status.update(|s| *s = ReviewStatus::Failed);
+                                        if navigate_if_review_terminal(&id, &navigate).await {
+                                            break;
+                                        }
+                                    }
+                                },
+                                Err(e) => {
+                                    log::warn!("Live SSE: failed to parse event: {e}");
                                 }
-                            },
-                            Err(e) => {
-                                log::warn!("Live SSE: failed to parse event: {e}");
+                            }
+
+                            if last_elapsed_update.elapsed().as_secs() >= 1 {
+                                let secs = start.elapsed().as_secs_f64();
+                                let elapsed_text = format_elapsed(secs);
+                                set_elapsed.set(elapsed_text);
+                                last_elapsed_update = std::time::Instant::now();
                             }
                         }
 
-                        if last_elapsed_update.elapsed().as_secs() >= 1 {
-                            let secs = start.elapsed().as_secs_f64();
-                            let elapsed_text = format_elapsed(secs);
-                            set_elapsed.set(elapsed_text);
-                            last_elapsed_update = std::time::Instant::now();
-                        }
-                    }
-
-                    if !navigate_if_review_terminal(&id, &navigate).await {
-                        match read_live_review_snapshot(id.clone()).await {
-                            Ok(review) => {
-                                set_stream_status.update(|status| *status = review.status);
-                            }
-                            Err(error) => {
-                                log::warn!(
-                                    "Live SSE: failed to refresh review snapshot after stream end: {error}"
-                                );
+                        if !navigate_if_review_terminal(&id, &navigate).await {
+                            match read_live_review_snapshot(id.clone()).await {
+                                Ok(review) => {
+                                    set_stream_status.update(|status| *status = review.status);
+                                }
+                                Err(error) => {
+                                    log::warn!(
+                                        "Live SSE: failed to refresh review snapshot after stream end: {error}"
+                                    );
+                                }
                             }
                         }
                     }
-                }
-                Err(e) => {
-                    log::error!("Live SSE connection failed: {e}");
-                    set_stream_status.update(|s| *s = ReviewStatus::Failed);
+                    Err(e) => {
+                        log::error!("Live SSE connection failed: {e}");
+                        set_stream_status.update(|s| *s = ReviewStatus::Failed);
+                    }
                 }
             }
-        }
-    });
+        });
+    };
 
     view! {
         <Suspense fallback=move || view! {

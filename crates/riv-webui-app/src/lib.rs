@@ -33,7 +33,7 @@ pub mod sse;
 
 pub use riv_webui_shared::config::AppConfig;
 
-use crate::components::sidebar::Sidebar;
+use crate::components::layout::sidebar::Sidebar;
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct LiveAgentInfo {

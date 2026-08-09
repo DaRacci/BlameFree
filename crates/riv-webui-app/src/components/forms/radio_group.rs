@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use riv_webui_shared::config::AvailableModel;
 
-use crate::components::model_popover::ModelPopover;
+use crate::components::popovers::model_popover::ModelPopover;
 
 /// A single option in a radio group.
 #[derive(Debug, Clone)]

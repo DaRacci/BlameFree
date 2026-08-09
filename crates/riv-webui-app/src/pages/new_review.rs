@@ -10,13 +10,11 @@ use super::form_support::{
     allowlisted_model_radio_options, pr_radio_options, reasoning_radio_options,
 };
 use crate::components::{
-    error_state::ErrorState,
-    form_page::FormPage,
-    form_section::FormSection,
-    loading_state::{LoadingState, LoadingVariant},
-    radio_group::RadioGroup,
-    role_selector::RoleSelector,
-    text_field::TextField,
+    forms::{
+        page::FormPage, radio_group::RadioGroup, role_selector::RoleSelector, section::FormSection,
+        text_field::TextField,
+    },
+    state::{error_state::ErrorState, loading_state::{LoadingState, LoadingVariant}},
 };
 use crate::storage::{clear, persist_signal, restore, restore_signal};
 

@@ -1,7 +1,8 @@
 use leptos::prelude::*;
 use riv_types::agent::{AgentSession, AgentTurn, AgentTurnMessage};
 
-use super::{empty_state::EmptyState, log_section::LogSection};
+use super::log_section::LogSection;
+use crate::components::state::empty_state::EmptyState;
 
 #[component]
 pub fn LogViewer(agent_sessions: Vec<AgentSession>) -> impl IntoView {

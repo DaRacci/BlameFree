@@ -5,9 +5,9 @@ use lucide_leptos::{ArrowDownToLine, ClipboardList, TriangleAlert};
 use riv_webui_shared::admin::LogsResponse;
 use riv_webui_shared::config::{AvailableModel, CatalogPage};
 
-use crate::components::empty_state::EmptyState;
-use crate::components::log_text::LogText;
-use crate::components::model_popover::ModelPopover;
+use crate::components::logs::log_text::LogText;
+use crate::components::popovers::model_popover::ModelPopover;
+use crate::components::state::empty_state::EmptyState;
 #[cfg(target_arch = "wasm32")]
 use riv_webui_shared::routes::API_ADMIN_LOGS_STREAM;
 

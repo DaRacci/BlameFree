@@ -12,13 +12,14 @@ use super::form_support::{
     allowlisted_model_radio_options, dataset_radio_options, reasoning_radio_options,
 };
 use crate::components::{
-    error_state::ErrorState,
-    form_page::FormPage,
-    form_section::FormSection,
-    loading_state::{LoadingState, LoadingVariant},
-    pr_selection::PrSelection,
-    radio_group::RadioGroup,
-    role_selector::RoleSelector,
+    forms::{
+        page::FormPage, pr_selection::PrSelection, radio_group::RadioGroup,
+        role_selector::RoleSelector, section::FormSection,
+    },
+    state::{
+        error_state::ErrorState,
+        loading_state::{LoadingState, LoadingVariant},
+    },
 };
 use crate::storage::{clear, persist_signal, restore, restore_signal};
 

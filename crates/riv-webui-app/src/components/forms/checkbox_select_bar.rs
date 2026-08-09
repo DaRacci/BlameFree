@@ -6,11 +6,10 @@ use super::checkbox_group::CheckboxOption;
 
 /// Select-all / deselect-all control bar for a [`CheckboxGroup`].
 ///
-/// Composable with any [`CheckboxGroup`], both are driven by the same
-/// `options` / `selected` / `set_selected` signals, so they stay in sync.
+/// Composable with any [`CheckboxGroup`].
 ///
-/// Renders a selected-count summary plus **Select All** and **Deselect All** buttons.
-/// Select All only selects the currently *enabled* options, unless a custom `select_all` callback is supplied.
+/// Renders a selected-count summary plus `Select All` and `Deselect All` buttons.
+/// Select All only selects the currently enabled options, unless a custom `select_all` callback is supplied.
 #[component]
 pub fn CheckboxSelectBar(
     /// Reactive signal for the available options.

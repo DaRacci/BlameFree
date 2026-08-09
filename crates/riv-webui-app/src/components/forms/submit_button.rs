@@ -21,6 +21,7 @@ pub fn SubmitButton(
         true => "Submitting...",
         false => label,
     };
+
     view! {
         <div class="form-actions">
             <button

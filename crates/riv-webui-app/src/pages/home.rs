@@ -4,7 +4,7 @@ use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
 
 use crate::async_resource::{ReloadableResource, create_reloadable_resource};
 use crate::components::{
-    format_elapsed, page_header::PageHeader, run_table::RunTable, status_badge_class,
+    format_elapsed, layout::page_header::PageHeader, run_table::RunTable, status_badge_class,
 };
 
 #[server]

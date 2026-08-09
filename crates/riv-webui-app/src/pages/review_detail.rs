@@ -6,16 +6,16 @@ use riv_types::{
 };
 
 use crate::components::{
-    empty_state::EmptyState,
-    error_state::ErrorState,
     format_elapsed,
-    loading_state::{LoadingState, LoadingVariant},
-    log_viewer::LogViewer,
-    metrics_card::MetricsCard,
-    metrics_grid::MetricsGrid,
-    page_header::PageHeader,
-    section_header::SectionHeader,
-    status_badge::StatusBadge,
+    layout::{page_header::PageHeader, section_header::SectionHeader},
+    logs::log_viewer::LogViewer,
+    metrics::{metrics_card::MetricsCard, metrics_grid::MetricsGrid},
+    state::{
+        empty_state::EmptyState,
+        error_state::ErrorState,
+        loading_state::{LoadingState, LoadingVariant},
+        status_badge::StatusBadge,
+    },
 };
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

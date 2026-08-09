@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use riv_webui_shared::config::AvailableModel;
 
-use super::popover::Popover;
+use crate::components::popovers::popover::Popover;
 
 /// Hover/focus popover showing a model's capabilities.
 ///

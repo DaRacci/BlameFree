@@ -4,10 +4,10 @@ use riv_types::{
 use riv_webui_shared::config::{AvailableModel, DatasetInfo};
 use strum::EnumProperty;
 
-use crate::components::{pr_selection::PrItem, radio_group::RadioOption};
+use crate::components::forms::{pr_selection::PrItem, radio_group::RadioOption};
 
-/// Build model radio options from allowlisted model metadata, enabling the
-/// hover popover in the form selector.
+/// Build model radio options from allowlisted model metadata,
+/// enabling the hover popover in the form selector.
 pub fn allowlisted_model_radio_options(models: &[AvailableModel]) -> Vec<RadioOption> {
     models
         .iter()

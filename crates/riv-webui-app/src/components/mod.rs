@@ -3,32 +3,14 @@
 use riv_types::review::ReviewStatus;
 
 pub mod agent_pane;
-pub mod checkbox_group;
-pub mod checkbox_select_bar;
-pub mod empty_state;
-pub mod error_state;
-pub mod form_page;
-pub mod form_section;
-pub mod loading_state;
-pub mod log_section;
-pub mod log_text;
-pub mod log_viewer;
-pub mod metrics_card;
-pub mod metrics_grid;
-pub mod model_popover;
-pub mod page_header;
-pub mod popover;
-pub mod pr_selection;
-pub mod progress_bar;
-pub mod radio_group;
-pub mod role_selector;
+pub mod forms;
+pub mod layout;
+pub mod logs;
+pub mod metrics;
+pub mod popovers;
 pub mod run_status_card;
 pub mod run_table;
-pub mod section_header;
-pub mod sidebar;
-pub mod status_badge;
-pub mod submit_button;
-pub mod text_field;
+pub mod state;
 
 pub(crate) const fn status_badge_class(status: &ReviewStatus) -> &'static str {
     match status {

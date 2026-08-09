@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use super::log_text::LogText;
+use crate::components::logs::log_text::LogText;
 
 #[component]
 pub fn LogSection(label: &'static str, text: String) -> impl IntoView {
