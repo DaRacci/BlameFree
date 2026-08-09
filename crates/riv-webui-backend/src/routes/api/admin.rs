@@ -9,8 +9,10 @@ use std::time::Duration;
 
 use axum::Json;
 use axum::extract::{Query, State};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
+use riv_shared::LATEST_LOG_FILENAME;
 use riv_stor::traits::Store;
 use riv_webui_shared::config::CatalogPage;
 use riv_webui_shared::routes::{API_ADMIN_LOGS_STREAM, API_ADMIN_MODELS, API_ADMIN_MODELS_CATALOG};
@@ -46,13 +48,13 @@ pub(crate) struct CatalogQuery {
 /// GET the current model allowlist.
 pub async fn get_models<S>(
     State(state): State<AppState<S>>,
-) -> Result<Json<Vec<String>>, (axum::http::StatusCode, String)>
+) -> Result<Json<Vec<String>>, (StatusCode, String)>
 where
     S: Store + Send + Sync + Clone + 'static,
 {
     let ids = list_allowed_models(&state)
         .await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(ids))
 }
 
@@ -63,13 +65,13 @@ where
 pub async fn put_models<S>(
     State(state): State<AppState<S>>,
     Json(ids): Json<Vec<String>>,
-) -> Result<Json<Vec<String>>, (axum::http::StatusCode, String)>
+) -> Result<Json<Vec<String>>, (StatusCode, String)>
 where
     S: Store + Send + Sync + Clone + 'static,
 {
     let ids = set_allowed_models(&state, ids)
         .await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(ids))
 }
 
@@ -77,7 +79,7 @@ where
 pub async fn get_models_catalog<S>(
     State(state): State<AppState<S>>,
     Query(query): Query<CatalogQuery>,
-) -> Result<Json<CatalogPage>, (axum::http::StatusCode, String)>
+) -> Result<Json<CatalogPage>, (StatusCode, String)>
 where
     S: Store + Send + Sync + Clone + 'static,
 {
@@ -88,12 +90,14 @@ where
         .clamp(1, CATALOG_MAX_PER_PAGE);
     let catalog = list_model_catalog(&state, page, per_page, query.query.as_deref().unwrap_or(""))
         .await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(catalog))
 }
 
-pub fn load_logs_response(log_path: &Path) -> LogsResponse {
-    match read_last_n_lines(log_path, READBACK_LINES) {
+pub fn load_logs_response(log_dir: &Path) -> LogsResponse {
+    let log_path = log_dir.join(LATEST_LOG_FILENAME);
+
+    match read_last_n_lines(&log_path, READBACK_LINES) {
         Ok(lines) => LogsResponse {
             logs: lines.join("\n"),
             available: true,
@@ -120,7 +124,15 @@ pub async fn get_logs_stream<S>(State(state): State<AppState<S>>) -> impl IntoRe
 where
     S: Store + Send + Sync + Clone + 'static,
 {
-    let log_path = state.log_file.clone();
+    let Some(log_dir) = state.log_dir.clone() else {
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Log dir not available").into_response();
+    };
+    let log_path = log_dir.join(LATEST_LOG_FILENAME);
+
+    if !log_path.exists() {
+        return (StatusCode::NOT_FOUND, "Latest log file not available").into_response();
+    }
+
     let (tx, rx) = mpsc::unbounded_channel::<Result<Event, Infallible>>();
 
     // Send an initial event so the client's EventSource transitions to OPEN immediately

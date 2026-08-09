@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use std::net::SocketAddr;
 
+use anyhow::anyhow;
 use axum::Router;
 use axum::extract::{Request, connect_info::ConnectInfo};
 use axum::middleware::{Next, from_fn};
@@ -43,8 +44,12 @@ where
     /// Octocrab GitHub API client (authenticated via GITHUB_TOKEN env var).
     pub octocrab: octocrab::Octocrab,
 
-    /// Path to the server log file.
-    pub log_file: PathBuf,
+    /// Path to the server log dir.
+    ///
+    /// The latest log file will always be available at `log_dir/latest.log`.
+    ///
+    /// If `None`, logging is not persisted to disk and is only available in-memory only through stderr.
+    pub log_dir: Option<PathBuf>,
 
     /// Active reviews tracked in-memory.
     pub active_reviews: Arc<RwLock<Vec<MagicTypeId>>>,
@@ -65,7 +70,7 @@ impl<S: Store + Send + Sync + Clone> AppState<S> {
         config: WebUiConfig,
         octocrab: octocrab::Octocrab,
         session_store: SessionStore,
-        log_file: PathBuf,
+        log_dir: Option<PathBuf>,
         store: Arc<S>,
     ) -> Self {
         Self {
@@ -73,7 +78,7 @@ impl<S: Store + Send + Sync + Clone> AppState<S> {
             config,
             session_store,
             octocrab,
-            log_file,
+            log_dir,
             active_reviews: Arc::new(RwLock::new(Vec::new())),
             review_channels: Arc::new(RwLock::new(HashMap::new())),
             live_review_agents: Arc::new(RwLock::new(HashMap::new())),
@@ -165,12 +170,15 @@ where
             }
         }),
         read_admin_logs: Arc::new({
-            let log_file = state.log_file.clone();
+            let Some(log_dir) = state.log_dir.clone() else {
+                return Err(anyhow!(
+                    "Log dir is unavailable, logging is only available through stderr."
+                ));
+            };
+
             move |()| {
-                let log_file = log_file.clone();
-                Box::pin(
-                    async move { Ok(crate::routes::api::admin::load_logs_response(&log_file)) },
-                )
+                let log_dir = log_dir.clone();
+                Box::pin(async move { Ok(crate::routes::api::admin::load_logs_response(&log_dir)) })
             }
         }),
         list_allowed_models: Arc::new({

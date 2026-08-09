@@ -10,7 +10,7 @@ use octocrab::Octocrab;
 use riv_agents::prompts::PromptLibrary;
 use riv_benchmark as _;
 use riv_stor::store::sqlite::SqliteStore;
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 use tracing_subscriber::util::SubscriberInitExt;
 
 mod auth;
@@ -31,51 +31,51 @@ pub struct CliArgs {
     #[arg(long, env = "DATASET_DIR", default_value = "datasets")]
     pub dataset_dir: PathBuf,
 
-    /// Path to the code-review-benchmark directory (must contain offline/).
+    /// Path to the code-review-benchmark directory.
     #[arg(long, env = "BENCHMARK_DIR")]
     pub benchmark_dir: Option<PathBuf>,
 
-    /// Write logs to this file in addition to stderr.
-    #[arg(long, env = "LOG_FILE")]
-    pub log_file: Option<PathBuf>,
+    /// Write logs to this directory in addition to stderr.
+    #[arg(long, env = "LOG_DIR")]
+    pub log_dir: Option<PathBuf>,
 
     /// Path to web UI config file
     #[arg(long)]
     pub config: Option<PathBuf>,
 }
 
-/// Auto-detect a writable log file path when `--log-file` is not provided.
+/// Auto-detect a writable log directory path when `--log-dir` is not provided.
 ///
 /// Tries candidates in order, silently skipping paths that can't be created.
-fn resolve_log_path(custom: Option<&Path>) -> PathBuf {
+/// If none of the candidates are writable, returns `None`..
+#[instrument]
+fn resolve_log_path(custom: Option<&Path>) -> Option<PathBuf> {
     static CANDIDATES: LazyLock<Vec<&'static Path>> = LazyLock::new(|| {
         vec![
-            Path::new("/var/log/riv/webui.log"),
-            Path::new("/tmp/riv-webui.log"),
-            Path::new("./server.log"),
+            Path::new("/var/log/riv/"),
+            Path::new("/tmp/riv/logs/"),
+            Path::new("./logs/"),
         ]
     });
 
     if let Some(path) = custom {
-        return path.to_path_buf();
+        return Some(path.to_path_buf());
     }
 
     for candidate in CANDIDATES.iter() {
-        if let Some(parent) = candidate.parent() {
-            let _ = fs::create_dir_all(parent); // Ignore — best-effort log directory setup
+        if fs::create_dir_all(candidate).is_err() {
+            continue;
         }
 
-        if std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(candidate)
-            .is_ok()
-        {
-            return candidate.to_path_buf();
+        // Ensure we can actually write in this directory.
+        let probe = candidate.join(".riv_write_probe");
+        if fs::write(&probe, b"").is_ok() {
+            let _ = fs::remove_file(&probe);
+            return Some(candidate.to_path_buf());
         }
     }
 
-    Path::new("./server.log").to_path_buf()
+    None
 }
 
 #[tokio::main]
@@ -87,7 +87,7 @@ async fn main() -> Result<()> {
 
     let args = CliArgs::parse();
     riv_shared::init_dotenv();
-    riv_shared::init_logging(Some(resolve_log_path(args.log_file.as_deref()))).try_init()?;
+    riv_shared::init_logging(resolve_log_path(args.log_dir.as_deref())).try_init()?;
 
     PromptLibrary::new().map_err(|e| anyhow!("Failed to initialize prompt library: {e}"))?;
 
@@ -116,12 +116,11 @@ async fn main() -> Result<()> {
                 .map_err(|e| anyhow!("Failed to build octocrab client: {e}"))?
         }
         Err(_) => {
-            warn!("GITHUB_TOKEN not set, GitHub API rate limits will be low (60 req/hr)");
+            warn!("GITHUB_TOKEN not set, GitHub API rate limits will be low");
             Octocrab::default()
         }
     };
 
-    // Initialize the store
     let store_path = webui_config.server.store_dir.to_string_lossy().to_string();
     let store = Arc::new(
         SqliteStore::new(&store_path)
@@ -137,7 +136,7 @@ async fn main() -> Result<()> {
         webui_config,
         octocrab,
         crate::auth::new_session_store(),
-        resolve_log_path(args.log_file.as_deref()),
+        resolve_log_path(args.log_dir.as_deref()),
         store,
     );
 

@@ -6,7 +6,7 @@ license.workspace = true
 
 [features]
 default = []
-backend = ["dotenvy", "rig-core", "tracing-subscriber"]
+backend = ["dotenvy", "rig-core", "tracing-appender", "tracing-subscriber"]
 
 [dependencies]
 anyhow = { workspace = true }
@@ -20,6 +20,7 @@ rand = { workspace = true }
 # Backend dependencies
 dotenvy = { workspace = true, optional = true }
 rig-core = { workspace = true, optional = true }
+tracing-appender = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 
 [dev-dependencies]
