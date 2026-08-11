@@ -83,13 +83,15 @@ async fn run_review(args: ReviewArgs) -> Result<()> {
 
     let review_id = riv_harness::cli_review_id();
     let config = review::build_review_config(&args)?;
-    let findings = review::review_diff(Diff::new(diff_str), &config).await?;
+    let (findings, agent_sessions) = review::review_diff(Diff::new(diff_str), &config).await?;
     let analytics = config.cost_tracker.to_snapshot().await;
     let duration = started_at.elapsed();
 
     // Persist the review to the same DB the webui uses, so CLI runs surface
     // identically. Only the id prefix differs (`riv-cli`).
-    if let Err(error) = persist_cli_review(&review_id, &analytics, duration, &args).await {
+    if let Err(error) =
+        persist_cli_review(&review_id, &analytics, duration, &args, agent_sessions).await
+    {
         eprintln!("Failed to persist review to DB: {error}");
     }
 
@@ -122,6 +124,7 @@ async fn persist_cli_review(
     analytics: &riv_types::cost::AnalyticsSnapshot,
     duration: Duration,
     _args: &ReviewArgs,
+    agent_sessions: Vec<riv_types::agent::AgentSession>,
 ) -> Result<()> {
     let store_path = env::var("STORE_PATH").unwrap_or_else(|_| "riv-stor.db".to_string());
     let store = SqliteStore::new(&store_path)
@@ -130,7 +133,7 @@ async fn persist_cli_review(
 
     let review = Review {
         id: review_id.clone(),
-        agent_sessions: Vec::new(),
+        agent_sessions,
         analytics: Some(analytics.clone()),
         duration: Some(duration),
         error_message: None,

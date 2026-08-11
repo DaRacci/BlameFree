@@ -79,6 +79,10 @@ impl RuntimeProvider for EvalConfig {
     fn get_dashboard_tx(&self) -> Option<Sender<RunEvent>> {
         self.dashboard_tx.clone()
     }
+
+    fn get_model_name(&self) -> String {
+        self.model.get().to_string()
+    }
 }
 
 impl AgentConfigProvider for EvalConfig {

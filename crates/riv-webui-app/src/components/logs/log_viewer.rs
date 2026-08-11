@@ -1,9 +1,10 @@
 use leptos::prelude::*;
 use riv_types::agent::{AgentSession, AgentTurn, AgentTurnMessage};
 
-use super::log_section::LogSection;
+use crate::components::logs::log_section::LogSection;
 use crate::components::state::empty_state::EmptyState;
 
+/// Collapsible log of all agent sessions for a review.
 #[component]
 pub fn LogViewer(agent_sessions: Vec<AgentSession>) -> impl IntoView {
     if agent_sessions.is_empty() {
@@ -19,32 +20,38 @@ pub fn LogViewer(agent_sessions: Vec<AgentSession>) -> impl IntoView {
                 .into_iter()
                 .enumerate()
                 .map(|(index, session)| {
-                    let prompt = prompt_text(&session);
-                    let response = response_text(&session);
-                    let reasoning = reasoning_text(&session);
-                    let summary = format!("Session {}", index + 1);
-                    let meta = format!("{} • {}", session.model_name, short_session_id(&session));
-
-                    view! {
-                        <details class="card" open=index == 0>
-                            <summary class="card__header session-log-viewer__summary">
-                                <div>
-                                    <h3 class="card__title">{summary}</h3>
-                                    <p class="session-log-viewer__meta">{meta}</p>
-                                </div>
-                            </summary>
-                            <div class="card__body">
-                                <LogSection label="Prompt" text=prompt />
-                                <LogSection label="Response" text=response />
-                                <LogSection label="Reasoning" text=reasoning />
-                            </div>
-                        </details>
-                    }
+                    view! { <SessionLog session=session session_num=index + 1 open=index == 0 /> }
                 })
                 .collect::<Vec<_>>()}
         </div>
     }
     .into_any()
+}
+
+/// One collapsible `<details>` card for a single agent session.
+#[component]
+fn SessionLog(session: AgentSession, session_num: usize, open: bool) -> impl IntoView {
+    let prompt = prompt_text(&session);
+    let response = response_text(&session);
+    let reasoning = reasoning_text(&session);
+    let summary = format!("Session {}", session_num);
+    let meta = format!("{} • {}", session.model_name, short_session_id(&session));
+
+    view! {
+        <details class="card" open=open>
+            <summary class="card__header session-log-viewer__summary">
+                <div>
+                    <h3 class="card__title">{summary}</h3>
+                    <p class="session-log-viewer__meta">{meta}</p>
+                </div>
+            </summary>
+            <div class="card__body">
+                <LogSection label="Prompt" text=prompt />
+                <LogSection label="Response" text=response />
+                <LogSection label="Reasoning" text=reasoning />
+            </div>
+        </details>
+    }
 }
 
 fn short_session_id(session: &AgentSession) -> String {

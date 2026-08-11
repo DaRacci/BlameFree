@@ -183,7 +183,7 @@ fn render_review_detail(detail: ReviewDetailData) -> AnyView {
                     <div class="card mb-lg">
                         <div class="card__body">
                             <p class="text-secondary">
-                                "This run has stored PR result files, but no persisted agent transcript turns. Imported/legacy benchmark runs commonly look like this."
+"Agent session transcripts are not available for this run, but PR results were generated. This may happen if the agent sessions were not stored or if the run was executed in a mode that does not save transcripts."
                             </p>
                         </div>
                     </div>

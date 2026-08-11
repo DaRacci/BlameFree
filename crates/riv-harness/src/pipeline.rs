@@ -6,6 +6,7 @@ use riv_consensus::adaptive::get_agents_for_diff;
 use riv_shared::diff::{self, Diff};
 use riv_tools::build_tool_server;
 
+use riv_types::agent::AgentSession;
 use riv_types::errors::ManyErrors;
 use riv_types::{RunEvent, finding::Finding};
 
@@ -16,7 +17,10 @@ use crate::eval::EvalConfig;
 use crate::finding::post_process_findings;
 
 #[tracing::instrument(name = "harness.pipeline.evaluate", skip_all, fields(review_id = %config.review_id, agent_count = config.agents.len()))]
-pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> {
+pub async fn evaluate(
+    mut diff: Diff,
+    config: &EvalConfig,
+) -> Result<(Vec<Finding>, Vec<AgentSession>)> {
     send_event!(
         config,
         RunEvent::ReviewStarted {
@@ -29,7 +33,8 @@ pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding
 
     let linters = run_linters(config);
     let reviewers = run_reviewers(&diff, config);
-    let (mut all_findings, (reviewer_findings, errors)) = tokio::join!(linters, reviewers);
+    let (mut all_findings, (reviewer_findings, agent_sessions, errors)) =
+        tokio::join!(linters, reviewers);
 
     let reviewer_findings = post_process(reviewer_findings.as_slice(), config);
     all_findings.extend(reviewer_findings);
@@ -54,7 +59,7 @@ pub async fn evaluate(mut diff: Diff, config: &EvalConfig) -> Result<Vec<Finding
         }
     );
 
-    Ok(all_findings)
+    Ok((all_findings, agent_sessions))
 }
 
 //TODO
@@ -89,11 +94,15 @@ async fn run_linters(_config: &EvalConfig) -> Vec<Finding> {
     Vec::new()
 }
 
-/// Run the configured agents on the given diff and return their findings along with any errors encountered during execution.
-async fn run_reviewers(diff: &Diff, config: &EvalConfig) -> (Vec<Finding>, Option<ManyErrors>) {
+/// Run the configured agents on the given diff and return their findings, their
+/// agent sessions, and any errors encountered during execution.
+async fn run_reviewers(
+    diff: &Diff,
+    config: &EvalConfig,
+) -> (Vec<Finding>, Vec<AgentSession>, Option<ManyErrors>) {
     let effective_agents = get_agents_for_diff(diff, config.agents);
     if effective_agents.is_empty() {
-        return (Vec::new(), None);
+        return (Vec::new(), Vec::new(), None);
     }
 
     let tool_server = build_tool_server(config.context.repo_root.to_str()).run();
@@ -118,9 +127,13 @@ async fn run_reviewers(diff: &Diff, config: &EvalConfig) -> (Vec<Finding>, Optio
 
     let mut errors = None;
     let mut all_findings = Vec::<Finding>::new();
+    let mut agent_sessions = Vec::<AgentSession>::new();
     while let Some(res) = agent_set.join_next().await {
         match res {
-            Ok(Ok(findings)) => all_findings.extend(findings),
+            Ok(Ok((findings, session))) => {
+                all_findings.extend(findings);
+                agent_sessions.push(session);
+            }
             Ok(Err(e)) => {
                 let errors = errors.get_or_insert_with(ManyErrors::new);
                 errors.push(e)
@@ -129,7 +142,7 @@ async fn run_reviewers(diff: &Diff, config: &EvalConfig) -> (Vec<Finding>, Optio
         }
     }
 
-    (all_findings, errors)
+    (all_findings, agent_sessions, errors)
 }
 
 fn post_process(findings: &[Finding], _config: &EvalConfig) -> Vec<Finding> {

@@ -14,7 +14,7 @@ use rig_core::streaming::{
 use rig_core::tool::server::ToolServerHandle;
 use riv_reporting::cost::{AnalyticsTracker, SessionUsageProvider};
 use riv_types::RunEvent;
-use riv_types::agent::{AgentChunk, ToolByte};
+use riv_types::agent::{AgentChunk, AgentSession, ToolByte};
 use riv_types::cost::SessionUsage;
 use riv_types::wrappers::{Model, WrappedData};
 use serde::de::DeserializeOwned;
@@ -26,6 +26,7 @@ use std::sync::Arc;
 
 pub mod agent;
 pub mod prompts;
+pub mod session;
 pub mod templates;
 
 pub use crate::agent::AgentEntry;
@@ -69,6 +70,7 @@ pub trait RuntimeProvider: Send + Sync {
     fn get_id(&self) -> &MagicTypeId;
     fn get_analytics(&self) -> Arc<AnalyticsTracker>;
     fn get_dashboard_tx(&self) -> Option<Sender<RunEvent>>;
+    fn get_model_name(&self) -> String;
 }
 
 /// Build a rig agent for the given [`AgentDetailsProvider`] and [`AgentConfigProvider`].
@@ -107,7 +109,7 @@ async fn stream_agent_inner<Output, R, M, Res>(
     agent_id: &MagicTypeId,
     prompt: &str,
     agent: impl StreamingPrompt<M, Res>,
-) -> Result<Output>
+) -> Result<(Output, AgentSession)>
 where
     Output: DeserializeOwned,
     R: RuntimeProvider + Send + Sync,
@@ -115,6 +117,8 @@ where
     Res: Clone + Unpin + GetTokenUsage,
 {
     let analytics_trcker = &config.get_analytics();
+    let mut builder =
+        session::SessionBuilder::new(config.get_id().clone(), config.get_model_name(), prompt);
     let mut stream = agent.stream_prompt(prompt).await;
     while let Some(chunk) = stream.next().await {
         let review_id = config.get_id().clone();
@@ -122,6 +126,7 @@ where
         match chunk? {
             MultiTurnStreamItem::StreamAssistantItem(assistant) => match assistant {
                 StreamedAssistantContent::Text(text) => {
+                    builder.push_output(&text.text);
                     send_event!(
                         config,
                         RunEvent::AgentChunk {
@@ -135,6 +140,7 @@ where
                     )
                 }
                 StreamedAssistantContent::ReasoningDelta { reasoning, .. } => {
+                    builder.push_thinking(&reasoning);
                     send_event!(
                         config,
                         RunEvent::AgentChunk {
@@ -148,6 +154,7 @@ where
                     )
                 }
                 StreamedAssistantContent::Final(r) => {
+                    builder.finalize_turn();
                     let analytics = r.token_usage().get_usage();
                     analytics_trcker.record(&agent_id, analytics, false).await;
                     send_event!(
@@ -162,6 +169,7 @@ where
                 StreamedAssistantContent::ToolCall {
                     internal_call_id, ..
                 } => {
+                    builder.tool_end();
                     let mut usage = SessionUsage::default();
                     usage.tool_use_count += 1;
                     analytics_trcker.record(&review_id, usage, false).await;
@@ -185,6 +193,7 @@ where
                     ..
                 } => match content {
                     ToolCallDeltaContent::Name(name) => {
+                        builder.tool_begin(name.clone());
                         send_event!(
                             config,
                             RunEvent::AgentChunk {
@@ -199,6 +208,7 @@ where
                         )
                     }
                     ToolCallDeltaContent::Delta(delta) => {
+                        builder.tool_delta(&delta);
                         send_event!(
                             config,
                             RunEvent::AgentChunk {
@@ -238,6 +248,18 @@ where
                 internal_call_id,
                 tool_result,
             }) => {
+                let tool_pieces: Vec<String> = tool_result
+                    .content
+                    .iter()
+                    .filter_map(|r| match r {
+                        ToolResultContent::Text(text) => Some(text.text.clone()),
+                        ToolResultContent::Image(_) => {
+                            error!("Image tool results are not supported in the review pipeline");
+                            None
+                        }
+                    })
+                    .collect();
+                builder.tool_result(tool_pieces);
                 send_event!(
                     config,
                     RunEvent::AgentChunk {
@@ -280,7 +302,10 @@ where
                 };
                 let serde = serde_json::from_str::<Output>(&text.text);
                 match serde {
-                    Ok(output) => return Ok(output),
+                    Ok(output) => {
+                        builder.finalize_turn();
+                        return Ok((output, builder.finish()));
+                    }
                     Err(e) => {
                         error!(
                             "Failed to deserialize final response for agent {} during review {}: {}",
@@ -306,6 +331,8 @@ where
 /// Stream an agent by building it internally from the config, then streaming the response.
 ///
 /// Backward-compatible 3-argument signature (used by benchmark/judge).
+/// The built [`AgentSession`] is discarded; use [`stream_agent_with_agent`]
+/// to retain it.
 pub async fn stream_agent<Output, R>(
     config: Arc<R>,
     agent_id: &MagicTypeId,
@@ -317,7 +344,8 @@ where
 {
     let cfg = config.get_agent_config();
     let agent = cfg.client.agent(cfg.model.get()).build();
-    stream_agent_inner(config, agent_id, prompt, agent).await
+    let (output, _session) = stream_agent_inner(config, agent_id, prompt, agent).await?;
+    Ok(output)
 }
 
 /// Stream an agent using a caller-provided agent instance.
@@ -329,7 +357,7 @@ pub async fn stream_agent_with_agent<Output, R, M, Res>(
     agent_id: &MagicTypeId,
     agent: impl StreamingPrompt<M, Res>,
     prompt: &str,
-) -> Result<Output>
+) -> Result<(Output, AgentSession)>
 where
     Output: DeserializeOwned,
     R: RuntimeProvider + Send + Sync + 'static,

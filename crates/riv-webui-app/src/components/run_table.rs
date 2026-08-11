@@ -1,12 +1,13 @@
 use std::cmp::Ordering;
 
-use leptos::either::{Either, EitherOf3};
+use leptos::either::Either;
 use leptos::prelude::*;
 use lucide_leptos::{ArrowDown, ArrowUp};
 use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
 
 use crate::components::status_badge_class;
 
+/// Sortable table of review runs.
 #[component]
 pub fn RunTable(runs: Vec<Review>) -> impl IntoView {
     let (sort_column, set_sort_column) = signal::<SortColumn>(SortColumn::Name);
@@ -36,13 +37,13 @@ pub fn RunTable(runs: Vec<Review>) -> impl IntoView {
         runs
     };
 
-    let sort_icon = move |col| -> EitherOf3<_, _, ()> {
+    let sort_icon = move |col| -> AnyView {
         match sort_column.get() == col {
             true => match sort_asc.get() {
-                true => EitherOf3::A(view! { <ArrowUp size=14 /> }),
-                false => EitherOf3::B(view! { <ArrowDown size=14 /> }),
+                true => view! { <ArrowUp size=14 /> }.into_any(),
+                false => view! { <ArrowDown size=14 /> }.into_any(),
             },
-            false => EitherOf3::C(()),
+            false => view! {}.into_any(),
         }
     };
 
@@ -64,49 +65,54 @@ pub fn RunTable(runs: Vec<Review>) -> impl IntoView {
                     </tr>
                 </thead>
                 <tbody>
-                    {move || sorted_runs().into_iter().map(|run| {
-                        let badge_variant = status_badge_class(&run.status);
-                        let cost_str = run.analytics.as_ref().map(|a| format!("${:.4}", a.total_cost())).unwrap_or_else(|| "-".into());
-                        let detail_path = format!("/reviews/{}", run.id);
-                        let live_path = format!("/reviews/{}/live", run.id);
-                        let label = review_label(&run);
-                        let subtitle = review_subtitle(&run);
-
-                        view! {
-                            <tr class="table__row table__row--clickable" data-href=detail_path.clone()>
-                                <td class="table__td font-medium">
-                                    <a href=detail_path.clone() style="color: var(--text-link, #58a6ff);">{label}</a>
-                                    <div class="text-secondary text-sm text-truncate" title=subtitle.clone()>{subtitle.clone()}</div>
-                                </td>
-                                <td class="table__td">
-                                    <span class=format!("badge {}", badge_variant)>
-                                        <span class="badge__dot"></span>
-                                        <span class="badge__label">{run.status.to_string()}</span>
-                                    </span>
-                                </td>
-                                <td class="table__td table__td--mono">{cost_str}</td>
-                                <td class="table__td">
-                                    <div class="flex-row gap-sm">
-                                        <a href=detail_path.clone() class="btn btn--sm btn--secondary">"View"</a>
-                                        {if run.status == ReviewStatus::Running || run.status == ReviewStatus::Pending {
-                                            Either::Left(
-                                                view! {
-                                                    <a href=live_path class="btn btn--sm btn--secondary">"Live"</a>
-                                                }
-                                            )
-                                        } else {
-                                            Either::Right(
-                                                view! { <span></span> }
-                                            )
-                                        }}
-                                    </div>
-                                </td>
-                            </tr>
-                        }
-                    }).collect::<Vec<_>>()}
+                    {move || sorted_runs().into_iter().map(|run| view! { <RunRow run=run /> }).collect::<Vec<_>>()}
                 </tbody>
             </table>
         </div>
+    }
+}
+
+/// A single run row with name, status badge, cost, and detail/live links.
+#[component]
+fn RunRow(run: Review) -> impl IntoView {
+    let badge_variant = status_badge_class(&run.status);
+    let cost_str = run
+        .analytics
+        .as_ref()
+        .map(|a| format!("${:.4}", a.total_cost()))
+        .unwrap_or_else(|| "-".into());
+    let detail_path = format!("/reviews/{}", run.id);
+    let live_path = format!("/reviews/{}/live", run.id);
+    let label = review_label(&run);
+    let subtitle = review_subtitle(&run);
+    let status = run.status.clone();
+
+    view! {
+        <tr class="table__row table__row--clickable" data-href=detail_path.clone()>
+            <td class="table__td font-medium">
+                <a href=detail_path.clone() style="color: var(--text-link, #58a6ff);">{label}</a>
+                <div class="text-secondary text-sm text-truncate" title=subtitle.clone()>{subtitle.clone()}</div>
+            </td>
+            <td class="table__td">
+                <span class=format!("badge {}", badge_variant)>
+                    <span class="badge__dot"></span>
+                    <span class="badge__label">{run.status.to_string()}</span>
+                </span>
+            </td>
+            <td class="table__td table__td--mono">{cost_str}</td>
+            <td class="table__td">
+                <div class="flex-row gap-sm">
+                    <a href=detail_path.clone() class="btn btn--sm btn--secondary">"View"</a>
+                    {if status == ReviewStatus::Running || status == ReviewStatus::Pending {
+                        Either::Left(
+                            view! { <a href=live_path class="btn btn--sm btn--secondary">"Live"</a> }
+                        )
+                    } else {
+                        Either::Right(view! { <span></span> })
+                    }}
+                </div>
+            </td>
+        </tr>
     }
 }
 

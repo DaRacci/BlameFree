@@ -6,6 +6,7 @@ use mti::prelude::MagicTypeId;
 use riv_agents::{AgentConfig, AgentConfigProvider, AgentDetailsProvider};
 use riv_cache::traits::CacheBackend;
 use riv_reporting::cost::AnalyticsTracker;
+use riv_types::wrappers::WrappedData;
 use riv_types::{
     RunEvent,
     benchmark::{golden::GoldenCommentEntry, judge::JudgedFindings},
@@ -67,6 +68,10 @@ impl riv_agents::RuntimeProvider for BenchmarkConfig {
 
     fn get_dashboard_tx(&self) -> Option<Sender<RunEvent>> {
         self.dashboard_tx.clone()
+    }
+
+    fn get_model_name(&self) -> String {
+        self.model.get().to_string()
     }
 }
 

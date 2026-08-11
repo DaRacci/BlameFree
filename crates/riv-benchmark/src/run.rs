@@ -207,7 +207,7 @@ async fn run_benchmark_pr(
         template_vars: None,
     };
 
-    let findings = review_diff(Diff::new(diff), &config)
+    let (findings, _agent_sessions) = review_diff(Diff::new(diff), &config)
         .await
         .map_err(|error| format!("Benchmark evaluation failed for {}: {error}", entry.url))?;
     let analytics = cost_tracker.to_snapshot().await;

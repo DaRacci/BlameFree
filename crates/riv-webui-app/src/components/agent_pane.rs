@@ -1,10 +1,12 @@
-use leptos::either::{Either, EitherOf4};
 use leptos::prelude::*;
 use lucide_leptos::{Check, Circle, CirclePlay, X};
 use riv_types::review::ReviewStatus;
 
 use crate::components::logs::log_text::LogText;
 
+/// Live agent status pane.
+///
+/// Shows a single review agent's name, status, and streaming response.
 #[component]
 pub fn AgentPane(
     name: String,
@@ -22,13 +24,13 @@ pub fn AgentPane(
         }
     };
 
-    let status_icon = move || -> EitherOf4<_, _, _, _> {
+    let status_icon = move || -> AnyView {
         match status.get() {
-            ReviewStatus::Running => EitherOf4::A(view! { <CirclePlay size=16 /> }),
-            ReviewStatus::Completed => EitherOf4::B(view! { <Check size=16 /> }),
-            ReviewStatus::Failed => EitherOf4::C(view! { <X size=16 /> }),
+            ReviewStatus::Running => view! { <CirclePlay size=16 /> }.into_any(),
+            ReviewStatus::Completed => view! { <Check size=16 /> }.into_any(),
+            ReviewStatus::Failed => view! { <X size=16 /> }.into_any(),
             ReviewStatus::Pending | ReviewStatus::Cancelled => {
-                EitherOf4::D(view! { <Circle size=16 /> })
+                view! { <Circle size=16 /> }.into_any()
             }
         }
     };
@@ -44,36 +46,7 @@ pub fn AgentPane(
             </div>
 
             <div class="agent-pane__content">
-                {move || {
-                    match (status.get(), response.get()) {
-                        (_, Some(resp)) if !resp.is_empty() => {
-                            Either::Left(Either::Left(Either::Left(
-                                view! { <LogText text=resp /> }
-                            )))
-                        }
-                        (s, _) if s == ReviewStatus::Pending => {
-                            Either::Left(Either::Left(Either::Right(
-                                view! {
-                                    <span class="text-tertiary text-italic">"Waiting for task..."</span>
-                                }
-                            )))
-                        }
-                        (s, _) if s == ReviewStatus::Running => {
-                            Either::Left(Either::Right(
-                                view! {
-                                    <span class="text-tertiary text-italic">"Processing..."</span>
-                                }
-                            ))
-                        }
-                        (_, _) => {
-                            Either::Right(
-                                view! {
-                                    <span class="text-tertiary text-italic">"No response yet"</span>
-                                }
-                            )
-                        }
-                    }
-                }}
+                <AgentPaneContent status=status response=response />
             </div>
 
             <div class="agent-pane__footer">
@@ -87,4 +60,23 @@ pub fn AgentPane(
             </div>
         </div>
     }
+}
+
+/// Renders the agent body: the streamed response, or a status message while waiting.
+#[component]
+fn AgentPaneContent(
+    status: Signal<ReviewStatus>,
+    response: Signal<Option<String>>,
+) -> impl IntoView {
+    if let Some(resp) = response.get().filter(|text| !text.is_empty()) {
+        return view! { <LogText text=resp /> }.into_any();
+    }
+
+    let message = match status.get() {
+        ReviewStatus::Pending => "Waiting for task...",
+        ReviewStatus::Running => "Processing...",
+        _ => "No response yet",
+    };
+
+    view! { <span class="text-tertiary text-italic">{message}</span> }.into_any()
 }

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use riv_shared::diff::Diff;
+use riv_types::agent::AgentSession;
 use riv_types::finding::Finding;
 use riv_types::wrappers::WrappedData;
 use tracing::info;
@@ -14,7 +15,10 @@ use crate::pipeline;
     agent_count = config.agents.len(),
     model = %config.model.get(),
 ))]
-pub async fn review_diff(diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>> {
+pub async fn review_diff(
+    diff: Diff,
+    config: &EvalConfig,
+) -> Result<(Vec<Finding>, Vec<AgentSession>)> {
     info!(
         "Reviewing diff ({} bytes, {} sections) with {} agents, model={}",
         diff.raw.len(),
@@ -23,12 +27,12 @@ pub async fn review_diff(diff: Diff, config: &EvalConfig) -> Result<Vec<Finding>
         config.model.get(),
     );
 
-    let findings = pipeline::evaluate(diff, config)
+    let (findings, agent_sessions) = pipeline::evaluate(diff, config)
         .await
         .context("Pipeline evaluation failed")?;
 
     info!("Review complete: {} findings", findings.len());
-    Ok(findings)
+    Ok((findings, agent_sessions))
 }
 
 /// Build an `EvalConfig` from `ReviewArgs` for a one-shot review.

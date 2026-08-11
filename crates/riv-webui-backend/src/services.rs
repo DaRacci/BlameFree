@@ -718,7 +718,7 @@ where
     let duration = started_at.elapsed();
 
     match result {
-        Ok(findings) => {
+        Ok((findings, agent_sessions)) => {
             info!(
                 "Review {} completed in {:.1}s with {} findings",
                 review_id,
@@ -734,7 +734,7 @@ where
 
             let review = Review {
                 id: review_id.clone(),
-                agent_sessions: Vec::new(),
+                agent_sessions,
                 analytics: Some(analytics.clone()),
                 duration: Some(duration),
                 error_message: None,
