@@ -36,6 +36,7 @@ fn SessionLog(session: AgentSession, session_num: usize, open: bool) -> impl Int
     let reasoning = reasoning_text(&session);
     let summary = format!("Session {}", session_num);
     let meta = format!("{} • {}", session.model_name, short_session_id(&session));
+    let usage = format_usage(&session);
 
     view! {
         <details class="card" open=open>
@@ -43,6 +44,11 @@ fn SessionLog(session: AgentSession, session_num: usize, open: bool) -> impl Int
                 <div>
                     <h3 class="card__title">{summary}</h3>
                     <p class="session-log-viewer__meta">{meta}</p>
+                    {if usage.is_empty() {
+                        view! { <span></span> }.into_any()
+                    } else {
+                        view! { <p class="session-log-viewer__meta">{usage}</p> }.into_any()
+                    }}
                 </div>
             </summary>
             <div class="card__body">
@@ -58,6 +64,26 @@ fn short_session_id(session: &AgentSession) -> String {
     let id = session.id.to_string();
     let keep = id.len().min(8);
     id[..keep].to_string()
+}
+
+/// Format a compact token-usage summary for a session card header.
+///
+/// Falls back to an empty string when no usage has been recorded.
+fn format_usage(session: &AgentSession) -> String {
+    let usage = session.usage;
+    if usage.call_count == 0 && usage.input_tokens == 0 && usage.output_tokens == 0 {
+        return String::new();
+    }
+    let mut parts = vec![format!("{} in", usage.input_tokens)];
+    parts.push(format!("{} out", usage.output_tokens));
+    if usage.reasoning_tokens > 0 {
+        parts.push(format!("{} reasoning", usage.reasoning_tokens));
+    }
+    if usage.tool_use_count > 0 {
+        parts.push(format!("{} tool calls", usage.tool_use_count));
+    }
+    parts.push(format!("{} calls", usage.call_count));
+    parts.join(" • ")
 }
 
 fn ordered_messages(session: &AgentSession) -> Vec<AgentTurnMessage> {

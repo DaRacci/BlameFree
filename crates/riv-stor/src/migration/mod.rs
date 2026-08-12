@@ -19,7 +19,7 @@ use riv_types::{
 };
 
 #[allow(dead_code)]
-const CURRENT_VERSION: i32 = 4;
+const CURRENT_VERSION: i32 = 5;
 
 /// Create the `_schema_version` tracking table if it does not exist.
 async fn create_schema_version_table(db: &DatabaseConnection) -> Result<(), Error> {
@@ -77,6 +77,9 @@ pub async fn run_migrations(db: &DatabaseConnection) -> Result<(), Error> {
     }
     if current_version < 4 {
         migrate_v4(db).await?;
+    }
+    if current_version < 5 {
+        migrate_v5(db).await?;
     }
 
     Ok(())
@@ -210,6 +213,41 @@ async fn migrate_v4(db: &DatabaseConnection) -> Result<(), Error> {
     Ok(())
 }
 
+/// Add the `usage` BLOB column to `agent_sessions`.
+///
+/// Persists the per-session token usage (`AgentSession.usage`) as a compressed
+/// JSON blob, mirroring `reviews.analytics`. `SchemaBuilder::sync()` does not
+/// ALTER an existing table, so this is an explicit `ALTER TABLE`. Idempotency is
+/// guaranteed by the schema-version gate in `run_migrations` (this only runs
+/// when the store is below version 5) plus the `pragma_table_info` existence
+/// check for safety across fresh and pre-existing stores.
+async fn migrate_v5(db: &DatabaseConnection) -> Result<(), Error> {
+    let has_column = db
+        .query_one_raw(sea_orm::Statement::from_string(
+            db.get_database_backend(),
+            "SELECT count(*) FROM pragma_table_info('agent_sessions') WHERE name='usage'"
+                .to_string(),
+        ))
+        .await
+        .map_err(|e| Error::Migration(format!("failed to inspect agent_sessions columns: {e}")))?
+        .and_then(|r| r.try_get_by_index::<i32>(0).ok())
+        .unwrap_or(0)
+        > 0;
+    if !has_column {
+        db.execute_unprepared("ALTER TABLE agent_sessions ADD COLUMN usage BLOB")
+            .await
+            .map_err(|e| Error::Migration(format!("failed to add usage column: {e}")))?;
+    }
+
+    db.execute_unprepared(
+        "INSERT INTO _schema_version (version, description) VALUES (5, 'add agent_sessions.usage BLOB for per-session token usage')",
+    )
+    .await
+    .map_err(|e| Error::Migration(format!("failed to record schema version: {e}")))?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,6 +314,23 @@ mod tests {
         assert_eq!(
             col_count, 1,
             "reviews.analytics BLOB column should exist after migration"
+        );
+
+        // The agent_sessions.usage BLOB column must exist (added by migrate_v5).
+        let usage_row = db
+            .query_one_raw(sea_orm::Statement::from_string(
+                db.get_database_backend(),
+                "SELECT count(*) FROM pragma_table_info('agent_sessions') WHERE name='usage'"
+                    .to_string(),
+            ))
+            .await
+            .expect("query should succeed");
+        let usage_count: i32 = usage_row
+            .and_then(|r| r.try_get_by_index::<i32>(0).ok())
+            .unwrap_or(0);
+        assert_eq!(
+            usage_count, 1,
+            "agent_sessions.usage BLOB column should exist after migration"
         );
 
         run_migrations(&db)
