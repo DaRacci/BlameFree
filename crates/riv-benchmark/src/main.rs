@@ -492,22 +492,16 @@ async fn run_benchmark(
             client: Arc::new(client.clone()),
             cache: None,
             cost_tracker: Arc::new(AnalyticsTracker::new()),
-            tool_handle: tool_server.clone(),
             dashboard_tx: dashboard_tx.clone(),
-            identifier: format!(
-                "run-{}",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-            ),
+            review_id: "benchmark".create_type_id::<V7>(),
             agents,
-            repo_root: workspace_root.clone(),
             max_findings,
-            judge_model: Model(judge_model),
-            judge: judge.clone(),
-            ruleset: ruleset.clone(),
             template_vars: None,
+            context: riv_harness::eval::EvalContext {
+                repo_root: benchmark_dir.clone(),
+                ruleset: ruleset.clone(),
+                ..riv_harness::eval::EvalContext::default()
+            },
         };
 
         match pipeline::evaluate(diff, &cfg).await {
