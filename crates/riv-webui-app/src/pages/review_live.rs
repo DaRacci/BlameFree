@@ -143,7 +143,10 @@ pub fn ReviewLivePage() -> impl IntoView {
 
                 let url = format!("/api/reviews/{id}/stream");
                 match sse::connect_sse(&url).await {
-                    Ok(mut rx) => {
+                    // The handle closes the underlying browser connection on drop.
+                    // Dropping it once the stream ends (or we navigate away) stops
+                    // the EventSource auto-reconnect loop.
+                    Ok((_es, mut rx)) => {
                         set_stream_status.update(|s| *s = ReviewStatus::Running);
 
                         let start = std::time::Instant::now();
@@ -223,6 +226,10 @@ pub fn ReviewLivePage() -> impl IntoView {
                                 last_elapsed_update = std::time::Instant::now();
                             }
                         }
+
+                        // Stream ended (server closed it) without a terminal event —
+                        // e.g. transient disconnect. Dropping the EventSource handle
+                        // here stops the browser from auto-reconnecting.
 
                         if !navigate_if_review_terminal(&id, &navigate).await {
                             match read_live_review_snapshot(id.clone()).await {

@@ -22,16 +22,35 @@ fn new_event_source(
     Ok((es, tx, rx))
 }
 
-/// Connect to an SSE endpoint and return a channel receiver that yields
-/// event data strings as they arrive.
+/// Wrapper around a browser [`EventSource`] that closes the underlying connection when dropped.
+///
+/// [`web_sys::EventSource`] does not close the browser connection on drop,
+/// so dropping it leaks a connection that keeps auto-reconnecting.
+/// This wrapper ensures the connection is torn down when the wrapper goes out of scope.
+pub struct EventSourceHandle(web_sys::EventSource);
+
+impl Drop for EventSourceHandle {
+    fn drop(&mut self) {
+        self.0.close();
+    }
+}
+
+/// Connect to an SSE endpoint and return an [`EventSourceHandle`] alongside a
+/// channel receiver that yields event data strings as they arrive.
+///
+/// Holding the [`EventSourceHandle`] keeps the connection open; dropping it
+/// closes the underlying browser connection and stops auto-reconnect. The
+/// handle must be kept alive for the lifetime of the stream.
 ///
 /// This basic version only sets up the `onmessage` handler — no connection
 /// status tracking. For status-aware connections (onopen / onerror), see
 /// [`connect_sse_with_status`].
-pub async fn connect_sse(url: &str) -> Result<mpsc::UnboundedReceiver<String>, String> {
+pub async fn connect_sse(
+    url: &str,
+) -> Result<(EventSourceHandle, mpsc::UnboundedReceiver<String>), String> {
     let (es, tx, rx) = new_event_source(url)?;
     attach_onmessage(&es, tx);
-    Ok(rx)
+    Ok((EventSourceHandle(es), rx))
 }
 
 /// Connect to an SSE endpoint with connection-status tracking.
