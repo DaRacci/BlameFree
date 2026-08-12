@@ -7,6 +7,7 @@
 
 use mti::prelude::MagicTypeId;
 use riv_types::agent::{AgentSession, AgentTurn, AgentTurnMessage};
+use riv_types::cost::SessionUsage;
 
 /// A tool invocation being accumulated from the stream.
 struct PendingTool {
@@ -39,6 +40,8 @@ pub struct SessionBuilder {
     output: String,
     /// Pending tool invocation, if one is in flight.
     current_tool: Option<PendingTool>,
+    /// Per-session token usage, recorded when the final response streams in.
+    usage: SessionUsage,
 }
 
 impl SessionBuilder {
@@ -60,6 +63,7 @@ impl SessionBuilder {
             thinking: String::new(),
             output: String::new(),
             current_tool: None,
+            usage: SessionUsage::default(),
         }
     }
 
@@ -116,6 +120,11 @@ impl SessionBuilder {
         self.current_messages.push(message);
     }
 
+    /// Record the per-session token usage (from the streamed final response).
+    pub fn set_usage(&mut self, usage: SessionUsage) {
+        self.usage = usage;
+    }
+
     /// Close out the current turn: flush any pending assistant message and
     /// push the accumulated turn into the session.
     pub fn finalize_turn(&mut self) {
@@ -140,6 +149,7 @@ impl SessionBuilder {
             id: self.id,
             review_id: None,
             model_name: self.model_name,
+            usage: self.usage,
             turns: self.turns,
         }
     }

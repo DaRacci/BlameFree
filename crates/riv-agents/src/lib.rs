@@ -104,12 +104,15 @@ where
 }
 
 /// Shared inner streaming loop used by `stream_agent` and `stream_agent_with_agent`.
+///
+/// Always returns the built (possibly partial) [`AgentSession`], even when the
+/// stream fails or ends without a final response, so callers can persist it.
 async fn stream_agent_inner<Output, R, M, Res>(
     config: Arc<R>,
     agent_id: &MagicTypeId,
     prompt: &str,
     agent: impl StreamingPrompt<M, Res>,
-) -> Result<(Output, AgentSession)>
+) -> (Result<Output>, AgentSession)
 where
     Output: DeserializeOwned,
     R: RuntimeProvider + Send + Sync,
@@ -121,9 +124,13 @@ where
         session::SessionBuilder::new(config.get_id().clone(), config.get_model_name(), prompt);
     let mut stream = agent.stream_prompt(prompt).await;
     while let Some(chunk) = stream.next().await {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(e) => return (Err(e.into()), builder.finish()),
+        };
         let review_id = config.get_id().clone();
         let agent_id = agent_id.clone();
-        match chunk? {
+        match chunk {
             MultiTurnStreamItem::StreamAssistantItem(assistant) => match assistant {
                 StreamedAssistantContent::Text(text) => {
                     builder.push_output(&text.text);
@@ -156,6 +163,7 @@ where
                 StreamedAssistantContent::Final(r) => {
                     builder.finalize_turn();
                     let analytics = r.token_usage().get_usage();
+                    builder.set_usage(analytics);
                     analytics_trcker.record(&agent_id, analytics, false).await;
                     send_event!(
                         config,
@@ -304,7 +312,7 @@ where
                 match serde {
                     Ok(output) => {
                         builder.finalize_turn();
-                        return Ok((output, builder.finish()));
+                        return (Ok(output), builder.finish());
                     }
                     Err(e) => {
                         error!(
@@ -321,11 +329,14 @@ where
         }
     }
 
-    Err(anyhow!(
-        "Stream ended without final response for agent {} during review {}",
-        agent_id,
-        config.get_id()
-    ))
+    (
+        Err(anyhow!(
+            "Stream ended without final response for agent {} during review {}",
+            agent_id,
+            config.get_id()
+        )),
+        builder.finish(),
+    )
 }
 
 /// Stream an agent by building it internally from the config, then streaming the response.
@@ -344,8 +355,8 @@ where
 {
     let cfg = config.get_agent_config();
     let agent = cfg.client.agent(cfg.model.get()).build();
-    let (output, _session) = stream_agent_inner(config, agent_id, prompt, agent).await?;
-    Ok(output)
+    let (result, _session) = stream_agent_inner(config, agent_id, prompt, agent).await;
+    result
 }
 
 /// Stream an agent using a caller-provided agent instance.
@@ -357,7 +368,7 @@ pub async fn stream_agent_with_agent<Output, R, M, Res>(
     agent_id: &MagicTypeId,
     agent: impl StreamingPrompt<M, Res>,
     prompt: &str,
-) -> Result<(Output, AgentSession)>
+) -> (Result<Output>, AgentSession)
 where
     Output: DeserializeOwned,
     R: RuntimeProvider + Send + Sync + 'static,

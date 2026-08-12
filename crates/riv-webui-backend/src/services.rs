@@ -1238,6 +1238,14 @@ fn build_review_agent_log(review_id: &MagicTypeId, session: &AgentSession) -> Re
         prompt,
         response,
         reasoning,
+        input_tokens: session.usage.input_tokens,
+        output_tokens: session.usage.output_tokens,
+        cached_input_tokens: session.usage.cached_input_tokens,
+        cache_creation_input_tokens: session.usage.cache_creation_input_tokens,
+        reasoning_tokens: session.usage.reasoning_tokens,
+        tool_use_prompt_tokens: session.usage.tool_use_prompt_tokens,
+        call_count: session.usage.call_count,
+        tool_use_count: session.usage.tool_use_count,
     }
 }
 
@@ -1284,6 +1292,7 @@ fn extract_pr_number(url: &str) -> u32 {
 mod tests {
     use super::*;
     use riv_types::agent::AgentResponse;
+    use riv_types::cost::SessionUsage;
 
     #[test]
     fn test_extract_pr_number() {
@@ -1299,6 +1308,12 @@ mod tests {
             id: session_id.clone(),
             review_id: Some(review_id.clone()),
             model_name: "openai/gpt-5-mini".to_string(),
+            usage: SessionUsage {
+                input_tokens: 12,
+                output_tokens: 34,
+                call_count: 1,
+                ..Default::default()
+            },
             turns: vec![AgentTurn {
                 id: None,
                 session_id,
@@ -1333,5 +1348,8 @@ mod tests {
         assert!(log.response.contains("Found potential bug"));
         assert!(log.response.contains("[tool] grep"));
         assert!(log.reasoning.contains("Need inspect auth flow"));
+        assert_eq!(log.input_tokens, 12);
+        assert_eq!(log.output_tokens, 34);
+        assert_eq!(log.call_count, 1);
     }
 }

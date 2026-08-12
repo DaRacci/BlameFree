@@ -14,6 +14,7 @@ use riv_types::{
         AgentResponse, AgentSession, AgentTurn, AgentTurnMessage, RoleMessage, ToolInvocation,
     },
     benchmark::{golden::GoldenComment, result::PrResult, standalone::Benchmark},
+    cost::SessionUsage,
     review::{Review, ReviewStatus},
 };
 use sea_orm::ConnectionTrait;
@@ -176,6 +177,7 @@ async fn test_agent_session_round_trip() {
         id: id.clone(),
         model_name: "spongebob".to_string(),
         review_id: None,
+        usage: SessionUsage::default(),
         turns: vec![
             AgentTurn {
                 id: None,
@@ -305,6 +307,7 @@ async fn test_agent_session_delete() {
         id: id.clone(),
         model_name: "patrick".to_string(),
         review_id: None,
+        usage: SessionUsage::default(),
         turns: vec![AgentTurn {
             id: None,
             session_id: id.clone(),

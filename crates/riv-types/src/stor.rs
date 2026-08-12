@@ -148,6 +148,25 @@ impl JsonBlobEnvelope for crate::review::ReviewRuntimeData {
     }
 }
 
+#[cfg(feature = "seaorm-storage")]
+impl JsonBlobEnvelope for crate::agent::AgentSessionRuntimeData {
+    type Domain = crate::agent::AgentSession;
+
+    fn encode(domain: &Self::Domain) -> Option<Vec<u8>> {
+        let wrapper = Self {
+            usage: domain.usage,
+        };
+        json_blob_encode(&wrapper)
+    }
+
+    fn decode_into(blob: &[u8], domain: &mut Self::Domain) {
+        let Some(wrapper) = json_blob_decode::<Self>(blob) else {
+            return;
+        };
+        domain.usage = wrapper.usage;
+    }
+}
+
 /// Envelope for a `#[sea_orm(json)]` field group: a single zstd-compressed JSON
 /// blob stored in one BLOB column.
 ///

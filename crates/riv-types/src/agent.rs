@@ -1,6 +1,8 @@
 use mti::prelude::MagicTypeId;
 use serde::{Deserialize, Serialize};
 
+use crate::cost::SessionUsage;
+
 #[cfg(feature = "seaorm-storage")]
 use crate::review::ReviewEntity;
 use crate::wrappers::Model;
@@ -169,6 +171,17 @@ pub struct AgentTurn {
     pub messages: Vec<AgentTurnMessage>,
 }
 
+/// Runtime-only agent session data (token usage) folded into a single
+/// zstd-compressed JSON blob stored in the `agent_sessions.usage` BLOB column.
+///
+/// `AgentSession.usage` is a `#[sea_orm(json)]` field; the EntityModel macro
+/// wraps it into this struct before persisting.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentSessionRuntimeData {
+    /// Token usage for this agent session.
+    pub usage: SessionUsage,
+}
+
 /// A single agent session, containing turns and messages.
 #[cfg_attr(
     feature = "seaorm-storage",
@@ -196,6 +209,10 @@ pub struct AgentSession {
     /// The model name used for this agent session.
     #[cfg_attr(feature = "seaorm-storage", sea_orm(column_name = "model_name"))]
     pub model_name: String,
+
+    /// Token usage for this agent session.
+    #[cfg_attr(feature = "seaorm-storage", sea_orm(json))]
+    pub usage: SessionUsage,
 
     /// A list of turns the agent has taken in this session.
     ///

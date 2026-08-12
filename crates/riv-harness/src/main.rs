@@ -10,6 +10,8 @@ use riv_harness::review;
 use riv_shared::diff::Diff;
 use riv_stor::store::sqlite::SqliteStore;
 use riv_stor::traits::Store;
+use riv_types::benchmark::result::PrResult;
+use riv_types::finding::Finding;
 use riv_types::review::{Review, ReviewMetadata, ReviewStatus};
 use tracing::info;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -89,8 +91,15 @@ async fn run_review(args: ReviewArgs) -> Result<()> {
 
     // Persist the review to the same DB the webui uses, so CLI runs surface
     // identically. Only the id prefix differs (`riv-cli`).
-    if let Err(error) =
-        persist_cli_review(&review_id, &analytics, duration, &args, agent_sessions).await
+    if let Err(error) = persist_cli_review(
+        &review_id,
+        &analytics,
+        duration,
+        &args,
+        &findings,
+        agent_sessions,
+    )
+    .await
     {
         eprintln!("Failed to persist review to DB: {error}");
     }
@@ -124,6 +133,7 @@ async fn persist_cli_review(
     analytics: &riv_types::cost::AnalyticsSnapshot,
     duration: Duration,
     _args: &ReviewArgs,
+    findings: &[Finding],
     agent_sessions: Vec<riv_types::agent::AgentSession>,
 ) -> Result<()> {
     let store_path = env::var("STORE_PATH").unwrap_or_else(|_| "riv-stor.db".to_string());
@@ -145,5 +155,28 @@ async fn persist_cli_review(
         .await
         .context("failed to save review")?;
     info!("Persisted review {} to {}", review_id, store_path);
+
+    // Persist the findings as a PrResult so CLI runs surface identically to
+    // webui reviews (which store findings inside a PrResult).
+    let pr_result_id = review_id.to_string();
+    let findings = findings
+        .iter()
+        .cloned()
+        .map(|mut finding| {
+            finding.pr_result_id = pr_result_id.clone();
+            finding
+        })
+        .collect();
+    let pr_result = PrResult {
+        id: review_id.clone(),
+        benchmark_id: None,
+        golden_comments: Vec::new(),
+        findings,
+    };
+    store
+        .save::<PrResult>(&pr_result)
+        .await
+        .context("failed to save pr result")?;
+    info!("Persisted pr result {} to {}", review_id, store_path);
     Ok(())
 }

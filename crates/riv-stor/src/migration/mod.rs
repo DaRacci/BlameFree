@@ -13,14 +13,13 @@ use riv_types::{
         golden::GoldenCommentEntity, judge::JudgeVerdictEntity, result::PrResultEntity,
         standalone::BenchmarkEntity,
     },
-    cost::{AgentSessionUsageEntity, CacheUsageEntryEntity},
     finding::FindingEntity,
     review::ReviewEntity,
     settings::AllowedModelEntity,
 };
 
 #[allow(dead_code)]
-const CURRENT_VERSION: i32 = 3;
+const CURRENT_VERSION: i32 = 4;
 
 /// Create the `_schema_version` tracking table if it does not exist.
 async fn create_schema_version_table(db: &DatabaseConnection) -> Result<(), Error> {
@@ -76,6 +75,9 @@ pub async fn run_migrations(db: &DatabaseConnection) -> Result<(), Error> {
     if current_version < 3 {
         migrate_v3(db).await?;
     }
+    if current_version < 4 {
+        migrate_v4(db).await?;
+    }
 
     Ok(())
 }
@@ -94,8 +96,6 @@ async fn migrate_v1(db: &DatabaseConnection) -> Result<(), Error> {
         .register(GoldenCommentEntity)
         .register(FindingEntity)
         .register(JudgeVerdictEntity)
-        .register(AgentSessionUsageEntity)
-        .register(CacheUsageEntryEntity)
         .register(AllowedModelEntity)
         .sync(db)
         .await
@@ -187,6 +187,29 @@ async fn migrate_v3(db: &DatabaseConnection) -> Result<(), Error> {
     Ok(())
 }
 
+/// Drop the dead `agent_session_usages` and `cache_usage_entries` tables.
+///
+/// The data those tables would hold is already persisted in the
+/// `reviews.analytics` JSON blob (per-review analytics). The tables are never
+/// written, so they are removed. `DROP TABLE IF EXISTS` keeps this idempotent
+/// across fresh and pre-existing stores.
+async fn migrate_v4(db: &DatabaseConnection) -> Result<(), Error> {
+    db.execute_unprepared("DROP TABLE IF EXISTS agent_session_usages;")
+        .await
+        .map_err(|e| Error::Migration(format!("failed to drop agent_session_usages: {e}")))?;
+    db.execute_unprepared("DROP TABLE IF EXISTS cache_usage_entries;")
+        .await
+        .map_err(|e| Error::Migration(format!("failed to drop cache_usage_entries: {e}")))?;
+
+    db.execute_unprepared(
+        "INSERT INTO _schema_version (version, description) VALUES (4, 'drop dead agent_session_usages and cache_usage_entries tables')",
+    )
+    .await
+    .map_err(|e| Error::Migration(format!("failed to record schema version: {e}")))?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,8 +242,6 @@ mod tests {
             "agent_sessions",
             "agent_turns",
             "agent_turn_messages",
-            "agent_session_usages",
-            "cache_usage_entries",
             "allowed_models",
             "_schema_version",
         ];

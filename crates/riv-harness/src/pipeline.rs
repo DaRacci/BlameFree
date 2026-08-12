@@ -130,13 +130,15 @@ async fn run_reviewers(
     let mut agent_sessions = Vec::<AgentSession>::new();
     while let Some(res) = agent_set.join_next().await {
         match res {
-            Ok(Ok((findings, session))) => {
-                all_findings.extend(findings);
+            Ok((result, session)) => {
                 agent_sessions.push(session);
-            }
-            Ok(Err(e)) => {
-                let errors = errors.get_or_insert_with(ManyErrors::new);
-                errors.push(e)
+                match result {
+                    Ok(findings) => all_findings.extend(findings),
+                    Err(e) => {
+                        let errors = errors.get_or_insert_with(ManyErrors::new);
+                        errors.push(e);
+                    }
+                }
             }
             Err(e) => warn!("Agent join error: {e}"),
         }
