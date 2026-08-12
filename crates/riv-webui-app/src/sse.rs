@@ -1,4 +1,4 @@
-#![allow(trivial_casts)] // wasm_bindgen Closure::wrap requires these explicit casts.
+#![allow(trivial_casts)]
 
 use futures::channel::mpsc;
 use leptos::prelude::{Set, WriteSignal};

@@ -81,6 +81,7 @@ async fn navigate_if_review_terminal(
 #[derive(Clone, Default)]
 struct LiveAgentState {
     response: String,
+    thinking: String,
     status: ReviewStatus,
 }
 
@@ -158,25 +159,35 @@ pub fn ReviewLivePage() -> impl IntoView {
                                                 ReviewStatus::Running;
                                         });
                                     }
-                                    RunEvent::AgentChunk { chunk, .. } => {
-                                        let (agent_id, content) = match &chunk {
-                                            AgentChunk::Output { id, content, .. } => {
-                                                (id, content.as_str())
+                                    RunEvent::AgentChunk { chunk, .. } => match &chunk {
+                                        AgentChunk::Output { id, content, .. } => {
+                                            let agent_key = id.to_string();
+                                            if !content.is_empty() {
+                                                set_agent_states.update(|states| {
+                                                    states
+                                                        .entry(agent_key)
+                                                        .or_default()
+                                                        .response
+                                                        .push_str(content);
+                                                });
                                             }
-                                            AgentChunk::Thinking { id, .. } => (id, ""),
-                                            AgentChunk::Tool { id, .. } => (id, ""),
-                                        };
-                                        let agent_key = agent_id.to_string();
-                                        if !content.is_empty() {
-                                            set_agent_states.update(|states| {
-                                                states
-                                                    .entry(agent_key)
-                                                    .or_default()
-                                                    .response
-                                                    .push_str(content);
-                                            });
                                         }
-                                    }
+                                        AgentChunk::Thinking { id, content, .. } => {
+                                            let agent_key = id.to_string();
+                                            if !content.is_empty() {
+                                                set_agent_states.update(|states| {
+                                                    states
+                                                        .entry(agent_key)
+                                                        .or_default()
+                                                        .thinking
+                                                        .push_str(content);
+                                                });
+                                            }
+                                        }
+                                        AgentChunk::Tool { id, .. } => {
+                                            let _ = id;
+                                        }
+                                    },
                                     RunEvent::AgentFinished { agent_id, .. } => {
                                         let agent_key = agent_id.to_string();
                                         set_agent_states.update(|states| {
@@ -326,12 +337,20 @@ fn render_live_view(
                                 Some(state.response.clone())
                             }
                         });
+                        let thinking_signal = Signal::derive(move || {
+                            if state.thinking.is_empty() {
+                                None
+                            } else {
+                                Some(state.thinking.clone())
+                            }
+                        });
                         let pr_signal = Signal::derive(move || None::<String>);
                         view! {
                             <AgentPane
                                 name=agent.name.clone()
                                 status=status_signal
                                 response=response_signal
+                                thinking=thinking_signal
                                 current_pr=pr_signal
                             />
                         }

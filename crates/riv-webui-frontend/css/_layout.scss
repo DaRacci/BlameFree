@@ -236,6 +236,16 @@
   word-break: break-word;
 }
 
+/* While a pane is actively streaming, show a blinking caret at the end of
+   the streamed text to signal that more content is on the way. Reuses the
+   existing `pulse` keyframe (defined in _skeleton.scss). */
+.agent-pane--running .log-viewer__pre::after {
+  content: "▍";
+  margin-left: 2px;
+  color: var(--accent-blue);
+  animation: pulse 0.8s infinite;
+}
+
 .agent-pane__footer {
   padding: var(--spacing-xs) var(--spacing-md);
   border-top: 1px solid var(--border-muted);
@@ -247,6 +257,32 @@
 .agent-pane__findings {
   font-size: var(--text-xs);
   color: var(--text-secondary);
+}
+
+.agent-pane__thinking {
+  margin-bottom: var(--spacing-md);
+  border: 1px solid var(--border-muted);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-subtle, var(--bg-surface));
+}
+
+.agent-pane__thinking-summary {
+  padding: var(--spacing-xs) var(--spacing-md);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.agent-pane__thinking-summary:hover {
+  color: var(--text-primary);
+}
+
+.agent-pane__thinking .log-viewer__content {
+  max-height: 160px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-muted);
 }
 
 .form-section {

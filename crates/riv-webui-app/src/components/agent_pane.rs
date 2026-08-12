@@ -6,12 +6,14 @@ use crate::components::logs::log_text::LogText;
 
 /// Live agent status pane.
 ///
-/// Shows a single review agent's name, status, and streaming response.
+/// Shows a single review agent's name, status, streaming response,
+/// and its live reasoning/thinking.
 #[component]
 pub fn AgentPane(
     name: String,
     status: Signal<ReviewStatus>,
     response: Signal<Option<String>>,
+    #[prop(optional)] thinking: Signal<Option<String>>,
     current_pr: Signal<Option<String>>,
 ) -> impl IntoView {
     let pane_class = move || -> &'static str {
@@ -46,7 +48,7 @@ pub fn AgentPane(
             </div>
 
             <div class="agent-pane__content">
-                <AgentPaneContent status=status response=response />
+                <AgentPaneContent status=status response=response thinking=thinking />
             </div>
 
             <div class="agent-pane__footer">
@@ -62,12 +64,24 @@ pub fn AgentPane(
     }
 }
 
-/// Renders the agent body: the streamed response, or a status message while waiting.
+/// Renders the agent body: live reasoning/thinking and the streamed response.
 #[component]
 fn AgentPaneContent(
     status: Signal<ReviewStatus>,
     response: Signal<Option<String>>,
+    #[prop(optional)] thinking: Signal<Option<String>>,
 ) -> impl IntoView {
+    let thinking = thinking.get().filter(|text| !text.trim().is_empty());
+    if let Some(think) = thinking {
+        return view! {
+            <details class="agent-pane__thinking">
+                <summary class="agent-pane__thinking-summary">"Reasoning"</summary>
+                <LogText text=think />
+            </details>
+        }
+        .into_any();
+    }
+
     if let Some(resp) = response.get().filter(|text| !text.is_empty()) {
         return view! { <LogText text=resp /> }.into_any();
     }
